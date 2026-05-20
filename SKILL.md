@@ -1,3 +1,8 @@
+---
+name: viva
+description: Section-by-section markdown review. Human signs off on every section; agent rewrites and loops until all approved.
+---
+
 # viva
 
 Section-by-section markdown review. Human signs off on every section; agent rewrites and loops until all approved. Named after the PhD oral exam — you present, they question, you defend and revise.
@@ -8,7 +13,7 @@ Replaces: `plan-reviewer`
 
 To enable brainstorming Q&A integration, run once in your Claude Code prompt:
 
-  ! bash ~/.claude/skills/viva/scripts/install.sh
+  ! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | head -1)"
 
 ---
 
@@ -73,7 +78,9 @@ Before each round (round 2+), re-extract sections from the current doc state. ID
 
 Round 1 — launch in background and wait for it to write its URL:
 ```bash
-python3 ~/.claude/skills/viva/server.py \
+VIVA_SERVER=$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name "server.py" -path "*/viva*" 2>/dev/null | head -1)
+mkdir -p .viva
+python3 "$VIVA_SERVER" \
   --mode review \
   --input .viva/review-input-r1.json \
   --output .viva/review-r1.json &

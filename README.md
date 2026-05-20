@@ -18,10 +18,16 @@ One browser tab stays open for the entire session. After you submit a round, a s
 ## Installation
 
 ```bash
-git clone https://github.com/jacquardlabs/viva ~/.claude/skills/viva
+claude install github:jacquardlabs/viva
 ```
 
 Requires Python 3.11+ and Claude Code.
+
+Or install manually via git clone:
+
+```bash
+git clone https://github.com/jacquardlabs/viva ~/.claude/skills/viva
+```
 
 ## Usage
 
@@ -35,10 +41,10 @@ If no path is given, Claude scans the current directory for a single `.md` file.
 
 ## Brainstorming integration
 
-viva adds a batch Q&A phase to the built-in `brainstorming` skill so Claude can surface key design questions before writing a spec. Run once to install:
+viva adds a batch Q&A phase to the built-in `brainstorming` skill so Claude can surface key design questions before writing a spec. Run once in your Claude Code prompt to install:
 
 ```
-! bash ~/.claude/skills/viva/scripts/install.sh
+! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | head -1)"
 ```
 
 Re-run after any superpowers plugin update.
