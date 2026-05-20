@@ -1,16 +1,16 @@
 # viva
 
-Section-by-section markdown review for Claude Code. Named after the PhD oral exam — you present work, Claude questions every section, you defend and revise, and the document only passes when it all holds up.
+Section-by-section markdown review for Claude Code. Named after the PhD oral exam — Claude presents its work, you drill every section for correctness and full understanding, Claude defends and revises, and the document only passes when it all holds up.
 
 ![viva review UI](assets/screenshot.png)
 
 ## What it does
 
-`/viva` turns any markdown document into a structured review session:
+`/viva` turns any agent-written markdown document into a structured review session:
 
 1. Claude extracts 5–15 logical sections from the doc
 2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
-3. Claude rewrites any sections you flag, then loops
+3. You review; Claude rewrites any sections you flag, then loops
 4. The session ends when every section is approved
 
 One browser tab stays open for the entire session. After you submit a round, a spinner appears while Claude rewrites; the next round loads in place without a page reload.
