@@ -1,0 +1,83 @@
+# viva
+
+Section-by-section markdown review for Claude Code. Named after the PhD oral exam — you present work, Claude questions every section, you defend and revise, and the document only passes when it all holds up.
+
+![viva review UI](assets/screenshot.png)
+
+## What it does
+
+`/viva` turns any markdown document into a structured review session:
+
+1. Claude extracts 5–15 logical sections from the doc
+2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
+3. Claude rewrites any sections you flag, then loops
+4. The session ends when every section is approved
+
+One browser tab stays open for the entire session. After you submit a round, a spinner appears while Claude rewrites; the next round loads in place without a page reload.
+
+## Installation
+
+```bash
+git clone https://github.com/jacquardlabs/viva ~/.claude/skills/viva
+```
+
+Requires Python 3.11+ and Claude Code.
+
+## Usage
+
+In Claude Code:
+
+```
+/viva path/to/file.md
+```
+
+If no path is given, Claude scans the current directory for a single `.md` file.
+
+## Brainstorming integration
+
+viva adds a batch Q&A phase to the built-in `brainstorming` skill so Claude can surface key design questions before writing a spec. Run once to install:
+
+```
+! bash ~/.claude/skills/viva/scripts/install.sh
+```
+
+Re-run after any superpowers plugin update.
+
+## Verdicts
+
+| Verdict | What happens |
+|---------|-------------|
+| `approved` | Section accepted; shown collapsed (green) in subsequent rounds, reopenable if needed |
+| `changes` | Claude rewrites the section using your note as the instruction |
+| `info` | Claude answers your question and rewrites the section incorporating that answer |
+| `pending` | Skipped; re-presented unchanged next round |
+
+## How it works
+
+The server is a single Python file with no dependencies beyond stdlib. Claude Code is the agent — no API key required. Claude launches the server as a background subprocess, polls for the output JSON, and calls HTTP endpoints to signal between rounds.
+
+```
+.viva/
+├── server.url             ← server writes on startup; deleted on shutdown
+├── review-input-r1.json   ← agent writes before each round
+├── review-r1.json         ← server writes after user submits
+└── ...
+```
+
+## Server CLI (advanced)
+
+```bash
+# Review mode
+python3 ~/.claude/skills/viva/server.py \
+  --mode review \
+  --input .viva/review-input-r1.json \
+  --output .viva/review-r1.json
+
+# Q&A mode (brainstorming integration)
+python3 ~/.claude/skills/viva/server.py \
+  --mode qa \
+  --input .viva/qa-input.json \
+  --output .viva/answers.json
+```
+
+Add `--no-browser` to skip opening a browser tab (useful for testing).

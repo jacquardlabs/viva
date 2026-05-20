@@ -1,0 +1,1383 @@
+#!/usr/bin/env python3
+"""viva — section-by-section markdown review server.
+
+Usage:
+  python server.py --mode review --input .viva/review-input-r1.json --output .viva/review-r1.json
+  python server.py --mode qa     --input .viva/qa-input.json        --output .viva/answers.json
+"""
+import argparse
+import json
+import signal
+import socket
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from socketserver import ThreadingMixIn
+from urllib.parse import parse_qs, urlparse
+
+HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viva</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ─── Tokens ─────────────────────────────────────────────── */
+:root {
+  --bg:        #06080e;
+  --bg2:       #0d1118;
+  --bg3:       #131922;
+  --border:    #181f2d;
+  --border2:   #222d3f;
+  --text:      #cdd8e8;
+  --text2:     #6e82a0;
+  --text3:     #374254;
+  --accent:    #cbff47;
+  --accent-dim:rgba(203,255,71,0.07);
+  --teal:      #4dffc3;
+  --teal-bg:   rgba(77,255,195,0.05);
+  --orange:    #ff8c42;
+  --orange-bg: rgba(255,140,66,0.07);
+  --violet:    #a78bfa;
+  --violet-bg: rgba(167,139,250,0.07);
+}
+
+/* ─── Light mode ─────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:        #f6f8fb;
+    --bg2:       #edf0f5;
+    --bg3:       #e2e7ef;
+    --border:    #d5dce8;
+    --border2:   #b8c4d6;
+    --text:      #111827;
+    --text2:     #4b5869;
+    --text3:     #8a99ae;
+    /* chartreuse → deep olive signal green */
+    --accent:    #4a7c12;
+    --accent-dim:rgba(74,124,18,0.07);
+    /* teal/orange/violet darkened for contrast on light */
+    --teal:      #0a7a6e;
+    --teal-bg:   rgba(10,122,110,0.07);
+    --orange:    #bf4b0a;
+    --orange-bg: rgba(191,75,10,0.07);
+    --violet:    #6230c8;
+    --violet-bg: rgba(98,48,200,0.07);
+  }
+
+  body {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.012'/%3E%3C/svg%3E");
+  }
+
+  .progress-fill {
+    box-shadow: 0 0 6px rgba(74,124,18,0.35), 0 0 2px rgba(74,124,18,0.6);
+  }
+
+  .dot-approved { box-shadow: 0 0 5px rgba(10,122,110,0.4); }
+  .dot-active   { box-shadow: 0 0 5px rgba(191,75,10,0.4); }
+  .dot-changes  { box-shadow: none; }
+  .dot-info     { box-shadow: none; }
+
+  .section-excerpt {
+    background: var(--bg);
+    border-left-color: var(--border2);
+  }
+
+  .note-field { background: var(--bg); }
+
+  .bottom-bar {
+    background: rgba(246,248,251,0.92);
+    border-top-color: var(--border);
+  }
+
+  .btn-submit.ready {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 16px rgba(74,124,18,0.18);
+  }
+  .btn-submit.ready:hover {
+    box-shadow: 0 0 24px rgba(74,124,18,0.28);
+  }
+
+  .card { background: #fff; }
+  .card-body { background: var(--bg); }
+  .card-head:hover { background: var(--bg2); }
+  .card.is-active { box-shadow: 0 0 0 1px var(--border2), 0 4px 20px rgba(0,0,0,0.08); }
+}
+
+/* ─── Reset ──────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+button { font-family:inherit; cursor:pointer; }
+textarea { font-family:inherit; }
+
+/* ─── Base ───────────────────────────────────────────────── */
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  /* subtle noise texture */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* ─── Shell ──────────────────────────────────────────────── */
+.shell {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 40px 20px 140px;
+}
+
+/* ─── Header ─────────────────────────────────────────────── */
+.header {
+  margin-bottom: 36px;
+  animation: fadeUp 0.4s ease both;
+}
+
+.doc-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-path::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.doc-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--text);
+  margin-bottom: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.doc-title em {
+  font-style: italic;
+  color: var(--text2);
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 2px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: visible;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 0 10px rgba(203,255,71,0.5), 0 0 2px rgba(203,255,71,0.8);
+}
+
+.progress-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  white-space: nowrap;
+  letter-spacing: 0.06em;
+}
+
+.round-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  color: var(--text3);
+}
+
+/* ─── Cards ──────────────────────────────────────────────── */
+.cards { display: flex; flex-direction: column; gap: 6px; }
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg2);
+  transition: border-color 0.2s, opacity 0.35s, box-shadow 0.2s;
+  animation: fadeUp 0.4s ease both;
+}
+
+.card:nth-child(1)  { animation-delay: 0.05s; }
+.card:nth-child(2)  { animation-delay: 0.09s; }
+.card:nth-child(3)  { animation-delay: 0.13s; }
+.card:nth-child(4)  { animation-delay: 0.17s; }
+.card:nth-child(5)  { animation-delay: 0.21s; }
+.card:nth-child(6)  { animation-delay: 0.25s; }
+.card:nth-child(7)  { animation-delay: 0.29s; }
+.card:nth-child(8)  { animation-delay: 0.33s; }
+
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.card.is-approved { opacity: 0.42; }
+.card.is-approved:hover { opacity: 0.72; transition: opacity 0.2s; }
+
+.card.is-active {
+  border-color: var(--border2);
+  box-shadow: 0 0 0 1px var(--border2), 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* ─── Card head ──────────────────────────────────────────── */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+  min-height: 48px;
+}
+.card-head:hover { background: var(--bg3); }
+
+/* dot */
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.25s, box-shadow 0.25s;
+}
+.dot-idle     { background: var(--text3); }
+.dot-active   { background: var(--orange); box-shadow: 0 0 7px rgba(255,140,66,0.6); }
+.dot-approved { background: var(--teal);   box-shadow: 0 0 7px rgba(77,255,195,0.5); }
+.dot-changes  { background: var(--orange); box-shadow: 0 0 5px rgba(255,140,66,0.4); }
+.dot-info     { background: var(--violet); box-shadow: 0 0 5px rgba(167,139,250,0.4); }
+
+.card-title-wrap { flex: 1; min-width: 0; }
+
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.note-inline {
+  font-size: 11px;
+  color: var(--text3);
+  font-style: italic;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* verdict badge */
+.vbadge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.vbadge-approved { background: var(--teal-bg);   color: var(--teal);   }
+.vbadge-changes  { background: var(--orange-bg);  color: var(--orange); }
+.vbadge-info     { background: var(--violet-bg);  color: var(--violet); }
+
+/* ─── Card body (smooth height animation) ────────────────── */
+.card-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.card.is-active .card-body-wrap {
+  grid-template-rows: 1fr;
+}
+.card-body-inner {
+  overflow: hidden;
+}
+
+.card-body {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.section-summary {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+.section-excerpt {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--text3);
+  padding: 10px 14px;
+  border-left: 2px solid var(--border2);
+  background: var(--bg2);
+  border-radius: 0 5px 5px 0;
+  margin-bottom: 14px;
+}
+
+/* ─── Action buttons ─────────────────────────────────────── */
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+
+.action-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 6px 14px;
+  border: 1.5px solid var(--border2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text2);
+  display: flex; align-items: center; gap: 5px;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.action-btn:hover {
+  border-color: var(--text3);
+  color: var(--text);
+}
+.action-btn.sel-approve {
+  border-color: var(--teal);   color: var(--teal);   background: var(--teal-bg);
+}
+.action-btn.sel-changes {
+  border-color: var(--orange); color: var(--orange); background: var(--orange-bg);
+}
+.action-btn.sel-info {
+  border-color: var(--violet); color: var(--violet); background: var(--violet-bg);
+}
+
+/* ─── Note textarea ──────────────────────────────────────── */
+.note-field {
+  width: 100%;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  padding: 9px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.55;
+  transition: border-color 0.15s;
+  margin-top: 2px;
+  display: block;
+}
+.note-field:focus { outline: none; border-color: var(--text3); }
+.note-field::placeholder { color: var(--text3); }
+
+/* ─── Divider between card sections ─────────────────────── */
+.sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* ─── Q&A choices (chip style) ──────────────────────────── */
+.choices-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 7px;
+}
+
+.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+
+.choice-chip {
+  font-size: 12px;
+  font-weight: 400;
+  padding: 5px 12px;
+  border: 1.5px solid var(--border2);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text2);
+  transition: all 0.12s;
+  cursor: pointer;
+}
+.choice-chip:hover { border-color: var(--text3); color: var(--text); }
+.choice-chip.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* QA action buttons */
+.qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.qa-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 6px 14px;
+  border: 1.5px solid var(--border2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text2);
+  display: flex; align-items: center; gap: 5px;
+  transition: all 0.12s;
+}
+.qa-btn:hover { border-color: var(--text3); color: var(--text); }
+.qa-btn.confirm {
+  border-color: var(--teal); color: var(--teal); background: var(--teal-bg);
+}
+
+/* ─── Bottom bar ─────────────────────────────────────────── */
+.bottom-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 14px 20px;
+  background: rgba(6,8,14,0.9);
+  backdrop-filter: blur(16px) saturate(180%);
+  border-top: 1px solid var(--border);
+}
+
+.bottom-inner {
+  max-width: 700px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.stat-approved { color: var(--teal); }
+.stat-feedback { color: var(--orange); }
+.stat-pending  { color: var(--text3); }
+
+.btn-group { display: flex; gap: 8px; }
+
+.btn-skip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 9px 16px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text2);
+  transition: all 0.15s;
+}
+.btn-skip:hover { border-color: var(--text3); color: var(--text); }
+
+.btn-submit {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 20px;
+  border: none;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+.btn-submit.ready {
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 0 20px rgba(203,255,71,0.2);
+}
+.btn-submit.ready:hover {
+  box-shadow: 0 0 32px rgba(203,255,71,0.35);
+  transform: translateY(-1px);
+}
+.btn-submit.disabled {
+  background: var(--border2);
+  color: var(--text3);
+  cursor: not-allowed;
+}
+/* ─── Processing / Complete states ──────────────────────── */
+@keyframes viva-spin { to { transform: rotate(360deg); } }
+
+.processing-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rem 2rem;
+  color: var(--text2);
+}
+.spinner {
+  width: 44px; height: 44px;
+  border: 3px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: viva-spin 0.75s linear infinite;
+  margin-bottom: 1.5rem;
+}
+.processing-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.complete-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rem 2rem;
+  text-align: center;
+}
+.complete-check {
+  font-size: 2.5rem;
+  color: var(--teal);
+  margin-bottom: 1.25rem;
+}
+.complete-headline {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.75rem;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.complete-detail {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  color: var(--text2);
+  margin-bottom: 0.25rem;
+}
+.complete-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text3);
+  margin-top: 1.75rem;
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── Review mode ──────────────────────────────────────── -->
+  <div id="review-view" style="display:none">
+    <div class="header">
+      <div class="doc-path" id="doc-path"></div>
+      <div class="doc-title" id="doc-title"></div>
+      <div class="progress-row">
+        <span class="round-badge" id="round-badge"></span>
+        <div class="progress-track">
+          <div class="progress-fill" id="r-progress" style="width:0%"></div>
+        </div>
+        <span class="progress-label" id="r-progress-label">0 / 0</span>
+      </div>
+    </div>
+    <div class="cards" id="review-cards"></div>
+  </div>
+
+  <!-- ── Q&A mode ─────────────────────────────────────────── -->
+  <div id="qa-view" style="display:none">
+    <div class="header">
+      <div class="doc-path">Q&amp;A phase</div>
+      <div class="doc-title" id="qa-title"></div>
+      <div class="progress-row">
+        <span class="round-badge" id="qa-count-badge"></span>
+        <div class="progress-track">
+          <div class="progress-fill" id="qa-progress" style="width:0%"></div>
+        </div>
+        <span class="progress-label" id="qa-progress-label">0 / 0</span>
+      </div>
+    </div>
+    <div class="cards" id="qa-cards"></div>
+  </div>
+
+  <!-- ── Processing state ─────────────────────────────────── -->
+  <div id="processing-view" style="display:none">
+    <div class="processing-inner">
+      <div class="spinner"></div>
+      <div class="processing-text">Claude is revising…</div>
+    </div>
+  </div>
+
+  <!-- ── Complete state ───────────────────────────────────── -->
+  <div id="complete-view" style="display:none">
+    <div class="complete-inner">
+      <div class="complete-check">&#10003;</div>
+      <div class="complete-headline" id="complete-headline"></div>
+      <div class="complete-detail" id="complete-detail"></div>
+      <div class="complete-hint">You can close this tab.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom bar -->
+<div class="bottom-bar">
+  <div class="bottom-inner">
+    <div class="stats" id="stats-area">
+      <span class="stat-approved" id="stat-approved"></span>
+      <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
+      <span class="stat-pending"  id="stat-pending"></span>
+    </div>
+    <div class="btn-group">
+      <button class="btn-skip" id="btn-skip">&#9889; skip rest &amp; submit</button>
+      <button class="btn-submit disabled" id="btn-submit">submit all</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────
+   DATA
+───────────────────────────────────────────────────────── */
+let REVIEW_DATA = null;
+let QA_DATA = null;
+
+/* ─────────────────────────────────────────────────────────
+   STATE
+   Cards are built ONCE. All interactions do surgical DOM
+   updates — no innerHTML rebuilds, no animation resets.
+───────────────────────────────────────────────────────── */
+const rState = { verdicts: {}, active: null };
+const qState = { answers: {}, active: null };
+
+/* ─────────────────────────────────────────────────────────
+   HELPERS
+───────────────────────────────────────────────────────── */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function el(id) { return document.getElementById(id); }
+
+/* ─────────────────────────────────────────────────────────
+   REVIEW MODE — build once, update surgically
+───────────────────────────────────────────────────────── */
+function initReview() {
+  const container = el('review-cards');
+  const priorApprovedSet = new Set(REVIEW_DATA.approved_ids || []);
+  // Pre-populate approved state for sections approved in previous rounds
+  priorApprovedSet.forEach(id => {
+    rState.verdicts[id] = { verdict: 'approved', note: '' };
+  });
+  REVIEW_DATA.sections.forEach((s, i) => {
+    const card = buildReviewCard(s);
+    card.style.animationDelay = (0.04 + i * 0.04) + 's';
+    container.appendChild(card);
+    // Apply approved CSS immediately for pre-approved cards
+    if (priorApprovedSet.has(s.id)) syncReviewCard(s.id);
+  });
+  // Open first non-approved card
+  const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
+  if (firstPending) activateReviewCard(firstPending.id);
+  else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
+  updateReviewStats();
+}
+
+function buildReviewCard(section) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'rcard-' + section.id;
+
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="dot dot-idle" id="rdot-${section.id}"></span>
+      <div class="card-title-wrap">
+        <div class="card-title">${esc(section.title)}</div>
+        <div class="note-inline" id="rnote-inline-${section.id}" style="display:none"></div>
+      </div>
+      <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
+    </div>
+    <div class="card-body-wrap">
+      <div class="card-body-inner">
+        <div class="card-body">
+          <p class="section-summary">${esc(section.summary)}</p>
+          <div class="section-excerpt">${esc(section.excerpt)}</div>
+          <div class="actions">
+            <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
+            <button class="action-btn" id="rbtn-changes-${section.id}">&#8617; request changes</button>
+            <button class="action-btn" id="rbtn-info-${section.id}">? need info</button>
+          </div>
+          <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
+            <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  card.querySelector('.card-head').addEventListener('click', () => {
+    toggleReviewCard(section.id);
+  });
+
+  card.querySelector('#rbtn-approve-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'approved'); });
+  card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
+  card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
+
+  const rta = card.querySelector('#rnote-' + section.id);
+  rta.addEventListener('input', e => {
+    if (!rState.verdicts[section.id]) rState.verdicts[section.id] = {};
+    rState.verdicts[section.id].note = e.target.value;
+    syncNoteInline(section.id);
+  });
+  rta.addEventListener('click', e => e.stopPropagation());
+
+  return card;
+}
+
+function activateReviewCard(id) {
+  // Deactivate previous
+  if (rState.active && rState.active !== id) {
+    el('rcard-' + rState.active)?.classList.remove('is-active');
+    syncReviewDot(rState.active);
+    syncNoteInline(rState.active);
+  }
+  rState.active = id;
+  const card = el('rcard-' + id);
+  if (card) {
+    card.classList.add('is-active');
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  syncReviewDot(id);
+}
+
+function toggleReviewCard(id) {
+  if (rState.active === id) {
+    el('rcard-' + id)?.classList.remove('is-active');
+    rState.active = null;
+    syncReviewDot(id);
+    syncNoteInline(id);
+  } else {
+    activateReviewCard(id);
+  }
+}
+
+function setReviewVerdict(id, verdict) {
+  const prev = rState.verdicts[id]?.verdict;
+
+  // Toggle off same verdict
+  if (prev === verdict) {
+    delete rState.verdicts[id];
+    syncReviewCard(id);
+    updateReviewStats();
+    return;
+  }
+
+  if (!rState.verdicts[id]) rState.verdicts[id] = {};
+  rState.verdicts[id].verdict = verdict;
+
+  if (verdict === 'approved') {
+    el('rcard-' + id)?.classList.remove('is-active');
+    el('rcard-' + id)?.classList.add('is-approved');
+    rState.active = null;
+    // Auto-advance to next unreviewed
+    const sections = REVIEW_DATA.sections;
+    const idx = sections.findIndex(s => s.id === id);
+    const next = sections.slice(idx + 1).find(s => rState.verdicts[s.id]?.verdict !== 'approved');
+    if (next) setTimeout(() => activateReviewCard(next.id), 80);
+  }
+
+  syncReviewCard(id);
+  updateReviewStats();
+}
+
+function syncReviewCard(id) {
+  const verdict = rState.verdicts[id]?.verdict || null;
+  const note    = rState.verdicts[id]?.note    || '';
+
+  // Approved dimming
+  el('rcard-' + id)?.classList.toggle('is-approved', verdict === 'approved');
+
+  // Dot
+  syncReviewDot(id);
+
+  // Badge
+  const badge = el('rbadge-' + id);
+  if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
+  else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
+  else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
+  else badge.style.display = 'none';
+
+  // Action button active states
+  el('rbtn-approve-' + id).className = 'action-btn' + (verdict === 'approved' ? ' sel-approve' : '');
+  el('rbtn-changes-' + id).className = 'action-btn' + (verdict === 'changes'  ? ' sel-changes' : '');
+  el('rbtn-info-'    + id).className = 'action-btn' + (verdict === 'info'     ? ' sel-info'    : '');
+
+  // Textarea show/hide
+  const noteWrap = el('rnote-wrap-' + id);
+  const ta = el('rnote-' + id);
+  if (verdict === 'changes' || verdict === 'info') {
+    noteWrap.style.display = '';
+    ta.placeholder = verdict === 'changes' ? 'Describe what needs to change...' : 'What do you need to know?';
+    if (ta.value !== note) ta.value = note;
+  } else {
+    noteWrap.style.display = 'none';
+  }
+
+  syncNoteInline(id);
+}
+
+function syncReviewDot(id) {
+  const verdict  = rState.verdicts[id]?.verdict;
+  const isActive = rState.active === id;
+  const dot = el('rdot-' + id);
+  if (!dot) return;
+  dot.className = 'dot ' + (
+    verdict === 'approved' ? 'dot-approved' :
+    verdict === 'changes'  ? 'dot-changes'  :
+    verdict === 'info'     ? 'dot-info'     :
+    isActive               ? 'dot-active'   : 'dot-idle'
+  );
+}
+
+function syncNoteInline(id) {
+  const verdict = rState.verdicts[id]?.verdict;
+  const note    = rState.verdicts[id]?.note || '';
+  const inlineEl = el('rnote-inline-' + id);
+  if (!inlineEl) return;
+  const show = note && verdict && verdict !== 'approved' && rState.active !== id;
+  inlineEl.style.display = show ? '' : 'none';
+  if (show) inlineEl.textContent = note;
+}
+
+function updateReviewStats() {
+  const sections = REVIEW_DATA.sections;
+  const approved    = sections.filter(s => rState.verdicts[s.id]?.verdict === 'approved').length;
+  const withFeedback= sections.filter(s => ['changes','info'].includes(rState.verdicts[s.id]?.verdict)).length;
+  const total    = sections.length;
+  const reviewed = approved + withFeedback;
+  const remaining= total - reviewed;
+
+  el('r-progress').style.width = (reviewed / total * 100) + '%';
+  el('r-progress-label').textContent = `${reviewed} / ${total}`;
+  el('stat-approved').textContent = `${approved} approved`;
+  const fEl = el('stat-feedback');
+  if (withFeedback > 0) { fEl.style.display=''; fEl.textContent=`${withFeedback} with feedback`; }
+  else fEl.style.display = 'none';
+  el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
+
+  const sub = el('btn-submit');
+  if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit all'; }
+  else                                 { sub.className='btn-submit disabled'; sub.textContent=remaining>0?`submit all (${remaining} remaining)`:'submit all'; }
+}
+
+/* ─────────────────────────────────────────────────────────
+   Q&A MODE — build once, update surgically
+───────────────────────────────────────────────────────── */
+function initQA() {
+  const container = el('qa-cards');
+  QA_DATA.questions.forEach((q, i) => {
+    const card = buildQACard(q);
+    card.style.animationDelay = (0.04 + i * 0.04) + 's';
+    container.appendChild(card);
+  });
+  if (QA_DATA.questions.length > 0) {
+    activateQACard(QA_DATA.questions[0].id);
+  }
+  updateQAStats();
+}
+
+function buildQACard(q) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'qacard-' + q.id;
+
+  const choicesHtml = q.choices.map(c =>
+    `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}</button>`
+  ).join('');
+
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="dot dot-idle" id="qdot-${q.id}"></span>
+      <div class="card-title-wrap">
+        <div class="card-title">${esc(q.text)}</div>
+      </div>
+      <span class="vbadge vbadge-approved" id="qbadge-${q.id}" style="display:none"></span>
+    </div>
+    <div class="card-body-wrap">
+      <div class="card-body-inner">
+        <div class="card-body">
+          <p class="section-summary">${esc(q.hint)}</p>
+          <div class="choices-label">Choices</div>
+          <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
+          <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional)..."></textarea>
+          <div class="qa-actions">
+            <button class="qa-btn" id="qconfirm-${q.id}">&#10003; confirm</button>
+            <button class="qa-btn" id="qskip-${q.id}">&#8595; skip</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  card.querySelector('.card-head').addEventListener('click', () => toggleQACard(q.id));
+
+  card.querySelector('#qchoices-' + q.id).addEventListener('click', e => {
+    const chip = e.target.closest('.choice-chip');
+    if (!chip) return;
+    e.stopPropagation();
+    if (!qState.answers[q.id]) qState.answers[q.id] = {};
+    const ch = chip.dataset.choice;
+    qState.answers[q.id].choice = qState.answers[q.id].choice === ch ? null : ch;
+    syncQACard(q.id);
+    updateQAStats();
+  });
+
+  const qta = card.querySelector('#qnote-' + q.id);
+  qta.addEventListener('input', e => {
+    if (!qState.answers[q.id]) qState.answers[q.id] = {};
+    qState.answers[q.id].note = e.target.value;
+  });
+  qta.addEventListener('click', e => e.stopPropagation());
+
+  card.querySelector('#qconfirm-' + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
+  card.querySelector('#qskip-'   + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
+
+  return card;
+}
+
+function activateQACard(id) {
+  if (qState.active && qState.active !== id) {
+    el('qacard-' + qState.active)?.classList.remove('is-active');
+    syncQADot(qState.active);
+  }
+  qState.active = id;
+  const card = el('qacard-' + id);
+  if (card) {
+    card.classList.add('is-active');
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  syncQADot(id);
+}
+
+function toggleQACard(id) {
+  if (qState.active === id) {
+    el('qacard-' + id)?.classList.remove('is-active');
+    qState.active = null;
+    syncQADot(id);
+  } else {
+    activateQACard(id);
+  }
+}
+
+function advanceQA(id) {
+  el('qacard-' + id)?.classList.remove('is-active');
+  if (qState.answers[id]?.choice) el('qacard-' + id)?.classList.add('is-approved');
+  qState.active = null;
+  syncQADot(id);
+
+  const qs  = QA_DATA.questions;
+  const idx = qs.findIndex(q => q.id === id);
+  const next= qs.slice(idx + 1).find(q => !qState.answers[q.id]?.choice);
+  if (next) setTimeout(() => activateQACard(next.id), 80);
+
+  updateQAStats();
+}
+
+function syncQACard(id) {
+  const choice = qState.answers[id]?.choice || null;
+
+  // Chip selections
+  el('qchoices-' + id).querySelectorAll('.choice-chip').forEach(chip => {
+    chip.classList.toggle('selected', chip.dataset.choice === choice);
+  });
+
+  // Badge
+  const badge = el('qbadge-' + id);
+  if (choice) { badge.style.display=''; badge.textContent=choice; }
+  else badge.style.display = 'none';
+
+  // Confirm button highlight
+  el('qconfirm-' + id).className = 'qa-btn' + (choice ? ' confirm' : '');
+
+  syncQADot(id);
+}
+
+function syncQADot(id) {
+  const choice   = qState.answers[id]?.choice;
+  const isActive = qState.active === id;
+  const dot = el('qdot-' + id);
+  if (!dot) return;
+  dot.className = 'dot ' + (choice ? 'dot-approved' : isActive ? 'dot-active' : 'dot-idle');
+}
+
+function updateQAStats() {
+  const qs       = QA_DATA.questions;
+  const answered = qs.filter(q => qState.answers[q.id]?.choice).length;
+  const total    = qs.length;
+  const remaining= total - answered;
+
+  el('qa-progress').style.width = (answered / total * 100) + '%';
+  el('qa-progress-label').textContent = `${answered} / ${total}`;
+  el('stat-approved').textContent = `${answered} answered`;
+  el('stat-feedback').style.display = 'none';
+  el('stat-pending').textContent = remaining > 0 ? `${remaining} remaining` : 'all answered';
+
+  const sub = el('btn-submit');
+  if (remaining === 0) { sub.className='btn-submit ready';    sub.textContent='done →'; }
+  else                 { sub.className='btn-submit disabled'; sub.textContent=`done (${remaining} remaining)`; }
+}
+
+/* ─── Submit handlers ──────────────────────────────────────── */
+function submitReview(early) {
+  el('btn-skip').disabled   = true;
+  el('btn-submit').disabled = true;
+  const result = {
+    round: REVIEW_DATA.round,
+    submitted_early: early,
+    sections: REVIEW_DATA.sections.map(s => ({
+      id:      s.id,
+      verdict: rState.verdicts[s.id]?.verdict || 'pending',
+      note:    rState.verdicts[s.id]?.note    || ''
+    }))
+  };
+  fetch('/submit', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(result)
+  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+}
+
+function submitQA(early) {
+  el('btn-skip').disabled   = true;
+  el('btn-submit').disabled = true;
+  const result = {
+    answers: QA_DATA.questions
+      .filter(q => qState.answers[q.id]?.choice)
+      .map(q => ({
+        id:     q.id,
+        choice: qState.answers[q.id].choice,
+        note:   qState.answers[q.id].note || ''
+      })),
+    skipped: early
+  };
+  fetch('/submit', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(result)
+  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+}
+
+el('btn-skip').addEventListener('click', () => {
+  if (REVIEW_DATA) submitReview(true);
+  else             submitQA(true);
+});
+
+el('btn-submit').addEventListener('click', () => {
+  if (el('btn-submit').classList.contains('disabled')) return;
+  if (REVIEW_DATA) submitReview(false);
+  else             submitQA(false);
+});
+
+/* ─── Init — fetch data from server, then build cards ─── */
+/* ─── SSE client ────────────────────────────────────────── */
+function connectSSE() {
+  const es = new EventSource('/events');
+
+  es.addEventListener('processing', () => {
+    el('review-view').style.display     = 'none';
+    el('qa-view').style.display         = 'none';
+    el('processing-view').style.display = '';
+  });
+
+  es.addEventListener('round', e => {
+    const data = JSON.parse(e.data);
+    REVIEW_DATA       = data;
+    rState.verdicts   = {};
+    rState.active     = null;
+    el('round-badge').textContent = `round ${data.round}`;
+    el('review-cards').innerHTML  = '';
+    initReview();
+    el('processing-view').style.display = 'none';
+    el('review-view').style.display     = '';
+    el('btn-skip').disabled   = false;
+    el('btn-submit').disabled = false;
+  });
+
+  es.addEventListener('complete', e => {
+    es.close(); // prevent onerror when server shuts down 2s later
+    const data = JSON.parse(e.data);
+    el('processing-view').style.display = 'none';
+    el('review-view').style.display     = 'none';
+    el('qa-view').style.display         = 'none';
+    el('complete-view').style.display   = '';
+    const r   = data.rounds_total     != null ? data.rounds_total    : '?';
+    const s   = data.sections_total   != null ? data.sections_total  : '?';
+    const rev = data.sections_revised != null ? data.sections_revised : null;
+    el('complete-headline').textContent = `Signed off — ${s} section${s !== 1 ? 's' : ''} across ${r} round${r !== 1 ? 's' : ''}`;
+    el('complete-detail').textContent   = rev != null
+      ? `${rev} section${rev !== 1 ? 's' : ''} revised`
+      : '';
+    document.querySelector('.bottom-bar').style.display = 'none';
+  });
+
+  es.onerror = () => {
+    if (!el('sse-error-banner')) {
+      const b = document.createElement('div');
+      b.id = 'sse-error-banner';
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:0.6rem 1rem;background:#ef4444;color:#fff;font-family:monospace;font-size:0.82rem;z-index:1000;text-align:center';
+      b.textContent = 'Connection lost — check the terminal.';
+      document.body.prepend(b);
+    }
+  };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  el('btn-skip').disabled   = true;
+  el('btn-submit').disabled = true;
+
+  fetch('/input')
+    .then(r => r.json())
+    .then(data => {
+      el('btn-skip').disabled   = false;
+      el('btn-submit').disabled = false;
+
+      if (data.mode === 'review') {
+        REVIEW_DATA = data;
+        el('doc-path').textContent    = data.doc_file || '';
+        el('doc-title').innerHTML     = 'viva <em>review</em>';
+        el('round-badge').textContent = `round ${data.round}`;
+        el('review-view').style.display = '';
+        initReview();
+        connectSSE();
+      } else {
+        QA_DATA = data;
+        el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
+        el('qa-count-badge').textContent  = `${data.questions.length} questions`;
+        el('qa-view').style.display = '';
+        initQA();
+        connectSSE();
+      }
+    })
+    .catch(err => {
+      document.body.innerHTML = '<p style="padding:2rem;font-family:sans-serif;color:#f87171">Failed to load session data: ' + (err.message || 'network error') + '</p>';
+    });
+});
+</script>
+</body>
+</html>"""
+
+_shutdown = threading.Event()
+_input_data: dict = {}
+_output_path: str = ""
+_server_state: str = "reviewing"
+_sse_clients: list = []
+_clients_lock = threading.Lock()
+_data_lock = threading.Lock()
+
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
+
+def _push_sse(event: str, data: dict) -> None:
+    msg = f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+    with _clients_lock:
+        dead = []
+        for wfile in _sse_clients:
+            try:
+                wfile.write(msg)
+                wfile.flush()
+            except (IOError, OSError):
+                dead.append(wfile)
+        for wfile in dead:
+            _sse_clients.remove(wfile)
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="viva review server")
+    p.add_argument("--mode",       required=True, choices=["review", "qa"])
+    p.add_argument("--input",      required=True)
+    p.add_argument("--output",     required=True)
+    p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
+    return p.parse_args()
+
+
+def find_free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+def load_input(path: str) -> dict:
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def write_output(path: str, data: dict) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args) -> None:
+        pass  # silence access log
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path in ("/", ""):
+            self._send(200, "text/html; charset=utf-8", HTML.encode())
+        elif path == "/input":
+            with _data_lock:
+                body = json.dumps(_input_data).encode()
+            self._send(200, "application/json", body)
+        elif path == "/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            try:
+                with _clients_lock:
+                    _sse_clients.append(self.wfile)
+                _shutdown.wait()
+            except Exception:
+                pass
+            finally:
+                with _clients_lock:
+                    try:
+                        _sse_clients.remove(self.wfile)
+                    except ValueError:
+                        pass
+        else:
+            self._send(404, "text/plain", b"not found")
+
+    def do_POST(self) -> None:
+        global _input_data, _output_path, _server_state
+        parsed = urlparse(self.path)
+        path   = parsed.path
+        params = parse_qs(parsed.query)
+        if path == "/submit":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                self._send(400, "text/plain", b"invalid Content-Length")
+                return
+
+            body = self.rfile.read(length)
+
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._send(400, "application/json", b'{"error":"invalid json"}')
+                return
+
+            with _data_lock:
+                out = _output_path
+            try:
+                write_output(out, data)
+            except (IOError, OSError) as e:
+                self._send(500, "application/json", f'{{"error":"write failed: {e}"}}'.encode())
+                return
+
+            self._send(200, "application/json", b'{"ok":true}')
+            _server_state = "processing"
+            _push_sse("processing", {})
+        elif path == "/next-round":
+            output = params.get("output", [None])[0]
+            if not output:
+                self._send(400, "text/plain", b"missing ?output= param")
+                return
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                self._send(400, "text/plain", b"invalid Content-Length")
+                return
+            body = self.rfile.read(length)
+            try:
+                new_data = json.loads(body)
+            except json.JSONDecodeError:
+                self._send(400, "application/json", b'{"error":"invalid json"}')
+                return
+            with _data_lock:
+                _input_data = new_data
+                _output_path = output
+            _server_state = "reviewing"
+            self._send(200, "application/json", b'{"ok":true}')
+            _push_sse("round", new_data)
+        elif path == "/complete":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                self._send(400, "text/plain", b"invalid Content-Length")
+                return
+            body = self.rfile.read(length) if length else b'{}'
+            try:
+                summary = json.loads(body) if body.strip() else {}
+            except json.JSONDecodeError:
+                summary = {}
+            _server_state = "complete"
+            self._send(200, "application/json", b'{"ok":true}')
+            _push_sse("complete", summary)
+            threading.Timer(2.0, _shutdown.set).start()
+        else:
+            self._send(404, "text/plain", b"not found")
+
+    def _send(self, status: int, content_type: str, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
+    _input_data = load_input(args.input)
+    _output_path = args.output
+
+    port = find_free_port()
+    server = ThreadedHTTPServer(("127.0.0.1", port), Handler)
+    server.timeout = 0.5
+    url = f"http://127.0.0.1:{port}"
+
+    url_file = Path(args.output).parent / "server.url"
+    url_file.write_text(url)
+    print(f"viva · {args.mode} mode · {url}", flush=True)
+
+    if not args.no_browser:
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+
+    try:
+        while not _shutdown.is_set():
+            server.handle_request()
+    finally:
+        url_file.unlink(missing_ok=True)
+        server.server_close()
+        print("viva · done", flush=True)

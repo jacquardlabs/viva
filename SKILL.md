@@ -1,0 +1,152 @@
+# viva
+
+Section-by-section markdown review. Human signs off on every section; agent rewrites and loops until all approved. Named after the PhD oral exam — you present, they question, you defend and revise.
+
+Replaces: `plan-reviewer`
+
+## Setup
+
+To enable brainstorming Q&A integration, run once in your Claude Code prompt:
+
+  ! bash ~/.claude/skills/viva/scripts/install.sh
+
+---
+
+## Invocation
+
+  /viva path/to/file.md
+
+If no path is given, scan the current directory for a single `.md` file.
+If `.viva/server.url` exists when `/viva` starts, a previous session may still be running. Warn the user and do not launch a new server. If you are certain no server is running (e.g. after a crash), delete `.viva/server.url` before proceeding.
+
+---
+
+## Steps
+
+**1. Read context**
+- Read the target `.md` file
+- Optionally read `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context
+
+**2. Extract sections** (run before every review round)
+
+Read the document and identify 5–15 logical sections a reviewer should sign off on. Each section must represent a distinct topic, decision area, or design choice. Merge trivially small sections; split any section covering multiple unrelated topics.
+
+For each section produce:
+- `id`: assign sequentially (s1, s2, s3…) — fresh each extraction pass
+- `title`: 5 words max
+- `summary`: 1–2 sentences describing what the section says
+- `excerpt`: the most important 1–3 sentences verbatim from the source
+
+Good sections: "Auth Strategy", "Data Model", "Error Handling" — real choices with rationale.
+Bad sections: "Introduction" (pure context), individual bullet points, boilerplate headings with no content.
+
+Edge cases:
+- Doc too short or no substantive sections → skip review, consider auto-approved
+- More than 15 natural sections → cap at 15, note which were collapsed
+
+**3. Match approved IDs across rounds**
+
+Before each round (round 2+), re-extract sections from the current doc state. IDs are assigned fresh. For previously approved sections, match by **title** (case-insensitive) to determine which new IDs correspond to already-approved content. Collect the full set of approved IDs (newly approved from the last round's output plus all previously accumulated IDs).
+
+**4. Write review-input JSON** to `.viva/review-input-r{N}.json`
+
+```json
+{
+  "mode": "review",
+  "doc_file": "relative/path/to/file.md",
+  "round": 1,
+  "approved_ids": [],
+  "sections": [
+    {
+      "id": "s1",
+      "title": "Architecture",
+      "summary": "One to two sentences summarising the section.",
+      "excerpt": "Verbatim most-important sentence(s) from the source."
+    }
+  ]
+}
+```
+
+**Always include ALL sections** (approved and pending) in the `sections` array every round. `approved_ids` lists the IDs of sections already approved in previous rounds — the server pre-populates those cards as approved (collapsed, green) so the user has context but can still reopen them if needed.
+
+**5. Launch or signal server**
+
+Round 1 — launch in background and wait for it to write its URL:
+```bash
+python3 ~/.claude/skills/viva/server.py \
+  --mode review \
+  --input .viva/review-input-r1.json \
+  --output .viva/review-r1.json &
+
+until [ -f .viva/server.url ]; do sleep 0.5; done
+BASE=$(cat .viva/server.url)
+```
+Server opens the browser tab on startup. `$BASE` is used for all subsequent API calls.
+
+Round 2+ — after writing the new input JSON (step 4), signal the running server:
+```bash
+curl -s -X POST "$BASE/next-round?output=.viva/review-r{N}.json" \
+  -H "Content-Type: application/json" \
+  -d @.viva/review-input-r{N}.json
+```
+The browser updates in place — no new tab or subprocess.
+
+**6. Wait for round output**
+
+Poll for the output file at 2-second intervals:
+```bash
+until [ -f .viva/review-r{N}.json ]; do sleep 2; done
+```
+When it appears, read verdicts.
+
+Verdicts:
+| Verdict | Action |
+|---------|--------|
+| `approved` | Add to `approved_ids`; shown collapsed next round but can be reopened |
+| `changes` | Rewrite the section in the doc using `note` as the instruction |
+| `info` | Answer the question in `note`, rewrite the section incorporating that answer |
+| `pending` | Carry forward unchanged; re-present next round |
+
+**7. Rewrite** all `changes` and `info` sections directly in the source `.md` file. Preserve the section heading text exactly — title-based matching in the next round depends on it.
+
+**8. Loop exit**
+
+After step 7: if every section has `verdict: "approved"`, signal completion and proceed to step 9:
+```bash
+curl -s -X POST "$BASE/complete" \
+  -H "Content-Type: application/json" \
+  -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
+```
+Otherwise loop to step 2 (re-extract → match → write input → POST `/next-round`).
+
+**9. Sign-off report**
+
+Summarise: how many sections, how many rounds, what was revised. Then ask:
+
+> "Sign-off complete. Commit the doc to git? (y/n)"
+
+If yes:
+```bash
+git add <doc_file>
+git commit -m "docs: sign off on <filename>"
+```
+
+---
+
+## File Layout
+
+```
+.viva/
+├── server.url             ← server writes on startup; deleted on shutdown
+├── review-input-r1.json   ← agent writes before round 1
+├── review-r1.json         ← server writes after round 1
+├── review-input-r2.json   ← agent writes before round 2 (if needed)
+└── review-r2.json         ← server writes after round 2
+```
+
+For brainstorming Q&A:
+```
+.viva/
+├── qa-input.json          ← brainstorming skill writes
+└── answers.json           ← server writes
+```
