@@ -65,6 +65,8 @@ A section's `content` may have changed since it was approved only if the change 
 
 **4. Write review-input JSON** to `.viva/review-input-r{N}.json`
 
+Round 1 only: first clear stale round files from any previous session in this directory: `mkdir -p .viva && rm -f .viva/review-input-r*.json .viva/review-r*.json`
+
 ```json
 {
   "mode": "review",
@@ -127,7 +129,7 @@ Verdicts:
 
 **8. Loop exit**
 
-After step 7: if every section has `verdict: "approved"`, signal completion and proceed to step 9:
+After step 7: if every section has `verdict: "approved"`, signal completion, then proceed to step 9 (append history) and step 10 (sign-off report):
 ```bash
 curl -s -X POST "$BASE/complete" \
   -H "Content-Type: application/json" \
@@ -135,7 +137,20 @@ curl -s -X POST "$BASE/complete" \
 ```
 Otherwise loop to step 2 (re-extract → match → write input → POST `/next-round`).
 
-**9. Sign-off report**
+**9. Append revision history**
+
+After signalling completion, append the session's decision record to the doc:
+
+```bash
+VIVA_HISTORY=$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name "revision_history.py" -path "*/viva*" 2>/dev/null | head -1)
+python3 "$VIVA_HISTORY" .viva <doc_file>
+```
+
+This appends `## Revision History` — a summary line plus a table of every
+`changes`/`info` note, verbatim from the round files. If the heading already
+exists (re-reviewed doc), the new session's block is appended under it.
+
+**10. Sign-off report**
 
 Summarise: how many sections, how many rounds, what was revised. Then ask:
 
