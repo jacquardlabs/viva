@@ -11,7 +11,8 @@ Section-by-section markdown review for Claude Code. Named after the PhD oral exa
 1. Claude parses the doc into sections at its markdown headings — no summarising, the cards show the section content verbatim
 2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
 3. You review; Claude rewrites any sections you flag, then loops
-4. The session ends when every section is approved
+4. A REVISIONS ledger in the UI tracks every change request and question — your notes verbatim — and is appended to the doc as `## Revision History` at sign-off
+5. The session ends when every section is approved
 
 One browser tab stays open for the entire session. After you submit a round, a spinner appears while Claude rewrites; the next round loads in place without a page reload.
 
