@@ -906,7 +906,7 @@ function el(id) { return document.getElementById(id); }
 function ledgerRowsHTML(entries) {
   return entries.map(e => `
     <div class="ledger-row">
-      <span class="ledger-round">R${e.round}</span>
+      <span class="ledger-round">R${esc(e.round)}</span>
       <span class="ledger-section">${esc(e.section_title)}</span>
       <span class="ledger-verdict v-${e.verdict}">${e.verdict}</span>
       <span class="ledger-note">${e.note ? '&ldquo;' + esc(e.note) + '&rdquo;' : '&mdash;'}</span>
@@ -1547,7 +1547,10 @@ class Handler(BaseHTTPRequestHandler):
                 out = _output_path
                 titles = {s.get("id"): s.get("title", "")
                           for s in _input_data.get("sections", [])}
-                rnd = data.get("round", _input_data.get("round", 0))
+                try:
+                    rnd = int(data.get("round", _input_data.get("round", 0)))
+                except (TypeError, ValueError):
+                    rnd = 0
                 for s in data.get("sections", []):
                     if s.get("verdict") in ("changes", "info"):
                         _ledger.append({

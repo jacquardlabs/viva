@@ -84,6 +84,14 @@ def main() -> None:
                        "function renderLedger", "function ledgerRowsHTML",
                        ".ledger-verdict.v-changes"):
             assert needle in page, f"page missing: {needle}"
+
+        # round is coerced to int (stored-XSS hardening)
+        post(base, "/submit", {"round": "<img src=x>", "submitted_early": False,
+                               "sections": [{"id": "s1", "verdict": "info", "note": "n"}]})
+        post(base, "/next-round?output=" + str(viva / "out4.json"), dict(r1, round=4))
+        ledger = get(base, "/input")["ledger"]
+        assert ledger[3]["round"] == 0, f"round not coerced: {ledger[3]}"
+
         print("OK")
     finally:
         proc.terminate()
