@@ -23,83 +23,91 @@ HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viva</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
+/* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
+   --teal/--orange/--violet are the verdict slots: approve / red-pencil / rfi */
 :root {
-  --bg:        #06080e;
-  --bg2:       #0d1118;
-  --bg3:       #131922;
-  --border:    #181f2d;
-  --border2:   #222d3f;
-  --text:      #cdd8e8;
-  --text2:     #6e82a0;
-  --text3:     #374254;
-  --accent:    #cbff47;
-  --accent-dim:rgba(203,255,71,0.07);
-  --teal:      #4dffc3;
-  --teal-bg:   rgba(77,255,195,0.05);
-  --orange:    #ff8c42;
-  --orange-bg: rgba(255,140,66,0.07);
-  --violet:    #a78bfa;
-  --violet-bg: rgba(167,139,250,0.07);
+  --bg:        #0a1727;
+  --bg2:       #0f1f33;
+  --bg3:       #152840;
+  --border:    #1d324e;
+  --border2:   #2a4768;
+  --text:      #d8e7f5;
+  --text2:     #7f9cba;
+  --text3:     #48648a;
+  --accent:    #5cc8ff;
+  --accent-dim:rgba(92,200,255,0.08);
+  --teal:      #43e0a8;
+  --teal-bg:   rgba(67,224,168,0.06);
+  --orange:    #ff5a36;
+  --orange-bg: rgba(255,90,54,0.08);
+  --violet:    #ffc857;
+  --violet-bg: rgba(255,200,87,0.08);
 }
 
 /* ─── Light mode ─────────────────────────────────────────── */
+/* Light mode: blueline print — blue ink on white vellum */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg:        #f6f8fb;
-    --bg2:       #edf0f5;
-    --bg3:       #e2e7ef;
-    --border:    #d5dce8;
-    --border2:   #b8c4d6;
-    --text:      #111827;
-    --text2:     #4b5869;
-    --text3:     #8a99ae;
-    /* chartreuse → deep olive signal green */
-    --accent:    #4a7c12;
-    --accent-dim:rgba(74,124,18,0.07);
-    /* teal/orange/violet darkened for contrast on light */
-    --teal:      #0a7a6e;
-    --teal-bg:   rgba(10,122,110,0.07);
-    --orange:    #bf4b0a;
-    --orange-bg: rgba(191,75,10,0.07);
-    --violet:    #6230c8;
-    --violet-bg: rgba(98,48,200,0.07);
+    --bg:        #f3f6fa;
+    --bg2:       #e9eef5;
+    --bg3:       #dde5ef;
+    --border:    #cdd9e8;
+    --border2:   #a8bdd4;
+    --text:      #13293f;
+    --text2:     #446080;
+    --text3:     #8aa0b8;
+    --accent:    #1271b8;
+    --accent-dim:rgba(18,113,184,0.08);
+    --teal:      #0c8a63;
+    --teal-bg:   rgba(12,138,99,0.07);
+    --orange:    #cf3f1d;
+    --orange-bg: rgba(207,63,29,0.07);
+    --violet:    #9a6b00;
+    --violet-bg: rgba(154,107,0,0.08);
   }
 
   body {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.012'/%3E%3C/svg%3E");
+    background-image:
+      linear-gradient(rgba(168,189,212,0.30) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168,189,212,0.30) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 
   .progress-fill {
-    box-shadow: 0 0 6px rgba(74,124,18,0.35), 0 0 2px rgba(74,124,18,0.6);
+    box-shadow: 0 0 6px rgba(18,113,184,0.35), 0 0 2px rgba(18,113,184,0.6);
   }
 
-  .dot-approved { box-shadow: 0 0 5px rgba(10,122,110,0.4); }
-  .dot-active   { box-shadow: 0 0 5px rgba(191,75,10,0.4); }
+  .dot-approved { box-shadow: 0 0 5px rgba(12,138,99,0.4); }
+  .dot-active   { box-shadow: 0 0 5px rgba(207,63,29,0.4); }
   .dot-changes  { box-shadow: none; }
   .dot-info     { box-shadow: none; }
 
-  .section-excerpt {
-    background: var(--bg);
-    border-left-color: var(--border2);
-  }
+  .titleblock { background: #fff; }
+
+  .section-content { background: #fff; }
+  .section-content::-webkit-scrollbar-thumb { border-color: #fff; }
+  .section-content pre { background: var(--bg); }
+  .section-content code { background: var(--bg2); }
 
   .note-field { background: var(--bg); }
 
   .bottom-bar {
-    background: rgba(246,248,251,0.92);
+    background: rgba(243,246,250,0.92);
     border-top-color: var(--border);
   }
 
   .btn-submit.ready {
     background: var(--accent);
     color: #fff;
-    box-shadow: 0 0 16px rgba(74,124,18,0.18);
+    box-shadow: 0 0 16px rgba(18,113,184,0.2);
   }
   .btn-submit.ready:hover {
-    box-shadow: 0 0 24px rgba(74,124,18,0.28);
+    box-shadow: 0 0 24px rgba(18,113,184,0.3);
   }
 
   .card { background: #fff; }
@@ -117,13 +125,16 @@ textarea { font-family:inherit; }
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Bricolage Grotesque', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  /* subtle noise texture */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  /* drafting grid paper */
+  background-image:
+    linear-gradient(rgba(42,71,104,0.28) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,71,104,0.28) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 /* ─── Shell ──────────────────────────────────────────────── */
@@ -139,54 +150,40 @@ body {
   animation: fadeUp 0.4s ease both;
 }
 
-.doc-path {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
+/* ─── Title block — the drafting-sheet header ───────────── */
+.titleblock {
+  display: flex;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 10px;
+}
+.tb-cell { padding: 10px 14px; border-right: 1px solid var(--border2); min-width: 0; }
+.tb-cell:last-child { border-right: none; }
+.tb-flex { flex: 1; }
+.tb-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  white-space: nowrap;
 }
-
-.doc-path::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.doc-title {
-  font-family: 'DM Serif Display', serif;
-  font-size: 26px;
-  font-weight: 400;
+.tb-val {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text);
-  margin-bottom: 20px;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.doc-title em {
-  font-style: italic;
-  color: var(--text2);
-}
-
-.progress-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.tb-val em { font-style: italic; color: var(--text2); }
+.tb-val.mono {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  padding-top: 2px;
 }
 
 .progress-track {
@@ -203,40 +200,43 @@ body {
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-  box-shadow: 0 0 10px rgba(203,255,71,0.5), 0 0 2px rgba(203,255,71,0.8);
+  box-shadow: 0 0 10px rgba(92,200,255,0.5), 0 0 2px rgba(92,200,255,0.8);
 }
 
 .progress-label {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   color: var(--text3);
   white-space: nowrap;
   letter-spacing: 0.06em;
 }
 
-.round-badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border: 1px solid var(--border2);
-  border-radius: 3px;
-  color: var(--text3);
-}
-
 /* ─── Cards ──────────────────────────────────────────────── */
 .cards { display: flex; flex-direction: column; gap: 6px; }
 
 .card {
+  position: relative;
   border: 1px solid var(--border);
-  border-radius: 7px;
-  overflow: hidden;
   background: var(--bg2);
   transition: border-color 0.2s, opacity 0.35s, box-shadow 0.2s;
   animation: fadeUp 0.4s ease both;
 }
+
+/* registration marks pin the active sheet to the table */
+.card::before, .card::after {
+  content: '+';
+  position: absolute;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.card::before { top: -7px; left: -6px; }
+.card::after  { bottom: -7px; right: -6px; }
+.card.is-active::before, .card.is-active::after { opacity: 1; }
 
 .card:nth-child(1)  { animation-delay: 0.05s; }
 .card:nth-child(2)  { animation-delay: 0.09s; }
@@ -307,7 +307,7 @@ body {
 
 /* verdict badge */
 .vbadge {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -346,23 +346,147 @@ body {
   margin-bottom: 12px;
 }
 
-.section-excerpt {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  line-height: 1.75;
-  color: var(--text3);
-  padding: 10px 14px;
-  border-left: 2px solid var(--border2);
+/* The document itself — a quiet page surface inside the card chrome */
+.section-content {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 13.5px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 16px 18px 14px;
+  border: 1px solid var(--border);
   background: var(--bg2);
-  border-radius: 0 5px 5px 0;
+  border-radius: 6px;
   margin-bottom: 14px;
+  overflow-wrap: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
 }
+.section-content::-webkit-scrollbar { width: 10px; }
+.section-content::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 5px;
+  border: 3px solid var(--bg2);
+}
+.section-content::-webkit-scrollbar-track { background: transparent; }
+
+/* offline fallback: raw verbatim source */
+.section-content.md-raw {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.section-content p { margin: 0 0 12px; }
+.section-content > *:last-child { margin-bottom: 0; }
+.section-content strong { font-weight: 500; color: var(--text); }
+.section-content em { color: var(--text2); }
+
+/* In-document headings: title-block lettering for majors, mono overline for minors */
+.section-content h1, .section-content h2 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin: 18px 0 8px;
+}
+.section-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 16px 0 6px;
+}
+.section-content h4, .section-content h5, .section-content h6 {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin: 16px 0 6px;
+}
+.section-content h1:first-child, .section-content h2:first-child,
+.section-content h3:first-child, .section-content h4:first-child { margin-top: 2px; }
+
+/* Code and diagrams: cyan linework on the print */
+.section-content pre {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  background: var(--bg);
+  border: 1px dashed var(--border2);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  color: var(--accent);
+}
+.section-content code {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  color: var(--accent);
+}
+.section-content pre code { background: none; border: none; padding: 0; color: inherit; }
+
+/* Editorial tables: hairline rows, mono overline headers, no grid boxes */
+.section-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 2px 0 14px;
+  font-size: 12px;
+}
+.section-content th {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  text-align: left;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border2);
+}
+.section-content td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+}
+.section-content tr:last-child td { border-bottom: none; }
+
+.section-content ul, .section-content ol { margin: 0 0 12px; padding-left: 20px; }
+.section-content li { margin: 3px 0; }
+.section-content li::marker { color: var(--text3); }
+
+.section-content blockquote {
+  border-left: 2px solid var(--accent);
+  margin: 0 0 12px;
+  padding: 2px 14px;
+  color: var(--text2);
+  font-style: italic;
+}
+.section-content a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-dim);
+}
+.section-content a:hover { border-bottom-color: var(--accent); }
+.section-content hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.section-content img { max-width: 100%; }
+
+/* ─── Blueprint geometry: drafting sheets have square corners ── */
+.card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
+.section-content, .choice-chip, .qa-btn,
+.progress-track, .progress-fill { border-radius: 0; }
 
 /* ─── Action buttons ─────────────────────────────────────── */
 .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 
 .action-btn {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -391,7 +515,7 @@ body {
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
   width: 100%;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 13px;
   padding: 9px 12px;
   border: 1px solid var(--border2);
@@ -413,7 +537,7 @@ body {
 
 /* ─── Q&A choices (chip style) ──────────────────────────── */
 .choices-label {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -445,7 +569,7 @@ body {
 /* QA action buttons */
 .qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .qa-btn {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -468,7 +592,7 @@ body {
   bottom: 0; left: 0; right: 0;
   z-index: 100;
   padding: 14px 20px;
-  background: rgba(6,8,14,0.9);
+  background: rgba(10,23,39,0.9);
   backdrop-filter: blur(16px) saturate(180%);
   border-top: 1px solid var(--border);
 }
@@ -483,7 +607,7 @@ body {
 }
 
 .stats {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   letter-spacing: 0.05em;
   display: flex;
@@ -497,7 +621,7 @@ body {
 .btn-group { display: flex; gap: 8px; }
 
 .btn-skip {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -511,7 +635,7 @@ body {
 .btn-skip:hover { border-color: var(--text3); color: var(--text); }
 
 .btn-submit {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -524,10 +648,10 @@ body {
 .btn-submit.ready {
   background: var(--accent);
   color: var(--bg);
-  box-shadow: 0 0 20px rgba(203,255,71,0.2);
+  box-shadow: 0 0 20px rgba(92,200,255,0.25);
 }
 .btn-submit.ready:hover {
-  box-shadow: 0 0 32px rgba(203,255,71,0.35);
+  box-shadow: 0 0 32px rgba(92,200,255,0.4);
   transform: translateY(-1px);
 }
 .btn-submit.disabled {
@@ -554,7 +678,7 @@ body {
   margin-bottom: 1.5rem;
 }
 .processing-text {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 1rem;
   letter-spacing: 0.02em;
 }
@@ -572,19 +696,19 @@ body {
   margin-bottom: 1.25rem;
 }
 .complete-headline {
-  font-family: 'DM Serif Display', serif;
-  font-size: 1.75rem;
+  font-size: 1.6rem;
+  font-weight: 600;
   color: var(--text);
   margin-bottom: 0.5rem;
 }
 .complete-detail {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 0.95rem;
   color: var(--text2);
   margin-bottom: 0.25rem;
 }
 .complete-hint {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fragment Mono', monospace;
   font-size: 0.78rem;
   color: var(--text3);
   margin-top: 1.75rem;
@@ -598,14 +722,14 @@ body {
   <!-- ── Review mode ──────────────────────────────────────── -->
   <div id="review-view" style="display:none">
     <div class="header">
-      <div class="doc-path" id="doc-path"></div>
-      <div class="doc-title" id="doc-title"></div>
-      <div class="progress-row">
-        <span class="round-badge" id="round-badge"></span>
-        <div class="progress-track">
-          <div class="progress-fill" id="r-progress" style="width:0%"></div>
-        </div>
-        <span class="progress-label" id="r-progress-label">0 / 0</span>
+      <div class="titleblock">
+        <div class="tb-cell"><div class="tb-label">drawing</div><div class="tb-val mono" id="doc-path"></div></div>
+        <div class="tb-cell"><div class="tb-label">rev</div><div class="tb-val mono" id="round-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-label">title</div><div class="tb-val" id="doc-title"></div></div>
+        <div class="tb-cell"><div class="tb-label">signed</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="r-progress" style="width:0%"></div>
       </div>
     </div>
     <div class="cards" id="review-cards"></div>
@@ -614,14 +738,14 @@ body {
   <!-- ── Q&A mode ─────────────────────────────────────────── -->
   <div id="qa-view" style="display:none">
     <div class="header">
-      <div class="doc-path">Q&amp;A phase</div>
-      <div class="doc-title" id="qa-title"></div>
-      <div class="progress-row">
-        <span class="round-badge" id="qa-count-badge"></span>
-        <div class="progress-track">
-          <div class="progress-fill" id="qa-progress" style="width:0%"></div>
-        </div>
-        <span class="progress-label" id="qa-progress-label">0 / 0</span>
+      <div class="titleblock">
+        <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
+        <div class="tb-cell tb-flex"><div class="tb-label">topic</div><div class="tb-val" id="qa-title"></div></div>
+        <div class="tb-cell"><div class="tb-label">count</div><div class="tb-val mono" id="qa-count-badge"></div></div>
+        <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="qa-progress" style="width:0%"></div>
       </div>
     </div>
     <div class="cards" id="qa-cards"></div>
@@ -684,6 +808,18 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/* Render verbatim markdown into el. Falls back to raw monospace text
+   if the CDN renderer didn't load (offline). */
+function renderMarkdown(target, md) {
+  if (window.marked) {
+    const html = marked.parse(md);
+    target.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  } else {
+    target.classList.add('md-raw');
+    target.textContent = md;
+  }
+}
+
 function el(id) { return document.getElementById(id); }
 
 /* ─────────────────────────────────────────────────────────
@@ -727,8 +863,7 @@ function buildReviewCard(section) {
     <div class="card-body-wrap">
       <div class="card-body-inner">
         <div class="card-body">
-          <p class="section-summary">${esc(section.summary)}</p>
-          <div class="section-excerpt">${esc(section.excerpt)}</div>
+          <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="actions">
             <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
             <button class="action-btn" id="rbtn-changes-${section.id}">&#8617; request changes</button>
@@ -740,6 +875,8 @@ function buildReviewCard(section) {
         </div>
       </div>
     </div>`;
+
+  renderMarkdown(card.querySelector('#rcontent-' + section.id), section.content ?? section.excerpt ?? '');
 
   card.querySelector('.card-head').addEventListener('click', () => {
     toggleReviewCard(section.id);
@@ -1119,7 +1256,7 @@ function connectSSE() {
     REVIEW_DATA       = data;
     rState.verdicts   = {};
     rState.active     = null;
-    el('round-badge').textContent = `round ${data.round}`;
+    el('round-badge').textContent = String(data.round).padStart(2, '0');
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
@@ -1170,7 +1307,7 @@ document.addEventListener('DOMContentLoaded', () => {
         REVIEW_DATA = data;
         el('doc-path').textContent    = data.doc_file || '';
         el('doc-title').innerHTML     = 'viva <em>review</em>';
-        el('round-badge').textContent = `round ${data.round}`;
+        el('round-badge').textContent = String(data.round).padStart(2, '0');
         el('review-view').style.display = '';
         initReview();
         connectSSE();

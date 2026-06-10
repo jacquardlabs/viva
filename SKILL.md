@@ -32,26 +32,33 @@ If `.viva/server.url` exists when `/viva` starts, a previous session may still b
 - Read the target `.md` file
 - Optionally read `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context
 
-**2. Extract sections** (run before every review round)
+**2. Parse sections** (run before every review round)
 
-Read the document and identify 5–15 logical sections a reviewer should sign off on. Each section must represent a distinct topic, decision area, or design choice. Merge trivially small sections; split any section covering multiple unrelated topics.
+Split the document mechanically at markdown headings. This is parsing, not interpretation — the reviewer sees the document itself, never your summary of it. Do not paraphrase, reorder, merge topics, retitle, or trim anything.
+
+Parsing rules:
+- Split level: the highest heading level (fewest `#`s) that occurs more than once — usually `##`. If that level yields more than 20 sections, split one level higher instead.
+- A section = one split-level heading plus everything below it up to the next split-level heading, verbatim — subsections, lists, tables, code blocks, byte-for-byte.
+- Content between the doc title and the first split-level heading becomes its own first section, titled with the H1 text (or "Preamble" if there is no H1). Omit it only if empty.
+- No headings at all → one section containing the whole doc, titled with the filename.
 
 For each section produce:
 - `id`: assign sequentially (s1, s2, s3…) — fresh each extraction pass
-- `title`: 5 words max
-- `summary`: 1–2 sentences describing what the section says
-- `excerpt`: the most important 1–3 sentences verbatim from the source
+- `title`: the heading text exactly as written (without the `#` markers)
+- `content`: the full verbatim markdown between this heading and the next split-level heading
 
-Good sections: "Auth Strategy", "Data Model", "Error Handling" — real choices with rationale.
-Bad sections: "Introduction" (pure context), individual bullet points, boilerplate headings with no content.
+Do the split with a small script (e.g. python) rather than by hand — hand-copying silently drops blank lines and whitespace.
+
+Integrity check before writing the JSON: every non-heading line of the source must appear in exactly one section's `content`, unchanged. If anything was dropped or reworded, redo the parse.
 
 Edge cases:
-- Doc too short or no substantive sections → skip review, consider auto-approved
-- More than 15 natural sections → cap at 15, note which were collapsed
+- Doc too short to review (a few lines, no substantive content) → skip review, consider auto-approved
 
 **3. Match approved IDs across rounds**
 
-Before each round (round 2+), re-extract sections from the current doc state. IDs are assigned fresh. For previously approved sections, match by **title** (case-insensitive) to determine which new IDs correspond to already-approved content. Collect the full set of approved IDs (newly approved from the last round's output plus all previously accumulated IDs).
+Before each round (round 2+), re-parse sections from the current doc state. IDs are assigned fresh. For previously approved sections, match by **title** (exact heading text, case-insensitive) to determine which new IDs correspond to already-approved content. Collect the full set of approved IDs (newly approved from the last round's output plus all previously accumulated IDs).
+
+A section's `content` may have changed since it was approved only if the change was a rewrite the user requested elsewhere bleeding into it — if you rewrote text inside a previously approved section, drop it from `approved_ids` so the user re-reviews it.
 
 **4. Write review-input JSON** to `.viva/review-input-r{N}.json`
 
@@ -65,8 +72,7 @@ Before each round (round 2+), re-extract sections from the current doc state. ID
     {
       "id": "s1",
       "title": "Architecture",
-      "summary": "One to two sentences summarising the section.",
-      "excerpt": "Verbatim most-important sentence(s) from the source."
+      "content": "Full verbatim markdown of the section body — every line\nbetween this heading and the next, JSON-escaped."
     }
   ]
 }

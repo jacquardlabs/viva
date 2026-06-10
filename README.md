@@ -8,7 +8,7 @@ Section-by-section markdown review for Claude Code. Named after the PhD oral exa
 
 `/viva` turns any agent-written markdown document into a structured review session:
 
-1. Claude extracts 5–15 logical sections from the doc
+1. Claude parses the doc into sections at its markdown headings — no summarising, the cards show the section content verbatim
 2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
 3. You review; Claude rewrites any sections you flag, then loops
 4. The session ends when every section is approved
