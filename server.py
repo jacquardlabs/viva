@@ -1335,6 +1335,7 @@ _server_state: str = "reviewing"
 _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
+_ledger: list = []
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -1391,7 +1392,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "text/html; charset=utf-8", HTML.encode())
         elif path == "/input":
             with _data_lock:
-                body = json.dumps(_input_data).encode()
+                body = json.dumps({**_input_data, "ledger": _ledger}).encode()
             self._send(200, "application/json", body)
         elif path == "/events":
             self.send_response(200)
@@ -1436,6 +1437,17 @@ class Handler(BaseHTTPRequestHandler):
 
             with _data_lock:
                 out = _output_path
+                titles = {s.get("id"): s.get("title", "")
+                          for s in _input_data.get("sections", [])}
+                rnd = data.get("round", _input_data.get("round", 0))
+                for s in data.get("sections", []):
+                    if s.get("verdict") in ("changes", "info"):
+                        _ledger.append({
+                            "round": rnd,
+                            "section_title": titles.get(s.get("id"), s.get("id", "?")),
+                            "verdict": s["verdict"],
+                            "note": s.get("note", ""),
+                        })
             try:
                 write_output(out, data)
             except (IOError, OSError) as e:
@@ -1464,9 +1476,10 @@ class Handler(BaseHTTPRequestHandler):
             with _data_lock:
                 _input_data = new_data
                 _output_path = output
+                ledger_snapshot = list(_ledger)
             _server_state = "reviewing"
             self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("round", new_data)
+            _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
             try:
                 length = int(self.headers.get("Content-Length", 0))
