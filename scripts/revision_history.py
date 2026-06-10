@@ -9,6 +9,7 @@ table under `## Revision History` (creating the heading on first use,
 appending a new session block thereafter).
 """
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -23,8 +24,9 @@ def esc_cell(text: str) -> str:
 def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
     """Return (entries, rounds_total, sections_total) from round file pairs."""
     rounds = sorted(
-        int(p.stem.rsplit("-r", 1)[1])
+        int(m.group(1))
         for p in viva_dir.glob("review-input-r*.json")
+        if (m := re.fullmatch(r"review-input-r(\d+)", p.stem))
     )
     entries: list[dict] = []
     sections_total = 0
@@ -68,9 +70,11 @@ def build_block(entries: list[dict], rounds_total: int,
 
 def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     entries, rounds_total, sections_total = collect(viva_dir)
+    if rounds_total == 0:
+        sys.exit(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day)
     doc = doc_path.read_text()
-    if HEADING in doc:
+    if re.search(r"(?m)^## Revision History\s*$", doc):
         new_doc = doc.rstrip("\n") + "\n\n" + block + "\n"
     else:
         new_doc = doc.rstrip("\n") + f"\n\n---\n\n{HEADING}\n\n" + block + "\n"

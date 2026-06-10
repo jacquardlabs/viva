@@ -67,6 +67,53 @@ def main() -> None:
     text2 = doc2.read_text()
     assert "0 revised" in text2
     assert "| Round |" not in text2
+
+    # Fix 1: H3 heading must not be treated as existing ## Revision History
+    viva3 = tmp / ".viva3"
+    viva3.mkdir()
+    doc3 = tmp / "doc3.md"
+    doc3.write_text("# Doc3\n\n### Revision History\n\nsome existing h3 content\n")
+    write_round(viva3, 1, secs, [
+        {"id": "s1", "verdict": "approved", "note": ""},
+        {"id": "s2", "verdict": "approved", "note": ""},
+    ])
+    run(viva3, doc3)
+    text3 = doc3.read_text()
+    # Must have exactly one real ## Revision History heading
+    assert text3.count("\n## Revision History\n") == 1, (
+        f"Expected one real ## Revision History heading; got:\n{text3}"
+    )
+
+    # Fix 2: stray backup file must not crash collect()
+    viva4 = tmp / ".viva4"
+    viva4.mkdir()
+    doc4 = tmp / "doc4.md"
+    doc4.write_text("# Doc4\n\nbody\n")
+    write_round(viva4, 1, secs, [
+        {"id": "s1", "verdict": "approved", "note": ""},
+        {"id": "s2", "verdict": "approved", "note": ""},
+    ])
+    # Drop a stray backup file that should be ignored
+    (viva4 / "review-input-r1-backup.json").write_text(json.dumps({"stray": True}))
+    run(viva4, doc4)  # must not raise
+    text4 = doc4.read_text()
+    assert "## Revision History" in text4, "Expected history block to be written"
+
+    # Fix 3: empty .viva dir → nonzero exit, doc untouched
+    viva5 = tmp / ".viva5"
+    viva5.mkdir()
+    doc5 = tmp / "doc5.md"
+    original5 = "# Doc5\n\nbody\n"
+    doc5.write_text(original5)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(viva5), str(doc5), "2026-06-09"],
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode != 0, (
+        f"Expected nonzero exit for empty viva dir; got 0. stderr={result.stderr!r}"
+    )
+    assert doc5.read_text() == original5, "Doc must be untouched when viva dir is empty"
+
     print("OK")
 
 
