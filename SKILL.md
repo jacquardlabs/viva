@@ -142,7 +142,7 @@ Otherwise loop to step 2 (re-extract → match → write input → POST `/next-r
 After signalling completion, append the session's decision record to the doc:
 
 ```bash
-VIVA_HISTORY=$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name "revision_history.py" -path "*/viva*" 2>/dev/null | head -1)
+VIVA_HISTORY=$(find -L ~/.claude/skills/viva ~/.claude/plugins/cache -name "revision_history.py" -path "*/viva*" 2>/dev/null | head -1)
 python3 "$VIVA_HISTORY" .viva <doc_file>
 ```
 
