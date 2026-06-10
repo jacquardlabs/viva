@@ -41,6 +41,9 @@ Parsing rules:
 - A section = one split-level heading plus everything below it up to the next split-level heading, verbatim — subsections, lists, tables, code blocks, byte-for-byte.
 - Content between the doc title and the first split-level heading becomes its own first section, titled with the H1 text (or "Preamble" if there is no H1). Omit it only if empty.
 - No headings at all → one section containing the whole doc, titled with the filename.
+- A section titled `Revision History` is the sign-off record from previous
+  viva sessions, not content under review: omit it from `sections`, and
+  exempt its lines from the integrity check.
 
 For each section produce:
 - `id`: assign sequentially (s1, s2, s3…) — fresh each extraction pass
