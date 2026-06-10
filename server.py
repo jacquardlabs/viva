@@ -88,6 +88,7 @@ HTML = r"""<!DOCTYPE html>
   .dot-info     { box-shadow: none; }
 
   .titleblock { background: #fff; }
+  .ledger { background: #fff; }
 
   .section-content { background: #fff; }
   .section-content::-webkit-scrollbar-thumb { border-color: #fff; }
@@ -185,6 +186,69 @@ body {
   color: var(--accent);
   padding-top: 2px;
 }
+
+/* ─── Revision ledger ────────────────────────────────────── */
+.ledger {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease both;
+}
+.ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.ledger-head:hover { background: var(--bg3); }
+.ledger-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.ledger-chevron { font-size: 10px; color: var(--text3); transition: transform 0.2s; }
+.ledger.is-collapsed .ledger-chevron { transform: rotate(-90deg); }
+.ledger-body-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.ledger.is-collapsed .ledger-body-wrap { grid-template-rows: 0fr; }
+.ledger-body-inner { overflow: hidden; }
+.ledger-rows { padding: 0 14px 10px; }
+.ledger-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.ledger-round {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.ledger-section { color: var(--text); font-weight: 500; flex-shrink: 0; }
+.ledger-verdict {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.ledger-verdict.v-changes { color: var(--orange); }
+.ledger-verdict.v-info    { color: var(--violet); }
+.ledger-note { color: var(--text2); font-style: italic; min-width: 0; }
+.ledger.ledger-static .ledger-head { cursor: default; }
+.ledger.ledger-static .ledger-head:hover { background: none; }
+.complete-inner .ledger { width: 100%; max-width: 560px; text-align: left; margin-top: 1.5rem; }
 
 .progress-track {
   flex: 1;
@@ -732,6 +796,17 @@ body {
         <div class="progress-fill" id="r-progress" style="width:0%"></div>
       </div>
     </div>
+    <div class="ledger" id="ledger" style="display:none">
+      <div class="ledger-head" id="ledger-head">
+        <span class="ledger-title">Revisions &middot; <span id="ledger-count">0</span></span>
+        <span class="ledger-chevron">&#9662;</span>
+      </div>
+      <div class="ledger-body-wrap">
+        <div class="ledger-body-inner">
+          <div class="ledger-rows" id="ledger-rows"></div>
+        </div>
+      </div>
+    </div>
     <div class="cards" id="review-cards"></div>
   </div>
 
@@ -765,6 +840,12 @@ body {
       <div class="complete-check">&#10003;</div>
       <div class="complete-headline" id="complete-headline"></div>
       <div class="complete-detail" id="complete-detail"></div>
+      <div class="ledger ledger-static" id="complete-ledger" style="display:none">
+        <div class="ledger-head">
+          <span class="ledger-title">Revisions &middot; <span id="complete-ledger-count">0</span></span>
+        </div>
+        <div class="ledger-rows" id="complete-ledger-rows"></div>
+      </div>
       <div class="complete-hint">You can close this tab.</div>
     </div>
   </div>
@@ -822,6 +903,26 @@ function renderMarkdown(target, md) {
 
 function el(id) { return document.getElementById(id); }
 
+function ledgerRowsHTML(entries) {
+  return entries.map(e => `
+    <div class="ledger-row">
+      <span class="ledger-round">R${e.round}</span>
+      <span class="ledger-section">${esc(e.section_title)}</span>
+      <span class="ledger-verdict v-${e.verdict}">${e.verdict}</span>
+      <span class="ledger-note">${e.note ? '&ldquo;' + esc(e.note) + '&rdquo;' : '&mdash;'}</span>
+    </div>`).join('');
+}
+
+function renderLedger() {
+  const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
+  const panel = el('ledger');
+  if (!entries.length) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  el('ledger-count').textContent = entries.length;
+  el('ledger-rows').innerHTML = ledgerRowsHTML(entries);
+  el('ledger-head').onclick = () => el('ledger').classList.toggle('is-collapsed');
+}
+
 /* ─────────────────────────────────────────────────────────
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
@@ -844,6 +945,7 @@ function initReview() {
   if (firstPending) activateReviewCard(firstPending.id);
   else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
   updateReviewStats();
+  renderLedger();
 }
 
 function buildReviewCard(section) {
@@ -1279,6 +1381,12 @@ function connectSSE() {
     el('complete-detail').textContent   = rev != null
       ? `${rev} section${rev !== 1 ? 's' : ''} revised`
       : '';
+    const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
+    if (entries.length) {
+      el('complete-ledger').style.display = '';
+      el('complete-ledger-count').textContent = entries.length;
+      el('complete-ledger-rows').innerHTML = ledgerRowsHTML(entries);
+    }
     document.querySelector('.bottom-bar').style.display = 'none';
   });
 

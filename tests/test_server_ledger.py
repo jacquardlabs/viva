@@ -79,6 +79,11 @@ def main() -> None:
         assert len(ledger) == 3, f"expected 3 entries, got {len(ledger)}"
         assert ledger[2] == {"round": 2, "section_title": "Error Handling",
                              "verdict": "changes", "note": ""}
+        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        for needle in ('id="ledger"', 'id="complete-ledger"',
+                       "function renderLedger", "function ledgerRowsHTML",
+                       ".ledger-verdict.v-changes"):
+            assert needle in page, f"page missing: {needle}"
         print("OK")
     finally:
         proc.terminate()
