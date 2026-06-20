@@ -1,6 +1,6 @@
 # viva
 
-Section-by-section markdown review for Claude Code. Named after the PhD oral exam — Claude presents its work, you drill every section for correctness and full understanding, Claude defends and revises, and the document only passes when it all holds up.
+Section-by-section markdown review for Claude Code. Named after the PhD oral exam: Claude presents its work, you drill every section, Claude defends and revises, the document only passes when it all holds up.
 
 ![viva review UI](assets/screenshot.png)
 
@@ -8,10 +8,10 @@ Section-by-section markdown review for Claude Code. Named after the PhD oral exa
 
 `/viva` turns any agent-written markdown document into a structured review session:
 
-1. Claude parses the doc into sections at its markdown headings — no summarising, the cards show the section content verbatim
+1. Claude parses the doc into sections at its markdown headings, no summarising, the cards show the section content verbatim
 2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
 3. You review; Claude rewrites any sections you flag, then loops
-4. A REVISIONS ledger in the UI tracks every change request and question — your notes verbatim — and is appended to the doc as `## Revision History` at sign-off
+4. A REVISIONS ledger in the UI tracks every change request and question (your notes verbatim) and is appended to the doc as `## Revision History` at sign-off
 5. The session ends when every section is approved
 
 One browser tab stays open for the entire session. After you submit a round, a spinner appears while Claude rewrites; the next round loads in place without a page reload.
@@ -71,7 +71,7 @@ Re-run after any superpowers plugin update.
 
 ## How it works
 
-The server is a single Python file with no dependencies beyond stdlib. Claude Code is the agent — no API key required. Claude launches the server as a background subprocess, polls for the output JSON, and calls HTTP endpoints to signal between rounds.
+The server is a single Python file with no dependencies beyond stdlib. Claude Code is the agent, no API key required. Claude launches the server as a background subprocess, polls for the output JSON, and calls HTTP endpoints to signal between rounds.
 
 ```
 .viva/
