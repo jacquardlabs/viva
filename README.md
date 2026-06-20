@@ -18,8 +18,18 @@ One browser tab stays open for the entire session. After you submit a round, a s
 
 ## Installation
 
+Install via the Jacquard Labs marketplace:
+
 ```bash
-claude install github:jacquardlabs/viva
+/plugin marketplace add jacquardlabs/marketplace
+/plugin install viva@jacquardlabs-marketplace
+```
+
+Or install this plugin directly:
+
+```bash
+/plugin marketplace add jacquardlabs/viva
+/plugin install viva@viva
 ```
 
 Requires Python 3.11+ and Claude Code.
