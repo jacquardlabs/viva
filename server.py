@@ -882,6 +882,7 @@ let QA_DATA = null;
 ───────────────────────────────────────────────────────── */
 const rState = { verdicts: {}, active: null };
 const qState = { answers: {}, active: null };
+const _pendingMarkdown = new Map(); // section id → raw markdown; deleted after first render
 
 /* ─────────────────────────────────────────────────────────
    HELPERS
@@ -929,6 +930,7 @@ function renderLedger() {
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
 function initReview() {
+  _pendingMarkdown.clear();
   const container = el('review-cards');
   const priorApprovedSet = new Set(REVIEW_DATA.approved_ids || []);
   // Pre-populate approved state for sections approved in previous rounds
@@ -955,6 +957,9 @@ function buildReviewCard(section) {
   card.className = 'card';
   card.id = 'rcard-' + section.id;
 
+  // Store raw markdown for lazy render on first open
+  _pendingMarkdown.set(section.id, section.content ?? section.excerpt ?? '');
+
   card.innerHTML = `
     <div class="card-head">
       <span class="dot dot-idle" id="rdot-${section.id}"></span>
@@ -972,6 +977,7 @@ function buildReviewCard(section) {
             <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
             <button class="action-btn" id="rbtn-changes-${section.id}">&#8617; request changes</button>
             <button class="action-btn" id="rbtn-info-${section.id}">? need info</button>
+            <button class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55">&#8595; skip</button>
           </div>
           <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
             <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
@@ -980,8 +986,6 @@ function buildReviewCard(section) {
       </div>
     </div>`;
 
-  renderMarkdown(card.querySelector('#rcontent-' + section.id), section.content ?? section.excerpt ?? '');
-
   card.querySelector('.card-head').addEventListener('click', () => {
     toggleReviewCard(section.id);
   });
@@ -989,6 +993,7 @@ function buildReviewCard(section) {
   card.querySelector('#rbtn-approve-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'approved'); });
   card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
   card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
+  card.querySelector('#rbtn-skip-'    + section.id).addEventListener('click', e => { e.stopPropagation(); skipReviewCard(section.id); });
 
   const rta = card.querySelector('#rnote-' + section.id);
   rta.addEventListener('input', e => {
@@ -1009,12 +1014,32 @@ function activateReviewCard(id) {
     syncNoteInline(rState.active);
   }
   rState.active = id;
+  _ensureRendered(id);
   const card = el('rcard-' + id);
   if (card) {
     card.classList.add('is-active');
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   syncReviewDot(id);
+}
+
+function _ensureRendered(id) {
+  if (!_pendingMarkdown.has(id)) return;
+  const contentEl = el('rcontent-' + id);
+  if (!contentEl) return;
+  renderMarkdown(contentEl, _pendingMarkdown.get(id));
+  _pendingMarkdown.delete(id);
+}
+
+function skipReviewCard(id) {
+  el('rcard-' + id)?.classList.remove('is-active');
+  rState.active = null;
+  syncReviewDot(id);
+  const sections = REVIEW_DATA.sections;
+  const idx = sections.findIndex(s => s.id === id);
+  const rest = [...sections.slice(idx + 1), ...sections.slice(0, idx)];
+  const next = rest.find(s => !rState.verdicts[s.id]?.verdict);
+  if (next) setTimeout(() => activateReviewCard(next.id), 80);
 }
 
 function toggleReviewCard(id) {
@@ -1403,6 +1428,56 @@ function connectSSE() {
     }
   };
 }
+
+/* ─── Keyboard shortcuts ────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement?.tagName;
+  if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+
+  if (REVIEW_DATA) {
+    if (e.key === 'a' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'approved'); return; }
+    if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
+    if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (rState.active) {
+        skipReviewCard(rState.active);
+      } else {
+        const first = REVIEW_DATA.sections.find(s => !rState.verdicts[s.id]?.verdict);
+        if (first) activateReviewCard(first.id);
+      }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      const sub = el('btn-submit');
+      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
+      return;
+    }
+  }
+
+  if (QA_DATA && qState.active) {
+    const q = QA_DATA.questions.find(q => q.id === qState.active);
+    if (q) {
+      const n = parseInt(e.key, 10);
+      if (!isNaN(n) && n >= 1 && n <= q.choices.length) {
+        e.preventDefault();
+        const choice = q.choices[n - 1];
+        if (!qState.answers[qState.active]) qState.answers[qState.active] = {};
+        qState.answers[qState.active].choice =
+          qState.answers[qState.active].choice === choice ? null : choice;
+        syncQACard(qState.active);
+        updateQAStats();
+        return;
+      }
+    }
+    if (e.key === 'Tab') { e.preventDefault(); advanceQA(qState.active); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      const sub = el('btn-submit');
+      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
+      return;
+    }
+  }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   el('btn-skip').disabled   = true;
