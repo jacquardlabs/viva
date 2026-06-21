@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.2 (2026-06-21)
+
+### Bug Fixes
+
+- 8 polish fixes across parser and server ([#5](https://github.com/jacquardlabs/viva/pull/5),
+  [`1572893`](https://github.com/jacquardlabs/viva/commit/1572893d3c670fa1e5e19ca56ac93261b810d2a7))
+
+
 ## v1.0.1 (2026-06-21)
 
 ### Continuous Integration
