@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-06-21)
+
+### Bug Fixes
+
+- 8 polish fixes across parser and server ([#6](https://github.com/jacquardlabs/viva/pull/6),
+  [`f62aa3d`](https://github.com/jacquardlabs/viva/commit/f62aa3dad258354a465161c152b53a1981f6d237))
+
+### Features
+
+- Keyboard shortcuts, lazy markdown render, per-card skip
+  ([#6](https://github.com/jacquardlabs/viva/pull/6),
+  [`f62aa3d`](https://github.com/jacquardlabs/viva/commit/f62aa3dad258354a465161c152b53a1981f6d237))
+
+
 ## v1.0.2 (2026-06-21)
 
 ### Bug Fixes
