@@ -921,6 +921,7 @@ function renderLedger() {
   panel.style.display = '';
   el('ledger-count').textContent = entries.length;
   el('ledger-rows').innerHTML = ledgerRowsHTML(entries);
+  el('ledger').classList.toggle('is-collapsed', entries.length > 2);
   el('ledger-head').onclick = () => el('ledger').classList.toggle('is-collapsed');
 }
 
@@ -1085,6 +1086,7 @@ function syncReviewCard(id) {
     noteWrap.style.display = '';
     ta.placeholder = verdict === 'changes' ? 'Describe what needs to change...' : 'What do you need to know?';
     if (ta.value !== note) ta.value = note;
+    ta.focus();
   } else {
     noteWrap.style.display = 'none';
   }
@@ -1112,7 +1114,7 @@ function syncNoteInline(id) {
   if (!inlineEl) return;
   const show = note && verdict && verdict !== 'approved' && rState.active !== id;
   inlineEl.style.display = show ? '' : 'none';
-  if (show) inlineEl.textContent = note;
+  if (show) { inlineEl.textContent = note; inlineEl.title = note; }
 }
 
 function updateReviewStats() {
@@ -1172,7 +1174,7 @@ function buildQACard(q) {
     <div class="card-body-wrap">
       <div class="card-body-inner">
         <div class="card-body">
-          <p class="section-summary">${esc(q.hint)}</p>
+          <p class="section-summary">${esc(q.hint || '')}</p>
           <div class="choices-label">Choices</div>
           <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
           <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional)..."></textarea>
@@ -1437,6 +1439,8 @@ document.addEventListener('DOMContentLoaded', () => {
 </body>
 </html>"""
 
+_HTML_BYTES = HTML.encode()
+
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
@@ -1498,7 +1502,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/", ""):
-            self._send(200, "text/html; charset=utf-8", HTML.encode())
+            self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
         elif path == "/input":
             with _data_lock:
                 body = json.dumps({**_input_data, "ledger": _ledger}).encode()
