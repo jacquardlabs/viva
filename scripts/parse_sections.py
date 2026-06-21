@@ -44,7 +44,7 @@ def _heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
     """Return (level, title, line_idx) for every ATX heading line."""
     result = []
     for i, line in enumerate(lines):
-        m = re.match(r'^(#{1,6})\s+(.+)', line.rstrip("\n"))
+        m = re.match(r'^(#{1,6})\s+(.+)', line.rstrip("\r\n"))
         if m:
             title = re.sub(r"\s+#+\s*$", "", m.group(2)).strip()
             result.append((len(m.group(1)), title, i))
@@ -65,7 +65,7 @@ def _find_split_level(headings: list[tuple[int, str, int]]) -> int | None:
         if counts[level] > 1:
             if counts[level] > 20 and level > 1:
                 coarser = level - 1
-                if counts.get(coarser, 0) >= 1:
+                if counts.get(coarser, 0) >= 2:
                     return coarser
             return level
     # Every level appears only once — use the highest (fewest #s)
@@ -205,7 +205,7 @@ def main() -> None:
 
     data = {
         "mode": "review",
-        "doc_file": args.doc_file or args.doc,
+        "doc_file": args.doc_file or Path(args.doc).name,
         "round": args.round_num,
         "approved_ids": approved_ids,
         "sections": sections,
