@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-06-27)
+
+### Features
+
+- Support Python 3.8+ and add CI test matrix ([#21](https://github.com/jacquardlabs/viva/pull/21),
+  [`d8a116d`](https://github.com/jacquardlabs/viva/commit/d8a116dc948b1b38c45d422f6c5f1afd3367f1dc))
+
+
 ## v1.3.0 (2026-06-27)
 
 ### Code Style
