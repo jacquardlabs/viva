@@ -7,6 +7,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import signal
 import socket
 import threading
@@ -1564,10 +1565,18 @@ def load_input(path: str) -> dict:
         return json.load(f)
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    # A reader polling with `[ -f path ]` then `cat path` must never observe a
+    # truncated/partial file. Write a sibling tmp, then rename atomically.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding='utf-8') as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def write_output(path: str, data: dict) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
+    _atomic_write(Path(path), json.dumps(data, indent=2))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1709,7 +1718,7 @@ if __name__ == "__main__":
     url = f"http://127.0.0.1:{port}"
 
     url_file = Path(args.output).parent / "server.url"
-    url_file.write_text(url)
+    _atomic_write(url_file, url)
     print(f"viva · {args.mode} mode · {url}", flush=True)
 
     if not args.no_browser:
