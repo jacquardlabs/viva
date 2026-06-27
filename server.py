@@ -393,6 +393,37 @@ body {
 .vbadge-changes  { background: var(--orange-bg);  color: var(--orange); }
 .vbadge-info     { background: var(--violet-bg);  color: var(--violet); }
 
+/* annotation strip — advisory pre-review flags. Reuses the verdict color
+   slots: info → teal, warn → violet (amber #ffc857), error → orange.
+   Advisory only — they decorate a card, they never gate a verdict. */
+.annot-strip { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.annot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 6px 9px;
+  border-radius: 5px;
+  border-left: 2px solid var(--border2);
+}
+.annot-kind {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.annot-msg { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+.annot-info  { background: var(--teal-bg);   border-color: var(--teal);   }
+.annot-warn  { background: var(--violet-bg);  border-color: var(--violet); }
+.annot-error { background: var(--orange-bg);  border-color: var(--orange); }
+.annot-info  .annot-kind { color: var(--teal);   }
+.annot-warn  .annot-kind { color: var(--violet); }
+.annot-error .annot-kind { color: var(--orange); }
+
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
   display: grid;
@@ -1000,6 +1031,27 @@ function initReview() {
   renderLedger();
 }
 
+// Severity → CSS-slot whitelist. Anything off-list (or missing) renders as
+// 'info' so a bad value can never break out of the class= attribute position.
+const ANNOT_SEVERITIES = { info: 1, warn: 1, error: 1 };
+
+// Build the advisory annotation strip for a card from section.annotations.
+// Returns '' when there are none, so a bare section renders exactly as before.
+function annotStripHTML(annotations) {
+  if (!Array.isArray(annotations) || annotations.length === 0) return '';
+  const rows = annotations.map(a => {
+    a = a || {};
+    const sev    = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
+    const kind   = esc(a.kind || 'note');
+    const msg    = esc(a.message || '');
+    const anchor = a.anchor ? ' title="' + esc(String(a.anchor)) + '"' : '';
+    return '<div class="annot annot-' + sev + '"' + anchor + '>'
+         + '<span class="annot-kind">' + kind + '</span>'
+         + '<span class="annot-msg">' + msg + '</span></div>';
+  }).join('');
+  return '<div class="annot-strip" aria-label="pre-review annotations">' + rows + '</div>';
+}
+
 function buildReviewCard(section) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -1020,6 +1072,7 @@ function buildReviewCard(section) {
     <div class="card-body-wrap">
       <div class="card-body-inner">
         <div class="card-body">
+          ${annotStripHTML(section.annotations)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="actions">
             <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>

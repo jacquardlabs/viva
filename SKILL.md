@@ -152,3 +152,37 @@ For brainstorming Q&A:
 ├── answers.json           ← server writes
 └── attachments/           ← server writes image attachments during /submit
 ```
+
+---
+
+## Annotations (advisory)
+
+Each section in `review-input-r{N}.json` may carry an optional `annotations` array. The server renders each entry as a color-coded badge at the top of that section's card, so the reviewer sees an agent's flagged weak spots *before* choosing a verdict.
+
+```json
+{
+  "id": "s3",
+  "title": "Error Handling",
+  "content": "## Error Handling\n...",
+  "annotations": [
+    { "kind": "grounding", "severity": "warn",  "message": "claim 'sub-second' is unsupported", "anchor": "line 12" },
+    { "kind": "drift",     "severity": "error", "message": "code retries 3×, doc says 5×" }
+  ]
+}
+```
+
+- `kind` *(required)* — short producer tag shown as the badge label (e.g. `grounding`, `drift`, `checklist`).
+- `severity` *(required)* ∈ `info | warn | error` → color slot `teal | violet | orange`. Any other value renders as `info`.
+- `message` *(required)* — the inline text shown beside the badge.
+- `anchor` *(optional)* — surfaced as the badge's hover title.
+
+Annotations are **advisory**: they decorate a card, they never gate a verdict — the human still decides. A `review-input` with no `annotations` renders exactly as before.
+
+### Producer contract
+
+A pre-review pass (claim grounding, contradiction detection, spec↔code drift, confidence triage, checklist gating) is the producer. It writes annotations into the round's `review-input` file **after** `parse_sections.py` generates it and **before** the round is armed:
+
+- **Round 1** — between the `parse_sections.py` call and launching `server.py --input` (the server reads the file once at startup).
+- **Round 2+** — between the `parse_sections.py` re-parse and the `POST /next-round` that ships the file to the running server.
+
+`parse_sections.py` carries annotations forward for any section whose title and content are byte-identical to the prior round; a rewritten section drops its annotations (the producer re-flags the new text next round).

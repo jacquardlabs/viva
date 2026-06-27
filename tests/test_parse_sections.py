@@ -197,6 +197,83 @@ def test_approved_not_carried_if_content_changed() -> None:
     assert data["approved_ids"] == []
 
 
+def test_no_annotations_key_when_absent() -> None:
+    # Zero-regression: a doc with no annotations must produce sections that
+    # carry no `annotations` key at all (byte-identical to pre-feature output).
+    doc = "## A\n\na\n\n## B\n\nb\n"
+    data = run(doc)
+    for s in data["sections"]:
+        assert "annotations" not in s, f"unexpected annotations key on {s['id']}"
+
+
+def _run_round2(doc: str, prior_input: dict, prior_verdicts: dict) -> dict:
+    """Parse `doc` as round 2 against the given prior files, return output JSON."""
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        doc_file = t / "doc.md"
+        doc_file.write_text(doc, encoding="utf-8")
+        pi = t / "prior-input.json"
+        pi.write_text(json.dumps(prior_input), encoding="utf-8")
+        pv = t / "prior-verdicts.json"
+        pv.write_text(json.dumps(prior_verdicts), encoding="utf-8")
+        out = t / ".viva" / "review-input-r2.json"
+        subprocess.run([
+            sys.executable, str(SCRIPT), str(doc_file),
+            "--output", str(out), "--round", "2",
+            "--prior-input", str(pi), "--prior-verdicts", str(pv),
+        ], capture_output=True, check=True)
+        return json.loads(out.read_text())
+
+
+def test_annotations_carried_forward_when_unchanged() -> None:
+    # A pre-review pass flagged Alpha last round; Alpha is byte-identical this
+    # round, so its annotations must survive the carry-forward.
+    content_a = "## Alpha\n\nalpha body\n\n"  # trailing blank belongs to Alpha
+    content_b = "## Beta\n\nbeta body\n"
+    doc = content_a + content_b
+    annots = [{"kind": "grounding", "severity": "warn", "message": "claim unsupported"}]
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": content_a, "annotations": annots},
+            {"id": "s2", "title": "Beta",  "content": content_b},
+        ],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "changes", "note": "fix"},
+            {"id": "s2", "verdict": "changes", "note": "fix"},
+        ],
+    }
+    data = _run_round2(doc, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    beta  = next(s for s in data["sections"] if s["title"] == "Beta")
+    assert alpha.get("annotations") == annots, "Alpha annotations must carry forward"
+    assert "annotations" not in beta, "Beta had none — must stay absent"
+
+
+def test_annotations_dropped_when_content_changed() -> None:
+    # A flag on Alpha's old text is stale once Alpha is rewritten; carrying it
+    # would show a warning the new content may already have fixed.
+    prior_content = "## Alpha\n\noriginal body\n"
+    new_content   = "## Alpha\n\nmodified body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [{
+            "id": "s1", "title": "Alpha", "content": prior_content,
+            "annotations": [{"kind": "drift", "severity": "error", "message": "stale"}],
+        }],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [{"id": "s1", "verdict": "changes", "note": "fix"}],
+    }
+    data = _run_round2(new_content, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    assert "annotations" not in alpha, "stale annotations must not carry to changed content"
+
+
 def test_content_verbatim_no_whitespace_drift() -> None:
     doc = "## A\n\n  indented line\n\n\ndouble blank\n\n## B\n\nlast\n"
     data = run(doc)
@@ -243,6 +320,9 @@ def main() -> None:
         test_ids_are_sequential,
         test_approved_matching_same_content,
         test_approved_not_carried_if_content_changed,
+        test_no_annotations_key_when_absent,
+        test_annotations_carried_forward_when_unchanged,
+        test_annotations_dropped_when_content_changed,
         test_content_verbatim_no_whitespace_drift,
         test_nonzero_exit_on_missing_doc,
         test_doc_file_override,
