@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-06-27)
+
+### Performance Improvements
+
+- Collapse viva startup to one round-trip, defer doc read
+  ([#7](https://github.com/jacquardlabs/viva/pull/7),
+  [`eac06f0`](https://github.com/jacquardlabs/viva/commit/eac06f08d251fff637c3d72ecafc37141dec72ac))
+
+
 ## v1.1.0 (2026-06-21)
 
 ### Bug Fixes
