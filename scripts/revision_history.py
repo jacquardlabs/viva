@@ -8,6 +8,8 @@ changes/info verdict with its note verbatim, and appends a summary line +
 table under `## Revision History` (creating the heading on first use,
 appending a new session block thereafter).
 """
+from __future__ import annotations
+
 import json
 import re
 import sys
