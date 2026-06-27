@@ -163,9 +163,13 @@ body {
   background: var(--bg2);
   margin-bottom: 10px;
 }
-.tb-cell { padding: 10px 14px; border-right: 1px solid var(--border2); min-width: 0; }
+/* Short data cells (rev, signed) hold their width; long cells (drawing,
+   title) get tb-flex and truncate. overflow:hidden keeps nowrap labels
+   from spilling into the next cell when space is tight. */
+.tb-cell { padding: 10px 14px; border-right: 1px solid var(--border2); min-width: 0; flex: 0 0 auto; overflow: hidden; }
 .tb-cell:last-child { border-right: none; }
-.tb-flex { flex: 1; }
+.tb-flex { flex: 1 1 0; }
+.tb-wide { flex: 2 1 0; }
 .tb-label {
   font-family: 'Fragment Mono', monospace;
   font-size: 8px;
@@ -551,7 +555,28 @@ body {
 .section-content, .choice-chip, .qa-btn,
 .progress-track, .progress-fill { border-radius: 0; }
 
-/* ─── Action buttons ─────────────────────────────────────── */
+/* ─── Reticle: drafting crop-mark corners ─────────────────────
+   Selectable controls (verdict actions, Q&A chips + buttons) wear
+   corner ticks in place of a full border. --c colors the ticks;
+   each state just reassigns it and the gradient recolors itself.
+   Registering --c lets the recolor animate; without support it snaps. */
+@property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
+.action-btn, .qa-btn, .choice-chip, .attach-btn {
+  --tick: 7px;          /* corner arm length */
+  --tw: 1.5px;          /* tick thickness    */
+  --c: var(--border2);
+  border: var(--tw) solid transparent;   /* hold box size; edge stays invisible */
+  background:
+    linear-gradient(var(--c) 0 0) 0 0,       linear-gradient(var(--c) 0 0) 0 0,
+    linear-gradient(var(--c) 0 0) 100% 0,    linear-gradient(var(--c) 0 0) 100% 0,
+    linear-gradient(var(--c) 0 0) 0 100%,    linear-gradient(var(--c) 0 0) 0 100%,
+    linear-gradient(var(--c) 0 0) 100% 100%, linear-gradient(var(--c) 0 0) 100% 100%;
+  background-repeat: no-repeat;
+  background-size: var(--tick) var(--tw), var(--tw) var(--tick);
+  transition: --c 0.12s, color 0.12s;
+}
+
+/* ─── Action buttons (verdict row) ───────────────────────── */
 .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 
 .action-btn {
@@ -560,26 +585,13 @@ body {
   font-weight: 600;
   letter-spacing: 0.05em;
   padding: 6px 14px;
-  border: 1.5px solid var(--border2);
-  border-radius: 5px;
-  background: transparent;
   color: var(--text2);
   display: flex; align-items: center; gap: 5px;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
-.action-btn:hover {
-  border-color: var(--text3);
-  color: var(--text);
-}
-.action-btn.sel-approve {
-  border-color: var(--teal);   color: var(--teal);   background: var(--teal-bg);
-}
-.action-btn.sel-changes {
-  border-color: var(--orange); color: var(--orange); background: var(--orange-bg);
-}
-.action-btn.sel-info {
-  border-color: var(--violet); color: var(--violet); background: var(--violet-bg);
-}
+.action-btn:hover       { --c: var(--text3);  color: var(--text);   }
+.action-btn.sel-approve { --c: var(--teal);   color: var(--teal);   }
+.action-btn.sel-changes { --c: var(--orange); color: var(--orange); }
+.action-btn.sel-info    { --c: var(--violet); color: var(--violet); }
 
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
@@ -588,7 +600,6 @@ body {
   font-size: 13px;
   padding: 9px 12px;
   border: 1px solid var(--border2);
-  border-radius: 6px;
   background: var(--bg2);
   color: var(--text);
   resize: vertical;
@@ -610,7 +621,6 @@ body {
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--border2);
 }
@@ -624,7 +634,6 @@ body {
   line-height: 18px;
   text-align: center;
   border: none;
-  border-radius: 50%;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   cursor: pointer;
@@ -638,16 +647,12 @@ body {
   font-weight: 600;
   letter-spacing: 0.05em;
   cursor: pointer;
-  background: transparent;
   color: var(--text2);
-  border: 1.5px solid var(--border2);
-  border-radius: 5px;
   padding: 5px 10px;
-  transition: border-color 0.12s, color 0.12s;
 }
-.attach-btn:hover { border-color: var(--text3); color: var(--text); }
-.attach-btn:focus-visible { outline: 2px solid var(--text3); outline-offset: 1px; }
-.card.is-drop-target { box-shadow: 0 0 0 2px var(--teal); }
+.attach-btn:hover { --c: var(--text3); color: var(--text); }
+/* neutral active highlight for a drop zone — teal stays reserved for approve */
+.card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -669,19 +674,11 @@ body {
   font-size: 12px;
   font-weight: 400;
   padding: 5px 12px;
-  border: 1.5px solid var(--border2);
-  border-radius: 20px;
-  background: transparent;
   color: var(--text2);
-  transition: all 0.12s;
   cursor: pointer;
 }
-.choice-chip:hover { border-color: var(--text3); color: var(--text); }
-.choice-chip.selected {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
-}
+.choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
+.choice-chip.selected { --c: var(--accent); color: var(--accent); }
 
 /* QA action buttons */
 .qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
@@ -691,16 +688,17 @@ body {
   font-weight: 600;
   letter-spacing: 0.05em;
   padding: 6px 14px;
-  border: 1.5px solid var(--border2);
-  border-radius: 5px;
-  background: transparent;
   color: var(--text2);
   display: flex; align-items: center; gap: 5px;
-  transition: all 0.12s;
 }
-.qa-btn:hover { border-color: var(--text3); color: var(--text); }
-.qa-btn.confirm {
-  border-color: var(--teal); color: var(--teal); background: var(--teal-bg);
+.qa-btn:hover   { --c: var(--text3); color: var(--text); }
+.qa-btn.confirm { --c: var(--teal);  color: var(--teal); }
+
+/* ─── Keyboard focus (quality floor) ─────────────────────── */
+.action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
+.attach-btn:focus-visible, .btn-skip:focus-visible, .btn-submit:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ─── Bottom bar ─────────────────────────────────────────── */
@@ -744,7 +742,6 @@ body {
   letter-spacing: 0.06em;
   padding: 9px 16px;
   border: 1px solid var(--border2);
-  border-radius: 6px;
   background: transparent;
   color: var(--text2);
   transition: all 0.15s;
@@ -759,7 +756,6 @@ body {
   text-transform: uppercase;
   padding: 9px 20px;
   border: none;
-  border-radius: 6px;
   transition: all 0.2s;
 }
 .btn-submit.ready {
@@ -840,7 +836,7 @@ body {
   <div id="review-view" style="display:none">
     <div class="header">
       <div class="titleblock">
-        <div class="tb-cell"><div class="tb-label">drawing</div><div class="tb-val mono" id="doc-path"></div></div>
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-label">drawing</div><div class="tb-val mono" id="doc-path"></div></div>
         <div class="tb-cell"><div class="tb-label">rev</div><div class="tb-val mono" id="round-badge"></div></div>
         <div class="tb-cell tb-flex"><div class="tb-label">title</div><div class="tb-val" id="doc-title"></div></div>
         <div class="tb-cell"><div class="tb-label">signed</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
@@ -1651,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.mode === 'review') {
         REVIEW_DATA = data;
         el('doc-path').textContent    = data.doc_file || '';
+        el('doc-path').title          = data.doc_file || '';   /* full path on hover when truncated */
         el('doc-title').innerHTML     = 'viva <em>review</em>';
         el('round-badge').textContent = String(data.round).padStart(2, '0');
         el('review-view').style.display = '';
@@ -1659,6 +1656,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         QA_DATA = data;
         el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
+        el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
         el('qa-count-badge').textContent  = `${data.questions.length} questions`;
         el('qa-view').style.display = '';
         initQA();
