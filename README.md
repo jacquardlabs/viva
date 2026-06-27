@@ -10,7 +10,7 @@ Section-by-section markdown review for Claude Code. Named after the PhD oral exa
 
 1. Claude parses the doc into sections at its markdown headings, no summarising, the cards show the section content verbatim
 2. A local browser UI opens — one card per section, each with **approve / request changes / need info** actions
-3. You review; Claude rewrites any sections you flag, then loops
+3. You review; Claude rewrites any sections you flag, then loops. Note fields accept image attachments (paste, drag-and-drop, or the 📎 button) — Claude reads each image as part of the rewrite
 4. A REVISIONS ledger in the UI tracks every change request and question (your notes verbatim) and is appended to the doc as `## Revision History` at sign-off
 5. The session ends when every section is approved
 
@@ -65,8 +65,8 @@ Re-run after any superpowers plugin update.
 | Verdict | What happens |
 |---------|-------------|
 | `approved` | Section accepted; shown collapsed (green) in subsequent rounds, reopenable if needed |
-| `changes` | Claude rewrites the section using your note as the instruction |
-| `info` | Claude answers your question and rewrites the section incorporating that answer |
+| `changes` | Claude rewrites the section using your note as the instruction (attached images, if any, are part of the instruction) |
+| `info` | Claude answers your question and rewrites the section incorporating that answer (attached images, if any, are included as context) |
 | `pending` | Skipped; re-presented unchanged next round |
 
 ## How it works
@@ -78,6 +78,7 @@ The server is a single Python file with no dependencies beyond stdlib. Claude Co
 ├── server.url             ← server writes on startup; deleted on shutdown
 ├── review-input-r1.json   ← agent writes before each round
 ├── review-r1.json         ← server writes after user submits
+├── attachments/           ← image files from note fields (gitignored)
 └── ...
 ```
 

@@ -45,6 +45,7 @@ VIVA_DIR=~/.claude/skills/viva
 # above has already confirmed no prior server is running.
 mkdir -p .viva
 rm -f .viva/server.url .viva/review-input-r*.json .viva/review-r*.json
+rm -rf .viva/attachments
 
 # Parse, then launch only if the integrity check passed (&&). Bounded poll so a
 # failed start can't hang the turn.
@@ -84,8 +85,8 @@ The server writes the file atomically (tmp + rename), so `cat` always sees compl
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes` | Rewrite the section using `note` as the instruction |
-| `info` | Answer the `note` question, rewrite the section to incorporate the answer |
+| `changes` | Rewrite the section using `note` as the instruction. If the verdict carries an `attachments` array, `Read` each image path first — the screenshots are part of the instruction |
+| `info` | Answer the `note` question, rewrite the section to incorporate the answer. If the verdict carries an `attachments` array, `Read` each image path before answering |
 | `pending` | Carry forward unchanged; re-present next round |
 
 - **Every section `approved`** → go to step 5 (finish).
@@ -98,7 +99,7 @@ Now — and only now — load what the rewrite needs. Pull a compact id→headin
 python3 -c "import json
 for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
 ```
-Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it.
+Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. Before rewriting a section whose verdict carries an `attachments` array, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
 
 Re-parse and signal the running server in one block, then loop to step 2:
 ```bash
@@ -140,12 +141,14 @@ git commit -m "docs: sign off on <filename>"
 ├── review-input-r1.json   ← agent writes before round 1
 ├── review-r1.json         ← server writes after round 1
 ├── review-input-r2.json   ← agent writes before round 2 (if needed)
-└── review-r2.json         ← server writes after round 2
+├── review-r2.json         ← server writes after round 2
+└── attachments/           ← server writes image attachments during /submit
 ```
 
 For brainstorming Q&A:
 ```
 .viva/
 ├── qa-input.json          ← brainstorming skill writes
-└── answers.json           ← server writes
+├── answers.json           ← server writes
+└── attachments/           ← server writes image attachments during /submit
 ```

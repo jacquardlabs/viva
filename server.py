@@ -6,10 +6,13 @@ Usage:
   python server.py --mode qa     --input .viva/qa-input.json        --output .viva/answers.json
 """
 import argparse
+import base64
 import json
 import os
+import re
 import signal
 import socket
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -597,6 +600,54 @@ body {
 }
 .note-field:focus { outline: none; border-color: var(--text3); }
 .note-field::placeholder { color: var(--text3); }
+.thumb-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.attach-btn {
+  margin-top: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text2);
+  border: 1.5px solid var(--border2);
+  border-radius: 5px;
+  padding: 5px 10px;
+  transition: border-color 0.12s, color 0.12s;
+}
+.attach-btn:hover { border-color: var(--text3); color: var(--text); }
+.attach-btn:focus-visible { outline: 2px solid var(--text3); outline-offset: 1px; }
+.card.is-drop-target { box-shadow: 0 0 0 2px var(--teal); }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -982,6 +1033,9 @@ function buildReviewCard(section) {
           </div>
           <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
             <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
+            <div class="thumb-strip" id="rthumbs-${section.id}" aria-live="polite" style="display:none"></div>
+            <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
+            <input type="file" accept="image/*" multiple style="display:none" id="rfile-${section.id}">
           </div>
         </div>
       </div>
@@ -1003,6 +1057,15 @@ function buildReviewCard(section) {
     syncNoteInline(section.id);
   });
   rta.addEventListener('click', e => e.stopPropagation());
+
+  wireCapture(
+    () => (rState.verdicts[section.id] ||= {}),
+    card.querySelector('#rnote-' + section.id),
+    card.querySelector('#rthumbs-' + section.id),
+    card.querySelector('#rattach-' + section.id),
+    card.querySelector('#rfile-' + section.id),
+    card
+  );
 
   return card;
 }
@@ -1057,9 +1120,10 @@ function toggleReviewCard(id) {
 function setReviewVerdict(id, verdict) {
   const prev = rState.verdicts[id]?.verdict;
 
-  // Toggle off same verdict
+  // Toggle off same verdict — clear only the verdict, keeping any attached
+  // images and note text so a mis-click doesn't silently discard them.
   if (prev === verdict) {
-    delete rState.verdicts[id];
+    if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
     syncReviewCard(id);
     updateReviewStats();
     return;
@@ -1110,7 +1174,9 @@ function syncReviewCard(id) {
   const ta = el('rnote-' + id);
   if (verdict === 'changes' || verdict === 'info') {
     noteWrap.style.display = '';
-    ta.placeholder = verdict === 'changes' ? 'Describe what needs to change...' : 'What do you need to know?';
+    ta.placeholder = verdict === 'changes'
+      ? 'Describe what needs to change… or paste a screenshot'
+      : 'What do you need to know? — or paste a screenshot';
     if (ta.value !== note) ta.value = note;
     ta.focus();
   } else {
@@ -1203,7 +1269,10 @@ function buildQACard(q) {
           <p class="section-summary">${esc(q.hint || '')}</p>
           <div class="choices-label">Choices</div>
           <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
-          <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional)..."></textarea>
+          <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional) — or paste a screenshot"></textarea>
+          <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
+          <button type="button" class="attach-btn" id="qattach-${q.id}">&#128206; attach image</button>
+          <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
           <div class="qa-actions">
             <button class="qa-btn" id="qconfirm-${q.id}">&#10003; confirm</button>
             <button class="qa-btn" id="qskip-${q.id}">&#8595; skip</button>
@@ -1234,6 +1303,15 @@ function buildQACard(q) {
 
   card.querySelector('#qconfirm-' + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
   card.querySelector('#qskip-'   + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
+
+  wireCapture(
+    () => (qState.answers[q.id] ||= {}),
+    card.querySelector('#qnote-' + q.id),
+    card.querySelector('#qthumbs-' + q.id),
+    card.querySelector('#qattach-' + q.id),
+    card.querySelector('#qfile-' + q.id),
+    card
+  );
 
   return card;
 }
@@ -1320,6 +1398,73 @@ function updateQAStats() {
   else                 { sub.className='btn-submit disabled'; sub.textContent=`done (${remaining} remaining)`; }
 }
 
+/* ─── Image attachments ────────────────────────────────────── */
+function renderThumbs(stateObj, stripEl) {
+  const imgs = stateObj.images || [];
+  stripEl.innerHTML = imgs.map((im, i) =>
+    `<div class="thumb"><img src="data:${esc(im.mime)};base64,${im.data}" width="64" height="64" alt="Attached image ${i + 1}">` +
+    `<button class="thumb-remove" data-i="${i}" title="Remove image" aria-label="Remove image">&times;</button></div>`
+  ).join('');
+  stripEl.style.display = imgs.length ? 'flex' : 'none';
+  stripEl.querySelectorAll('.thumb-remove').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      stateObj.images.splice(Number(btn.dataset.i), 1);
+      renderThumbs(stateObj, stripEl);
+    });
+  });
+}
+
+function attachImageFiles(stateObj, files, stripEl) {
+  const list = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  if (!stateObj.images) stateObj.images = [];
+  let pending = list.length;
+  list.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      const comma = result.indexOf(',');
+      stateObj.images.push({ data: result.slice(comma + 1), mime: file.type });
+      if (--pending === 0) renderThumbs(stateObj, stripEl);
+    };
+    reader.onerror = () => { if (--pending === 0) renderThumbs(stateObj, stripEl); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function wireCapture(stateGetter, textarea, stripEl, attachBtn, fileInput, card) {
+  // Only accept drops when the note area holding the strip is visible — review
+  // cards hide it for approved/pending verdicts, where captured images could
+  // neither be seen, removed, nor read by the verdict's consumer.
+  const droppable = () => stripEl.parentElement.style.display !== 'none';
+  textarea.addEventListener('paste', e => {
+    const files = Array.from(e.clipboardData?.items || [])
+      .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+      .map(it => it.getAsFile()).filter(Boolean);
+    if (files.length) { e.preventDefault(); attachImageFiles(stateGetter(), files, stripEl); }
+  });
+  card.addEventListener('dragover', e => {
+    if (!droppable()) return;
+    e.preventDefault();
+    card.classList.add('is-drop-target');
+  });
+  card.addEventListener('dragleave', e => {
+    if (e.target === card) card.classList.remove('is-drop-target');
+  });
+  card.addEventListener('drop', e => {
+    card.classList.remove('is-drop-target');
+    if (!droppable() || !e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    attachImageFiles(stateGetter(), e.dataTransfer.files, stripEl);
+  });
+  attachBtn.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+  fileInput.addEventListener('change', () => {
+    attachImageFiles(stateGetter(), fileInput.files, stripEl);
+    fileInput.value = '';
+  });
+}
+
 /* ─── Submit handlers ──────────────────────────────────────── */
 function submitReview(early) {
   el('btn-skip').disabled   = true;
@@ -1327,11 +1472,11 @@ function submitReview(early) {
   const result = {
     round: REVIEW_DATA.round,
     submitted_early: early,
-    sections: REVIEW_DATA.sections.map(s => ({
-      id:      s.id,
-      verdict: rState.verdicts[s.id]?.verdict || 'pending',
-      note:    rState.verdicts[s.id]?.note    || ''
-    }))
+    sections: REVIEW_DATA.sections.map(s => {
+      const v = rState.verdicts[s.id] || {};
+      return { id: s.id, verdict: v.verdict || 'pending', note: v.note || '',
+               ...(v.images && v.images.length && { images: v.images }) };
+    })
   };
   fetch('/submit', {
     method:  'POST',
@@ -1343,14 +1488,27 @@ function submitReview(early) {
 function submitQA(early) {
   el('btn-skip').disabled   = true;
   el('btn-submit').disabled = true;
+  // Images on a question with no selected choice would be silently dropped by
+  // the choice filter below — warn before discarding them.
+  if (!early) {
+    const orphaned = QA_DATA.questions.filter(
+      q => qState.answers[q.id]?.images?.length && !qState.answers[q.id]?.choice
+    );
+    if (orphaned.length &&
+        !confirm(orphaned.length + ' question(s) have an attached image but no selected choice — their images will be dropped. Continue?')) {
+      el('btn-skip').disabled   = false;
+      el('btn-submit').disabled = false;
+      return;
+    }
+  }
   const result = {
     answers: QA_DATA.questions
       .filter(q => qState.answers[q.id]?.choice)
-      .map(q => ({
-        id:     q.id,
-        choice: qState.answers[q.id].choice,
-        note:   qState.answers[q.id].note || ''
-      })),
+      .map(q => {
+        const a = qState.answers[q.id];
+        return { id: q.id, choice: a.choice, note: a.note || '',
+                 ...(a.images && a.images.length && { images: a.images }) };
+      }),
     skipped: early
   };
   fetch('/submit', {
@@ -1579,6 +1737,68 @@ def write_output(path: str, data: dict) -> None:
     _atomic_write(Path(path), json.dumps(data, indent=2))
 
 
+# Raster formats only — SVG is excluded deliberately because it can carry
+# embedded JavaScript. The MIME is also the sole source of the on-disk
+# extension, so this allowlist doubles as the extension allowlist.
+ALLOWED_IMAGE_MIMES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB decoded, per image
+MAX_SUBMIT_BYTES = 256 * 1024 * 1024  # 256 MiB total /submit request body
+
+
+def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
+    """Turn inline base64 `images` on each submitted item into written files.
+
+    Walks review `sections` and Q&A `answers`. For each image: validates the
+    declared MIME against ALLOWED_IMAGE_MIMES, base64-decodes the data,
+    enforces MAX_IMAGE_BYTES, and writes it under `<output dir>/attachments/`
+    with a SERVER-GENERATED filename `r{rnd}-{safeId}-{i}.{ext}`. Surviving
+    paths are collected into the item's `attachments` list. Invalid, oversized,
+    or undecodable images are dropped silently. The `images` key is always
+    removed. Mutates and returns `data`.
+    """
+    attach_dir = Path(output_path).parent / "attachments"
+    items = list(data.get("sections", [])) + list(data.get("answers", []))
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        images = item.pop("images", None)
+        if not isinstance(images, list):
+            continue
+        # Section/question ids are sequential (s1, q1, …), so sanitized names do
+        # not collide; the sub() only neutralizes path separators in the id.
+        safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", str(item.get("id", "x"))) or "x"
+        paths = []
+        for i, img in enumerate(images):
+            if not isinstance(img, dict):
+                continue
+            ext = ALLOWED_IMAGE_MIMES.get(img.get("mime"))
+            if ext is None:
+                continue
+            try:
+                raw = base64.b64decode(img.get("data", ""), validate=True)
+            except (ValueError, TypeError):
+                continue
+            if not raw or len(raw) > MAX_IMAGE_BYTES:
+                continue
+            attach_dir.mkdir(parents=True, exist_ok=True)
+            dest = attach_dir / f"r{rnd}-{safe_id}-{i}.{ext}"
+            try:
+                dest.write_bytes(raw)
+            except OSError as e:
+                print(f"viva · warning: could not write attachment {dest}: {e}",
+                      file=sys.stderr, flush=True)
+                continue
+            paths.append(str(dest))
+        if paths:
+            item["attachments"] = paths
+    return data
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args) -> None:
         pass  # silence access log
@@ -1618,10 +1838,20 @@ class Handler(BaseHTTPRequestHandler):
         path   = parsed.path
         params = parse_qs(parsed.query)
         if path == "/submit":
+            # Loopback-only tool: reject cross-origin POSTs (defense-in-depth
+            # against a malicious page driving the local write sink via CSRF).
+            origin = self.headers.get("Origin", "")
+            if origin and not (origin.startswith("http://127.0.0.1")
+                               or origin.startswith("http://localhost")):
+                self._send(403, "text/plain", b"forbidden origin")
+                return
             try:
                 length = int(self.headers.get("Content-Length", 0))
             except ValueError:
                 self._send(400, "text/plain", b"invalid Content-Length")
+                return
+            if length > MAX_SUBMIT_BYTES:
+                self._send(413, "text/plain", b"payload too large")
                 return
 
             body = self.rfile.read(length)
@@ -1648,6 +1878,7 @@ class Handler(BaseHTTPRequestHandler):
                             "verdict": s["verdict"],
                             "note": s.get("note", ""),
                         })
+            data = extract_attachments(data, out, rnd)
             try:
                 write_output(out, data)
             except (IOError, OSError) as e:

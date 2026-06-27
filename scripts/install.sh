@@ -82,7 +82,7 @@ python ~/.claude/skills/viva/server.py \
   --output .viva/answers.json
 ```
 
-Read `.viva/answers.json` after the server exits. Unanswered questions: use best judgment and proceed.
+Read `.viva/answers.json` after the server exits. If an answer carries an `attachments` array, `Read` each listed image path before incorporating that answer. Unanswered questions: use best judgment and proceed.
 '
 
 # Inject after the "Ask clarifying questions" checklist item
