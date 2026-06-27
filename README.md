@@ -32,7 +32,7 @@ Or install this plugin directly:
 /plugin install viva@viva
 ```
 
-Requires Python 3.11+ and Claude Code.
+Requires Python 3.8+ and Claude Code.
 
 Or install manually via git clone:
 
