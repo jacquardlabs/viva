@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-06-27)
+
+### Code Style
+
+- Align image-attachment UI with reticle/blueprint system
+  ([#20](https://github.com/jacquardlabs/viva/pull/20),
+  [`1ef9d80`](https://github.com/jacquardlabs/viva/commit/1ef9d80f20cc3a9e30142ea96962e8301540b192))
+
+### Features
+
+- Square buttons to reticle look, fix title-block overflow
+  ([#20](https://github.com/jacquardlabs/viva/pull/20),
+  [`1ef9d80`](https://github.com/jacquardlabs/viva/commit/1ef9d80f20cc3a9e30142ea96962e8301540b192))
+
+
 ## v1.2.0 (2026-06-27)
 
 ### Features
