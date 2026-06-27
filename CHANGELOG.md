@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-06-27)
+
+### Features
+
+- Per-section annotation channel → card badges ([#22](https://github.com/jacquardlabs/viva/pull/22),
+  [`533016a`](https://github.com/jacquardlabs/viva/commit/533016ae5fa26abeed6b010e5200ce5e43154a62))
+
+
 ## v1.4.0 (2026-06-27)
 
 ### Features
