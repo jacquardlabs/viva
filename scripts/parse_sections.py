@@ -142,9 +142,24 @@ def _integrity_check(text: str, sections: list[dict], rev_line: int | None) -> N
     )
 
 
-def _load_approved(
+def _load_prior(
     prior_input_path: str | None,
     prior_verdicts_path: str | None,
+) -> tuple[dict | None, dict | None]:
+    """Read the prior round's input and verdict files once, or (None, None)."""
+    if not prior_input_path or not prior_verdicts_path:
+        return None, None
+    try:
+        prior_in = json.loads(Path(prior_input_path).read_text(encoding="utf-8"))
+        prior_v = json.loads(Path(prior_verdicts_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"viva: could not read prior round files: {e}")
+    return prior_in, prior_v
+
+
+def _load_approved(
+    prior_in: dict | None,
+    prior_v: dict | None,
     new_sections: list[dict],
 ) -> list[str]:
     """Carry forward approved IDs by title+content equality.
@@ -153,13 +168,8 @@ def _load_approved(
     AND its content is byte-for-byte identical to the prior approved version.
     Changed content requires re-review.
     """
-    if not prior_input_path or not prior_verdicts_path:
+    if prior_in is None or prior_v is None:
         return []
-    try:
-        prior_in = json.loads(Path(prior_input_path).read_text(encoding="utf-8"))
-        prior_v = json.loads(Path(prior_verdicts_path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"viva: could not read prior round files: {e}")
 
     by_id: dict[str, dict] = {s["id"]: s for s in prior_in.get("sections", [])}
 
@@ -186,6 +196,31 @@ def _load_approved(
     ]
 
 
+def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
+    """Carry prior annotations onto byte-identical new sections, in place.
+
+    Annotations are advisory flags from a pre-review pass. A flag is only still
+    valid if the section's title and content are unchanged; a rewritten section
+    may already have addressed the flag, so its annotations are dropped (the
+    next round's pre-review pass can re-flag). Sections that never carried
+    annotations gain no `annotations` key — output stays byte-identical to a
+    no-annotation run.
+    """
+    if prior_in is None:
+        return
+    prior_annots: dict[tuple[str, str], list] = {
+        (s["title"].strip().lower(), s.get("content", "")): s["annotations"]
+        for s in prior_in.get("sections", [])
+        if s.get("annotations")
+    }
+    if not prior_annots:
+        return
+    for s in new_sections:
+        key = (s["title"].strip().lower(), s.get("content", ""))
+        if key in prior_annots:
+            s["annotations"] = prior_annots[key]
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -201,7 +236,9 @@ def main() -> None:
 
     _integrity_check(text, sections, rev_line)
 
-    approved_ids = _load_approved(args.prior_input, args.prior_verdicts, sections)
+    prior_in, prior_v = _load_prior(args.prior_input, args.prior_verdicts)
+    approved_ids = _load_approved(prior_in, prior_v, sections)
+    _carry_annotations(prior_in, sections)
 
     data = {
         "mode": "review",
