@@ -561,7 +561,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip {
+.action-btn, .qa-btn, .choice-chip, .attach-btn {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -621,7 +621,6 @@ body {
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--border2);
 }
@@ -635,7 +634,6 @@ body {
   line-height: 18px;
   text-align: center;
   border: none;
-  border-radius: 50%;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   cursor: pointer;
@@ -649,16 +647,12 @@ body {
   font-weight: 600;
   letter-spacing: 0.05em;
   cursor: pointer;
-  background: transparent;
   color: var(--text2);
-  border: 1.5px solid var(--border2);
-  border-radius: 5px;
   padding: 5px 10px;
-  transition: border-color 0.12s, color 0.12s;
 }
-.attach-btn:hover { border-color: var(--text3); color: var(--text); }
-.attach-btn:focus-visible { outline: 2px solid var(--text3); outline-offset: 1px; }
-.card.is-drop-target { box-shadow: 0 0 0 2px var(--teal); }
+.attach-btn:hover { --c: var(--text3); color: var(--text); }
+/* neutral active highlight for a drop zone — teal stays reserved for approve */
+.card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -702,7 +696,7 @@ body {
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.btn-skip:focus-visible, .btn-submit:focus-visible {
+.attach-btn:focus-visible, .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
