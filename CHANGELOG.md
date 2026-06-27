@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-06-27)
+
+### Features
+
+- Image attachments in review and Q&A feedback ([#18](https://github.com/jacquardlabs/viva/pull/18),
+  [`9275844`](https://github.com/jacquardlabs/viva/commit/9275844ae40d1c031cbff78f8c0b7dac3c610688))
+
+
 ## v1.1.1 (2026-06-27)
 
 ### Performance Improvements
