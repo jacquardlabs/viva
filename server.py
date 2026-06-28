@@ -1592,9 +1592,9 @@ function syncReviewCard(id) {
 function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
 function deriveVerdict(id) {
-  const cs = rState.verdicts[id]?.comments || [];
-  if (cs.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
-  return cs.some(c => c.type === 'changes') ? 'changes' : 'info';
+  const active = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  if (active.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
+  return active.some(c => c.type === 'changes') ? 'changes' : 'info';
 }
 
 function addComment(id, { type, note, anchor }) {
@@ -1629,7 +1629,7 @@ function syncCard(id) {
 
 function renderPrimaryButton(id) {
   const btn = el('rbtn-primary-' + id); if (!btn) return;
-  const n = (rState.verdicts[id]?.comments || []).length;
+  const n = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note).length;
   btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
   btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
                     : '&#10003; approve';
