@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-06-28)
+
+### Features
+
+- Line anchors, open notes across rounds, confidence triage (#15, #16, #12)
+  ([#24](https://github.com/jacquardlabs/viva/pull/24),
+  [`6de093f`](https://github.com/jacquardlabs/viva/commit/6de093fe6d9070e807b319bebb6e4d5590755b7e))
+
+
 ## v1.6.0 (2026-06-28)
 
 ### Bug Fixes
