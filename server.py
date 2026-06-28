@@ -417,12 +417,64 @@ body {
   white-space: nowrap;
 }
 .annot-msg { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+/* deep-link to a conflicting section (contradiction producer): rendered when an
+   annotation's anchor matches a section id. */
+.annot-jump {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--violet);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.annot-jump:hover { filter: brightness(1.2); }
 .annot-info  { background: var(--teal-bg);   border-color: var(--teal);   }
 .annot-warn  { background: var(--violet-bg);  border-color: var(--violet); }
 .annot-error { background: var(--orange-bg);  border-color: var(--orange); }
 .annot-info  .annot-kind { color: var(--teal);   }
 .annot-warn  .annot-kind { color: var(--violet); }
 .annot-error .annot-kind { color: var(--orange); }
+
+/* round-to-round diff — added/removed lines vs the prior round on a rewritten
+   card. Reuses the verdict slots: added → teal, removed → orange. Presentational
+   only; it never alters a verdict. Shown by default, collapsible. */
+.diff-block { margin-bottom: 12px; border: 1px solid var(--border2); border-radius: 6px; overflow: hidden; }
+.diff-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+.diff-toggle:hover { color: var(--teal); }
+.diff-block.collapsed .diff-toggle { border-bottom: none; }
+.diff-block.collapsed .diff-body { display: none; }
+.diff-body {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.diff-line { display: flex; white-space: pre; padding: 0 9px; }
+.diff-gutter { flex-shrink: 0; width: 1.1em; opacity: 0.6; user-select: none; }
+.diff-add { background: var(--teal-bg);   color: var(--teal);   }
+.diff-del { background: var(--orange-bg); color: var(--orange); }
+.diff-ctx { color: var(--text2); }
+.diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
@@ -1037,19 +1089,56 @@ const ANNOT_SEVERITIES = { info: 1, warn: 1, error: 1 };
 
 // Build the advisory annotation strip for a card from section.annotations.
 // Returns '' when there are none, so a bare section renders exactly as before.
+// Map every section id → title for the current round, so an annotation whose
+// anchor names another section can render a deep-link to it.
+function reviewSectionTitles() {
+  const m = new Map();
+  ((typeof REVIEW_DATA !== 'undefined' && REVIEW_DATA.sections) || [])
+    .forEach(s => m.set(s.id, s.title));
+  return m;
+}
+
 function annotStripHTML(annotations) {
   if (!Array.isArray(annotations) || annotations.length === 0) return '';
+  const titles = reviewSectionTitles();
   const rows = annotations.map(a => {
     a = a || {};
     const sev    = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
     const kind   = esc(a.kind || 'note');
     const msg    = esc(a.message || '');
-    const anchor = a.anchor ? ' title="' + esc(String(a.anchor)) + '"' : '';
-    return '<div class="annot annot-' + sev + '"' + anchor + '>'
+    const anchorId = a.anchor != null ? String(a.anchor) : '';
+    // Anchor that matches a section id → clickable jump; otherwise hover title.
+    const isJump = anchorId && titles.has(anchorId);
+    const titleAttr = (anchorId && !isJump) ? ' title="' + esc(anchorId) + '"' : '';
+    const jump = isJump
+      ? '<button type="button" class="annot-jump" data-target="' + esc(anchorId)
+        + '">' + esc(titles.get(anchorId) || anchorId) + ' ↗</button>'
+      : '';
+    return '<div class="annot annot-' + sev + '"' + titleAttr + '>'
          + '<span class="annot-kind">' + kind + '</span>'
-         + '<span class="annot-msg">' + msg + '</span></div>';
+         + '<span class="annot-msg">' + msg + jump + '</span></div>';
   }).join('');
   return '<div class="annot-strip" aria-label="pre-review annotations">' + rows + '</div>';
+}
+
+// Build the round-to-round diff block from section.diff (rows of {op, text}).
+// Returns '' when there is no diff, so unchanged/new cards render as before.
+// Presentational only — it never touches a verdict. Shown by default; the
+// header toggles it collapsed.
+function diffStripHTML(id, diff) {
+  if (!Array.isArray(diff) || diff.length === 0) return '';
+  const rows = diff.map(d => {
+    d = d || {};
+    const text = esc(d.text || '');
+    if (d.op === '+') return '<div class="diff-line diff-add"><span class="diff-gutter">+</span>' + text + '</div>';
+    if (d.op === '-') return '<div class="diff-line diff-del"><span class="diff-gutter">-</span>' + text + '</div>';
+    if (d.op === '@') return '<div class="diff-hunk">' + text + '</div>';
+    return '<div class="diff-line diff-ctx"><span class="diff-gutter"> </span>' + text + '</div>';
+  }).join('');
+  return '<div class="diff-block" id="rdiff-' + id + '">'
+       + '<button type="button" class="diff-toggle" id="rdiff-toggle-' + id + '">'
+       + '&#9662; changes since last round</button>'
+       + '<div class="diff-body">' + rows + '</div></div>';
 }
 
 function buildReviewCard(section) {
@@ -1073,6 +1162,7 @@ function buildReviewCard(section) {
       <div class="card-body-inner">
         <div class="card-body">
           ${annotStripHTML(section.annotations)}
+          ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="actions">
             <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
@@ -1098,6 +1188,19 @@ function buildReviewCard(section) {
   card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
   card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
   card.querySelector('#rbtn-skip-'    + section.id).addEventListener('click', e => { e.stopPropagation(); skipReviewCard(section.id); });
+
+  const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
+  if (diffToggle) diffToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    card.querySelector('#rdiff-' + section.id).classList.toggle('collapsed');
+  });
+
+  card.querySelectorAll('.annot-jump').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      activateReviewCard(btn.getAttribute('data-target'));
+    });
+  });
 
   const rta = card.querySelector('#rnote-' + section.id);
   rta.addEventListener('input', e => {

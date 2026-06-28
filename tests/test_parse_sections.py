@@ -274,6 +274,97 @@ def test_annotations_dropped_when_content_changed() -> None:
     assert "annotations" not in alpha, "stale annotations must not carry to changed content"
 
 
+def test_diff_computed_for_changed_section() -> None:
+    # A section rewritten between rounds (same title, changed content) gets an
+    # inline diff against its prior-round text so the reviewer sees the delta.
+    prior_content = "## Alpha\n\noriginal body\n"
+    new_content   = "## Alpha\n\nmodified body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [{"id": "s1", "title": "Alpha", "content": prior_content}],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [{"id": "s1", "verdict": "changes", "note": "fix"}],
+    }
+    data = _run_round2(new_content, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    diff = alpha.get("diff")
+    assert diff, "changed section must carry a diff"
+    ops = {(d["op"], d["text"]) for d in diff}
+    assert ("-", "original body") in ops, f"removed line missing in {diff}"
+    assert ("+", "modified body") in ops, f"added line missing in {diff}"
+
+
+def test_diff_keeps_dash_prefixed_content_line() -> None:
+    # A removed line whose text begins with '-- ' must not be mistaken for the
+    # unified-diff '--- ' file header and dropped.
+    prior_content = "## Alpha\n\n-- caveat about retries\n"
+    new_content   = "## Alpha\n\nplain body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [{"id": "s1", "title": "Alpha", "content": prior_content}],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [{"id": "s1", "verdict": "changes", "note": "fix"}],
+    }
+    data = _run_round2(new_content, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    ops = {(d["op"], d["text"]) for d in alpha.get("diff", [])}
+    assert ("-", "-- caveat about retries") in ops, f"dash-prefixed line dropped: {alpha.get('diff')}"
+
+
+def test_no_diff_for_unchanged_carried_section() -> None:
+    # Byte-identical carried-forward section shows no diff — consistent with the
+    # approved-carry-forward logic.
+    content_a = "## Alpha\n\nalpha body\n\n"
+    content_b = "## Beta\n\nbeta body\n"
+    doc = content_a + content_b
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": content_a},
+            {"id": "s2", "title": "Beta",  "content": content_b},
+        ],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "changes",  "note": "fix"},
+        ],
+    }
+    data = _run_round2(doc, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    assert "diff" not in alpha, "unchanged carried section must not carry a diff"
+
+
+def test_no_diff_for_new_section() -> None:
+    # A section with no prior-round counterpart (new, or renamed heading) has
+    # nothing to diff against.
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [{"id": "s1", "title": "Alpha", "content": "## Alpha\n\nbody\n"}],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [{"id": "s1", "verdict": "changes", "note": "fix"}],
+    }
+    new_doc = "## Alpha\n\nbody\n\n## Brand New\n\nfresh content\n"
+    data = _run_round2(new_doc, prior_input, prior_verdicts)
+    new_sec = next(s for s in data["sections"] if s["title"] == "Brand New")
+    assert "diff" not in new_sec, "new section must not carry a diff"
+
+
+def test_no_diff_key_round_one() -> None:
+    # Zero-regression: round 1 (no prior) never produces a diff key.
+    doc = "## A\n\na\n\n## B\n\nb\n"
+    data = run(doc)
+    for s in data["sections"]:
+        assert "diff" not in s, f"unexpected diff key on {s['id']} in round 1"
+
+
 def test_content_verbatim_no_whitespace_drift() -> None:
     doc = "## A\n\n  indented line\n\n\ndouble blank\n\n## B\n\nlast\n"
     data = run(doc)
@@ -323,6 +414,11 @@ def main() -> None:
         test_no_annotations_key_when_absent,
         test_annotations_carried_forward_when_unchanged,
         test_annotations_dropped_when_content_changed,
+        test_diff_computed_for_changed_section,
+        test_diff_keeps_dash_prefixed_content_line,
+        test_no_diff_for_unchanged_carried_section,
+        test_no_diff_for_new_section,
+        test_no_diff_key_round_one,
         test_content_verbatim_no_whitespace_drift,
         test_nonzero_exit_on_missing_doc,
         test_doc_file_override,

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Integration test: the server carries per-section annotations through to the
-client unchanged, and the page ships the annotation-strip renderer + styles.
+"""Integration test: the server carries the round-to-round section `diff`
+through to the client unchanged, and the page ships the diff renderer + styles.
 
-Annotations are advisory badges a pre-review pass writes into review-input.
-The server is a dumb pipe for them (load_input is verbatim), so the contract is:
-GET /input and the /next-round push must both preserve the annotations array,
-and the page must define the renderer that turns them into colored badges.
+The diff is computed by parse_sections.py and rendered inline on a rewritten
+card (added/removed lines vs the prior round). The server is a dumb pipe for it
+(load_input is verbatim), so the contract is: GET /input and the /next-round
+push preserve the diff rows, and the page defines the renderer + collapse toggle.
 """
 import json
 import subprocess
@@ -35,17 +35,18 @@ def main() -> None:
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
-    annots = [
-        {"kind": "grounding", "severity": "warn", "message": "claim unsupported"},
-        {"kind": "drift", "severity": "error", "message": "code says 30s, doc says 60s"},
+    diff = [
+        {"op": " ", "text": "## Goals"},
+        {"op": "-", "text": "old goal"},
+        {"op": "+", "text": "new goal"},
     ]
     r1 = {
         "mode": "review",
         "doc_file": "doc.md",
-        "round": 1,
+        "round": 2,
         "approved_ids": [],
         "sections": [
-            {"id": "s1", "title": "Goals", "content": "goals body", "annotations": annots},
+            {"id": "s1", "title": "Goals", "content": "goals body", "diff": diff},
             {"id": "s2", "title": "Scope", "content": "scope body"},
         ],
     }
@@ -64,29 +65,25 @@ def main() -> None:
             time.sleep(0.2)
         base = url_file.read_text().strip()
 
-        # Pass-through: GET /input preserves the annotations array verbatim.
+        # Pass-through: GET /input preserves the diff rows verbatim.
         data = get(base, "/input")
         s1 = next(s for s in data["sections"] if s["id"] == "s1")
         s2 = next(s for s in data["sections"] if s["id"] == "s2")
-        assert s1.get("annotations") == annots, f"annotations dropped: {s1}"
-        assert "annotations" not in s2, f"s2 must stay bare: {s2}"
+        assert s1.get("diff") == diff, f"diff dropped: {s1}"
+        assert "diff" not in s2, f"s2 must stay bare: {s2}"
 
-        # Pass-through across a round push: /next-round body is reflected in /input.
-        r2 = dict(r1, round=2)
+        # Pass-through across a round push: /next-round body reflected in /input.
+        r2 = dict(r1, round=3)
         post(base, "/next-round?output=" + str(viva / "out2.json"), r2)
         data = get(base, "/input")
         s1 = next(s for s in data["sections"] if s["id"] == "s1")
-        assert s1.get("annotations") == annots, f"annotations lost across round: {s1}"
+        assert s1.get("diff") == diff, f"diff lost across round: {s1}"
 
-        # Page ships the renderer, the strip markup hook, and the three
-        # severity styles mapped onto the existing verdict color slots.
+        # Page ships the renderer, the diff markup hook, the collapse toggle,
+        # and the add/del line styles reusing the verdict color slots.
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
-        for needle in ("function annotStripHTML", "annot-strip",
-                       ".annot-info", ".annot-warn", ".annot-error",
-                       "section.annotations",
-                       # contradiction deep-link: anchor matching a section id
-                       # renders a clickable jump to the conflicting card.
-                       "annot-jump", "reviewSectionTitles", "data-target"):
+        for needle in ("function diffStripHTML", "diff-block", "diff-toggle",
+                       ".diff-add", ".diff-del", "section.diff"):
             assert needle in page, f"page missing: {needle}"
 
         print("OK")
