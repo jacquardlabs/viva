@@ -792,6 +792,14 @@ Wire them in the event block:
 
 Re-run `renderHighlights(id)` whenever a card's content renders (find where `_pendingMarkdown` is rendered into `.section-content` on first open and call `renderHighlights(id)` after).
 
+- [ ] **Step 3b: Rewire dot / stats / advance to the DERIVED verdict** (carried over from Task 5)
+
+Task 5 left three pre-existing functions reading the *stored* `rState.verdicts[id].verdict`, which is no longer set for a comments-only section. Now that `deriveVerdict(id)` exists, point them at it so a section with comments shows the right dot/stats and isn't auto-advanced into:
+- `syncReviewDot(id)` — compute `const verdict = deriveVerdict(id);` instead of reading `rState.verdicts[id]?.verdict`, so a comments-only section shows the `changes`/`info` dot. (An un-acted section derives `pending` → idle dot, as today.)
+- `updateReviewStats()` — count "with feedback" and "approved" off `deriveVerdict(s.id)` for each section, not the stored verdict.
+- `advanceFrom(id)` next-card filter — treat a section as done when `deriveVerdict(s.id) === 'approved'` (was `rState.verdicts[s.id]?.verdict !== 'approved'`), so the cursor skips approved cards and doesn't override a section already carrying comments.
+These are display/navigation derivations; no test-needle change is required, but confirm `python3 tests/test_server_comments_submit.py` still prints `OK` after.
+
 - [ ] **Step 4: Add CSS**
 
 Replace the removed `.anchor-row`/`.anchor-btn`/`.anchor-chip*` CSS (`server.py:770-808`) with comment styles, reusing existing color vars:
