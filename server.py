@@ -663,7 +663,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn {
+.action-btn, .qa-btn, .choice-chip, .attach-btn, .anchor-btn {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -768,24 +768,27 @@ body {
   padding: 5px 10px;
 }
 .anchor-btn:hover { --c: var(--text3); color: var(--text); }
+/* A dismissible anchor token. Reuses the .vbadge tag treatment — square,
+   tinted fill, no border — so it reads as the same family as the verdict
+   badges. Violet is the anchor slot: the ⚓ pin and × frame it in violet, and
+   the fill echoes the violet ::selection highlight the anchor was pinned from. */
 .anchor-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 100%;
   font-size: 11px;
-  padding: 3px 4px 3px 8px;
-  border-radius: 4px;
+  padding: 3px 6px 3px 8px;
   background: var(--violet-bg);
-  border: 1px solid var(--violet);
   color: var(--text2);
 }
+.anchor-chip-pin { flex-shrink: 0; color: var(--violet); }
 .anchor-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .anchor-chip-x {
   flex-shrink: 0;
   border: none;
   background: none;
-  color: var(--text3);
+  color: var(--violet);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
@@ -904,7 +907,8 @@ body {
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.attach-btn:focus-visible, .btn-skip:focus-visible, .btn-submit:focus-visible {
+.attach-btn:focus-visible, .anchor-btn:focus-visible, .anchor-chip-x:focus-visible,
+.btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1620,9 +1624,10 @@ function syncAnchorChip(id) {
   chip.style.display = '';
   chip.title = anchor;
   const short = anchor.length > 60 ? anchor.slice(0, 57) + '…' : anchor;
-  chip.innerHTML = '<span class="anchor-chip-text"></span>'
+  chip.innerHTML = '<span class="anchor-chip-pin">&#9875;</span>'
+                 + '<span class="anchor-chip-text"></span>'
                  + '<button type="button" class="anchor-chip-x" title="Remove anchor" aria-label="Remove anchor">&times;</button>';
-  chip.querySelector('.anchor-chip-text').textContent = '⚓ ' + short;
+  chip.querySelector('.anchor-chip-text').textContent = short;
   chip.querySelector('.anchor-chip-x').onclick = e => { e.stopPropagation(); clearAnchor(id); };
 }
 
