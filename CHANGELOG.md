@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.9.0 (2026-06-28)
+
+### Bug Fixes
+
+- **test**: Update open_notes test needles for pin-btn rename
+  ([#65](https://github.com/jacquardlabs/viva/pull/65),
+  [`697957c`](https://github.com/jacquardlabs/viva/commit/697957cd87e31afd3eb7f0db86045c4d23c834b3))
+
+### Features
+
+- **ui**: Replace keep-open checkbox with pin-note toggle button
+  ([#65](https://github.com/jacquardlabs/viva/pull/65),
+  [`697957c`](https://github.com/jacquardlabs/viva/commit/697957cd87e31afd3eb7f0db86045c4d23c834b3))
+
+
 ## v1.8.1 (2026-06-28)
 
 ### Bug Fixes
