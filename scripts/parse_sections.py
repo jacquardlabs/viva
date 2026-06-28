@@ -290,17 +290,22 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
         store = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         sys.exit(f"viva: could not read open-notes store {open_notes_path}: {e}")
-    open_threads = {
-        title_key: thread.get("exchanges", [])
-        for title_key, thread in store.items()
-        if thread.get("status") == "open" and thread.get("exchanges")
-    }
-    if not open_threads:
-        return
+    by_title: dict[str, list] = {}
+    for t in store.values():
+        if t.get("status") != "open":
+            continue  # settled threads drop from later rounds
+        by_title.setdefault((t.get("title") or "").strip().lower(), []).append({
+            "cid": t.get("cid"),
+            "quote": t.get("quote", ""),
+            "status": t.get("status", "open"),
+            "exchanges": t.get("exchanges", []),
+        })
+    for threads in by_title.values():
+        threads.sort(key=lambda t: t.get("cid", ""))
     for s in new_sections:
-        key = s["title"].strip().lower()
-        if key in open_threads:
-            s["open_notes"] = open_threads[key]
+        key = (s.get("title") or "").strip().lower()
+        if key in by_title:
+            s["open_notes"] = by_title[key]
 
 
 def main() -> None:
