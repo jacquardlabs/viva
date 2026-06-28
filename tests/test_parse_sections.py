@@ -296,6 +296,25 @@ def test_diff_computed_for_changed_section() -> None:
     assert ("+", "modified body") in ops, f"added line missing in {diff}"
 
 
+def test_diff_keeps_dash_prefixed_content_line() -> None:
+    # A removed line whose text begins with '-- ' must not be mistaken for the
+    # unified-diff '--- ' file header and dropped.
+    prior_content = "## Alpha\n\n-- caveat about retries\n"
+    new_content   = "## Alpha\n\nplain body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [{"id": "s1", "title": "Alpha", "content": prior_content}],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [{"id": "s1", "verdict": "changes", "note": "fix"}],
+    }
+    data = _run_round2(new_content, prior_input, prior_verdicts)
+    alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
+    ops = {(d["op"], d["text"]) for d in alpha.get("diff", [])}
+    assert ("-", "-- caveat about retries") in ops, f"dash-prefixed line dropped: {alpha.get('diff')}"
+
+
 def test_no_diff_for_unchanged_carried_section() -> None:
     # Byte-identical carried-forward section shows no diff — consistent with the
     # approved-carry-forward logic.
@@ -396,6 +415,7 @@ def main() -> None:
         test_annotations_carried_forward_when_unchanged,
         test_annotations_dropped_when_content_changed,
         test_diff_computed_for_changed_section,
+        test_diff_keeps_dash_prefixed_content_line,
         test_no_diff_for_unchanged_carried_section,
         test_no_diff_for_new_section,
         test_no_diff_key_round_one,

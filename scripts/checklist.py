@@ -45,20 +45,26 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def _tokens(s: str) -> set:
+    """Lowercased alphanumeric tokens — used for whole-word type inference."""
+    return {t for t in re.split(r"[^a-z0-9]+", s.lower()) if t}
+
+
 def infer_type(doc_file: str, sections: list) -> str | None:
     """Resolve a doc type from the filename or H1, or None if untyped.
 
-    Filename wins (it's the most explicit author signal); the first section's
-    title (usually the H1/preamble) is the fallback. Returns None when nothing
-    matches — the caller then emits no gating.
+    Matches a type name as a whole token, not a substring — 'inspector.md' must
+    not infer 'spec'. Filename wins (the most explicit author signal); the first
+    section's title (usually the H1/preamble) is the fallback. Returns None when
+    nothing matches — the caller then emits no gating and the doc reviews as today.
     """
     haystacks = [doc_file or ""]
     if sections:
         haystacks.append(sections[0].get("title", ""))
     for hay in haystacks:
-        n = _norm(hay)
+        toks = _tokens(hay)
         for doc_type in TEMPLATES:
-            if doc_type in n:
+            if doc_type in toks:
                 return doc_type
     return None
 

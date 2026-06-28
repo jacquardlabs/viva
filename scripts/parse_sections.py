@@ -233,11 +233,15 @@ def _line_diff(prior: str, current: str) -> list[dict]:
     diff = difflib.unified_diff(
         prior.splitlines(), current.splitlines(), n=3, lineterm=""
     )
+    seen_hunk = False
     for line in diff:
-        if line.startswith("--- ") or line.startswith("+++ "):
-            continue
         if line.startswith("@@"):
+            seen_hunk = True
             rows.append({"op": "@", "text": line})
+        # The `--- / +++` file headers only appear before the first hunk; after
+        # that a `--`/`++`-prefixed line is real content, not a header.
+        elif not seen_hunk and (line.startswith("--- ") or line.startswith("+++ ")):
+            continue
         elif line.startswith("+"):
             rows.append({"op": "+", "text": line[1:]})
         elif line.startswith("-"):

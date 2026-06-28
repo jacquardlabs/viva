@@ -80,6 +80,21 @@ def test_case_and_punctuation_insensitive_match() -> None:
     assert out == [], f"normalized heading match failed: {out}"
 
 
+def test_unrelated_filename_not_inferred() -> None:
+    # 'spec' is a substring of 'inspector' — a token-boundary match must NOT
+    # infer a type here, so an untyped doc reviews exactly as today.
+    out = run(secs("Whatever", "Random"), doc_file="inspector.md")
+    assert out == [], f"'inspector.md' must not infer a doc type, got {out}"
+
+
+def test_inferred_type_from_h1_token() -> None:
+    # First section title 'Spec: Caching' carries the type as a whole token.
+    out = run(secs("Spec: Caching", "Problem"), doc_file="notes.md")
+    # spec requires non-goals + testing → both missing → flagged.
+    msgs = " ".join(f["message"].lower() for f in out)
+    assert "non-goals" in msgs and "testing" in msgs, f"H1 type inference failed: {out}"
+
+
 def main() -> None:
     tests = [
         test_spec_missing_nongoals_flagged,
@@ -88,6 +103,8 @@ def main() -> None:
         test_explicit_type_overrides_inference,
         test_inferred_type_from_filename,
         test_case_and_punctuation_insensitive_match,
+        test_unrelated_filename_not_inferred,
+        test_inferred_type_from_h1_token,
     ]
     failed = 0
     for t in tests:
