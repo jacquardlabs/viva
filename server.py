@@ -417,6 +417,20 @@ body {
   white-space: nowrap;
 }
 .annot-msg { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+/* deep-link to a conflicting section (contradiction producer): rendered when an
+   annotation's anchor matches a section id. */
+.annot-jump {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--violet);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.annot-jump:hover { filter: brightness(1.2); }
 .annot-info  { background: var(--teal-bg);   border-color: var(--teal);   }
 .annot-warn  { background: var(--violet-bg);  border-color: var(--violet); }
 .annot-error { background: var(--orange-bg);  border-color: var(--orange); }
@@ -1075,17 +1089,34 @@ const ANNOT_SEVERITIES = { info: 1, warn: 1, error: 1 };
 
 // Build the advisory annotation strip for a card from section.annotations.
 // Returns '' when there are none, so a bare section renders exactly as before.
+// Map every section id → title for the current round, so an annotation whose
+// anchor names another section can render a deep-link to it.
+function reviewSectionTitles() {
+  const m = new Map();
+  ((typeof REVIEW_DATA !== 'undefined' && REVIEW_DATA.sections) || [])
+    .forEach(s => m.set(s.id, s.title));
+  return m;
+}
+
 function annotStripHTML(annotations) {
   if (!Array.isArray(annotations) || annotations.length === 0) return '';
+  const titles = reviewSectionTitles();
   const rows = annotations.map(a => {
     a = a || {};
     const sev    = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
     const kind   = esc(a.kind || 'note');
     const msg    = esc(a.message || '');
-    const anchor = a.anchor ? ' title="' + esc(String(a.anchor)) + '"' : '';
-    return '<div class="annot annot-' + sev + '"' + anchor + '>'
+    const anchorId = a.anchor != null ? String(a.anchor) : '';
+    // Anchor that matches a section id → clickable jump; otherwise hover title.
+    const isJump = anchorId && titles.has(anchorId);
+    const titleAttr = (anchorId && !isJump) ? ' title="' + esc(anchorId) + '"' : '';
+    const jump = isJump
+      ? '<button type="button" class="annot-jump" data-target="' + esc(anchorId)
+        + '">' + esc(titles.get(anchorId) || anchorId) + ' ↗</button>'
+      : '';
+    return '<div class="annot annot-' + sev + '"' + titleAttr + '>'
          + '<span class="annot-kind">' + kind + '</span>'
-         + '<span class="annot-msg">' + msg + '</span></div>';
+         + '<span class="annot-msg">' + msg + jump + '</span></div>';
   }).join('');
   return '<div class="annot-strip" aria-label="pre-review annotations">' + rows + '</div>';
 }
@@ -1162,6 +1193,13 @@ function buildReviewCard(section) {
   if (diffToggle) diffToggle.addEventListener('click', e => {
     e.stopPropagation();
     card.querySelector('#rdiff-' + section.id).classList.toggle('collapsed');
+  });
+
+  card.querySelectorAll('.annot-jump').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      activateReviewCard(btn.getAttribute('data-target'));
+    });
   });
 
   const rta = card.querySelector('#rnote-' + section.id);

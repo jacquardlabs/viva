@@ -83,7 +83,10 @@ def main() -> None:
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
         for needle in ("function annotStripHTML", "annot-strip",
                        ".annot-info", ".annot-warn", ".annot-error",
-                       "section.annotations"):
+                       "section.annotations",
+                       # contradiction deep-link: anchor matching a section id
+                       # renders a clickable jump to the conflicting card.
+                       "annot-jump", "reviewSectionTitles", "data-target"):
             assert needle in page, f"page missing: {needle}"
 
         print("OK")
