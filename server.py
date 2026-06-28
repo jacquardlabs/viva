@@ -1547,7 +1547,7 @@ function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
 function deriveVerdict(id) {
   const cs = rState.verdicts[id]?.comments || [];
-  if (cs.length === 0) return rState.verdicts[id]?.skip ? 'pending' : 'approved';
+  if (cs.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
   return cs.some(c => c.type === 'changes') ? 'changes' : 'info';
 }
 
@@ -1942,8 +1942,7 @@ function submitReview(early) {
     sections: REVIEW_DATA.sections.map(s => {
       const v = rState.verdicts[s.id] || {};
       const comments = v.comments || [];
-      const verdict = comments.length ? (comments.some(c => c.type === 'changes') ? 'changes' : 'info')
-                    : (v.skip ? 'pending' : (v.verdict || 'pending'));
+      const verdict = deriveVerdict(s.id);
       return { id: s.id, verdict,
                ...(comments.length && { comments }),
                ...(v.images && v.images.length && { images: v.images }) };
