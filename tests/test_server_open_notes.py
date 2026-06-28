@@ -69,10 +69,10 @@ def main():
         assert s1.get("open_notes") == exchanges, f"open_notes dropped: {s1}"
         assert "open_notes" not in s2, f"s2 must stay bare: {s2}"
 
-        # Page ships the thread renderer, keep-open control, and settle action.
+        # Page ships the thread renderer, pin-note control, and settle action.
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
-        for needle in ("openNotesHTML", "open-thread", "keep open",
-                       "settleOpenNotes", "rkeepopen-", "section.open_notes"):
+        for needle in ("openNotesHTML", "open-thread", "pin note to next round",
+                       "settleOpenNotes", "rpin-", "section.open_notes"):
             assert needle in page, f"page missing: {needle}"
 
         # /submit preserves open + settle flags; a bare verdict carries neither.
