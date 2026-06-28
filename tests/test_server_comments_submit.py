@@ -37,7 +37,8 @@ def main():
 
         # The page ships the new comment machinery.
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
-        for needle in ("deriveVerdict", "addComment", "comments"):
+        for needle in ("deriveVerdict", "addComment", "comments",
+                       "openCommentPopover", "renderHighlights", "cmt-hl-changes", "add note"):
             assert needle in page, f"page missing: {needle}"
 
         # A section with two typed comments → derived verdict "changes"; a
