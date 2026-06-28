@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.8.1 (2026-06-28)
+
+### Bug Fixes
+
+- **ui**: Realign line-anchor controls to the blueprint design system
+  ([#45](https://github.com/jacquardlabs/viva/pull/45),
+  [`37736cf`](https://github.com/jacquardlabs/viva/commit/37736cf65d8f2e61064703acfe75fc72d071ff5b))
+
+
 ## v1.8.0 (2026-06-28)
 
 ### Features
