@@ -2334,11 +2334,14 @@ class Handler(BaseHTTPRequestHandler):
                     rnd = 0
                 for s in data.get("sections", []):
                     if s.get("verdict") in ("changes", "info"):
+                        comments = s.get("comments") or []
+                        note = (" · ".join(c.get("note", "") for c in comments if c.get("note"))
+                                if comments else s.get("note", ""))
                         _ledger.append({
                             "round": rnd,
                             "section_title": titles.get(s.get("id"), s.get("id", "?")),
                             "verdict": s["verdict"],
-                            "note": s.get("note", ""),
+                            "note": note,
                         })
             data = extract_attachments(data, out, rnd)
             try:
