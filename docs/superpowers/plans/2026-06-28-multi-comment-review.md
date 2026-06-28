@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - **Python 3.8+**, standard library only — no new dependencies (`pyproject.toml`).
+- **Test convention (binding):** CI runs every test as a plain script — `for f in tests/test_*.py; do python "$f"; done`. So each test file **must** define a `main()` that executes all its assertions, end with `if __name__ == "__main__": main()`, and `print("OK")` on success — matching `tests/test_revision_history.py`. Pytest-style `def test_*` functions may exist *in addition* (and are encouraged for clarity), but a `main()` runner that calls each one is REQUIRED, or CI runs the file and asserts nothing (silent green). **Verify by running the file directly: `python3 tests/test_<name>.py` (expect `OK`)** — not via `python3 -m pytest`; pytest is NOT a project dependency and must never be added to `pyproject.toml`/`uv.lock`. Where a task below shows a `pytest` run command or a bare `def test_*` test body, apply this constraint: add the `main()` runner and run the file directly instead.
 - **Single writer per store:** `scripts/open_notes.py` is the only writer of `.viva/open-notes.json`; `scripts/revision_history.py` and `parse_sections.py --open-notes` only read it.
 - **Zero-regression contract:** a section with no `comments` must serialize and render byte-identically to today's approved/bare card; the `/submit` endpoint stays a pure pipe (never strips or injects comment keys).
 - **Vocabulary:** use the existing **settle** / **open-note** / **pin** terms — comment threading state is `open` (default true) and `settled`; never "resolve".
