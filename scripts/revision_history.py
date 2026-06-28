@@ -23,6 +23,45 @@ def esc_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
 
+def flat(text: str) -> str:
+    """Collapse newlines for a single-line list item, verbatim otherwise."""
+    return " ".join((text or "").split())
+
+
+def collect_threads(viva_dir: Path) -> list[dict]:
+    """Read the open-note store, return threads (with exchanges) in title order.
+
+    The store is this session's `.viva/open-notes.json`, the single source of
+    truth for notes that carried across rounds (issue #16). Absent or empty →
+    no threads, so the ledger is byte-identical to a no-open-note session.
+    """
+    path = viva_dir / "open-notes.json"
+    if not path.exists():
+        return []
+    try:
+        store = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    threads = [t for t in store.values() if t.get("exchanges")]
+    return sorted(threads, key=lambda t: t.get("title", "").lower())
+
+
+def build_threads_block(threads: list[dict]) -> str:
+    """Render each open-note thread as the full exchange — note → response."""
+    lines = ["### Open notes", ""]
+    for t in threads:
+        status = t.get("status", "open")
+        lines.append(f"**{flat(t.get('title', '?'))}** — {status}")
+        for x in t.get("exchanges", []):
+            note = flat(x.get("note", "")) or "—"
+            resp = flat(x.get("response", ""))
+            tail = f' → "{resp}"' if resp else ""
+            lines.append(f'- R{x.get("round", "?")} {x.get("verdict", "?")} '
+                         f'— "{note}"{tail}')
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
     """Return (entries, rounds_total, sections_total) from round file pairs."""
     rounds = sorted(
@@ -75,6 +114,9 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     if rounds_total == 0:
         sys.exit(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day)
+    threads = collect_threads(viva_dir)
+    if threads:
+        block = block + "\n\n" + build_threads_block(threads)
     doc = doc_path.read_text()
     if re.search(r"(?m)^## Revision History\s*$", doc):
         new_doc = doc.rstrip("\n") + "\n\n" + block + "\n"

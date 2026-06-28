@@ -5,6 +5,8 @@ Usage:
   python server.py --mode review --input .viva/review-input-r1.json --output .viva/review-r1.json
   python server.py --mode qa     --input .viva/qa-input.json        --output .viva/answers.json
 """
+from __future__ import annotations  # 3.8-safe `X | None` hints (CI matrix runs 3.8)
+
 import argparse
 import base64
 import json
@@ -286,6 +288,23 @@ body {
 
 /* ─── Cards ──────────────────────────────────────────────── */
 .cards { display: flex; flex-direction: column; gap: 6px; }
+
+/* ─── Confidence triage sort (issue #12) ─────────────────── */
+.sort-bar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.sort-toggle {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 4px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: none;
+}
+.sort-toggle:hover { color: var(--text); border-color: var(--text3); }
+.sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
 
 .card {
   position: relative;
@@ -737,6 +756,112 @@ body {
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
+/* ─── Line anchor (issue #15) — pin a note to selected text ─── */
+.anchor-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.anchor-btn {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.anchor-btn:hover { --c: var(--text3); color: var(--text); }
+.anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 11px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 4px;
+  background: var(--violet-bg);
+  border: 1px solid var(--violet);
+  color: var(--text2);
+}
+.anchor-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.anchor-chip-x {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.anchor-chip-x:hover { color: var(--text); }
+/* a section the reviewer is selecting text in, to make the anchor target obvious */
+.section-content::selection,
+.section-content *::selection { background: var(--violet-bg); }
+
+/* ─── Open notes (issue #16) — a note that carries across rounds ─── */
+.open-thread {
+  margin-bottom: 12px;
+  border: 1px solid var(--border2);
+  border-left: 2px solid var(--violet);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.open-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.open-thread-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+.settle-btn {
+  margin-left: auto;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 3px 9px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: none;
+}
+.settle-btn:hover { color: var(--teal); border-color: var(--teal); }
+.open-thread.is-settled { opacity: 0.55; }
+.open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+.exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
+.exchange + .exchange { border-top: 1px solid var(--border); }
+.exchange-q { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.exchange-round {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px; font-weight: 600; color: var(--text3); flex-shrink: 0;
+}
+.exchange-verdict {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px; font-weight: 600; text-transform: uppercase; flex-shrink: 0;
+}
+.exchange-verdict.v-changes { color: var(--orange); }
+.exchange-verdict.v-info    { color: var(--violet); }
+.exchange-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+.exchange-a {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 1px solid var(--border2);
+  color: var(--text3);
+}
+.exchange-a::before { content: '↳ '; }
+.keep-open-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 7px;
+  font-size: 11px; color: var(--text2); cursor: pointer; user-select: none;
+}
+.keep-open-row input { cursor: pointer; }
+
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
 
@@ -939,6 +1064,9 @@ body {
         </div>
       </div>
     </div>
+    <div class="sort-bar" id="sort-bar" style="display:none">
+      <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident">&#8645; document order</button>
+    </div>
     <div class="cards" id="review-cards"></div>
   </div>
 
@@ -1081,6 +1209,7 @@ function initReview() {
   else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
   updateReviewStats();
   renderLedger();
+  setupCardSort();
 }
 
 // Severity → CSS-slot whitelist. Anything off-list (or missing) renders as
@@ -1141,6 +1270,85 @@ function diffStripHTML(id, diff) {
        + '<div class="diff-body">' + rows + '</div></div>';
 }
 
+// Build the open-note thread for a card from section.open_notes (issue #16) —
+// the prior exchange (what was asked, what the agent answered) carried across
+// rounds until the reviewer settles it. Returns '' when there's no open thread,
+// so a bare section renders exactly as before.
+function openNotesHTML(exchanges) {
+  return (exchanges || []).map(x => {
+    x = x || {};
+    const v = String(x.verdict || '');
+    const vClass = (v === 'changes' || v === 'info') ? ' v-' + v : '';
+    return '<div class="exchange">'
+      + '<div class="exchange-q">'
+      +   '<span class="exchange-round">R' + esc(x.round) + '</span>'
+      +   '<span class="exchange-verdict' + vClass + '">' + esc(v) + '</span>'
+      +   '<span class="exchange-note">' + esc(x.note || '') + '</span>'
+      + '</div>'
+      + (x.response ? '<div class="exchange-a">' + esc(x.response) + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function openThreadHTML(section) {
+  const ex = section.open_notes;
+  if (!Array.isArray(ex) || ex.length === 0) return '';
+  return '<div class="open-thread" id="rthread-' + section.id + '">'
+    + '<div class="open-thread-head">'
+    +   '<span class="open-thread-label">open note</span>'
+    +   '<button type="button" class="settle-btn" id="rsettle-' + section.id + '">&#10003; settle</button>'
+    + '</div>'
+    + '<div class="open-thread-body">' + openNotesHTML(ex) + '</div>'
+    + '</div>';
+}
+
+/* ─── Confidence triage (issue #12) ───────────────────────────
+   The generating agent self-annotates each section with a
+   kind:"confidence" annotation carrying basis (sourced|inferred) and level
+   (high|medium|low). The reviewer can reorder the queue weakest-first so
+   attention lands where the agent is shakiest; document order stays the
+   default and remains available. Sorting reads the structured fields off the
+   annotation — never the message text. Sections with no confidence annotation
+   sink to the bottom and keep document order (a doc with none is unchanged). */
+const LEVEL_RANK = { low: 0, medium: 1, high: 2 };
+const BASIS_RANK = { inferred: 0, sourced: 1 };
+
+function confidenceAnnot(section) {
+  return (section.annotations || []).find(a => a && a.kind === 'confidence') || null;
+}
+
+// Smaller = weaker = shown first. inferred+low → 0 (weakest); sourced+high → 5.
+// No confidence annotation → 99, so unknowns sink below ranked cards while
+// CSS `order` ties preserve document (DOM) order among them.
+function weaknessScore(section) {
+  const c = confidenceAnnot(section);
+  if (!c) return 99;
+  const l = LEVEL_RANK[c.level] === undefined ? 1 : LEVEL_RANK[c.level];
+  const b = BASIS_RANK[c.basis] === undefined ? 1 : BASIS_RANK[c.basis];
+  return l * 2 + b;
+}
+
+function applyCardSort() {
+  const conf = rState.sortMode === 'confidence';
+  REVIEW_DATA.sections.forEach(s => {
+    const card = el('rcard-' + s.id);
+    if (card) card.style.order = conf ? String(weaknessScore(s)) : '';
+  });
+  const btn = el('sort-toggle');
+  if (btn) {
+    btn.classList.toggle('is-active', conf);
+    btn.innerHTML = conf ? '&#8645; weakest first' : '&#8645; document order';
+  }
+}
+
+function setupCardSort() {
+  rState.sortMode = 'document';
+  const bar = el('sort-bar');
+  const hasConfidence = REVIEW_DATA.sections.some(s => confidenceAnnot(s));
+  if (bar) bar.style.display = hasConfidence ? '' : 'none';
+  applyCardSort();
+}
+
 function buildReviewCard(section) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -1162,6 +1370,7 @@ function buildReviewCard(section) {
       <div class="card-body-inner">
         <div class="card-body">
           ${annotStripHTML(section.annotations)}
+          ${openThreadHTML(section)}
           ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="actions">
@@ -1173,7 +1382,12 @@ function buildReviewCard(section) {
           <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
             <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
             <div class="thumb-strip" id="rthumbs-${section.id}" aria-live="polite" style="display:none"></div>
-            <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
+            <div class="anchor-row">
+              <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
+              <button type="button" class="anchor-btn" id="ranchor-btn-${section.id}" title="Select text in the section above, then click to pin this note to it">&#9875; anchor selection</button>
+              <span class="anchor-chip" id="ranchor-chip-${section.id}" style="display:none"></span>
+            </div>
+            <label class="keep-open-row"><input type="checkbox" id="rkeepopen-${section.id}"> keep open across rounds</label>
             <input type="file" accept="image/*" multiple style="display:none" id="rfile-${section.id}">
           </div>
         </div>
@@ -1188,6 +1402,16 @@ function buildReviewCard(section) {
   card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
   card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
   card.querySelector('#rbtn-skip-'    + section.id).addEventListener('click', e => { e.stopPropagation(); skipReviewCard(section.id); });
+  card.querySelector('#ranchor-btn-'  + section.id).addEventListener('click', e => { e.stopPropagation(); anchorSelection(section.id); });
+
+  // Open-note controls (issue #16). The settle button exists only when a thread
+  // carried forward; the keep-open checkbox marks a fresh changes/info note to
+  // persist into next round.
+  const settleBtn = card.querySelector('#rsettle-' + section.id);
+  if (settleBtn) settleBtn.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id); });
+  card.querySelector('#rkeepopen-' + section.id).addEventListener('change', e => {
+    (rState.verdicts[section.id] ||= {}).open = e.target.checked;
+  });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
   if (diffToggle) diffToggle.addEventListener('click', e => {
@@ -1330,12 +1554,76 @@ function syncReviewCard(id) {
       ? 'Describe what needs to change… or paste a screenshot'
       : 'What do you need to know? — or paste a screenshot';
     if (ta.value !== note) ta.value = note;
+    syncAnchorChip(id);
     ta.focus();
   } else {
     noteWrap.style.display = 'none';
   }
 
   syncNoteInline(id);
+}
+
+/* ─── Line anchor (issue #15) ─────────────────────────────────
+   A reviewer pins a note to a specific line by selecting text in the
+   rendered section. focus() on the note textarea collapses the selection,
+   so we stash the most recent non-empty selection per card as it happens
+   (selectionchange) and read the stash when the anchor button is clicked.
+   The stored anchor is the selected text — the agent greps the source for
+   it. An un-anchored note carries no `anchor` key (zero-regression). */
+const _lastSelection = {}; // section id → most recent selected text within its content
+
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed) return;
+  const text = sel.toString().trim();
+  if (!text) return;
+  const node = sel.anchorNode;
+  const start = node && node.nodeType === 3 ? node.parentElement : node;
+  const content = start && start.closest ? start.closest('.section-content') : null;
+  if (!content) return;
+  const m = content.id.match(/^rcontent-(.+)$/);
+  if (m) _lastSelection[m[1]] = text;
+});
+
+function anchorSelection(id) {
+  const text = (_lastSelection[id] || '').trim();
+  const btn = el('ranchor-btn-' + id);
+  if (!text) {
+    // Nothing selected — nudge the reviewer rather than anchoring nothing.
+    if (btn) { const prev = btn.textContent; btn.textContent = '⚓ select text first'; setTimeout(() => { btn.textContent = prev; }, 1400); }
+    return;
+  }
+  (rState.verdicts[id] ||= {}).anchor = text;
+  syncAnchorChip(id);
+}
+
+function clearAnchor(id) {
+  if (rState.verdicts[id]) delete rState.verdicts[id].anchor;
+  syncAnchorChip(id);
+}
+
+/* ─── Open notes (issue #16) — settle toggles a carried thread closed ─── */
+function settleOpenNotes(id) {
+  const v = (rState.verdicts[id] ||= {});
+  v.settle = !v.settle;
+  const thread = el('rthread-' + id);
+  const btn = el('rsettle-' + id);
+  if (thread) thread.classList.toggle('is-settled', !!v.settle);
+  if (btn) btn.innerHTML = v.settle ? '&#10003; settled' : '&#10003; settle';
+}
+
+function syncAnchorChip(id) {
+  const chip = el('ranchor-chip-' + id);
+  if (!chip) return;
+  const anchor = rState.verdicts[id]?.anchor;
+  if (!anchor) { chip.style.display = 'none'; chip.innerHTML = ''; return; }
+  chip.style.display = '';
+  chip.title = anchor;
+  const short = anchor.length > 60 ? anchor.slice(0, 57) + '…' : anchor;
+  chip.innerHTML = '<span class="anchor-chip-text"></span>'
+                 + '<button type="button" class="anchor-chip-x" title="Remove anchor" aria-label="Remove anchor">&times;</button>';
+  chip.querySelector('.anchor-chip-text').textContent = '⚓ ' + short;
+  chip.querySelector('.anchor-chip-x').onclick = e => { e.stopPropagation(); clearAnchor(id); };
 }
 
 function syncReviewDot(id) {
@@ -1627,6 +1915,9 @@ function submitReview(early) {
     sections: REVIEW_DATA.sections.map(s => {
       const v = rState.verdicts[s.id] || {};
       return { id: s.id, verdict: v.verdict || 'pending', note: v.note || '',
+               ...(v.anchor && { anchor: v.anchor }),
+               ...(v.open && { open: true }),
+               ...(v.settle && { settle: true }),
                ...(v.images && v.images.length && { images: v.images }) };
     })
   };
@@ -1679,6 +1970,11 @@ el('btn-submit').addEventListener('click', () => {
   if (el('btn-submit').classList.contains('disabled')) return;
   if (REVIEW_DATA) submitReview(false);
   else             submitQA(false);
+});
+
+el('sort-toggle').addEventListener('click', () => {
+  rState.sortMode = rState.sortMode === 'confidence' ? 'document' : 'confidence';
+  applyCardSort();
 });
 
 /* ─── Init — fetch data from server, then build cards ─── */

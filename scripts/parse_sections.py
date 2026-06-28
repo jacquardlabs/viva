@@ -38,6 +38,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--doc-file", help="Relative path shown in UI (defaults to --doc)")
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
+    p.add_argument("--open-notes", help="Open-note store JSON (.viva/open-notes.json)")
     return p.parse_args()
 
 
@@ -271,6 +272,37 @@ def _compute_diffs(prior_in: dict | None, new_sections: list[dict]) -> None:
             s["diff"] = _line_diff(prior_content, s["content"])
 
 
+def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) -> None:
+    """Attach each open thread's exchanges onto the matching section, in place.
+
+    The open-note store (maintained by open_notes.py) is keyed by normalized
+    title. A thread still `open` re-presents on its section's card next round so
+    the reviewer sees the prior exchange; a settled thread is dropped. Sections
+    with no open thread gain no `open_notes` key — output stays byte-identical to
+    a run without the store.
+    """
+    if not open_notes_path:
+        return
+    path = Path(open_notes_path)
+    if not path.exists():
+        return
+    try:
+        store = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"viva: could not read open-notes store {open_notes_path}: {e}")
+    open_threads = {
+        title_key: thread.get("exchanges", [])
+        for title_key, thread in store.items()
+        if thread.get("status") == "open" and thread.get("exchanges")
+    }
+    if not open_threads:
+        return
+    for s in new_sections:
+        key = s["title"].strip().lower()
+        if key in open_threads:
+            s["open_notes"] = open_threads[key]
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -290,6 +322,7 @@ def main() -> None:
     approved_ids = _load_approved(prior_in, prior_v, sections)
     _carry_annotations(prior_in, sections)
     _compute_diffs(prior_in, sections)
+    _attach_open_notes(args.open_notes, sections)
 
     data = {
         "mode": "review",

@@ -44,7 +44,7 @@ VIVA_DIR=~/.claude/skills/viva
 # Clear stale state. Deleting server.url here is safe — the Invocation guard
 # above has already confirmed no prior server is running.
 mkdir -p .viva
-rm -f .viva/server.url .viva/review-input-r*.json .viva/review-r*.json
+rm -f .viva/server.url .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json
 rm -rf .viva/attachments
 
 # Parse, then launch only if the integrity check passed (&&). Bounded poll so a
@@ -85,8 +85,8 @@ The server writes the file atomically (tmp + rename), so `cat` always sees compl
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes` | Rewrite the section using `note` as the instruction. If the verdict carries an `attachments` array, `Read` each image path first — the screenshots are part of the instruction |
-| `info` | Answer the `note` question, rewrite the section to incorporate the answer. If the verdict carries an `attachments` array, `Read` each image path before answering |
+| `changes` | Rewrite the section using `note` as the instruction. If the verdict carries an `anchor` string, that is the exact line/phrase the reviewer selected — locate it in the section's source and target the rewrite there. If the verdict carries an `attachments` array, `Read` each image path first — the screenshots are part of the instruction |
+| `info` | Answer the `note` question, rewrite the section to incorporate the answer. If the verdict carries an `anchor`, the question is about that selected line. If the verdict carries an `attachments` array, `Read` each image path before answering |
 | `pending` | Carry forward unchanged; re-present next round |
 
 - **Every section `approved`** → go to step 5 (finish).
@@ -99,13 +99,22 @@ Now — and only now — load what the rewrite needs. Pull a compact id→headin
 python3 -c "import json
 for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
 ```
-Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. Before rewriting a section whose verdict carries an `attachments` array, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
+Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. When a verdict carries an `anchor`, find that exact text in the section and scope the edit to that line rather than rewriting the whole section. Before rewriting a section whose verdict carries an `attachments` array, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
 
-Re-parse and signal the running server in one block, then loop to step 2:
+Then update the **open-note store** (issue #16). For every section the reviewer left *open* (verdict carried `"open": true`) or *settled* (`"settle": true`), and every section now `approved`, record the outcome — passing a one-line `--response "<id>=<what you changed>"` for each open note you just rewrote:
+```bash
+python3 "$VIVA_DIR/scripts/open_notes.py" update \
+  --store .viva/open-notes.json --round {N} \
+  --verdicts .viva/review-r{N}.json --input .viva/review-input-r{N}.json \
+  --response "s2=Shortened the intro to two sentences"   # repeat per open note
+```
+
+Re-parse (passing `--open-notes` so still-open threads re-present on their cards) and signal the running server in one block, then loop to step 2:
 ```bash
 python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
   --output .viva/review-input-r{N+1}.json --round {N+1} --doc-file <relative/path/to/doc.md> \
   --prior-input .viva/review-input-r{N}.json --prior-verdicts .viva/review-r{N}.json \
+  --open-notes .viva/open-notes.json \
 && curl -s -X POST "$BASE/next-round?output=.viva/review-r{N+1}.json" \
      -H "Content-Type: application/json" -d @.viva/review-input-r{N+1}.json
 ```
@@ -113,13 +122,16 @@ The browser updates in place — no new tab. The parser carries an ID forward as
 
 **5. Finish** (all sections approved)
 
-Signal completion and append the revision history in one block:
+Signal completion and append the revision history in one block. Run the open-note update once more for the final round first, so this round's approvals settle any still-open threads before the ledger is written:
 ```bash
+python3 "$VIVA_DIR/scripts/open_notes.py" update \
+  --store .viva/open-notes.json --round N \
+  --verdicts .viva/review-rN.json --input .viva/review-input-rN.json
 curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
   -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
 python3 "$VIVA_DIR/scripts/revision_history.py" .viva <doc_file>
 ```
-`revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
+`revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response) and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
 
 Then give the sign-off report — how many sections, how many rounds, what was revised — and ask:
 
@@ -142,6 +154,7 @@ git commit -m "docs: sign off on <filename>"
 ├── review-r1.json         ← server writes after round 1
 ├── review-input-r2.json   ← agent writes before round 2 (if needed)
 ├── review-r2.json         ← server writes after round 2
+├── open-notes.json        ← open_notes.py maintains; threads carried across rounds
 └── attachments/           ← server writes image attachments during /submit
 ```
 
@@ -217,3 +230,32 @@ A sidecar is just a JSON list; write it to `.viva/producer-r{N}.json` and merge:
 python3 "$VIVA_DIR/scripts/annotate.py" --input .viva/review-input-r{N}.json \
   --annotations .viva/producer-r{N}.json
 ```
+
+### Confidence triage (sourced vs inferred)
+
+When you generate or revise a doc, self-annotate each section with a **confidence** annotation so the reviewer's attention lands where you are weakest. It is an ordinary annotation with `kind: "confidence"` plus two structured fields:
+
+```json
+{ "kind": "confidence", "severity": "warn", "basis": "inferred", "level": "low", "message": "inferred · low" }
+```
+
+- `basis` — `sourced` (drawn from the repo, the user's input, or a cited fact) or `inferred` (your own guess or extrapolation).
+- `level` — `high | medium | low` confidence in the section's correctness.
+- Set `severity` to mirror the weakness (`error`/`warn` for low/inferred, `info` for high/sourced) so the badge color tracks it, and keep `message` a short human label.
+
+Unlike the pre-review producers above, confidence is the **generating agent's own** self-annotation, emitted at write time. Append the confidence annotation **directly** to each section's `annotations` array in the round's `review-input` — do *not* route it through `annotate.py`, which keeps only `kind`/`severity`/`message`/`anchor` and would drop the `basis`/`level` fields the sort depends on. The server reads `basis`/`level` directly — never the message — to offer a **weakest-first** sort toggle (inferred + low first); document order stays the default. A section with no confidence annotation keeps document order, and a doc with none hides the toggle entirely. `parse_sections.py` carries a confidence annotation forward like any other on a byte-identical section.
+
+---
+
+## Open notes (carried across rounds)
+
+A `changes`/`info` note normally lasts one round — the reviewer flags it, the agent rewrites, and the note is gone. When a rewrite doesn't actually satisfy the reviewer they would have to re-flag from scratch. An **open note** instead persists round to round, accumulating the exchange (what was asked, what the agent answered), until the reviewer **settles** it.
+
+The store lives at `.viva/open-notes.json`, keyed by normalized section title, and `scripts/open_notes.py` is its single writer. The loop is:
+
+1. A verdict carries `"open": true` when the reviewer ticks **keep open across rounds** on a `changes`/`info` note.
+2. In step 4 you run `open_notes.py update`, passing a one-line `--response "<id>=…"` for each open note you rewrote. It appends the exchange to that section's thread.
+3. The re-parse passes `--open-notes`, so still-open threads re-present on their cards next round with the full prior exchange shown.
+4. The reviewer **settles** a thread (verdict `"settle": true`) when satisfied; approving the section settles its open notes too. A settled thread drops from later rounds.
+
+Open notes **compose with verdicts, they don't replace them** — an open note never blocks sign-off on its own. A section signs off when its verdict is `approved`; the open thread is the conversation alongside that decision. At completion `revision_history.py` folds every thread's full exchange into the ledger. A doc where no note was ever kept open behaves exactly as before — no store, no `open_notes` on any card, no Open notes ledger section.

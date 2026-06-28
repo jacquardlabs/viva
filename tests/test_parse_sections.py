@@ -365,6 +365,41 @@ def test_no_diff_key_round_one() -> None:
         assert "diff" not in s, f"unexpected diff key on {s['id']} in round 1"
 
 
+def test_open_notes_attached_by_title() -> None:
+    # An open thread in the store attaches to the matching section by title so
+    # the server can re-present the exchange. A settled thread does not attach.
+    doc = "## Goals\n\nbody\n\n## Scope\n\nscope\n"
+    store = {
+        "goals": {"title": "Goals", "status": "open", "exchanges": [
+            {"round": 1, "verdict": "changes", "note": "tighten", "response": "did it"}]},
+        "scope": {"title": "Scope", "status": "settled", "exchanges": [
+            {"round": 1, "verdict": "info", "note": "x", "response": "y"}]},
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        doc_file = t / "doc.md"
+        doc_file.write_text(doc, encoding="utf-8")
+        sp = t / "open-notes.json"
+        sp.write_text(json.dumps(store), encoding="utf-8")
+        out = t / ".viva" / "review-input-r1.json"
+        subprocess.run([
+            sys.executable, str(SCRIPT), str(doc_file),
+            "--output", str(out), "--round", "1", "--open-notes", str(sp),
+        ], capture_output=True, check=True)
+        data = json.loads(out.read_text())
+    goals = next(s for s in data["sections"] if s["title"] == "Goals")
+    scope = next(s for s in data["sections"] if s["title"] == "Scope")
+    assert goals.get("open_notes") == store["goals"]["exchanges"], goals
+    assert "open_notes" not in scope, "settled thread must not attach"
+
+
+def test_no_open_notes_key_when_store_absent() -> None:
+    # Zero-regression: without --open-notes, no section gains an open_notes key.
+    data = run("## A\n\na\n\n## B\n\nb\n")
+    for s in data["sections"]:
+        assert "open_notes" not in s, f"unexpected open_notes on {s['id']}"
+
+
 def test_content_verbatim_no_whitespace_drift() -> None:
     doc = "## A\n\n  indented line\n\n\ndouble blank\n\n## B\n\nlast\n"
     data = run(doc)
@@ -419,6 +454,8 @@ def main() -> None:
         test_no_diff_for_unchanged_carried_section,
         test_no_diff_for_new_section,
         test_no_diff_key_round_one,
+        test_open_notes_attached_by_title,
+        test_no_open_notes_key_when_store_absent,
         test_content_verbatim_no_whitespace_drift,
         test_nonzero_exit_on_missing_doc,
         test_doc_file_override,

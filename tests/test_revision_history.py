@@ -114,6 +114,30 @@ def main() -> None:
     )
     assert doc5.read_text() == original5, "Doc must be untouched when viva dir is empty"
 
+    # Open-note threads (#16): the committed ledger reflects the FULL exchange —
+    # every round's note AND the agent's response — not just the last note.
+    viva6 = tmp / ".viva6"
+    viva6.mkdir()
+    doc6 = tmp / "doc6.md"
+    doc6.write_text("# Doc6\n\n## Goals\n\nbody\n")
+    write_round(viva6, 1, secs, [{"id": "s1", "verdict": "changes", "note": "tighten intro"}])
+    (viva6 / "open-notes.json").write_text(json.dumps({
+        "goals": {"title": "Goals", "status": "settled", "exchanges": [
+            {"round": 1, "verdict": "changes", "note": "tighten intro", "response": "Shortened."},
+            {"round": 2, "verdict": "info", "note": "why two?", "response": "Rest moved to Scope."},
+        ]},
+    }))
+    run(viva6, doc6)
+    text6 = doc6.read_text()
+    assert "### Open notes" in text6, text6
+    assert "**Goals**" in text6 and "settled" in text6, text6
+    # Both exchanges and both responses are present — the full back-and-forth.
+    assert "tighten intro" in text6 and "Shortened." in text6, text6
+    assert "why two?" in text6 and "Rest moved to Scope." in text6, text6
+
+    # Zero-regression: no open-notes.json → no Open notes section.
+    assert "### Open notes" not in doc.read_text()
+
     print("OK")
 
 
