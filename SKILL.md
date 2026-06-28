@@ -49,6 +49,8 @@ rm -rf .viva/attachments
 
 # Parse, then launch only if the integrity check passed (&&). Bounded poll so a
 # failed start can't hang the turn.
+# DEFAULT no-read path — use this single block UNLESS standing learned
+# preferences exist (see the auto-engage branch right below).
 python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
   --output .viva/review-input-r1.json --round 1 --doc-file <relative/path/to/doc.md> \
 && {
@@ -61,6 +63,29 @@ BASE=$(cat .viva/server.url)
 ```
 
 `$VIVA_DIR` and `$BASE` are reused for every later command — never repeat the `find`. The server opens the browser tab on startup and `$BASE` serves all API calls.
+
+**Learned-preference auto-engage (round 1).** First check for standing learned preferences — this is a cheap state read, not a doc read:
+```bash
+python3 "$VIVA_DIR/scripts/preferences.py" list --store .viva/preferences.json --status standing
+```
+- **None** (the default until sign-offs accumulate) → use the single block above and skip to step 2. Round 1 stays a no-read launch.
+- **Any standing preference** → do **not** use the atomic block. The preference producer must merge its flags *before* the server reads the input at startup, so split round 1 into three ordered steps:
+  1. **Parse** (no launch yet):
+     ```bash
+     python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
+       --output .viva/review-input-r1.json --round 1 --doc-file <relative/path/to/doc.md> \
+     || { echo "viva: parse failed"; exit 1; }
+     ```
+  2. **Run the preference producer** — read the doc, build the `kind: "preference"` sidecar for sections that repeat a standing critique, and merge it with `annotate.py` (see [Learned preferences](#learned-preferences-across-sessions) and [Judgment producers](#judgment-producers-llm-passes)).
+  3. **Launch** the server, which now reads the flagged input:
+     ```bash
+     python3 "$VIVA_DIR/server.py" --mode review \
+       --input .viva/review-input-r1.json --output .viva/review-r1.json &
+     for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
+     [ -f .viva/server.url ] || { echo "viva: launch failed"; exit 1; }
+     BASE=$(cat .viva/server.url)
+     ```
+  This is the one case where round 1 reads the doc — paid deliberately, and only once the reviewer has accumulated standing preferences.
 
 The parser splits verbatim, runs an integrity check, and writes the file directly — never parse by hand or read its output back into context. Parsing rules it implements (for reference):
 - Split level: the highest heading level (fewest `#`s) that occurs more than once — usually `##`. If that level yields more than 20 sections, falls back one level coarser.
@@ -101,6 +126,8 @@ for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['i
 ```
 Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. When a verdict carries an `anchor`, find that exact text in the section and scope the edit to that line rather than rewriting the whole section. Before rewriting a section whose verdict carries an `attachments` array, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
 
+**Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — pull it (`preferences.py list --store .viva/preferences.json --status standing --format json`) and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
+
 Then update the **open-note store** (issue #16). For every section the reviewer left *open* (verdict carried `"open": true`) or *settled* (`"settle": true`), and every section now `approved`, record the outcome — passing a one-line `--response "<id>=<what you changed>"` for each open note you just rewrote:
 ```bash
 python3 "$VIVA_DIR/scripts/open_notes.py" update \
@@ -133,6 +160,18 @@ python3 "$VIVA_DIR/scripts/revision_history.py" .viva <doc_file>
 ```
 `revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response) and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
 
+**Record learned preferences.** This session's notes are the training signal, so before moving on, cluster the `changes`/`info` notes you saw into distinct critiques and record each so a recurring one is learned (issue #17, [Learned preferences](#learned-preferences-across-sessions)). First `list --status all` to see existing preferences, then `record` each cluster — reuse an existing `--id` to reinforce it across sessions (the second session promotes it to standing), or create a new candidate with a short stable id:
+```bash
+python3 "$VIVA_DIR/scripts/preferences.py" list \
+  --store .viva/preferences.json --status all
+python3 "$VIVA_DIR/scripts/preferences.py" record \
+  --store .viva/preferences.json --session "<date> <doc filename>" \
+  --id cite-sources --label "Cite a source for every quantitative claim" \
+  --guidance "When a section states a number, attach a citation or mark it unsourced." \
+  --count <sections this critique hit this session>   # repeat per recurring critique
+```
+A session with no recurring critique records nothing; skip the step.
+
 Then give the sign-off report — how many sections, how many rounds, what was revised — and ask:
 
 > "Sign-off complete. Commit the doc to git? (y/n)"
@@ -155,6 +194,7 @@ git commit -m "docs: sign off on <filename>"
 ├── review-input-r2.json   ← agent writes before round 2 (if needed)
 ├── review-r2.json         ← server writes after round 2
 ├── open-notes.json        ← open_notes.py maintains; threads carried across rounds
+├── preferences.json       ← preferences.py maintains; learned critiques, survives the round-1 clear
 └── attachments/           ← server writes image attachments during /submit
 ```
 
@@ -223,6 +263,7 @@ These need reading and reasoning, so the agent runs them itself: analyze the doc
 - **Claim grounding** (#9) — extract each section's checkable assertions (counts, signatures, file paths, behaviors), verify each against the repo, and emit a `warn`/`error` flag per unsupported or contradicted claim: the offending sentence + what the repo actually shows (`file:line` or "no match found"). Extraction is read-only — never rewrite the section.
 - **Cross-section contradiction** (#10) — compare sections pairwise for incompatible statements (a §3 non-goal that §7 specifies; two sections with conflicting defaults). Emit a `warn` on **both** sides; set each flag's `anchor` to the *other* section's id so the badge names where the conflict lives.
 - **Spec↔code signature drift** (#11, judgment) — the half `drift.py` deliberately skips: compare a described function/endpoint **signature** against the actual code and flag a mismatch (`warn`). Regex can't do this without false drift, so it's a reading task, not a script.
+- **Learned preferences** (#17) — for each *standing* preference (`preferences.py list --store .viva/preferences.json --status standing --format json`), read every new/changed section and emit a `kind: "preference"` `warn` where the section repeats that learned critique: name what to change. Encode the preference id in the message (e.g. `[cite-sources] "80% faster" has no source`) — `annotate.py` keeps only `kind`/`severity`/`message`/`anchor`, so the id has to ride in the text for the human to trace the flag back. Unlike the other judgment producers, this one **auto-engages at round 1 when the store holds any standing preference** (the deliberate round-1 read above); on later rounds it is opt-in, flagging only un-flagged (new/changed) sections.
 
 A sidecar is just a JSON list; write it to `.viva/producer-r{N}.json` and merge:
 
@@ -259,3 +300,41 @@ The store lives at `.viva/open-notes.json`, keyed by normalized section title, a
 4. The reviewer **settles** a thread (verdict `"settle": true`) when satisfied; approving the section settles its open notes too. A settled thread drops from later rounds.
 
 Open notes **compose with verdicts, they don't replace them** — an open note never blocks sign-off on its own. A section signs off when its verdict is `approved`; the open thread is the conversation alongside that decision. At completion `revision_history.py` folds every thread's full exchange into the ledger. A doc where no note was ever kept open behaves exactly as before — no store, no `open_notes` on any card, no Open notes ledger section.
+
+---
+
+## Learned preferences (across sessions)
+
+Reviewers repeat the same critiques across docs — "unsourced numbers", "passive voice", "no rollback step". viva learns these so a recurring issue is pre-applied or pre-flagged before the human re-types it (issue #17).
+
+The store lives at `.viva/preferences.json` and `scripts/preferences.py` is its single writer. Unlike the round files, it is **not** cleared by the round-1 state reset, so it persists across sessions; it is gitignored, so learned preferences are a reviewer's own (per clone), not shared. It is plain JSON — the human can open and edit it, and `preferences.py set --status muted` retires a bad one. Preferences are **suggestions the agent applies, not rules**: a pre-applied fix still rides a normal rewrite to the human, and a pre-flag is an advisory annotation that never gates a verdict. Nothing is auto-accepted.
+
+A preference carries a `status`:
+
+| Status | Meaning | Consulted? |
+|--------|---------|------------|
+| `candidate` | observed in one session | no — recorded, waiting to recur |
+| `standing` | recurred across ≥2 distinct sessions | yes — at rewrite and pre-flag time |
+| `muted` | retired by the human | never; also never auto-promoted |
+
+The semantic work — recognizing that "where's the citation for 80%?" and "unsourced stat" are one critique, and that a new cluster matches an existing preference — is judgment the agent does. `preferences.py` only does the bookkeeping: stable ids, the distinct-session count, and the candidate→standing promotion. The lifecycle is three touch points in the loop:
+
+**Consult — step 4, default-on.** The doc is already open for the rewrite, so applying the standing set costs nothing. Pull it as JSON:
+```bash
+python3 "$VIVA_DIR/scripts/preferences.py" list \
+  --store .viva/preferences.json --status standing --format json
+```
+
+**Pre-flag — round 1 auto, round 2+ opt-in.** A fresh incoming doc has no verdict yet, so the only way to surface a learned critique without the human typing it is the **preference producer** (see [Producers](#judgment-producers-llm-passes)). When the store holds any standing preference, it runs automatically at round 1 — the one case where the round-1 doc read is paid deliberately, and only once the reviewer has earned it by accumulating standing preferences.
+
+**Record — step 5, at sign-off.** This session's `changes`/`info` notes are the training signal. Cluster them into distinct critiques, `list --status all` to see which existing preferences they match, then `record` each — reusing an existing `--id` to reinforce it across sessions (the second session promotes it to standing), or creating a new candidate:
+```bash
+python3 "$VIVA_DIR/scripts/preferences.py" record \
+  --store .viva/preferences.json --session "<date> <doc filename>" \
+  --id cite-sources --label "Cite a source for every quantitative claim" \
+  --guidance "When a section states a number, attach a citation or mark it unsourced." \
+  --count <sections this critique hit this session>
+```
+Use a short, stable `--id` (e.g. `cite-sources`) so a later session matches and reinforces it instead of forking a near-duplicate. Only a signed-off session learns — an abandoned review records nothing.
+
+A project with no `preferences.json` behaves exactly as before: step 4 lists an empty set, no producer auto-engages, and nothing is recorded until the first sign-off.
