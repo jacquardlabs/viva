@@ -22,6 +22,7 @@ or prior round files are specified but can't be read.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
 import sys
@@ -221,6 +222,51 @@ def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
             s["annotations"] = prior_annots[key]
 
 
+def _line_diff(prior: str, current: str) -> list[dict]:
+    """Unified line diff prior→current as a list of {op, text} rows.
+
+    op ∈ '+' (added) | '-' (removed) | ' ' (context) | '@' (hunk header).
+    The leading `--- / +++` file headers are dropped — the card already names
+    the section. Trailing newlines are stripped per line for clean rendering.
+    """
+    rows: list[dict] = []
+    diff = difflib.unified_diff(
+        prior.splitlines(), current.splitlines(), n=3, lineterm=""
+    )
+    for line in diff:
+        if line.startswith("--- ") or line.startswith("+++ "):
+            continue
+        if line.startswith("@@"):
+            rows.append({"op": "@", "text": line})
+        elif line.startswith("+"):
+            rows.append({"op": "+", "text": line[1:]})
+        elif line.startswith("-"):
+            rows.append({"op": "-", "text": line[1:]})
+        else:  # context line — unified_diff prefixes a single space
+            rows.append({"op": " ", "text": line[1:]})
+    return rows
+
+
+def _compute_diffs(prior_in: dict | None, new_sections: list[dict]) -> None:
+    """Attach a round-to-round `diff` onto rewritten sections, in place.
+
+    A section gets a diff when a prior-round section shares its title
+    (case-insensitive) and the content differs. Byte-identical carried sections
+    and brand-new sections (no prior title match) get no `diff` key — output
+    stays byte-identical to a no-prior run for those.
+    """
+    if prior_in is None:
+        return
+    prior_by_title: dict[str, str] = {
+        s["title"].strip().lower(): s.get("content", "")
+        for s in prior_in.get("sections", [])
+    }
+    for s in new_sections:
+        prior_content = prior_by_title.get(s["title"].strip().lower())
+        if prior_content is not None and prior_content != s["content"]:
+            s["diff"] = _line_diff(prior_content, s["content"])
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -239,6 +285,7 @@ def main() -> None:
     prior_in, prior_v = _load_prior(args.prior_input, args.prior_verdicts)
     approved_ids = _load_approved(prior_in, prior_v, sections)
     _carry_annotations(prior_in, sections)
+    _compute_diffs(prior_in, sections)
 
     data = {
         "mode": "review",
