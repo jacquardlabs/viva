@@ -515,7 +515,8 @@ def main():
         assert s1["verdict"] == "changes", s1
         assert [c["cid"] for c in s1["comments"]] == ["s1-c1", "s1-c2"], s1
         assert s1["comments"][0]["anchor"] == {"text": "retries 3x", "offset": 9}
-        assert s2["verdict"] == "approved" and "comments" not in s2 or not s2.get("comments"), s2
+        assert s2["verdict"] == "approved", s2
+        assert not s2.get("comments"), s2
         print("OK")
     finally:
         proc.terminate(); proc.wait(timeout=5)
