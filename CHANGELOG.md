@@ -2,6 +2,45 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-06-28)
+
+### Bug Fixes
+
+- Token-boundary type inference (#13) and dash-prefixed diff lines
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+### Documentation
+
+- Document pre-review producers in SKILL.md (#9, #10, #11, #13)
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+### Features
+
+- Deep-link annotation anchors to conflicting sections
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+- Required-section checklist gating producer ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+- Round-to-round section diff on rewritten cards
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+- Section annotation producers + round-to-round diff (#9, #10, #11, #13, #14)
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+- Shared annotation-merge helper for producers ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+- Spec<->code drift producer (#11), existence checks
+  ([#23](https://github.com/jacquardlabs/viva/pull/23),
+  [`63dd066`](https://github.com/jacquardlabs/viva/commit/63dd066eda2ec81df44a2047924445bfd81bf193))
+
+
 ## v1.5.0 (2026-06-27)
 
 ### Features
