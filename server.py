@@ -663,7 +663,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip, .pin-btn {
+.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -753,17 +753,6 @@ body {
   padding: 5px 10px;
 }
 .attach-btn:hover { --c: var(--text3); color: var(--text); }
-.pin-btn {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--text2);
-  padding: 5px 10px;
-}
-.pin-btn:hover { --c: var(--text3); color: var(--text); }
-.pin-btn.is-pinned { --c: var(--accent); color: var(--accent); }
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
@@ -859,6 +848,54 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
 }
 .exchange-a::before { content: '↳ '; }
+.open-thread-quote {
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* ─── Comment list (this round's freshly-added comments) ─── */
+.cmt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--border);
+}
+.cmt:last-child { border-bottom: none; }
+.cmt-type {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.v-changes .cmt-type { color: var(--orange); }
+.v-info    .cmt-type { color: var(--violet); }
+.cmt-quote {
+  font-style: italic;
+  color: var(--text3);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.cmt-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; flex: 1; }
+.cmt-del {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.cmt-del:hover { color: var(--text); }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -902,7 +939,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible, .pin-btn:focus-visible,
+.attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1292,13 +1329,17 @@ function openNotesHTML(exchanges) {
 function openThreadHTML(section) {
   const ex = section.open_notes;
   if (!Array.isArray(ex) || ex.length === 0) return '';
-  return '<div class="open-thread" id="rthread-' + section.id + '">'
-    + '<div class="open-thread-head">'
-    +   '<span class="open-thread-label">open note</span>'
-    +   '<button type="button" class="settle-btn" id="rsettle-' + section.id + '">&#10003; settle</button>'
-    + '</div>'
-    + '<div class="open-thread-body">' + openNotesHTML(ex) + '</div>'
-    + '</div>';
+  return ex.map(t => {
+    const cid = esc(t.cid || '');
+    const quote = t.quote ? '<span class="open-thread-quote">&#9875; ' + esc(t.quote) + '</span>' : '';
+    return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
+      + '<div class="open-thread-head">'
+      +   '<span class="open-thread-label">open note</span>' + quote
+      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '">&#10003; settle</button>'
+      + '</div>'
+      + '<div class="open-thread-body">' + openNotesHTML(t.exchanges) + '</div>'
+      + '</div>';
+  }).join('');
 }
 
 /* ─── Confidence triage (issue #12) ───────────────────────────
@@ -1397,10 +1438,9 @@ function buildReviewCard(section) {
     e.stopPropagation(); skipReviewCard(section.id);
   });
 
-  // Open-note controls (issue #16). The settle button exists only when a thread
-  // carried forward.
-  const settleBtn = card.querySelector('#rsettle-' + section.id);
-  if (settleBtn) settleBtn.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id); });
+  // Open-note controls (issue #16). Wire each per-cid settle button.
+  card.querySelectorAll('.settle-btn').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
   if (diffToggle) diffToggle.addEventListener('click', e => {
@@ -1425,6 +1465,7 @@ function buildReviewCard(section) {
     e.stopPropagation(); openCommentPopover(section.id, {});
   });
 
+  renderCommentList(section.id);
   return card;
 }
 
@@ -1683,14 +1724,33 @@ function wrapFirst(root, needle, cls) {
   }
 }
 
-/* ─── Open notes (issue #16) — settle toggles a carried thread closed ─── */
-function settleOpenNotes(id) {
-  const v = (rState.verdicts[id] ||= {});
-  v.settle = !v.settle;
-  const thread = el('rthread-' + id);
-  const btn = el('rsettle-' + id);
-  if (thread) thread.classList.toggle('is-settled', !!v.settle);
-  if (btn) btn.innerHTML = v.settle ? '&#10003; settled' : '&#10003; settle';
+/* ─── Open notes (issue #16) — settle by cid, recorded as a comment so the
+   submit carries it to open_notes.py which closes the thread. ─── */
+function settleOpenNotes(id, cid) {
+  const cs = commentsOf(id);
+  let c = cs.find(x => x.cid === cid);
+  if (!c) { c = { cid, type: 'info', note: '', open: true, settled: true }; cs.push(c); }
+  else c.settled = !c.settled;
+  const thread = el('rthread-' + cid);
+  const btn = el('rsettle-' + cid);
+  if (thread) thread.classList.toggle('is-settled', !!c.settled);
+  if (btn) btn.innerHTML = c.settled ? '&#10003; settled' : '&#10003; settle';
+  syncCard(id);
+}
+
+// Paint this round's freshly-added comments under the section (edit/delete each).
+function renderCommentList(id) {
+  const host = el('rclist-' + id); if (!host) return;
+  const cs = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  host.innerHTML = cs.map(c =>
+      '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
+    +   '<span class="cmt-type">' + c.type + '</span>'
+    +   (c.anchor?.text ? '<span class="cmt-quote">&#9875; ' + esc(c.anchor.text) + '</span>' : '')
+    +   '<span class="cmt-note">' + esc(c.note) + '</span>'
+    +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
+    + '</div>').join('');
+  host.querySelectorAll('.cmt-del').forEach(b =>
+    b.onclick = e => { e.stopPropagation(); removeComment(id, b.dataset.cid); });
 }
 
 
@@ -1708,7 +1768,7 @@ function syncReviewDot(id) {
 }
 
 function syncNoteInline(id) {
-  const verdict = rState.verdicts[id]?.verdict;
+  const verdict = deriveVerdict(id);
   const note    = rState.verdicts[id]?.note || '';
   const inlineEl = el('rnote-inline-' + id);
   if (!inlineEl) return;
