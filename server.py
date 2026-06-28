@@ -663,7 +663,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn, .anchor-btn {
+.action-btn, .qa-btn, .choice-chip, .attach-btn, .anchor-btn, .pin-btn {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -753,6 +753,17 @@ body {
   padding: 5px 10px;
 }
 .attach-btn:hover { --c: var(--text3); color: var(--text); }
+.pin-btn {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.pin-btn:hover { --c: var(--text3); color: var(--text); }
+.pin-btn.is-pinned { --c: var(--accent); color: var(--accent); }
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
@@ -858,12 +869,6 @@ body {
   color: var(--text3);
 }
 .exchange-a::before { content: '↳ '; }
-.keep-open-row {
-  display: flex; align-items: center; gap: 6px;
-  margin-top: 7px;
-  font-size: 11px; color: var(--text2); cursor: pointer; user-select: none;
-}
-.keep-open-row input { cursor: pointer; }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -907,7 +912,7 @@ body {
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.attach-btn:focus-visible, .anchor-btn:focus-visible, .anchor-chip-x:focus-visible,
+.attach-btn:focus-visible, .anchor-btn:focus-visible, .pin-btn:focus-visible, .anchor-chip-x:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1389,9 +1394,9 @@ function buildReviewCard(section) {
             <div class="anchor-row">
               <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
               <button type="button" class="anchor-btn" id="ranchor-btn-${section.id}" title="Select text in the section above, then click to pin this note to it">&#9875; anchor selection</button>
+              <button type="button" class="pin-btn" id="rpin-${section.id}" title="Pin note to next round — carries this thread forward until you settle it">&#128204; pin note to next round</button>
               <span class="anchor-chip" id="ranchor-chip-${section.id}" style="display:none"></span>
             </div>
-            <label class="keep-open-row"><input type="checkbox" id="rkeepopen-${section.id}"> keep open across rounds</label>
             <input type="file" accept="image/*" multiple style="display:none" id="rfile-${section.id}">
           </div>
         </div>
@@ -1409,12 +1414,14 @@ function buildReviewCard(section) {
   card.querySelector('#ranchor-btn-'  + section.id).addEventListener('click', e => { e.stopPropagation(); anchorSelection(section.id); });
 
   // Open-note controls (issue #16). The settle button exists only when a thread
-  // carried forward; the keep-open checkbox marks a fresh changes/info note to
-  // persist into next round.
+  // carried forward; the pin button marks a fresh changes/info note to persist
+  // into next round.
   const settleBtn = card.querySelector('#rsettle-' + section.id);
   if (settleBtn) settleBtn.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id); });
-  card.querySelector('#rkeepopen-' + section.id).addEventListener('change', e => {
-    (rState.verdicts[section.id] ||= {}).open = e.target.checked;
+  card.querySelector('#rpin-' + section.id).addEventListener('click', e => {
+    e.stopPropagation();
+    const pinned = e.currentTarget.classList.toggle('is-pinned');
+    (rState.verdicts[section.id] ||= {}).open = pinned;
   });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
