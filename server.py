@@ -1383,22 +1383,11 @@ function buildReviewCard(section) {
           ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="actions">
-            <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
-            <button class="action-btn" id="rbtn-changes-${section.id}">&#8617; request changes</button>
-            <button class="action-btn" id="rbtn-info-${section.id}">? need info</button>
+            <button class="action-btn is-approve" id="rbtn-primary-${section.id}">&#10003; approve</button>
             <button class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55">&#8595; skip</button>
           </div>
-          <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
-            <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
-            <div class="thumb-strip" id="rthumbs-${section.id}" aria-live="polite" style="display:none"></div>
-            <div class="anchor-row">
-              <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
-              <button type="button" class="anchor-btn" id="ranchor-btn-${section.id}" title="Select text in the section above, then click to pin this note to it">&#9875; anchor selection</button>
-              <button type="button" class="pin-btn" id="rpin-${section.id}" title="Pin note to next round — carries this thread forward until you settle it">&#128204; pin note to next round</button>
-              <span class="anchor-chip" id="ranchor-chip-${section.id}" style="display:none"></span>
-            </div>
-            <input type="file" accept="image/*" multiple style="display:none" id="rfile-${section.id}">
-          </div>
+          <div class="comment-list" id="rclist-${section.id}"></div>
+          <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
         </div>
       </div>
     </div>`;
@@ -1407,22 +1396,17 @@ function buildReviewCard(section) {
     toggleReviewCard(section.id);
   });
 
-  card.querySelector('#rbtn-approve-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'approved'); });
-  card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
-  card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
-  card.querySelector('#rbtn-skip-'    + section.id).addEventListener('click', e => { e.stopPropagation(); skipReviewCard(section.id); });
-  card.querySelector('#ranchor-btn-'  + section.id).addEventListener('click', e => { e.stopPropagation(); anchorSelection(section.id); });
+  card.querySelector('#rbtn-primary-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); approveSection(section.id);
+  });
+  card.querySelector('#rbtn-skip-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); skipReviewCard(section.id);
+  });
 
   // Open-note controls (issue #16). The settle button exists only when a thread
-  // carried forward; the pin button marks a fresh changes/info note to persist
-  // into next round.
+  // carried forward.
   const settleBtn = card.querySelector('#rsettle-' + section.id);
   if (settleBtn) settleBtn.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id); });
-  card.querySelector('#rpin-' + section.id).addEventListener('click', e => {
-    e.stopPropagation();
-    const pinned = e.currentTarget.classList.toggle('is-pinned');
-    (rState.verdicts[section.id] ||= {}).open = pinned;
-  });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
   if (diffToggle) diffToggle.addEventListener('click', e => {
@@ -1436,23 +1420,6 @@ function buildReviewCard(section) {
       activateReviewCard(btn.getAttribute('data-target'));
     });
   });
-
-  const rta = card.querySelector('#rnote-' + section.id);
-  rta.addEventListener('input', e => {
-    if (!rState.verdicts[section.id]) rState.verdicts[section.id] = {};
-    rState.verdicts[section.id].note = e.target.value;
-    syncNoteInline(section.id);
-  });
-  rta.addEventListener('click', e => e.stopPropagation());
-
-  wireCapture(
-    () => (rState.verdicts[section.id] ||= {}),
-    card.querySelector('#rnote-' + section.id),
-    card.querySelector('#rthumbs-' + section.id),
-    card.querySelector('#rattach-' + section.id),
-    card.querySelector('#rfile-' + section.id),
-    card
-  );
 
   return card;
 }
@@ -1504,6 +1471,29 @@ function toggleReviewCard(id) {
   }
 }
 
+// Advance past a just-decided card: close it, add is-approved CSS, auto-advance
+// to the next unreviewed card. Does NOT call sync/stats — caller handles that.
+function advanceFrom(id) {
+  el('rcard-' + id)?.classList.remove('is-active');
+  el('rcard-' + id)?.classList.add('is-approved');
+  rState.active = null;
+  const sections = REVIEW_DATA.sections;
+  const idx = sections.findIndex(s => s.id === id);
+  const next = sections.slice(idx + 1).find(s => rState.verdicts[s.id]?.verdict !== 'approved');
+  if (next) setTimeout(() => activateReviewCard(next.id), 80);
+}
+
+// Approve = sign off this section. A section with comments cannot approve; the
+// primary button only reads "approve" when comments.length === 0.
+function approveSection(id) {
+  if ((rState.verdicts[id]?.comments || []).length) return;  // guarded by label
+  (rState.verdicts[id] ||= {}).skip = false;
+  rState.verdicts[id].verdict = 'approved';
+  advanceFrom(id);
+  syncReviewCard(id);
+  updateReviewStats();
+}
+
 function setReviewVerdict(id, verdict) {
   const prev = rState.verdicts[id]?.verdict;
 
@@ -1519,16 +1509,7 @@ function setReviewVerdict(id, verdict) {
   if (!rState.verdicts[id]) rState.verdicts[id] = {};
   rState.verdicts[id].verdict = verdict;
 
-  if (verdict === 'approved') {
-    el('rcard-' + id)?.classList.remove('is-active');
-    el('rcard-' + id)?.classList.add('is-approved');
-    rState.active = null;
-    // Auto-advance to next unreviewed
-    const sections = REVIEW_DATA.sections;
-    const idx = sections.findIndex(s => s.id === id);
-    const next = sections.slice(idx + 1).find(s => rState.verdicts[s.id]?.verdict !== 'approved');
-    if (next) setTimeout(() => activateReviewCard(next.id), 80);
-  }
+  if (verdict === 'approved') advanceFrom(id);
 
   syncReviewCard(id);
   updateReviewStats();
@@ -1536,7 +1517,6 @@ function setReviewVerdict(id, verdict) {
 
 function syncReviewCard(id) {
   const verdict = rState.verdicts[id]?.verdict || null;
-  const note    = rState.verdicts[id]?.note    || '';
 
   // Approved dimming
   el('rcard-' + id)?.classList.toggle('is-approved', verdict === 'approved');
@@ -1546,32 +1526,67 @@ function syncReviewCard(id) {
 
   // Badge
   const badge = el('rbadge-' + id);
-  if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
-  else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
-  else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
-  else badge.style.display = 'none';
-
-  // Action button active states
-  el('rbtn-approve-' + id).className = 'action-btn' + (verdict === 'approved' ? ' sel-approve' : '');
-  el('rbtn-changes-' + id).className = 'action-btn' + (verdict === 'changes'  ? ' sel-changes' : '');
-  el('rbtn-info-'    + id).className = 'action-btn' + (verdict === 'info'     ? ' sel-info'    : '');
-
-  // Textarea show/hide
-  const noteWrap = el('rnote-wrap-' + id);
-  const ta = el('rnote-' + id);
-  if (verdict === 'changes' || verdict === 'info') {
-    noteWrap.style.display = '';
-    ta.placeholder = verdict === 'changes'
-      ? 'Describe what needs to change… or paste a screenshot'
-      : 'What do you need to know? — or paste a screenshot';
-    if (ta.value !== note) ta.value = note;
-    syncAnchorChip(id);
-    ta.focus();
-  } else {
-    noteWrap.style.display = 'none';
+  if (badge) {
+    if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
+    else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
+    else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
+    else badge.style.display = 'none';
   }
 
+  // Primary button
+  renderPrimaryButton(id);
+
   syncNoteInline(id);
+}
+
+/* ─── Comments (multi-comment review) ───────────────────────────
+   A section owns a list of typed comments; the section verdict is DERIVED,
+   never picked. No comments → approved; any `changes` comment → changes;
+   otherwise info. Each comment is an open thread by default (cid-keyed). */
+function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
+
+function deriveVerdict(id) {
+  const cs = rState.verdicts[id]?.comments || [];
+  if (cs.length === 0) return rState.verdicts[id]?.skip ? 'pending' : 'approved';
+  return cs.some(c => c.type === 'changes') ? 'changes' : 'info';
+}
+
+function addComment(id, { type, note, anchor }) {
+  const cs = commentsOf(id);
+  const n = cs.reduce((m, c) => Math.max(m, +(String(c.cid).split('-c')[1] || 0)), 0);
+  cs.push({ cid: id + '-c' + (n + 1), type, note: note || '',
+            ...(anchor && { anchor }), open: true, settled: false });
+  syncCard(id);
+}
+
+function removeComment(id, cid) {
+  const v = rState.verdicts[id]; if (!v) return;
+  v.comments = (v.comments || []).filter(c => c.cid !== cid);
+  syncCard(id);
+}
+
+function setComment(id, cid, patch) {
+  const c = (rState.verdicts[id]?.comments || []).find(x => x.cid === cid);
+  if (c) Object.assign(c, patch);
+  syncCard(id);
+}
+
+// Repaint everything that derives from a card's comments: dot, primary button,
+// highlights (Task 6), thread list (Task 7).
+function syncCard(id) {
+  syncReviewDot(id);
+  renderPrimaryButton(id);
+  if (typeof renderHighlights === 'function') renderHighlights(id);
+  if (typeof renderCommentList === 'function') renderCommentList(id);
+  updateReviewStats();
+}
+
+function renderPrimaryButton(id) {
+  const btn = el('rbtn-primary-' + id); if (!btn) return;
+  const n = (rState.verdicts[id]?.comments || []).length;
+  btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
+  btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
+                    : '&#10003; approve';
 }
 
 /* ─── Line anchor (issue #15) ─────────────────────────────────
@@ -1926,10 +1941,11 @@ function submitReview(early) {
     submitted_early: early,
     sections: REVIEW_DATA.sections.map(s => {
       const v = rState.verdicts[s.id] || {};
-      return { id: s.id, verdict: v.verdict || 'pending', note: v.note || '',
-               ...(v.anchor && { anchor: v.anchor }),
-               ...(v.open && { open: true }),
-               ...(v.settle && { settle: true }),
+      const comments = v.comments || [];
+      const verdict = comments.length ? (comments.some(c => c.type === 'changes') ? 'changes' : 'info')
+                    : (v.skip ? 'pending' : (v.verdict || 'pending'));
+      return { id: s.id, verdict,
+               ...(comments.length && { comments }),
                ...(v.images && v.images.length && { images: v.images }) };
     })
   };
