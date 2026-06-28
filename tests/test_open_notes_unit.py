@@ -52,3 +52,15 @@ def test_approving_section_settles_all_its_threads():
 def test_no_comments_is_noop():
     verdicts = {"sections": [{"id": "s1", "verdict": "approved"}]}
     assert open_notes.update({}, 1, verdicts, _input(), {}) == {}
+
+
+def main():
+    test_two_open_comments_become_two_threads()
+    test_settle_one_thread_by_cid()
+    test_approving_section_settles_all_its_threads()
+    test_no_comments_is_noop()
+    print("OK")
+
+
+if __name__ == "__main__":
+    main()
