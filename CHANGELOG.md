@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.8.0 (2026-06-28)
+
+### Features
+
+- Learned recurring critiques (#17) ([#25](https://github.com/jacquardlabs/viva/pull/25),
+  [`0c393cb`](https://github.com/jacquardlabs/viva/commit/0c393cb2c07fdf01be51059eba3a1b855e81c37e))
+
+
 ## v1.7.0 (2026-06-28)
 
 ### Features
