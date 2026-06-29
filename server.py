@@ -22,6 +22,12 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+# The sibling `scripts/` dir holds the shared schema contract (section_key, the
+# ledger rule, boundary validation). It sits beside server.py in both the repo
+# and the installed skill (`~/.claude/skills/viva/{server.py,scripts/}`).
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+import schema  # noqa: E402
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2606,6 +2612,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, "application/json", b'{"error":"invalid json"}')
                 return
 
+            # Validate review verdicts at the boundary. Q&A submits an `answers`
+            # payload with no `sections`, so it is gated out (shape, not mode).
+            if "sections" in data:
+                try:
+                    schema.validate_verdicts(data)
+                except ValueError as e:
+                    self._send(400, "application/json",
+                               json.dumps({"error": f"invalid verdicts: {e}"}).encode())
+                    return
+
             with _data_lock:
                 out = _output_path
                 titles = {s.get("id"): s.get("title", "")
@@ -2615,16 +2631,10 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     rnd = 0
                 for s in data.get("sections", []):
-                    if s.get("verdict") in ("changes", "info"):
-                        comments = s.get("comments") or []
-                        note = (" · ".join(c.get("note", "") for c in comments if c.get("note"))
-                                if comments else s.get("note", ""))
-                        _ledger.append({
-                            "round": rnd,
-                            "section_title": titles.get(s.get("id"), s.get("id", "?")),
-                            "verdict": s["verdict"],
-                            "note": note,
-                        })
+                    entry = schema.verdict_to_ledger_entry(
+                        rnd, titles.get(s.get("id"), s.get("id", "?")), s)
+                    if entry is not None:
+                        _ledger.append(entry)
             data = extract_attachments(data, out, rnd)
             try:
                 write_output(out, data)
@@ -2651,6 +2661,13 @@ class Handler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 self._send(400, "application/json", b'{"error":"invalid json"}')
                 return
+            if "sections" in new_data:
+                try:
+                    schema.validate_review_input(new_data)
+                except ValueError as e:
+                    self._send(400, "application/json",
+                               json.dumps({"error": f"invalid review-input: {e}"}).encode())
+                    return
             with _data_lock:
                 _input_data = new_data
                 _output_path = output
@@ -2688,6 +2705,14 @@ if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
     _input_data = load_input(args.input)
+    # Validate review-input on read at the boundary. Q&A input has `questions`,
+    # not `sections`, so it is gated out (shape, not mode); a malformed
+    # review-input fails loudly here instead of silently downstream.
+    if "sections" in _input_data:
+        try:
+            schema.validate_review_input(_input_data)
+        except ValueError as e:
+            sys.exit(f"viva: invalid review-input {args.input}: {e}")
     _output_path = args.output
 
     port = find_free_port()

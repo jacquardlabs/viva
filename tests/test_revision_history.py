@@ -138,6 +138,29 @@ def main() -> None:
     # Zero-regression: no open-notes.json → no Open notes section.
     assert "### Open notes" not in doc.read_text()
 
+    # Multi-comment session (#68): the output section carries `comments[]` and
+    # no top-level `note`. The ledger table must show the comments joined with
+    # " · " — pre-schema-consolidation this read `s.get("note")` and the Note
+    # column went blank for every multi-comment section (regression for #26).
+    viva7 = tmp / ".viva7"
+    viva7.mkdir()
+    doc7 = tmp / "doc7.md"
+    doc7.write_text("# Doc7\n\n## Goals\n\nbody\n")
+    (viva7 / "review-input-r1.json").write_text(json.dumps(
+        {"mode": "review", "doc_file": "doc.md", "round": 1,
+         "approved_ids": [], "sections": secs}))
+    (viva7 / "review-r1.json").write_text(json.dumps(
+        {"round": 1, "submitted_early": False, "sections": [
+            {"id": "s1", "verdict": "changes", "comments": [
+                {"cid": "s1-c1", "type": "changes", "note": "tighten the intro"},
+                {"cid": "s1-c2", "type": "changes", "note": "drop the aside"},
+            ]},
+        ]}))
+    run(viva7, doc7)
+    text7 = doc7.read_text()
+    assert "| 1 | Goals | changes | tighten the intro \\u00b7 drop the aside |".replace(
+        "\\u00b7", "·") in text7, text7
+
     print("OK")
 
 

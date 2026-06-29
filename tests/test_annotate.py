@@ -107,6 +107,23 @@ def test_missing_message_skipped() -> None:
     assert "annotations" not in out["sections"][0], "message-less flag must be skipped"
 
 
+def test_confidence_basis_level_preserved() -> None:
+    # Issue #40: a confidence annotation's structured sort keys must survive the
+    # merge so it can route through annotate.py instead of bypassing it.
+    data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
+    out = run(data, [{"id": "s1", "kind": "confidence", "severity": "info",
+                      "message": "inferred from context",
+                      "basis": "inferred", "level": "low"}])
+    annot = out["sections"][0]["annotations"][0]
+    assert annot["basis"] == "inferred", annot
+    assert annot["level"] == "low", annot
+    # An out-of-vocab basis/level is dropped, not passed through verbatim.
+    out2 = run(data, [{"id": "s1", "kind": "confidence", "severity": "info",
+                       "message": "m", "basis": "bogus", "level": "huge"}])
+    annot2 = out2["sections"][0]["annotations"][0]
+    assert "basis" not in annot2 and "level" not in annot2, annot2
+
+
 def main() -> None:
     tests = [
         test_merge_adds_annotation_to_section,
@@ -116,6 +133,7 @@ def main() -> None:
         test_merge_is_idempotent,
         test_empty_sidecar_is_byte_identical,
         test_missing_message_skipped,
+        test_confidence_basis_level_preserved,
     ]
     failed = 0
     for t in tests:
