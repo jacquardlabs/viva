@@ -54,11 +54,21 @@ def test_no_comments_is_noop():
     assert open_notes.update({}, 1, verdicts, _input(), {}) == {}
 
 
+def test_legacy_section_without_comments_is_noop():
+    """A bare legacy section {anchor, note, open} with no `comments` key must
+    not crash open_notes.update and must leave the store empty — an in-flight
+    old round file cannot break the thread store."""
+    verdicts = {"sections": [{"id": "s1", "verdict": "changes", "note": "x",
+                              "anchor": "y", "open": True}]}
+    assert open_notes.update({}, 1, verdicts, _input(), {}) == {}
+
+
 def main():
     test_two_open_comments_become_two_threads()
     test_settle_one_thread_by_cid()
     test_approving_section_settles_all_its_threads()
     test_no_comments_is_noop()
+    test_legacy_section_without_comments_is_noop()
     print("OK")
 
 
