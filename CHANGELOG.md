@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.11.1 (2026-06-29)
+
+### Bug Fixes
+
+- **qa**: Standardize QA submit contract + add end-to-end test
+  ([#70](https://github.com/jacquardlabs/viva/pull/70),
+  [`28a4aba`](https://github.com/jacquardlabs/viva/commit/28a4aba0f26e00106d2b769f92ef0c26171a335b))
+
+
 ## v1.11.0 (2026-06-29)
 
 ### Features
