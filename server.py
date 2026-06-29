@@ -2210,7 +2210,7 @@ function submitQA(early) {
         return { id: q.id, choice: a.choice, note: a.note || '',
                  ...(a.images && a.images.length && { images: a.images }) };
       }),
-    skipped: early
+    submitted_early: early
   };
   fetch('/submit', {
     method:  'POST',
@@ -2468,14 +2468,19 @@ def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
     Walks review `sections` and Q&A `answers`. For each image: validates the
     declared MIME against ALLOWED_IMAGE_MIMES, base64-decodes the data,
     enforces MAX_IMAGE_BYTES, and writes it under `<output dir>/attachments/`
-    with a SERVER-GENERATED filename `r{rnd}-{safeId}-{i}.{ext}`. Surviving
+    with a SERVER-GENERATED filename `{prefix}-{safeId}-{i}.{ext}`, where the
+    prefix follows the item's kind: review `sections` use `r{rnd}` (rounds start
+    at 1), Q&A `answers` use `qa` (there is no round concept in Q&A). Surviving
     paths are collected into the item's `attachments` list. Invalid, oversized,
     or undecodable images are dropped silently. The `images` key is always
     removed. Mutates and returns `data`.
     """
     attach_dir = Path(output_path).parent / "attachments"
-    items = list(data.get("sections", [])) + list(data.get("answers", []))
-    for item in items:
+    # Tag each item with its filename prefix by the list it came from, so Q&A
+    # attachments are never mislabeled with a nonexistent `r0-` round.
+    items = ([("r%d" % rnd, s) for s in data.get("sections", [])]
+             + [("qa", a) for a in data.get("answers", [])])
+    for prefix, item in items:
         if not isinstance(item, dict):
             continue
         images = item.pop("images", None)
@@ -2498,7 +2503,7 @@ def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
             if not raw or len(raw) > MAX_IMAGE_BYTES:
                 continue
             attach_dir.mkdir(parents=True, exist_ok=True)
-            dest = attach_dir / f"r{rnd}-{safe_id}-{i}.{ext}"
+            dest = attach_dir / f"{prefix}-{safe_id}-{i}.{ext}"
             try:
                 dest.write_bytes(raw)
             except OSError as e:
