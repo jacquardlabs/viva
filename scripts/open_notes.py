@@ -40,9 +40,7 @@ import json
 import sys
 from pathlib import Path
 
-
-def norm(title: str) -> str:
-    return (title or "").strip().lower()
+import schema
 
 
 def update(
@@ -77,7 +75,8 @@ def update(
         if verdict == "approved":
             # Settle every open thread belonging to this section (by title).
             for thread in out.values():
-                if norm(thread.get("title")) == norm(title) and thread.get("status") == "open":
+                if (schema.section_key(thread.get("title")) == schema.section_key(title)
+                        and thread.get("status") == "open"):
                     thread["status"] = "settled"
             continue
 

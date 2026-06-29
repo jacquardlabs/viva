@@ -16,6 +16,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import schema
+
 HEADING = "## Revision History"
 
 
@@ -88,19 +90,16 @@ def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
         titles = {s["id"]: s.get("title", s["id"]) for s in inp.get("sections", [])}
         sections_total = max(sections_total, len(inp.get("sections", [])))
         entries.extend(
-            {"round": n,
-             "section": titles.get(s.get("id"), s.get("id", "?")),
-             "verdict": s["verdict"],
-             "note": s.get("note", "")}
-            for s in out.get("sections", [])
-            if s.get("verdict") in ("changes", "info")
+            e for s in out.get("sections", [])
+            if (e := schema.verdict_to_ledger_entry(
+                n, titles.get(s.get("id"), s.get("id", "?")), s)) is not None
         )
     return entries, len(rounds), sections_total
 
 
 def build_block(entries: list[dict], rounds_total: int,
                 sections_total: int, day: str) -> str:
-    revised = len({e["section"] for e in entries})
+    revised = len({e["section_title"] for e in entries})
     lines = [
         f"Signed off via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
@@ -110,7 +109,7 @@ def build_block(entries: list[dict], rounds_total: int,
         lines += ["", "| Round | Section | Verdict | Note |",
                   "|-------|---------|---------|------|"]
         lines += [
-            f"| {e['round']} | {esc_cell(e['section'])} | {e['verdict']} "
+            f"| {e['round']} | {esc_cell(e['section_title'])} | {e['verdict']} "
             f"| {esc_cell(e['note']) or '—'} |"
             for e in entries
         ]

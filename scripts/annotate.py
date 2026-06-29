@@ -56,6 +56,14 @@ def _clean(item: dict) -> dict | None:
     }
     if item.get("anchor"):
         annot["anchor"] = str(item["anchor"])
+    # Confidence annotations carry structured sort keys (issue #40) that the
+    # server's weakest-first toggle reads directly — not via `message`. Preserve
+    # them through the merge so a confidence flag can route through the shared
+    # write path like any other annotation instead of bypassing it.
+    if item.get("basis") in ("sourced", "inferred"):
+        annot["basis"] = item["basis"]
+    if item.get("level") in ("high", "medium", "low"):
+        annot["level"] = item["level"]
     return {"id": str(sid), "annotation": annot}
 
 

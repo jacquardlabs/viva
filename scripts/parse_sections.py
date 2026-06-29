@@ -29,6 +29,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import schema
+
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Parse markdown into viva review-input JSON")
@@ -183,9 +185,9 @@ def _load_approved(
     }
     all_approved = pre_approved | verdict_approved
 
-    # Map title (lower) → content for every approved section
+    # Map section identity → content for every approved section
     approved_content: dict[str, str] = {
-        by_id[sid]["title"].strip().lower(): by_id[sid].get("content", "")
+        schema.section_key(by_id[sid]["title"]): by_id[sid].get("content", "")
         for sid in all_approved
         if sid in by_id
     }
@@ -193,8 +195,8 @@ def _load_approved(
     return [
         s["id"]
         for s in new_sections
-        if s["title"].strip().lower() in approved_content
-        and s["content"] == approved_content[s["title"].strip().lower()]
+        if schema.section_key(s["title"]) in approved_content
+        and s["content"] == approved_content[schema.section_key(s["title"])]
     ]
 
 
@@ -211,14 +213,14 @@ def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
     if prior_in is None:
         return
     prior_annots: dict[tuple[str, str], list] = {
-        (s["title"].strip().lower(), s.get("content", "")): s["annotations"]
+        (schema.section_key(s["title"]), s.get("content", "")): s["annotations"]
         for s in prior_in.get("sections", [])
         if s.get("annotations")
     }
     if not prior_annots:
         return
     for s in new_sections:
-        key = (s["title"].strip().lower(), s.get("content", ""))
+        key = (schema.section_key(s["title"]), s.get("content", ""))
         if key in prior_annots:
             s["annotations"] = prior_annots[key]
 
@@ -263,11 +265,11 @@ def _compute_diffs(prior_in: dict | None, new_sections: list[dict]) -> None:
     if prior_in is None:
         return
     prior_by_title: dict[str, str] = {
-        s["title"].strip().lower(): s.get("content", "")
+        schema.section_key(s["title"]): s.get("content", "")
         for s in prior_in.get("sections", [])
     }
     for s in new_sections:
-        prior_content = prior_by_title.get(s["title"].strip().lower())
+        prior_content = prior_by_title.get(schema.section_key(s["title"]))
         if prior_content is not None and prior_content != s["content"]:
             s["diff"] = _line_diff(prior_content, s["content"])
 
@@ -294,7 +296,7 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
     for t in store.values():
         if t.get("status") != "open":
             continue  # settled threads drop from later rounds
-        by_title.setdefault((t.get("title") or "").strip().lower(), []).append({
+        by_title.setdefault(schema.section_key(t.get("title")), []).append({
             "cid": t.get("cid"),
             "quote": t.get("quote", ""),
             "status": t.get("status", "open"),
@@ -303,7 +305,7 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
     for threads in by_title.values():
         threads.sort(key=lambda t: t.get("cid", ""))
     for s in new_sections:
-        key = (s.get("title") or "").strip().lower()
+        key = schema.section_key(s.get("title"))
         if key in by_title:
             s["open_notes"] = by_title[key]
 
@@ -336,6 +338,9 @@ def main() -> None:
         "approved_ids": approved_ids,
         "sections": sections,
     }
+    # Validate at the boundary, on write, so a malformed round file never
+    # reaches the server or a downstream reader.
+    schema.validate_review_input(data)
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)

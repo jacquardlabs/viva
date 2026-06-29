@@ -251,4 +251,6 @@ Submit button states:
 - The same concept uses the same field name across modes: `submitted_early` is the
   shared "ended before reviewing everything" flag in every mode — never a mode-specific
   alias like `skipped`.
-- Annotation schema: `{kind, severity, message, anchor?}`. Extensions that add structured fields (`basis`, `level` for confidence) must be preserved by any write path that touches the annotation.
+- Annotation schema: `{kind, severity, message, anchor?}`. Structured extensions (`basis`, `level` for confidence) are preserved through the shared merge in `scripts/annotate.py`, so a confidence flag routes through the same write path as any other annotation rather than bypassing it.
+- `GET /input` returns the current review-input merged with `ledger: [...]` — the live running ledger. The `ledger` field is injected by the server at serve time and is **not** part of the `review-input-r{N}.json` file schema that `parse_sections.py` writes.
+- The round shapes are the system's load-bearing contract, defined in one place: `scripts/schema.py` holds the TypedDicts, `section_key()` (the single section-identity normalization), `verdict_to_ledger_entry()` (the single ledger-row rule), and the boundary validators. Adding a field means updating that module and validating at the boundary (on parse write, on server read) — never at the point of use.
