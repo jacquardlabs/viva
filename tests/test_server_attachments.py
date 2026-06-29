@@ -88,10 +88,10 @@ def test_malicious_id_sanitized_no_traversal():
 def test_qa_answers_supported():
     def body(d):
         out = str(d / ".viva" / "answers.json")
-        data = {"answers": [{"id": "q1", "choice": "A", "images": [_img()]}], "skipped": False}
+        data = {"answers": [{"id": "q1", "choice": "A", "images": [_img()]}], "submitted_early": False}
         result = server.extract_attachments(data, out, 0)
         ans = result["answers"][0]
-        assert ans["attachments"] == [str(d / ".viva" / "attachments" / "r0-q1-0.png")], ans
+        assert ans["attachments"] == [str(d / ".viva" / "attachments" / "qa-q1-0.png")], ans
     run_in_tmp(body)
     print("  ok  test_qa_answers_supported")
 
