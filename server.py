@@ -757,7 +757,8 @@ body {
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
 /* ─── Multi-comment review ─── */
-.comment-add-row { display: flex; gap: 8px; margin-top: 6px; }
+.comment-add-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+.cmt-add-hint { font-size: 12px; color: var(--text3); opacity: 0.8; margin-right: auto; }
 .cmt-add-btn {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -1414,7 +1415,7 @@ function buildReviewCard(section) {
           ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="comment-add-row">
-            <button type="button" class="cmt-add-btn" id="rcmtsel-${section.id}" title="Select text above, then add a comment pinned to it">&#9875; comment on selection</button>
+            <span class="cmt-add-hint">&#9875; select text above to comment</span>
             <button type="button" class="cmt-add-btn" id="rcmtnote-${section.id}">+ add note</button>
           </div>
           <div class="actions">
@@ -1455,12 +1456,6 @@ function buildReviewCard(section) {
     });
   });
 
-  card.querySelector('#rcmtsel-' + section.id).addEventListener('click', e => {
-    e.stopPropagation();
-    if (_selRange && _selRange.id === section.id)
-      openCommentPopover(section.id, { anchor: { text: _selRange.text, offset: _selRange.offset } });
-    else { const b = e.currentTarget; const p = b.textContent; b.textContent = '⚓ select text first'; setTimeout(() => b.textContent = p, 1400); }
-  });
   card.querySelector('#rcmtnote-' + section.id).addEventListener('click', e => {
     e.stopPropagation(); openCommentPopover(section.id, {});
   });
@@ -1637,26 +1632,26 @@ function renderPrimaryButton(id) {
 }
 
 /* ─── Selection → popover comment creation ─────────────────────
-   Capture text selections within a section-content and stash them so
-   the "comment on selection" button can read the selection after
-   focus() on the note textarea collapses it. */
-let _selRange = null;  // {id, text, offset} — the LAST non-empty in-content selection
-
-document.addEventListener('selectionchange', () => {
-  const sel = document.getSelection();
-  // Keep the last non-empty selection; a collapse (e.g. clicking the "comment
-  // on selection" button steals focus and collapses the range) must NOT wipe it,
-  // or the button reads null and the popover never opens. Only a fresh non-empty
-  // selection inside a section's content replaces it.
-  if (!sel || sel.isCollapsed) return;
-  const text = sel.toString().trim();
-  if (!text) return;
-  const node = sel.anchorNode;
-  const start = node && node.nodeType === 3 ? node.parentElement : node;
-  const content = start && start.closest ? start.closest('.section-content') : null;
-  if (!content) return;
-  const m = content.id.match(/^rcontent-(.+)$/);
-  if (m) _selRange = { id: m[1], text, offset: offsetInSource(m[1], text) };
+   Finishing a text selection inside a section's rendered content auto-opens
+   the comment popover anchored to that selection — no extra click. `mouseup`
+   is the "selection finished" signal (selectionchange fires continuously
+   mid-drag). A plain click (collapsed selection), a selection outside any
+   section content, or one inside the popover itself is ignored. */
+document.addEventListener('mouseup', () => {
+  // Defer a tick so the browser has finalized the selection after mouseup.
+  setTimeout(() => {
+    const sel = document.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const text = sel.toString().trim();
+    if (!text) return;
+    const node = sel.anchorNode;
+    const start = node && node.nodeType === 3 ? node.parentElement : node;
+    const content = start && start.closest ? start.closest('.section-content') : null;
+    if (!content) return;
+    const m = content.id.match(/^rcontent-(.+)$/);
+    if (!m) return;
+    openCommentPopover(m[1], { anchor: { text, offset: offsetInSource(m[1], text) } });
+  }, 0);
 });
 
 // Char offset of `text` in the section's raw markdown source — the rewrite
