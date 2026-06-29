@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v1.12.0 (2026-06-29)
+
+### Documentation
+
+- Spec for per-comment image attachments ([#71](https://github.com/jacquardlabs/viva/pull/71),
+  [`0426446`](https://github.com/jacquardlabs/viva/commit/04264464445b16deb3f5fffca3ca2df1cd945af1))
+
+### Features
+
+- Per-comment image attachments ([#71](https://github.com/jacquardlabs/viva/pull/71),
+  [`0426446`](https://github.com/jacquardlabs/viva/commit/04264464445b16deb3f5fffca3ca2df1cd945af1))
+
+- Restore comment.attachments instruction in SKILL.md
+  ([#71](https://github.com/jacquardlabs/viva/pull/71),
+  [`0426446`](https://github.com/jacquardlabs/viva/commit/04264464445b16deb3f5fffca3ca2df1cd945af1))
+
+- Restore per-comment image attachments in review feedback (#66)
+  ([#71](https://github.com/jacquardlabs/viva/pull/71),
+  [`0426446`](https://github.com/jacquardlabs/viva/commit/04264464445b16deb3f5fffca3ca2df1cd945af1))
+
+### Testing
+
+- Integration test for comment image attachments
+  ([#71](https://github.com/jacquardlabs/viva/pull/71),
+  [`0426446`](https://github.com/jacquardlabs/viva/commit/04264464445b16deb3f5fffca3ca2df1cd945af1))
+
+
 ## v1.11.1 (2026-06-29)
 
 ### Bug Fixes
