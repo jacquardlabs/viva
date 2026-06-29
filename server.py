@@ -1639,17 +1639,21 @@ function renderPrimaryButton(id) {
    Capture text selections within a section-content and stash them so
    the "comment on selection" button can read the selection after
    focus() on the note textarea collapses it. */
-let _selRange = null;  // {id, text, offset} for the live selection, or null
+let _selRange = null;  // {id, text, offset} — the LAST non-empty in-content selection
 
 document.addEventListener('selectionchange', () => {
   const sel = document.getSelection();
-  if (!sel || sel.isCollapsed) { _selRange = null; return; }
+  // Keep the last non-empty selection; a collapse (e.g. clicking the "comment
+  // on selection" button steals focus and collapses the range) must NOT wipe it,
+  // or the button reads null and the popover never opens. Only a fresh non-empty
+  // selection inside a section's content replaces it.
+  if (!sel || sel.isCollapsed) return;
   const text = sel.toString().trim();
-  if (!text) { _selRange = null; return; }
+  if (!text) return;
   const node = sel.anchorNode;
   const start = node && node.nodeType === 3 ? node.parentElement : node;
   const content = start && start.closest ? start.closest('.section-content') : null;
-  if (!content) { _selRange = null; return; }
+  if (!content) return;
   const m = content.id.match(/^rcontent-(.+)$/);
   if (m) _selRange = { id: m[1], text, offset: offsetInSource(m[1], text) };
 });
