@@ -1705,11 +1705,13 @@ function deriveVerdict(id) {
   return active.some(c => c.type === 'changes') ? 'changes' : 'info';
 }
 
-function addComment(id, { type, note, anchor }) {
+function addComment(id, { type, note, anchor, images }) {
   const cs = commentsOf(id);
   const n = cs.reduce((m, c) => Math.max(m, +(String(c.cid).split('-c')[1] || 0)), 0);
   cs.push({ cid: id + '-c' + (n + 1), type, note: note || '',
-            ...(anchor && { anchor }), open: true, settled: false });
+            ...(anchor && { anchor }),
+            ...(images?.length && { images }),
+            open: true, settled: false });
   syncCard(id);
 }
 
@@ -1773,6 +1775,7 @@ function offsetInSource(id, text) {
 function openCommentPopover(id, { anchor } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
+  const captureState = {};
   pop.innerHTML =
       '<div class="cmt-pop-row">'
     +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
@@ -1780,18 +1783,29 @@ function openCommentPopover(id, { anchor } = {}) {
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
+    + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
+    + '<button type="button" class="attach-btn">&#128206; attach image</button>'
+    + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
   pop.style.display = '';
+
+  const ta        = pop.querySelector('.cmt-pop-note');
+  const strip     = pop.querySelector('.thumb-strip');
+  const attachBtn = pop.querySelector('.attach-btn');
+  const fileInput = pop.querySelector('input[type="file"]');
+  wireCapture(() => captureState, ta, strip, attachBtn, fileInput, el('rcard-' + id));
+
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
   });
-  const ta = pop.querySelector('.cmt-pop-note'); ta.focus();
+  ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
     const note = ta.value.trim();
     if (!note) { ta.placeholder = 'a comment needs a note'; return; }
-    addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined });
+    addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined,
+                     images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
   };
   pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
@@ -2136,7 +2150,8 @@ function wireCapture(stateGetter, textarea, stripEl, attachBtn, fileInput, card)
   // Only accept drops when the note area holding the strip is visible — review
   // cards hide it for approved/pending verdicts, where captured images could
   // neither be seen, removed, nor read by the verdict's consumer.
-  const droppable = () => stripEl.parentElement.style.display !== 'none';
+  const droppable = () => stripEl.isConnected && stripEl.parentElement != null
+                       && stripEl.parentElement.style.display !== 'none';
   textarea.addEventListener('paste', e => {
     const files = Array.from(e.clipboardData?.items || [])
       .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
@@ -2462,18 +2477,51 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB decoded, per image
 MAX_SUBMIT_BYTES = 256 * 1024 * 1024  # 256 MiB total /submit request body
 
 
+def _write_item_images(item: dict, prefix: str, safe_id: str, attach_dir: Path) -> None:
+    """Pop `images` from item, validate, write files, set `attachments`. Mutates item."""
+    images = item.pop("images", None)
+    if not isinstance(images, list):
+        return
+    paths: list[str] = []
+    for i, img in enumerate(images):
+        if not isinstance(img, dict):
+            continue
+        ext = ALLOWED_IMAGE_MIMES.get(img.get("mime"))
+        if ext is None:
+            continue
+        try:
+            raw = base64.b64decode(img.get("data", ""), validate=True)
+        except (ValueError, TypeError):
+            continue
+        if not raw or len(raw) > MAX_IMAGE_BYTES:
+            continue
+        attach_dir.mkdir(parents=True, exist_ok=True)
+        dest = attach_dir / f"{prefix}-{safe_id}-{i}.{ext}"
+        try:
+            dest.write_bytes(raw)
+        except OSError as e:
+            print(f"viva · warning: could not write attachment {dest}: {e}",
+                  file=sys.stderr, flush=True)
+            continue
+        paths.append(str(dest))
+    if paths:
+        item["attachments"] = paths
+
+
 def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
     """Turn inline base64 `images` on each submitted item into written files.
 
-    Walks review `sections` and Q&A `answers`. For each image: validates the
-    declared MIME against ALLOWED_IMAGE_MIMES, base64-decodes the data,
-    enforces MAX_IMAGE_BYTES, and writes it under `<output dir>/attachments/`
-    with a SERVER-GENERATED filename `{prefix}-{safeId}-{i}.{ext}`, where the
-    prefix follows the item's kind: review `sections` use `r{rnd}` (rounds start
-    at 1), Q&A `answers` use `qa` (there is no round concept in Q&A). Surviving
-    paths are collected into the item's `attachments` list. Invalid, oversized,
-    or undecodable images are dropped silently. The `images` key is always
-    removed. Mutates and returns `data`.
+    Walks review `sections` and Q&A `answers`, plus `comments[]` inside each
+    section. For each image: validates the declared MIME against
+    ALLOWED_IMAGE_MIMES, base64-decodes the data, enforces MAX_IMAGE_BYTES, and
+    writes it under `<output dir>/attachments/` with a SERVER-GENERATED filename
+    `{prefix}-{safeId}-{i}.{ext}`, where the prefix follows the item's kind:
+    review `sections` use `r{rnd}` (rounds start at 1), Q&A `answers` use `qa`
+    (there is no round concept in Q&A). Comment images inside sections use the
+    same `r{rnd}` prefix as their section. Surviving paths are collected into the
+    item's `attachments` list. Invalid, oversized, or undecodable images are
+    dropped silently. The `images` key is always removed. Mutates and returns
+    `data`.
     """
     attach_dir = Path(output_path).parent / "attachments"
     # Tag each item with its filename prefix by the list it came from, so Q&A
@@ -2483,36 +2531,15 @@ def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
     for prefix, item in items:
         if not isinstance(item, dict):
             continue
-        images = item.pop("images", None)
-        if not isinstance(images, list):
-            continue
         # Section/question ids are sequential (s1, q1, …), so sanitized names do
         # not collide; the sub() only neutralizes path separators in the id.
         safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", str(item.get("id", "x"))) or "x"
-        paths = []
-        for i, img in enumerate(images):
-            if not isinstance(img, dict):
+        _write_item_images(item, prefix, safe_id, attach_dir)
+        for cmt in item.get("comments", []) or []:
+            if not isinstance(cmt, dict):
                 continue
-            ext = ALLOWED_IMAGE_MIMES.get(img.get("mime"))
-            if ext is None:
-                continue
-            try:
-                raw = base64.b64decode(img.get("data", ""), validate=True)
-            except (ValueError, TypeError):
-                continue
-            if not raw or len(raw) > MAX_IMAGE_BYTES:
-                continue
-            attach_dir.mkdir(parents=True, exist_ok=True)
-            dest = attach_dir / f"{prefix}-{safe_id}-{i}.{ext}"
-            try:
-                dest.write_bytes(raw)
-            except OSError as e:
-                print(f"viva · warning: could not write attachment {dest}: {e}",
-                      file=sys.stderr, flush=True)
-                continue
-            paths.append(str(dest))
-        if paths:
-            item["attachments"] = paths
+            safe_cid = re.sub(r"[^A-Za-z0-9_-]", "_", str(cmt.get("cid", "x"))) or "x"
+            _write_item_images(cmt, prefix, safe_cid, attach_dir)
     return data
 
 

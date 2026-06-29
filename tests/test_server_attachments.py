@@ -106,11 +106,48 @@ def test_no_images_unchanged():
     print("  ok  test_no_images_unchanged")
 
 
+def test_comment_images_extracted():
+    def body(d):
+        out = str(d / ".viva" / "review-r1.json")
+        data = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+            {"cid": "s1-c1", "type": "changes", "note": "fix this",
+             "images": [_img()]}
+        ]}]}
+        result = server.extract_attachments(data, out, 1)
+        sec = result["sections"][0]
+        assert "images" not in sec, "section must not have images key"
+        assert "attachments" not in sec, "section must not have attachments (only comment does)"
+        cmt = sec["comments"][0]
+        assert "images" not in cmt, "images must be stripped from comment"
+        expected = str(d / ".viva" / "attachments" / "r1-s1-c1-0.png")
+        assert cmt["attachments"] == [expected], cmt
+        assert Path(cmt["attachments"][0]).read_bytes() == PNG
+        assert cmt["note"] == "fix this"
+    run_in_tmp(body)
+    print("  ok  test_comment_images_extracted")
+
+
+def test_comment_image_bad_mime_dropped():
+    def body(d):
+        out = str(d / ".viva" / "review-r1.json")
+        data = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+            {"cid": "s1-c1", "type": "changes", "note": "note preserved",
+             "images": [_img(mime="image/svg+xml")]}
+        ]}]}
+        result = server.extract_attachments(data, out, 1)
+        cmt = result["sections"][0]["comments"][0]
+        assert "images" not in cmt, "images key must always be stripped"
+        assert "attachments" not in cmt, "bad mime must not produce attachments"
+        assert cmt["note"] == "note preserved"
+    run_in_tmp(body)
+    print("  ok  test_comment_image_bad_mime_dropped")
+
+
 def test_html_has_capture_wiring():
     html = server.HTML
     for needle in ("function attachImageFiles", "function renderThumbs",
                    "addEventListener('paste'", "thumb-strip", "attach-btn",
-                   "images: "):
+                   "images: ", "captureState"):
         assert needle in html, f"HTML missing: {needle}"
     print("  ok  test_html_has_capture_wiring")
 
@@ -123,8 +160,10 @@ def main():
     test_malicious_id_sanitized_no_traversal()
     test_qa_answers_supported()
     test_no_images_unchanged()
+    test_comment_images_extracted()
+    test_comment_image_bad_mime_dropped()
     test_html_has_capture_wiring()
-    print("OK (8 tests)")
+    print("OK (10 tests)")
 
 
 if __name__ == "__main__":
