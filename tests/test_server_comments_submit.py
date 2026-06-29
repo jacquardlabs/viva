@@ -63,5 +63,55 @@ def main():
         proc.terminate(); proc.wait(timeout=5)
 
 
+def test_comment_images_survive_submit():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _fixtures import PNG_B64  # noqa: E402
+
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"; viva.mkdir()
+    r1 = {"mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+          "sections": [{"id": "s1", "title": "Goals", "content": "## Goals\nfoo\n"}]}
+    (viva / "in1.json").write_text(json.dumps(r1))
+    proc = subprocess.Popen(
+        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
+         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
+         "--no-browser"],
+        cwd=tmp)
+    try:
+        uf = viva / "server.url"
+        for _ in range(50):
+            if uf.exists(): break
+            time.sleep(0.2)
+        assert uf.exists(), "server failed to start"
+        base = uf.read_text().strip()
+
+        post(base, "/submit", {"round": 1, "submitted_early": False, "sections": [
+            {"id": "s1", "verdict": "changes", "comments": [
+                {"cid": "s1-c1", "type": "changes", "note": "update this",
+                 "open": True, "settled": False,
+                 "images": [{"data": PNG_B64, "mime": "image/png"}]}
+            ]}
+        ]})
+
+        out_path = viva / "out1.json"
+        for _ in range(20):
+            if out_path.exists(): break
+            time.sleep(0.1)
+
+        out = json.loads(out_path.read_text())
+        s1 = next(s for s in out["sections"] if s["id"] == "s1")
+        cmt = s1["comments"][0]
+        assert "images" not in cmt, "images must be stripped by extract_attachments"
+        assert "attachments" in cmt, "attachments must be set on comment"
+        assert cmt["attachments"][0].endswith(".png"), cmt["attachments"]
+        attach_path = Path(cmt["attachments"][0])
+        assert attach_path.exists(), f"file not written: {attach_path}"
+        assert "s1-c1" in attach_path.name, f"cid missing from filename: {attach_path.name}"
+        print("  ok  test_comment_images_survive_submit")
+    finally:
+        proc.terminate(); proc.wait(timeout=5)
+
+
 if __name__ == "__main__":
     main()
+    test_comment_images_survive_submit()
