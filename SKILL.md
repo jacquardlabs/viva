@@ -110,10 +110,10 @@ The server writes the file atomically (tmp + rename), so `cat` always sees compl
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes`/`info` | The section carries a `comments` array. For **each** comment: apply its `note` as a targeted edit (or, for `type: "info"`, answer the question and fold the answer in). When the comment has an `anchor`, scope the edit to `anchor.text` at `anchor.offset` in the section source — the offset disambiguates a phrase that appears twice; an un-anchored comment scopes to the whole section. If a comment carries an `attachments` array, `Read` each path first. |
+| `changes`/`info` | The section carries a `comments` array. For **each** comment: apply its `note` as a targeted edit (or, for `type: "info"`, answer the question and fold the answer in). When the comment has an `anchor`, scope the edit to `anchor.text` at `anchor.offset` in the section source — the offset disambiguates a phrase that appears twice; an un-anchored comment scopes to the whole section. |
 | `pending` | Carry forward unchanged; re-present next round |
 
-The verdict is **derived** from the section's comments: no `comments` → `approved`; any comment with `type: "changes"` → section `changes`; otherwise (only `info` comments) → section `info`.
+The verdict is **derived** from the section's active comments (unsettled, non-empty): no active comments → `approved` if the reviewer approved, otherwise `pending`; any active comment with `type: "changes"` → section `changes`; otherwise (only active `info` comments) → section `info`.
 
 - **Every section `approved`** → go to step 5 (finish).
 - **Any `changes`/`info`** → rewrite and re-arm the next round (step 4).
@@ -125,7 +125,7 @@ Now — and only now — load what the rewrite needs. Pull a compact id→headin
 python3 -c "import json
 for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
 ```
-Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. Loop over `comments[]` for the section; each comment's `anchor.offset` locates its edit within the section source and `anchor.text` confirms it; an un-anchored comment scopes to the whole section. Before rewriting a section whose comments carry `attachments`, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
+Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. Loop over `comments[]` for the section; each comment's `anchor.offset` locates its edit within the section source and `anchor.text` confirms it; an un-anchored comment scopes to the whole section.
 
 **Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — pull it (`preferences.py list --store .viva/preferences.json --status standing --format json`) and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
 

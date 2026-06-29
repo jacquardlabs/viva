@@ -1532,7 +1532,7 @@ function advanceFrom(id) {
 // Approve = sign off this section. A section with comments cannot approve; the
 // primary button only reads "approve" when comments.length === 0.
 function approveSection(id) {
-  if ((rState.verdicts[id]?.comments || []).length) return;  // guarded by label
+  if (activeComments(id).length) return;  // guarded by label
   (rState.verdicts[id] ||= {}).skip = false;
   rState.verdicts[id].verdict = 'approved';
   advanceFrom(id);
@@ -1587,12 +1587,19 @@ function syncReviewCard(id) {
 
 /* ─── Comments (multi-comment review) ───────────────────────────
    A section owns a list of typed comments; the section verdict is DERIVED,
-   never picked. No comments → approved; any `changes` comment → changes;
-   otherwise info. Each comment is an open thread by default (cid-keyed). */
+   never picked. No active comments → approved (if reviewer approved) or pending;
+   any `changes` comment → changes; otherwise info. Each comment is an open
+   thread by default (cid-keyed). */
 function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
+// Comments that are real, unsettled feedback — the basis for the verdict, the
+// button count, the rendered list, and whether a section can be approved.
+function activeComments(id) {
+  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+}
+
 function deriveVerdict(id) {
-  const active = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  const active = activeComments(id);
   if (active.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
   return active.some(c => c.type === 'changes') ? 'changes' : 'info';
 }
@@ -1611,12 +1618,6 @@ function removeComment(id, cid) {
   syncCard(id);
 }
 
-function setComment(id, cid, patch) {
-  const c = (rState.verdicts[id]?.comments || []).find(x => x.cid === cid);
-  if (c) Object.assign(c, patch);
-  syncCard(id);
-}
-
 // Repaint everything that derives from a card's comments: dot, primary button,
 // highlights (Task 6), thread list (Task 7).
 function syncCard(id) {
@@ -1629,7 +1630,7 @@ function syncCard(id) {
 
 function renderPrimaryButton(id) {
   const btn = el('rbtn-primary-' + id); if (!btn) return;
-  const n = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note).length;
+  const n = activeComments(id).length;
   btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
   btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
                     : '&#10003; approve';
@@ -1677,7 +1678,7 @@ function openCommentPopover(id, { anchor } = {}) {
     +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">&#9875; ' + esc(anchor.text) + '</div>' : '')
-    + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change… or paste a screenshot"></textarea>'
+    + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
   pop.style.display = '';
@@ -1745,7 +1746,7 @@ function settleOpenNotes(id, cid) {
 // Paint this round's freshly-added comments under the section (edit/delete each).
 function renderCommentList(id) {
   const host = el('rclist-' + id); if (!host) return;
-  const cs = (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  const cs = activeComments(id);
   host.innerHTML = cs.map(c =>
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
@@ -2049,8 +2050,7 @@ function submitReview(early) {
       const comments = v.comments || [];
       const verdict = deriveVerdict(s.id);
       return { id: s.id, verdict,
-               ...(comments.length && { comments }),
-               ...(v.images && v.images.length && { images: v.images }) };
+               ...(comments.length && { comments }) };
     })
   };
   fetch('/submit', {
