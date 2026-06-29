@@ -110,9 +110,10 @@ The server writes the file atomically (tmp + rename), so `cat` always sees compl
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes` | Rewrite the section using `note` as the instruction. If the verdict carries an `anchor` string, that is the exact line/phrase the reviewer selected — locate it in the section's source and target the rewrite there. If the verdict carries an `attachments` array, `Read` each image path first — the screenshots are part of the instruction |
-| `info` | Answer the `note` question, rewrite the section to incorporate the answer. If the verdict carries an `anchor`, the question is about that selected line. If the verdict carries an `attachments` array, `Read` each image path before answering |
+| `changes`/`info` | The section carries a `comments` array. For **each** comment: apply its `note` as a targeted edit (or, for `type: "info"`, answer the question and fold the answer in). When the comment has an `anchor`, scope the edit to `anchor.text` at `anchor.offset` in the section source — the offset disambiguates a phrase that appears twice; an un-anchored comment scopes to the whole section. If a comment carries an `attachments` array, `Read` each path first. |
 | `pending` | Carry forward unchanged; re-present next round |
+
+The verdict is **derived** from the section's comments: no `comments` → `approved`; any comment with `type: "changes"` → section `changes`; otherwise (only `info` comments) → section `info`.
 
 - **Every section `approved`** → go to step 5 (finish).
 - **Any `changes`/`info`** → rewrite and re-arm the next round (step 4).
@@ -124,16 +125,16 @@ Now — and only now — load what the rewrite needs. Pull a compact id→headin
 python3 -c "import json
 for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
 ```
-Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. When a verdict carries an `anchor`, find that exact text in the section and scope the edit to that line rather than rewriting the whole section. Before rewriting a section whose verdict carries an `attachments` array, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
+Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context), then rewrite every `changes`/`info` section directly in the source file. Preserve each heading's text exactly — next-round title matching depends on it. Loop over `comments[]` for the section; each comment's `anchor.offset` locates its edit within the section source and `anchor.text` confirms it; an un-anchored comment scopes to the whole section. Before rewriting a section whose comments carry `attachments`, `Read` each listed path (e.g. `.viva/attachments/r2-s3-0.png`) so the screenshot informs the rewrite.
 
 **Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — pull it (`preferences.py list --store .viva/preferences.json --status standing --format json`) and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
 
-Then update the **open-note store** (issue #16). For every section the reviewer left *open* (verdict carried `"open": true`) or *settled* (`"settle": true`), and every section now `approved`, record the outcome — passing a one-line `--response "<id>=<what you changed>"` for each open note you just rewrote:
+Then update the **open-note store** (issue #16). For every comment you rewrote or answered, and for every section now `approved` (which settles all of its threads), record the outcome — passing a one-line `--response "<cid>=<what you changed>"` per comment thread:
 ```bash
 python3 "$VIVA_DIR/scripts/open_notes.py" update \
   --store .viva/open-notes.json --round {N} \
   --verdicts .viva/review-r{N}.json --input .viva/review-input-r{N}.json \
-  --response "s2=Shortened the intro to two sentences"   # repeat per open note
+  --response "s2-c1=Shortened the intro to two sentences"   # repeat per comment (keyed by cid); approving a section settles all its threads
 ```
 
 Re-parse (passing `--open-notes` so still-open threads re-present on their cards) and signal the running server in one block, then loop to step 2:
@@ -158,7 +159,7 @@ curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
   -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
 python3 "$VIVA_DIR/scripts/revision_history.py" .viva <doc_file>
 ```
-`revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response) and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
+`revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response), keyed by `cid` and including each comment's original quoted span, and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
 
 **Record learned preferences.** This session's notes are the training signal, so before moving on, cluster the `changes`/`info` notes you saw into distinct critiques and record each so a recurring one is learned (issue #17, [Learned preferences](#learned-preferences-across-sessions)). First `list --status all` to see existing preferences, then `record` each cluster — reuse an existing `--id` to reinforce it across sessions (the second session promotes it to standing), or create a new candidate with a short stable id:
 ```bash
@@ -290,16 +291,16 @@ Unlike the pre-review producers above, confidence is the **generating agent's ow
 
 ## Open notes (carried across rounds)
 
-A `changes`/`info` note normally lasts one round — the reviewer flags it, the agent rewrites, and the note is gone. When a rewrite doesn't actually satisfy the reviewer they would have to re-flag from scratch. An **open note** instead persists round to round, accumulating the exchange (what was asked, what the agent answered), until the reviewer **settles** it.
+A `changes`/`info` note normally lasts one round — the reviewer flags it, the agent rewrites, and the note is gone. When a rewrite doesn't satisfy the reviewer they would have to re-flag from scratch. An **open note** instead persists round to round, accumulating the exchange (what was asked, what the agent answered), until the reviewer **settles** it.
 
-The store lives at `.viva/open-notes.json`, keyed by normalized section title, and `scripts/open_notes.py` is its single writer. The loop is:
+Every comment is an open thread **by default** — no opt-in required. The store lives at `.viva/open-notes.json`, keyed by `cid` (each comment's stable id), and `scripts/open_notes.py` is its single writer. Each thread also carries the comment's original quoted span (`quote`), so the conversation never loses its referent even if the span is later rewritten away. The loop is:
 
-1. A verdict carries `"open": true` when the reviewer ticks **keep open across rounds** on a `changes`/`info` note.
-2. In step 4 you run `open_notes.py update`, passing a one-line `--response "<id>=…"` for each open note you rewrote. It appends the exchange to that section's thread.
+1. Every submitted comment automatically becomes an open thread, keyed by its `cid`.
+2. In step 4 you run `open_notes.py update`, passing a one-line `--response "<cid>=…"` for each comment you rewrote or answered. It appends the exchange to that comment's thread.
 3. The re-parse passes `--open-notes`, so still-open threads re-present on their cards next round with the full prior exchange shown.
-4. The reviewer **settles** a thread (verdict `"settle": true`) when satisfied; approving the section settles its open notes too. A settled thread drops from later rounds.
+4. The reviewer **settles** a thread (hits **settle** on it) when satisfied; approving the section settles all of its threads. A settled thread drops from later rounds.
 
-Open notes **compose with verdicts, they don't replace them** — an open note never blocks sign-off on its own. A section signs off when its verdict is `approved`; the open thread is the conversation alongside that decision. At completion `revision_history.py` folds every thread's full exchange into the ledger. A doc where no note was ever kept open behaves exactly as before — no store, no `open_notes` on any card, no Open notes ledger section.
+Open notes **compose with verdicts, they don't replace them** — an open thread never blocks sign-off on its own. A section signs off when its verdict is `approved`; the open thread is the conversation alongside that decision. At completion `revision_history.py` folds every thread's full exchange into the ledger. A doc where no section carries comments has no open threads and behaves exactly as before — no store, no `open_notes` on any card, no Open notes ledger section.
 
 ---
 
