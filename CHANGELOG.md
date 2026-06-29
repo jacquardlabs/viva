@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.11.0 (2026-06-29)
+
+### Features
+
+- **ui**: Blueprint design pass — sheet frame, revision triangles, approval stamp
+  ([#69](https://github.com/jacquardlabs/viva/pull/69),
+  [`a74f119`](https://github.com/jacquardlabs/viva/commit/a74f119eaaa1b3a78716ab60d6b0454dcf763f56))
+
+
 ## v1.10.0 (2026-06-29)
 
 ### Bug Fixes
