@@ -90,7 +90,7 @@ HTML = r"""<!DOCTYPE html>
   }
 
   .dot-approved { box-shadow: 0 0 5px rgba(12,138,99,0.4); }
-  .dot-active   { box-shadow: 0 0 5px rgba(207,63,29,0.4); }
+  .dot-active   { box-shadow: 0 0 5px rgba(18,113,184,0.4); }
   .dot-changes  { box-shadow: none; }
   .dot-info     { box-shadow: none; }
 
@@ -328,6 +328,15 @@ body {
 }
 .card::before { top: -7px; left: -6px; }
 .card::after  { bottom: -7px; right: -6px; }
+
+/* The drawing sheet: a bordered field framing the whole review, registration
+   marks at its corners — the work sits on a sheet, not in a void. */
+.sheet-frame { position: fixed; inset: 16px; z-index: 30; pointer-events: none; border: 1px solid var(--border2); }
+.sheet-frame::before { content: ''; position: absolute; inset: 5px; border: 1px solid var(--border); }
+.sf-mark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
+.sf-tl { top: -7px; left: -7px; } .sf-tr { top: -7px; right: -7px; }
+.sf-bl { bottom: -7px; left: -7px; } .sf-br { bottom: -7px; right: -7px; }
+@media (max-width: 720px) { .sheet-frame { display: none; } }
 .card.is-active::before, .card.is-active::after { opacity: 1; }
 
 .card:nth-child(1)  { animation-delay: 0.05s; }
@@ -373,10 +382,13 @@ body {
   transition: background 0.25s, box-shadow 0.25s;
 }
 .dot-idle     { background: var(--text3); }
-.dot-active   { background: var(--orange); box-shadow: 0 0 7px rgba(255,140,66,0.6); }
+.dot-active   { background: var(--accent); box-shadow: 0 0 7px rgba(92,200,255,0.55); }
 .dot-approved { background: var(--teal);   box-shadow: 0 0 7px rgba(77,255,195,0.5); }
 .dot-changes  { background: var(--orange); box-shadow: 0 0 5px rgba(255,140,66,0.4); }
 .dot-info     { background: var(--violet); box-shadow: 0 0 5px rgba(167,139,250,0.4); }
+/* Revision triangle — drafting's "this region changed at this rev" flag, keyed
+   to the titleblock REV and the revision log. */
+.rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
 
 .card-title-wrap { flex: 1; min-width: 0; }
 
@@ -528,10 +540,10 @@ body {
   font-weight: 300;
   line-height: 1.7;
   color: var(--text);
-  padding: 16px 18px 14px;
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  border-radius: 6px;
+  padding: 6px 2px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
   margin-bottom: 14px;
   overflow-wrap: break-word;
   max-height: 60vh;
@@ -1093,11 +1105,26 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 8rem 2rem;
   text-align: center;
 }
-.complete-check {
-  font-size: 2.5rem;
+/* Approval stamp — the drafting world's gesture for "signed off". Double-ruled,
+   teal ink, slammed onto the sheet at a slight angle as the review completes. */
+.approve-stamp { transform: rotate(-5deg); margin-bottom: 2rem; animation: stamp-down 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.stamp-rule {
+  border: 2px solid var(--teal);
   color: var(--teal);
-  margin-bottom: 1.25rem;
+  padding: 14px 30px 12px;
+  position: relative;
+  background: rgba(77,255,195,0.04);
 }
+.stamp-rule::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--teal); opacity: 0.55; }
+.stamp-word { font-family: 'Fragment Mono', monospace; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.16em; }
+.stamp-meta { font-family: 'Fragment Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; opacity: 0.85; margin-top: 6px; text-transform: uppercase; }
+.stamp-sub  { font-family: 'Fragment Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; opacity: 0.6; margin-top: 2px; }
+@keyframes stamp-down {
+  0%   { opacity: 0; transform: rotate(-5deg) scale(2.1); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: rotate(-5deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } }
 .complete-headline {
   font-size: 1.6rem;
   font-weight: 600;
@@ -1119,6 +1146,8 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 </style>
 </head>
 <body>
+
+<div class="sheet-frame" aria-hidden="true"><span class="sf-mark sf-tl">+</span><span class="sf-mark sf-tr">+</span><span class="sf-mark sf-bl">+</span><span class="sf-mark sf-br">+</span></div>
 
 <div class="shell">
 
@@ -1179,7 +1208,13 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   <!-- ── Complete state ───────────────────────────────────── -->
   <div id="complete-view" style="display:none">
     <div class="complete-inner">
-      <div class="complete-check">&#10003;</div>
+      <div class="approve-stamp" id="approve-stamp">
+        <div class="stamp-rule">
+          <div class="stamp-word">APPROVED</div>
+          <div class="stamp-meta" id="stamp-meta">viva</div>
+          <div class="stamp-sub" id="stamp-sub"></div>
+        </div>
+      </div>
       <div class="complete-headline" id="complete-headline"></div>
       <div class="complete-detail" id="complete-detail"></div>
       <div class="ledger ledger-static" id="complete-ledger" style="display:none">
@@ -1463,6 +1498,7 @@ function buildReviewCard(section) {
         <div class="card-title">${esc(section.title)}</div>
         <div class="note-inline" id="rnote-inline-${section.id}" style="display:none"></div>
       </div>
+      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}">&#9651; ${String(REVIEW_DATA.round).padStart(2,'0')}</span>` : ''}
       <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
     </div>
     <div class="card-body-wrap">
@@ -2234,7 +2270,11 @@ function connectSSE() {
     const r   = data.rounds_total     != null ? data.rounds_total    : '?';
     const s   = data.sections_total   != null ? data.sections_total  : '?';
     const rev = data.sections_revised != null ? data.sections_revised : null;
-    el('complete-headline').textContent = `Signed off — ${s} section${s !== 1 ? 's' : ''} across ${r} round${r !== 1 ? 's' : ''}`;
+    el('complete-headline').textContent = '';
+    const stampSub = el('stamp-sub');
+    if (stampSub) stampSub.textContent = `${s} sheet${s !== 1 ? 's' : ''} · ${r} revision${r !== 1 ? 's' : ''}`;
+    const stampMeta = el('stamp-meta');
+    if (stampMeta) stampMeta.textContent = 'viva · ' + new Date().toISOString().slice(0, 10);
     el('complete-detail').textContent   = rev != null
       ? `${rev} section${rev !== 1 ? 's' : ''} revised`
       : '';
