@@ -2,6 +2,134 @@
 
 <!-- version list -->
 
+## v1.10.0 (2026-06-29)
+
+### Bug Fixes
+
+- **skill**: Type-aware rewrite (info = respond only, no source edit); test escalated reply appends
+  changes exchange ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Keep last non-empty selection so 'comment on selection' opens the popover
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Reconcile deriveVerdict with submitReview (single source; untouched=pending)
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Settle stub is inert for verdict/button count (settle-only section stays approvable)
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Single activeComments predicate (settle-only section approvable); cut dead review-comment
+  attachment promise ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+### Code Style
+
+- **ui**: Drop anchor icons; make commented-span a clear accent callout
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Popover hint→mono, anchor quote→small italic muted (match quote convention)
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Popover save/cancel match the blueprint reticle buttons
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+### Documentation
+
+- Design for multiple inline comments per section in viva review
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- Implementation plan for multiple inline comments per section
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **plan**: Require main() test-runner convention to match CI
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **plan**: Strengthen Task 5 s2 assertion ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **plan**: Task 6 absorbs derived dot/stats/advance rewiring from Task 5
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **skill**: Consume comments[] — derived verdict, cid threads, retire pin
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+### Features
+
+- Multiple inline comments per section (GitHub-style threads)
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **open-notes**: Re-key threads by comment cid for multi-comment review
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **parse**: Attach cid threads to sections grouped by title
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **revision-history**: Group cid threads by section with quoted span
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **server**: Derive ledger note from comments[] on submit
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Auto-open comment popover on text selection; drop the explicit button
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Derived verdict + toggling primary button + comments[] submit
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Per-comment thread list + cid settle; retire pin button
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Reply box on open threads — GitHub-style back-and-forth until settled
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Select→popover comment creation with typed highlights
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **ui**: Typed reply chips — escalate an info thread to a changes directive; SKILL.md hybrid rule
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+### Testing
+
+- Assert s2 derives info verdict + comment cids in end-to-end test
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- End-to-end multi-comment round-trip + legacy fallback
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- Two comments on the same span preserved with distinct cids
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+- **open-notes**: Add main() runner so CI executes the unit test
+  ([#68](https://github.com/jacquardlabs/viva/pull/68),
+  [`50ce029`](https://github.com/jacquardlabs/viva/commit/50ce029a22261456d19d1ac1014761eb15eccbfd))
+
+
 ## v1.9.0 (2026-06-28)
 
 ### Bug Fixes
