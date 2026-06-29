@@ -110,7 +110,7 @@ The server writes the file atomically (tmp + rename), so `cat` always sees compl
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes`/`info` | The section carries a `comments` array. For **each** comment: apply its `note` as a targeted edit (or, for `type: "info"`, answer the question and fold the answer in). When the comment has an `anchor`, scope the edit to `anchor.text` at `anchor.offset` in the section source — the offset disambiguates a phrase that appears twice; an un-anchored comment scopes to the whole section. |
+| `changes`/`info` | The section carries a `comments` array. Act on each comment **by its `type`** (hybrid rule): a **`changes`** comment is a *directive* — apply its `note` as a targeted edit **now** (scope to `anchor.text` at `anchor.offset` when anchored — the offset disambiguates a repeated phrase — else the whole section) so the reviewer reviews the diff. An **`info`** comment is a *question* — answer it in the thread (record the response, see [Open notes](#open-notes-carried-across-rounds)) and **do not edit the section**. A section is edited for an `info` thread only once the discussion escalates to a `changes` turn (see below). |
 | `pending` | Carry forward unchanged; re-present next round |
 
 The verdict is **derived** from the section's active comments (unsettled, non-empty): no active comments → `approved` if the reviewer approved, otherwise `pending`; any active comment with `type: "changes"` → section `changes`; otherwise (only active `info` comments) → section `info`.
@@ -297,8 +297,15 @@ Every comment is an open thread **by default** — no opt-in required. The store
 
 1. Every submitted comment automatically becomes an open thread, keyed by its `cid`.
 2. In step 4 you run `open_notes.py update`, passing a one-line `--response "<cid>=…"` for each comment you rewrote or answered. It appends the exchange to that comment's thread.
-3. The re-parse passes `--open-notes`, so still-open threads re-present on their cards next round with the full prior exchange shown.
+3. The re-parse passes `--open-notes`, so still-open threads re-present on their cards next round with the full prior exchange shown — **with a reply box**, so the reviewer can continue the conversation across rounds, GitHub-style.
 4. The reviewer **settles** a thread (hits **settle** on it) when satisfied; approving the section settles all of its threads. A settled thread drops from later rounds.
+
+**A thread is a sequence of typed turns, and you act on the latest one.** Each reviewer turn (the original comment, then each reply) carries its own `type`, recorded as that exchange's `verdict`. On every round, for each open thread look at the **most recent reviewer turn**:
+
+- latest turn `info` → **respond in the thread only; do not edit the section.** The discussion is still open.
+- latest turn `changes` → **apply the edit to the section now** (and note what you changed in the thread response), so the reviewer reviews the diff.
+
+This is how an `info` discussion turns into a change: the reviewer **escalates** by switching their reply to `request changes`. That turn arrives as a comment on the same `cid` with `type: "changes"`, so the rule above applies it. A fresh `info` comment therefore discusses until some turn is typed `changes`; a fresh `changes` comment applies immediately. (A reply that just continues the discussion keeps the thread's `info` type and only ever appends to the conversation.)
 
 Open notes **compose with verdicts, they don't replace them** — an open thread never blocks sign-off on its own. A section signs off when its verdict is `approved`; the open thread is the conversation alongside that decision. At completion `revision_history.py` folds every thread's full exchange into the ledger. A doc where no section carries comments has no open threads and behaves exactly as before — no store, no `open_notes` on any card, no Open notes ledger section.
 

@@ -853,10 +853,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .settle-btn:hover { color: var(--teal); border-color: var(--teal); }
 .open-thread.is-settled { opacity: 0.55; }
 .open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
-/* Reply box at the foot of an open thread — continue the back-and-forth. */
+/* Reply box at the foot of an open thread — continue the back-and-forth, or
+   switch the chip to "request changes" to turn the discussion into an edit. */
+.thread-reply { margin-top: 7px; }
+.thread-reply-chips { display: flex; gap: 8px; margin-bottom: 5px; }
 .thread-reply-field {
   width: 100%;
-  margin-top: 7px;
   font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 12px;
   padding: 6px 9px;
@@ -870,7 +872,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .thread-reply-field:focus { outline: none; border-color: var(--text3); }
 .thread-reply-field::placeholder { color: var(--text3); }
-.open-thread.is-settled .thread-reply-field { display: none; }
+.open-thread.is-settled .thread-reply { display: none; }
 .exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
 .exchange + .exchange { border-top: 1px solid var(--border); }
 .exchange-q { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
@@ -1386,8 +1388,15 @@ function openThreadHTML(section) {
       +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '">&#10003; settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
-      + '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
-      +   '" data-type="' + esc(type) + '" placeholder="Reply to continue this thread…"></textarea>'
+      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '">'
+      +   '<div class="thread-reply-chips">'
+      +     '<button type="button" class="cmt-chip cmt-chip-changes' + (type === 'changes' ? ' is-on' : '')
+      +       '" data-type="changes">request changes</button>'
+      +     '<button type="button" class="cmt-chip cmt-chip-info' + (type === 'info' ? ' is-on' : '')
+      +       '" data-type="info">need info</button>'
+      +   '</div>'
+      +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
+      +     '" placeholder="Reply… (switch to “request changes” to turn the discussion into an edit)"></textarea>'
       + '</div>';
   }).join('');
 }
@@ -1491,9 +1500,17 @@ function buildReviewCard(section) {
   // Open-note controls (issue #16). Wire each per-cid settle button + reply box.
   card.querySelectorAll('.settle-btn').forEach(b =>
     b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
-  card.querySelectorAll('.thread-reply-field').forEach(t => {
-    t.addEventListener('input', () => replyToThread(section.id, t.dataset.cid, t.dataset.type));
-    t.addEventListener('click', e => e.stopPropagation());
+  card.querySelectorAll('.thread-reply').forEach(wrap => {
+    const cid = wrap.dataset.cid;
+    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.dataset.type = ch.dataset.type;
+      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+      replyToThread(section.id, cid);   // re-tag any pending reply with the new type
+    }));
+    const field = wrap.querySelector('.thread-reply-field');
+    field.addEventListener('input', () => replyToThread(section.id, cid));
+    field.addEventListener('click', e => e.stopPropagation());
   });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
@@ -1786,8 +1803,10 @@ function wrapFirst(root, needle, cls) {
    emptied reply clears the pending one. Reply comments are kept out of the
    new-comment list (they live in their thread) but still count as active
    feedback, so the section can't be approved while a reply is pending. */
-function replyToThread(id, cid, type) {
+function replyToThread(id, cid) {
   const field = el('rreply-' + cid);
+  const wrap = field ? field.closest('.thread-reply') : null;
+  const type = (wrap && wrap.dataset.type) || 'info';   // info = keep discussing; changes = escalate to an edit
   const note = (field ? field.value : '').trim();
   const cs = commentsOf(id);
   let c = cs.find(x => x.cid === cid);
@@ -1797,7 +1816,7 @@ function replyToThread(id, cid, type) {
     return;
   }
   if (!c) { c = { cid }; cs.push(c); }
-  Object.assign(c, { type: type || 'info', note, open: true, settled: false, reply: true });
+  Object.assign(c, { type, note, open: true, settled: false, reply: true });
   syncCard(id);
 }
 
