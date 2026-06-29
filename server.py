@@ -853,6 +853,24 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .settle-btn:hover { color: var(--teal); border-color: var(--teal); }
 .open-thread.is-settled { opacity: 0.55; }
 .open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+/* Reply box at the foot of an open thread — continue the back-and-forth. */
+.thread-reply-field {
+  width: 100%;
+  margin-top: 7px;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+  min-height: 34px;
+  line-height: 1.5;
+  display: block;
+}
+.thread-reply-field:focus { outline: none; border-color: var(--text3); }
+.thread-reply-field::placeholder { color: var(--text3); }
+.open-thread.is-settled .thread-reply-field { display: none; }
 .exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
 .exchange + .exchange { border-top: 1px solid var(--border); }
 .exchange-q { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
@@ -1357,13 +1375,19 @@ function openThreadHTML(section) {
   if (!Array.isArray(ex) || ex.length === 0) return '';
   return ex.map(t => {
     const cid = esc(t.cid || '');
+    const exs = t.exchanges || [];
+    // The thread's current type carries to a reply (continuing an info thread
+    // stays info), defaulting to info.
+    const type = (exs.length && exs[exs.length - 1].verdict) || 'info';
     const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
     return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
       +   '<span class="open-thread-label">open note</span>' + quote
       +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '">&#10003; settle</button>'
       + '</div>'
-      + '<div class="open-thread-body">' + openNotesHTML(t.exchanges) + '</div>'
+      + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
+      + '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
+      +   '" data-type="' + esc(type) + '" placeholder="Reply to continue this thread…"></textarea>'
       + '</div>';
   }).join('');
 }
@@ -1464,9 +1488,13 @@ function buildReviewCard(section) {
     e.stopPropagation(); skipReviewCard(section.id);
   });
 
-  // Open-note controls (issue #16). Wire each per-cid settle button.
+  // Open-note controls (issue #16). Wire each per-cid settle button + reply box.
   card.querySelectorAll('.settle-btn').forEach(b =>
     b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
+  card.querySelectorAll('.thread-reply-field').forEach(t => {
+    t.addEventListener('input', () => replyToThread(section.id, t.dataset.cid, t.dataset.type));
+    t.addEventListener('click', e => e.stopPropagation());
+  });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
   if (diffToggle) diffToggle.addEventListener('click', e => {
@@ -1751,11 +1779,33 @@ function wrapFirst(root, needle, cls) {
 
 /* ─── Open notes (issue #16) — settle by cid, recorded as a comment so the
    submit carries it to open_notes.py which closes the thread. ─── */
+/* Reviewer replies to an open thread → continues the SAME cid thread. The reply
+   rides as a comment on that cid (open, unsettled, flagged `reply`), so
+   open_notes.update appends it as a new exchange and the agent answers again
+   next round — a GitHub-style back-and-forth until the thread is settled. An
+   emptied reply clears the pending one. Reply comments are kept out of the
+   new-comment list (they live in their thread) but still count as active
+   feedback, so the section can't be approved while a reply is pending. */
+function replyToThread(id, cid, type) {
+  const field = el('rreply-' + cid);
+  const note = (field ? field.value : '').trim();
+  const cs = commentsOf(id);
+  let c = cs.find(x => x.cid === cid);
+  if (!note) {
+    if (c && c.reply) rState.verdicts[id].comments = cs.filter(x => x !== c);
+    syncCard(id);
+    return;
+  }
+  if (!c) { c = { cid }; cs.push(c); }
+  Object.assign(c, { type: type || 'info', note, open: true, settled: false, reply: true });
+  syncCard(id);
+}
+
 function settleOpenNotes(id, cid) {
   const cs = commentsOf(id);
   let c = cs.find(x => x.cid === cid);
   if (!c) { c = { cid, type: 'info', note: '', open: true, settled: true }; cs.push(c); }
-  else c.settled = !c.settled;
+  else { c.settled = !c.settled; c.reply = false; }
   const thread = el('rthread-' + cid);
   const btn = el('rsettle-' + cid);
   if (thread) thread.classList.toggle('is-settled', !!c.settled);
@@ -1766,7 +1816,8 @@ function settleOpenNotes(id, cid) {
 // Paint this round's freshly-added comments under the section (edit/delete each).
 function renderCommentList(id) {
   const host = el('rclist-' + id); if (!host) return;
-  const cs = activeComments(id);
+  // Replies live in their own thread, not the new-comment list.
+  const cs = activeComments(id).filter(c => !c.reply);
   host.innerHTML = cs.map(c =>
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
