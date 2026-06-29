@@ -663,7 +663,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip {
+.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -786,6 +786,20 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .cmt-chip:hover { --c: var(--text3); color: var(--text); }
 .cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
 .cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
+/* Popover save / cancel — reticle buttons like the verdict row; save reads
+   affirmative (teal), cancel stays muted. */
+.cmt-save, .cmt-cancel {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 6px 14px;
+  color: var(--text2);
+}
+.cmt-save { --c: var(--teal); color: var(--teal); }
+.cmt-save:hover   { color: var(--text); }
+.cmt-cancel:hover { --c: var(--text3); color: var(--text); }
 /* a section the reviewer is selecting text in, to make the anchor target obvious */
 .section-content::selection,
 .section-content *::selection { background: var(--violet-bg); }
@@ -941,6 +955,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
+.cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
