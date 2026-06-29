@@ -63,12 +63,32 @@ def test_legacy_section_without_comments_is_noop():
     assert open_notes.update({}, 1, verdicts, _input(), {}) == {}
 
 
+def test_escalated_reply_appends_changes_exchange():
+    """A reply that escalates an info thread to `request changes` arrives as a
+    comment on the SAME cid with type "changes"; open_notes.update appends it as
+    a new exchange whose verdict is "changes" — the per-turn record the hybrid
+    rewrite rule reads to decide whether to edit the section."""
+    store = {"s1-c1": {"cid": "s1-c1", "title": "Goals", "quote": "x",
+                       "status": "open", "exchanges": [
+                           {"round": 1, "verdict": "info", "note": "why?", "response": "because"}]}}
+    verdicts = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "changes", "note": "make it configurable",
+         "open": True, "settled": False, "reply": True}]}]}
+    out = open_notes.update(store, 2, verdicts, _input(), {"s1-c1": "exposed RETRY_MAX"})
+    exs = out["s1-c1"]["exchanges"]
+    assert len(exs) == 2, exs
+    assert exs[1] == {"round": 2, "verdict": "changes",
+                      "note": "make it configurable", "response": "exposed RETRY_MAX"}, exs
+    assert out["s1-c1"]["status"] == "open"  # still open until settled
+
+
 def main():
     test_two_open_comments_become_two_threads()
     test_settle_one_thread_by_cid()
     test_approving_section_settles_all_its_threads()
     test_no_comments_is_noop()
     test_legacy_section_without_comments_is_noop()
+    test_escalated_reply_appends_changes_exchange()
     print("OK")
 
 

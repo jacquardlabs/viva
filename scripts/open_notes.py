@@ -87,6 +87,8 @@ def update(
                 continue
             thread = out.get(cid)
             if c.get("settled"):
+                # Settling is decisive: close the thread and ignore any note on
+                # this turn (a reply typed then settled is intentionally dropped).
                 if thread:
                     thread["status"] = "settled"
                 continue
