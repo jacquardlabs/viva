@@ -43,21 +43,29 @@ def collect_threads(viva_dir: Path) -> list[dict]:
     except (OSError, json.JSONDecodeError):
         return []
     threads = [t for t in store.values() if t.get("exchanges")]
-    return sorted(threads, key=lambda t: t.get("title", "").lower())
+    threads.sort(key=lambda t: ((t.get("title") or "").strip().lower(), t.get("cid", "")))
+    return threads
 
 
 def build_threads_block(threads: list[dict]) -> str:
-    """Render each open-note thread as the full exchange — note → response."""
+    """Render open-note threads grouped by section heading, with quoted span."""
     lines = ["### Open notes", ""]
+    current_title = None
     for t in threads:
+        title = t.get("title", "")
+        if title != current_title:
+            lines.append(f"**{title}**")
+            lines.append("")
+            current_title = title
         status = t.get("status", "open")
-        lines.append(f"**{flat(t.get('title', '?'))}** — {status}")
+        quote = t.get("quote", "")
+        head = f"- _{flat(quote)}_ — {status}" if quote else f"- (whole section) — {status}"
+        lines.append(head)
         for x in t.get("exchanges", []):
-            note = flat(x.get("note", "")) or "—"
+            note = flat(x.get("note", ""))
             resp = flat(x.get("response", ""))
-            tail = f' → "{resp}"' if resp else ""
-            lines.append(f'- R{x.get("round", "?")} {x.get("verdict", "?")} '
-                         f'— "{note}"{tail}')
+            lines.append(f"  - R{x.get('round')} {x.get('verdict')}: {note}"
+                         + (f" → {resp}" if resp else ""))
         lines.append("")
     return "\n".join(lines).rstrip()
 

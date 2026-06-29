@@ -8,17 +8,19 @@ script is the SINGLE writer of `.viva/open-notes.json`; the server only reads it
 round's cards) and `revision_history.py` folds the full threads into the ledger
 at sign-off.
 
-The store is keyed by normalized section title — the same stable identity that
-approval and annotation carry-forward use, since section ids are positional and
-re-assigned each round.
+The store is keyed by comment `cid` — one thread per inline comment, not one per
+section. Each thread carries its section title (for re-attachment) and the
+anchored quote (if any).
 
   open-notes.json:
   {
-    "goals": {
+    "s1-c1": {
+      "cid": "s1-c1",
       "title": "Goals",
+      "quote": "retries 3x",
       "status": "open",            # open | settled
       "exchanges": [
-        {"round": 1, "verdict": "changes", "note": "tighten", "response": "Done."}
+        {"round": 1, "verdict": "changes", "note": "5x not 3x", "response": "Done."}
       ]
     }
   }
@@ -29,7 +31,7 @@ Usage:
     --round N \\
     --verdicts .viva/review-rN.json \\
     --input .viva/review-input-rN.json \\
-    [--response "s2=one-line summary of the rewrite" ...]
+    [--response "<cid>=one-line summary of the rewrite" ...]
 """
 from __future__ import annotations
 
@@ -50,47 +52,62 @@ def update(
     input_data: dict,
     responses: dict,
 ) -> dict:
-    """Apply one round's verdicts to the thread store. Pure — returns a new dict.
+    """Apply one round's verdicts to the per-comment thread store. Pure.
 
-    - changes/info with `open` truthy → append an exchange (create the thread
-      if new); the agent's `response` for that section id rides along.
-    - `settle` truthy                 → mark the thread settled.
-    - approved                        → settle any open thread (approval settles,
-                                        so an open note never blocks sign-off).
-    Untracked changes/info notes (no `open`) are ignored — today's behavior.
+    Each section carries a `comments` list; each comment is its own thread keyed
+    by `cid`. For every comment:
+      - open & changes/info → append an exchange (create the thread if new),
+        carrying the agent's `responses[cid]`.
+      - settled truthy      → mark that thread settled.
+    Approving a section settles every still-open thread whose `cid` belongs to it
+    (matched by the section's stable title), so approval clears the section's
+    conversation. A section with no comments is a no-op (today's behavior).
     """
     titles = {s.get("id"): s.get("title", s.get("id"))
               for s in input_data.get("sections", [])}
-    # Deep-enough copy: clone each thread and its exchange list so the input
-    # store is never mutated.
     out = {k: {**v, "exchanges": list(v.get("exchanges", []))}
            for k, v in store.items()}
 
     for s in verdicts.get("sections", []):
         sid = s.get("id")
         title = titles.get(sid, sid or "?")
-        key = norm(title)
         verdict = s.get("verdict")
-        thread = out.get(key)
+        comments = s.get("comments") or []
 
         if verdict == "approved":
-            if thread and thread.get("status") == "open":
-                thread["status"] = "settled"
-        elif s.get("settle"):
-            if thread:
-                thread["status"] = "settled"
-        elif verdict in ("changes", "info") and s.get("open"):
-            if thread is None:
-                thread = {"title": title, "status": "open", "exchanges": []}
-                out[key] = thread
-            thread["status"] = "open"
-            thread["title"] = title  # keep display title fresh
-            thread["exchanges"].append({
-                "round": round_num,
-                "verdict": verdict,
-                "note": s.get("note", ""),
-                "response": responses.get(sid, ""),
-            })
+            # Settle every open thread belonging to this section (by title).
+            for thread in out.values():
+                if norm(thread.get("title")) == norm(title) and thread.get("status") == "open":
+                    thread["status"] = "settled"
+            continue
+
+        for c in comments:
+            cid = c.get("cid")
+            if not cid:
+                continue
+            thread = out.get(cid)
+            if c.get("settled"):
+                # Settling is decisive: close the thread and ignore any note on
+                # this turn (a reply typed then settled is intentionally dropped).
+                if thread:
+                    thread["status"] = "settled"
+                continue
+            if c.get("type") in ("changes", "info") and c.get("open"):
+                anchor = c.get("anchor") or {}
+                if thread is None:
+                    thread = {"cid": cid, "title": title, "quote": anchor.get("text", ""),
+                              "status": "open", "exchanges": []}
+                    out[cid] = thread
+                thread["status"] = "open"
+                thread["title"] = title          # keep display title fresh
+                if anchor.get("text"):
+                    thread["quote"] = anchor["text"]
+                thread["exchanges"].append({
+                    "round": round_num,
+                    "verdict": c.get("type"),
+                    "note": c.get("note", ""),
+                    "response": responses.get(cid, ""),
+                })
     return out
 
 
@@ -120,7 +137,7 @@ def main() -> None:
     up.add_argument("--verdicts", required=True)
     up.add_argument("--input", required=True)
     up.add_argument("--response", action="append", default=[],
-                    help='Agent response for a section, as "id=text" (repeatable)')
+                    help='Agent response for a comment, as "<cid>=text" (repeatable)')
     args = p.parse_args()
 
     store_path = Path(args.store)

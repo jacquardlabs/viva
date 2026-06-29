@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Integration test: a line-anchored note (issue #15).
+"""Integration test: multi-comment round-trip (comments[] model).
 
-A reviewer can select text in a rendered section and attach a note to that
-specific line. The selected text travels as an `anchor` string on the verdict,
-straight through /submit into the output JSON, so the agent can grep the source
-for it and target the rewrite. The contract:
+Each section carries a `comments[]` list of {cid, type, note, anchor?, open,
+settled}. The section verdict is DERIVED — never stored as a bare scalar.
+The page ships renderHighlights / openCommentPopover / deriveVerdict and does
+NOT ship the retired single-anchor controls (anchor-chip, rpin-, anchorSelection).
 
-  - /submit is a pure pipe for `anchor` — it never strips or injects it.
-  - A verdict with NO anchor is byte-identical to today (no `anchor` key).
-  - The page ships the selection-capture + anchor UI so a browser can produce one.
+Contract verified here:
+  - /submit passes comments[] through into out.json unchanged.
+  - Anchored comments carry anchor.offset; un-anchored ones have no `anchor` key.
+  - Derived verdict on the section matches the dominant comment type.
+  - Retired page needles are absent; new interaction needles are present.
 """
 import json
 import subprocess
@@ -57,28 +59,36 @@ def main() -> None:
         assert url_file.exists(), "server failed to start within 10s"
         base = url_file.read_text().strip()
 
-        # An anchored changes note and a bare info note in the same submit.
+        # Submit s1 with two comments (changes + info, first anchored) and
+        # s2 with one un-anchored info comment.
         post(base, "/submit", {"round": 1, "submitted_early": False, "sections": [
-            {"id": "s1", "verdict": "changes", "note": "this claim is unsupported",
-             "anchor": "sub-second latency"},
-            {"id": "s2", "verdict": "info", "note": "what about errors?"},
-        ]})
+            {"id": "s1", "verdict": "changes", "comments": [
+                {"cid": "s1-c1", "type": "changes", "note": "unsupported",
+                 "anchor": {"text": "sub-second latency", "offset": 9}, "open": True, "settled": False},
+                {"cid": "s1-c2", "type": "info", "note": "errors?", "open": True, "settled": False}]},
+            {"id": "s2", "verdict": "info", "comments": [
+                {"cid": "s2-c1", "type": "info", "note": "whole-section question", "open": True, "settled": False}]}]})
 
         out = json.loads((viva / "out1.json").read_text())
         s1 = next(s for s in out["sections"] if s["id"] == "s1")
         s2 = next(s for s in out["sections"] if s["id"] == "s2")
 
-        # The anchor survives the pipe verbatim.
-        assert s1.get("anchor") == "sub-second latency", f"anchor dropped: {s1}"
-        # Zero-regression: an un-anchored note carries no `anchor` key at all.
-        assert "anchor" not in s2, f"s2 must stay anchor-free: {s2}"
+        # Derived verdict from dominant comment type; comments array preserved.
+        assert s1["verdict"] == "changes" and len(s1["comments"]) == 2, s1
+        # Each comment carries its stable cid through the pipe.
+        assert [c["cid"] for c in s1["comments"]] == ["s1-c1", "s1-c2"], s1
+        # Anchored comment carries offset through the pipe.
+        assert s1["comments"][0]["anchor"]["offset"] == 9, s1
+        # Un-anchored comment: no `anchor` key, and a lone info comment derives `info`.
+        assert s2["verdict"] == "info", s2
+        assert "anchor" not in s2["comments"][0], s2
 
-        # The page ships the selection capture + anchor controls so a browser
-        # can produce the anchor in the first place.
+        # Page ships the interaction-model needles and NOT the retired ones.
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
-        for needle in ("_lastSelection", "anchorSelection", "anchor-chip",
-                       "selectionchange"):
+        for needle in ("renderHighlights", "openCommentPopover", "deriveVerdict"):
             assert needle in page, f"page missing: {needle}"
+        for gone in ("anchor-chip", "rpin-", "anchorSelection"):
+            assert gone not in page, f"retired control still present: {gone}"
 
         print("OK")
     finally:

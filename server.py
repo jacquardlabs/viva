@@ -663,7 +663,7 @@ body {
    each state just reassigns it and the gradient recolors itself.
    Registering --c lets the recolor animate; without support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn, .anchor-btn, .pin-btn {
+.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --tick: 7px;          /* corner arm length */
   --tw: 1.5px;          /* tick thickness    */
   --c: var(--border2);
@@ -753,23 +753,13 @@ body {
   padding: 5px 10px;
 }
 .attach-btn:hover { --c: var(--text3); color: var(--text); }
-.pin-btn {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--text2);
-  padding: 5px 10px;
-}
-.pin-btn:hover { --c: var(--text3); color: var(--text); }
-.pin-btn.is-pinned { --c: var(--accent); color: var(--accent); }
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
-/* ─── Line anchor (issue #15) — pin a note to selected text ─── */
-.anchor-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-.anchor-btn {
+/* ─── Multi-comment review ─── */
+.comment-add-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+.cmt-add-hint { font-family: 'Fragment Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text3); margin-right: auto; }
+.cmt-add-btn {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 600;
@@ -778,34 +768,48 @@ body {
   color: var(--text2);
   padding: 5px 10px;
 }
-.anchor-btn:hover { --c: var(--text3); color: var(--text); }
-/* A dismissible anchor token. Reuses the .vbadge tag treatment — square,
-   tinted fill, no border — so it reads as the same family as the verdict
-   badges. Violet is the anchor slot: the ⚓ pin and × frame it in violet, and
-   the fill echoes the violet ::selection highlight the anchor was pinned from. */
-.anchor-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  font-size: 11px;
-  padding: 3px 6px 3px 8px;
-  background: var(--violet-bg);
+.cmt-add-btn:hover { --c: var(--text3); color: var(--text); }
+mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var(--orange); color: inherit; }
+mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
+.comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
+.cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+/* The span being commented on — a focal accent callout so it reads clearly as
+   the thing being acted on, not muted context. Uses the app's accent slot. */
+.cmt-pop-quote {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--accent-dim);
+  border-left: 2px solid var(--accent);
+  padding: 5px 9px;
+  margin: 2px 0 9px;
+  overflow-wrap: anywhere;
+}
+.cmt-chip {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.cmt-chip:hover { --c: var(--text3); color: var(--text); }
+.cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
+.cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
+/* Popover save / cancel — reticle buttons like the verdict row; save reads
+   affirmative (teal), cancel stays muted. */
+.cmt-save, .cmt-cancel {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 6px 14px;
   color: var(--text2);
 }
-.anchor-chip-pin { flex-shrink: 0; color: var(--violet); }
-.anchor-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.anchor-chip-x {
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--violet);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 4px;
-}
-.anchor-chip-x:hover { color: var(--text); }
+.cmt-save { --c: var(--teal); color: var(--teal); }
+.cmt-save:hover   { color: var(--text); }
+.cmt-cancel:hover { --c: var(--text3); color: var(--text); }
 /* a section the reviewer is selecting text in, to make the anchor target obvious */
 .section-content::selection,
 .section-content *::selection { background: var(--violet-bg); }
@@ -849,6 +853,26 @@ body {
 .settle-btn:hover { color: var(--teal); border-color: var(--teal); }
 .open-thread.is-settled { opacity: 0.55; }
 .open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+/* Reply box at the foot of an open thread — continue the back-and-forth, or
+   switch the chip to "request changes" to turn the discussion into an edit. */
+.thread-reply { margin-top: 7px; }
+.thread-reply-chips { display: flex; gap: 8px; margin-bottom: 5px; }
+.thread-reply-field {
+  width: 100%;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+  min-height: 34px;
+  line-height: 1.5;
+  display: block;
+}
+.thread-reply-field:focus { outline: none; border-color: var(--text3); }
+.thread-reply-field::placeholder { color: var(--text3); }
+.open-thread.is-settled .thread-reply { display: none; }
 .exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
 .exchange + .exchange { border-top: 1px solid var(--border); }
 .exchange-q { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
@@ -869,6 +893,54 @@ body {
   color: var(--text3);
 }
 .exchange-a::before { content: '↳ '; }
+.open-thread-quote {
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* ─── Comment list (this round's freshly-added comments) ─── */
+.cmt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--border);
+}
+.cmt:last-child { border-bottom: none; }
+.cmt-type {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.v-changes .cmt-type { color: var(--orange); }
+.v-info    .cmt-type { color: var(--violet); }
+.cmt-quote {
+  font-style: italic;
+  color: var(--text3);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.cmt-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; flex: 1; }
+.cmt-del {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.cmt-del:hover { color: var(--text); }
 
 /* ─── Divider between card sections ─────────────────────── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -912,7 +984,8 @@ body {
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.attach-btn:focus-visible, .anchor-btn:focus-visible, .pin-btn:focus-visible, .anchor-chip-x:focus-visible,
+.attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
+.cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1302,13 +1375,30 @@ function openNotesHTML(exchanges) {
 function openThreadHTML(section) {
   const ex = section.open_notes;
   if (!Array.isArray(ex) || ex.length === 0) return '';
-  return '<div class="open-thread" id="rthread-' + section.id + '">'
-    + '<div class="open-thread-head">'
-    +   '<span class="open-thread-label">open note</span>'
-    +   '<button type="button" class="settle-btn" id="rsettle-' + section.id + '">&#10003; settle</button>'
-    + '</div>'
-    + '<div class="open-thread-body">' + openNotesHTML(ex) + '</div>'
-    + '</div>';
+  return ex.map(t => {
+    const cid = esc(t.cid || '');
+    const exs = t.exchanges || [];
+    // The thread's current type carries to a reply (continuing an info thread
+    // stays info), defaulting to info.
+    const type = (exs.length && exs[exs.length - 1].verdict) || 'info';
+    const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
+    return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
+      + '<div class="open-thread-head">'
+      +   '<span class="open-thread-label">open note</span>' + quote
+      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '">&#10003; settle</button>'
+      + '</div>'
+      + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
+      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '">'
+      +   '<div class="thread-reply-chips">'
+      +     '<button type="button" class="cmt-chip cmt-chip-changes' + (type === 'changes' ? ' is-on' : '')
+      +       '" data-type="changes">request changes</button>'
+      +     '<button type="button" class="cmt-chip cmt-chip-info' + (type === 'info' ? ' is-on' : '')
+      +       '" data-type="info">need info</button>'
+      +   '</div>'
+      +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
+      +     '" placeholder="Reply… (switch to “request changes” to turn the discussion into an edit)"></textarea>'
+      + '</div>';
+  }).join('');
 }
 
 /* ─── Confidence triage (issue #12) ───────────────────────────
@@ -1382,23 +1472,16 @@ function buildReviewCard(section) {
           ${openThreadHTML(section)}
           ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
+          <div class="comment-add-row">
+            <span class="cmt-add-hint">select text above to comment</span>
+            <button type="button" class="cmt-add-btn" id="rcmtnote-${section.id}">+ add note</button>
+          </div>
           <div class="actions">
-            <button class="action-btn" id="rbtn-approve-${section.id}">&#10003; approve</button>
-            <button class="action-btn" id="rbtn-changes-${section.id}">&#8617; request changes</button>
-            <button class="action-btn" id="rbtn-info-${section.id}">? need info</button>
+            <button class="action-btn is-approve" id="rbtn-primary-${section.id}">&#10003; approve</button>
             <button class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55">&#8595; skip</button>
           </div>
-          <div id="rnote-wrap-${section.id}" style="display:none; margin-top:2px">
-            <textarea class="note-field" id="rnote-${section.id}" placeholder=""></textarea>
-            <div class="thumb-strip" id="rthumbs-${section.id}" aria-live="polite" style="display:none"></div>
-            <div class="anchor-row">
-              <button type="button" class="attach-btn" id="rattach-${section.id}">&#128206; attach image</button>
-              <button type="button" class="anchor-btn" id="ranchor-btn-${section.id}" title="Select text in the section above, then click to pin this note to it">&#9875; anchor selection</button>
-              <button type="button" class="pin-btn" id="rpin-${section.id}" title="Pin note to next round — carries this thread forward until you settle it">&#128204; pin note to next round</button>
-              <span class="anchor-chip" id="ranchor-chip-${section.id}" style="display:none"></span>
-            </div>
-            <input type="file" accept="image/*" multiple style="display:none" id="rfile-${section.id}">
-          </div>
+          <div class="comment-list" id="rclist-${section.id}"></div>
+          <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
         </div>
       </div>
     </div>`;
@@ -1407,21 +1490,27 @@ function buildReviewCard(section) {
     toggleReviewCard(section.id);
   });
 
-  card.querySelector('#rbtn-approve-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'approved'); });
-  card.querySelector('#rbtn-changes-' + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'changes'); });
-  card.querySelector('#rbtn-info-'    + section.id).addEventListener('click', e => { e.stopPropagation(); setReviewVerdict(section.id, 'info'); });
-  card.querySelector('#rbtn-skip-'    + section.id).addEventListener('click', e => { e.stopPropagation(); skipReviewCard(section.id); });
-  card.querySelector('#ranchor-btn-'  + section.id).addEventListener('click', e => { e.stopPropagation(); anchorSelection(section.id); });
+  card.querySelector('#rbtn-primary-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); approveSection(section.id);
+  });
+  card.querySelector('#rbtn-skip-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); skipReviewCard(section.id);
+  });
 
-  // Open-note controls (issue #16). The settle button exists only when a thread
-  // carried forward; the pin button marks a fresh changes/info note to persist
-  // into next round.
-  const settleBtn = card.querySelector('#rsettle-' + section.id);
-  if (settleBtn) settleBtn.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id); });
-  card.querySelector('#rpin-' + section.id).addEventListener('click', e => {
-    e.stopPropagation();
-    const pinned = e.currentTarget.classList.toggle('is-pinned');
-    (rState.verdicts[section.id] ||= {}).open = pinned;
+  // Open-note controls (issue #16). Wire each per-cid settle button + reply box.
+  card.querySelectorAll('.settle-btn').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
+  card.querySelectorAll('.thread-reply').forEach(wrap => {
+    const cid = wrap.dataset.cid;
+    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.dataset.type = ch.dataset.type;
+      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+      replyToThread(section.id, cid);   // re-tag any pending reply with the new type
+    }));
+    const field = wrap.querySelector('.thread-reply-field');
+    field.addEventListener('input', () => replyToThread(section.id, cid));
+    field.addEventListener('click', e => e.stopPropagation());
   });
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
@@ -1437,23 +1526,11 @@ function buildReviewCard(section) {
     });
   });
 
-  const rta = card.querySelector('#rnote-' + section.id);
-  rta.addEventListener('input', e => {
-    if (!rState.verdicts[section.id]) rState.verdicts[section.id] = {};
-    rState.verdicts[section.id].note = e.target.value;
-    syncNoteInline(section.id);
+  card.querySelector('#rcmtnote-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); openCommentPopover(section.id, {});
   });
-  rta.addEventListener('click', e => e.stopPropagation());
 
-  wireCapture(
-    () => (rState.verdicts[section.id] ||= {}),
-    card.querySelector('#rnote-' + section.id),
-    card.querySelector('#rthumbs-' + section.id),
-    card.querySelector('#rattach-' + section.id),
-    card.querySelector('#rfile-' + section.id),
-    card
-  );
-
+  renderCommentList(section.id);
   return card;
 }
 
@@ -1480,6 +1557,7 @@ function _ensureRendered(id) {
   if (!contentEl) return;
   renderMarkdown(contentEl, _pendingMarkdown.get(id));
   _pendingMarkdown.delete(id);
+  renderHighlights(id);
 }
 
 function skipReviewCard(id) {
@@ -1504,6 +1582,29 @@ function toggleReviewCard(id) {
   }
 }
 
+// Advance past a just-decided card: close it, add is-approved CSS, auto-advance
+// to the next unreviewed card. Does NOT call sync/stats — caller handles that.
+function advanceFrom(id) {
+  el('rcard-' + id)?.classList.remove('is-active');
+  el('rcard-' + id)?.classList.add('is-approved');
+  rState.active = null;
+  const sections = REVIEW_DATA.sections;
+  const idx = sections.findIndex(s => s.id === id);
+  const next = sections.slice(idx + 1).find(s => deriveVerdict(s.id) !== 'approved');
+  if (next) setTimeout(() => activateReviewCard(next.id), 80);
+}
+
+// Approve = sign off this section. A section with comments cannot approve; the
+// primary button only reads "approve" when comments.length === 0.
+function approveSection(id) {
+  if (activeComments(id).length) return;  // guarded by label
+  (rState.verdicts[id] ||= {}).skip = false;
+  rState.verdicts[id].verdict = 'approved';
+  advanceFrom(id);
+  syncReviewCard(id);
+  updateReviewStats();
+}
+
 function setReviewVerdict(id, verdict) {
   const prev = rState.verdicts[id]?.verdict;
 
@@ -1519,16 +1620,7 @@ function setReviewVerdict(id, verdict) {
   if (!rState.verdicts[id]) rState.verdicts[id] = {};
   rState.verdicts[id].verdict = verdict;
 
-  if (verdict === 'approved') {
-    el('rcard-' + id)?.classList.remove('is-active');
-    el('rcard-' + id)?.classList.add('is-approved');
-    rState.active = null;
-    // Auto-advance to next unreviewed
-    const sections = REVIEW_DATA.sections;
-    const idx = sections.findIndex(s => s.id === id);
-    const next = sections.slice(idx + 1).find(s => rState.verdicts[s.id]?.verdict !== 'approved');
-    if (next) setTimeout(() => activateReviewCard(next.id), 80);
-  }
+  if (verdict === 'approved') advanceFrom(id);
 
   syncReviewCard(id);
   updateReviewStats();
@@ -1536,7 +1628,6 @@ function setReviewVerdict(id, verdict) {
 
 function syncReviewCard(id) {
   const verdict = rState.verdicts[id]?.verdict || null;
-  const note    = rState.verdicts[id]?.note    || '';
 
   // Approved dimming
   el('rcard-' + id)?.classList.toggle('is-approved', verdict === 'approved');
@@ -1546,100 +1637,220 @@ function syncReviewCard(id) {
 
   // Badge
   const badge = el('rbadge-' + id);
-  if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
-  else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
-  else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
-  else badge.style.display = 'none';
-
-  // Action button active states
-  el('rbtn-approve-' + id).className = 'action-btn' + (verdict === 'approved' ? ' sel-approve' : '');
-  el('rbtn-changes-' + id).className = 'action-btn' + (verdict === 'changes'  ? ' sel-changes' : '');
-  el('rbtn-info-'    + id).className = 'action-btn' + (verdict === 'info'     ? ' sel-info'    : '');
-
-  // Textarea show/hide
-  const noteWrap = el('rnote-wrap-' + id);
-  const ta = el('rnote-' + id);
-  if (verdict === 'changes' || verdict === 'info') {
-    noteWrap.style.display = '';
-    ta.placeholder = verdict === 'changes'
-      ? 'Describe what needs to change… or paste a screenshot'
-      : 'What do you need to know? — or paste a screenshot';
-    if (ta.value !== note) ta.value = note;
-    syncAnchorChip(id);
-    ta.focus();
-  } else {
-    noteWrap.style.display = 'none';
+  if (badge) {
+    if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
+    else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
+    else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
+    else badge.style.display = 'none';
   }
+
+  // Primary button
+  renderPrimaryButton(id);
 
   syncNoteInline(id);
 }
 
-/* ─── Line anchor (issue #15) ─────────────────────────────────
-   A reviewer pins a note to a specific line by selecting text in the
-   rendered section. focus() on the note textarea collapses the selection,
-   so we stash the most recent non-empty selection per card as it happens
-   (selectionchange) and read the stash when the anchor button is clicked.
-   The stored anchor is the selected text — the agent greps the source for
-   it. An un-anchored note carries no `anchor` key (zero-regression). */
-const _lastSelection = {}; // section id → most recent selected text within its content
+/* ─── Comments (multi-comment review) ───────────────────────────
+   A section owns a list of typed comments; the section verdict is DERIVED,
+   never picked. No active comments → approved (if reviewer approved) or pending;
+   any `changes` comment → changes; otherwise info. Each comment is an open
+   thread by default (cid-keyed). */
+function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
-document.addEventListener('selectionchange', () => {
-  const sel = document.getSelection();
-  if (!sel || sel.isCollapsed) return;
-  const text = sel.toString().trim();
-  if (!text) return;
-  const node = sel.anchorNode;
-  const start = node && node.nodeType === 3 ? node.parentElement : node;
-  const content = start && start.closest ? start.closest('.section-content') : null;
-  if (!content) return;
-  const m = content.id.match(/^rcontent-(.+)$/);
-  if (m) _lastSelection[m[1]] = text;
+// Comments that are real, unsettled feedback — the basis for the verdict, the
+// button count, the rendered list, and whether a section can be approved.
+function activeComments(id) {
+  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+}
+
+function deriveVerdict(id) {
+  const active = activeComments(id);
+  if (active.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
+  return active.some(c => c.type === 'changes') ? 'changes' : 'info';
+}
+
+function addComment(id, { type, note, anchor }) {
+  const cs = commentsOf(id);
+  const n = cs.reduce((m, c) => Math.max(m, +(String(c.cid).split('-c')[1] || 0)), 0);
+  cs.push({ cid: id + '-c' + (n + 1), type, note: note || '',
+            ...(anchor && { anchor }), open: true, settled: false });
+  syncCard(id);
+}
+
+function removeComment(id, cid) {
+  const v = rState.verdicts[id]; if (!v) return;
+  v.comments = (v.comments || []).filter(c => c.cid !== cid);
+  syncCard(id);
+}
+
+// Repaint everything that derives from a card's comments: dot, primary button,
+// highlights (Task 6), thread list (Task 7).
+function syncCard(id) {
+  syncReviewDot(id);
+  renderPrimaryButton(id);
+  if (typeof renderHighlights === 'function') renderHighlights(id);
+  if (typeof renderCommentList === 'function') renderCommentList(id);
+  updateReviewStats();
+}
+
+function renderPrimaryButton(id) {
+  const btn = el('rbtn-primary-' + id); if (!btn) return;
+  const n = activeComments(id).length;
+  btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
+  btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
+                    : '&#10003; approve';
+}
+
+/* ─── Selection → popover comment creation ─────────────────────
+   Finishing a text selection inside a section's rendered content auto-opens
+   the comment popover anchored to that selection — no extra click. `mouseup`
+   is the "selection finished" signal (selectionchange fires continuously
+   mid-drag). A plain click (collapsed selection), a selection outside any
+   section content, or one inside the popover itself is ignored. */
+document.addEventListener('mouseup', () => {
+  // Defer a tick so the browser has finalized the selection after mouseup.
+  setTimeout(() => {
+    const sel = document.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const text = sel.toString().trim();
+    if (!text) return;
+    const node = sel.anchorNode;
+    const start = node && node.nodeType === 3 ? node.parentElement : node;
+    const content = start && start.closest ? start.closest('.section-content') : null;
+    if (!content) return;
+    const m = content.id.match(/^rcontent-(.+)$/);
+    if (!m) return;
+    openCommentPopover(m[1], { anchor: { text, offset: offsetInSource(m[1], text) } });
+  }, 0);
 });
 
-function anchorSelection(id) {
-  const text = (_lastSelection[id] || '').trim();
-  const btn = el('ranchor-btn-' + id);
-  if (!text) {
-    // Nothing selected — nudge the reviewer rather than anchoring nothing.
-    if (btn) { const prev = btn.textContent; btn.textContent = '⚓ select text first'; setTimeout(() => { btn.textContent = prev; }, 1400); }
+// Char offset of `text` in the section's raw markdown source — the rewrite
+// target. -1 when not found (anchor still stores text; agent falls back to grep).
+function offsetInSource(id, text) {
+  const src = _pendingMarkdown.get(id)
+    || REVIEW_DATA.sections.find(s => s.id === id)?.content || '';
+  return src.indexOf(text);
+}
+
+// A small popover with two type chips + a note field + save/cancel. `anchor`
+// is {text, offset} or null (whole-section note).
+function openCommentPopover(id, { anchor } = {}) {
+  const pop = el('rpop-' + id); if (!pop) return;
+  pop.dataset.type = 'changes';
+  pop.innerHTML =
+      '<div class="cmt-pop-row">'
+    +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
+    +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
+    + '</div>'
+    + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
+    + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
+    + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
+    +   '<button type="button" class="cmt-cancel">cancel</button></div>';
+  pop.style.display = '';
+  pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
+    pop.dataset.type = ch.dataset.type;
+    pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+  });
+  const ta = pop.querySelector('.cmt-pop-note'); ta.focus();
+  pop.querySelector('.cmt-save').onclick = () => {
+    const note = ta.value.trim();
+    if (!note) { ta.placeholder = 'a comment needs a note'; return; }
+    addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined });
+    closeCommentPopover(id);
+  };
+  pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
+}
+
+function closeCommentPopover(id) {
+  const pop = el('rpop-' + id);
+  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; }
+}
+
+// Re-wrap each comment's anchored span in the rendered content with a typed mark.
+function renderHighlights(id) {
+  const content = el('rcontent-' + id); if (!content) return;
+  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info').forEach(m => {
+    m.replaceWith(document.createTextNode(m.textContent));
+  });
+  content.normalize();
+  const cs = (rState.verdicts[id]?.comments || []).filter(c => c.anchor?.text);
+  cs.forEach(c => wrapFirst(content, c.anchor.text, 'cmt-hl-' + c.type));
+}
+
+// Wrap the first text-node occurrence of `needle` in a <mark class=cls>.
+function wrapFirst(root, needle, cls) {
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walk.nextNode())) {
+    const i = n.nodeValue.indexOf(needle);
+    if (i < 0) continue;
+    const after = n.splitText(i);
+    after.splitText(needle.length);
+    const mark = document.createElement('mark');
+    mark.className = cls;
+    mark.textContent = after.nodeValue;
+    after.replaceWith(mark);
     return;
   }
-  (rState.verdicts[id] ||= {}).anchor = text;
-  syncAnchorChip(id);
 }
 
-function clearAnchor(id) {
-  if (rState.verdicts[id]) delete rState.verdicts[id].anchor;
-  syncAnchorChip(id);
+/* ─── Open notes (issue #16) — settle by cid, recorded as a comment so the
+   submit carries it to open_notes.py which closes the thread. ─── */
+/* Reviewer replies to an open thread → continues the SAME cid thread. The reply
+   rides as a comment on that cid (open, unsettled, flagged `reply`), so
+   open_notes.update appends it as a new exchange and the agent answers again
+   next round — a GitHub-style back-and-forth until the thread is settled. An
+   emptied reply clears the pending one. Reply comments are kept out of the
+   new-comment list (they live in their thread) but still count as active
+   feedback, so the section can't be approved while a reply is pending. */
+function replyToThread(id, cid) {
+  const field = el('rreply-' + cid);
+  const wrap = field ? field.closest('.thread-reply') : null;
+  const type = (wrap && wrap.dataset.type) || 'info';   // info = keep discussing; changes = escalate to an edit
+  const note = (field ? field.value : '').trim();
+  const cs = commentsOf(id);
+  let c = cs.find(x => x.cid === cid);
+  if (!note) {
+    if (c && c.reply) rState.verdicts[id].comments = cs.filter(x => x !== c);
+    syncCard(id);
+    return;
+  }
+  if (!c) { c = { cid }; cs.push(c); }
+  Object.assign(c, { type, note, open: true, settled: false, reply: true });
+  syncCard(id);
 }
 
-/* ─── Open notes (issue #16) — settle toggles a carried thread closed ─── */
-function settleOpenNotes(id) {
-  const v = (rState.verdicts[id] ||= {});
-  v.settle = !v.settle;
-  const thread = el('rthread-' + id);
-  const btn = el('rsettle-' + id);
-  if (thread) thread.classList.toggle('is-settled', !!v.settle);
-  if (btn) btn.innerHTML = v.settle ? '&#10003; settled' : '&#10003; settle';
+function settleOpenNotes(id, cid) {
+  const cs = commentsOf(id);
+  let c = cs.find(x => x.cid === cid);
+  if (!c) { c = { cid, type: 'info', note: '', open: true, settled: true }; cs.push(c); }
+  else { c.settled = !c.settled; c.reply = false; }
+  const thread = el('rthread-' + cid);
+  const btn = el('rsettle-' + cid);
+  if (thread) thread.classList.toggle('is-settled', !!c.settled);
+  if (btn) btn.innerHTML = c.settled ? '&#10003; settled' : '&#10003; settle';
+  syncCard(id);
 }
 
-function syncAnchorChip(id) {
-  const chip = el('ranchor-chip-' + id);
-  if (!chip) return;
-  const anchor = rState.verdicts[id]?.anchor;
-  if (!anchor) { chip.style.display = 'none'; chip.innerHTML = ''; return; }
-  chip.style.display = '';
-  chip.title = anchor;
-  const short = anchor.length > 60 ? anchor.slice(0, 57) + '…' : anchor;
-  chip.innerHTML = '<span class="anchor-chip-pin">&#9875;</span>'
-                 + '<span class="anchor-chip-text"></span>'
-                 + '<button type="button" class="anchor-chip-x" title="Remove anchor" aria-label="Remove anchor">&times;</button>';
-  chip.querySelector('.anchor-chip-text').textContent = short;
-  chip.querySelector('.anchor-chip-x').onclick = e => { e.stopPropagation(); clearAnchor(id); };
+// Paint this round's freshly-added comments under the section (edit/delete each).
+function renderCommentList(id) {
+  const host = el('rclist-' + id); if (!host) return;
+  // Replies live in their own thread, not the new-comment list.
+  const cs = activeComments(id).filter(c => !c.reply);
+  host.innerHTML = cs.map(c =>
+      '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
+    +   '<span class="cmt-type">' + c.type + '</span>'
+    +   (c.anchor?.text ? '<span class="cmt-quote">' + esc(c.anchor.text) + '</span>' : '')
+    +   '<span class="cmt-note">' + esc(c.note) + '</span>'
+    +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
+    + '</div>').join('');
+  host.querySelectorAll('.cmt-del').forEach(b =>
+    b.onclick = e => { e.stopPropagation(); removeComment(id, b.dataset.cid); });
 }
+
 
 function syncReviewDot(id) {
-  const verdict  = rState.verdicts[id]?.verdict;
+  const verdict  = deriveVerdict(id);
   const isActive = rState.active === id;
   const dot = el('rdot-' + id);
   if (!dot) return;
@@ -1652,7 +1863,7 @@ function syncReviewDot(id) {
 }
 
 function syncNoteInline(id) {
-  const verdict = rState.verdicts[id]?.verdict;
+  const verdict = deriveVerdict(id);
   const note    = rState.verdicts[id]?.note || '';
   const inlineEl = el('rnote-inline-' + id);
   if (!inlineEl) return;
@@ -1663,8 +1874,8 @@ function syncNoteInline(id) {
 
 function updateReviewStats() {
   const sections = REVIEW_DATA.sections;
-  const approved    = sections.filter(s => rState.verdicts[s.id]?.verdict === 'approved').length;
-  const withFeedback= sections.filter(s => ['changes','info'].includes(rState.verdicts[s.id]?.verdict)).length;
+  const approved    = sections.filter(s => deriveVerdict(s.id) === 'approved').length;
+  const withFeedback= sections.filter(s => ['changes','info'].includes(deriveVerdict(s.id))).length;
   const total    = sections.length;
   const reviewed = approved + withFeedback;
   const remaining= total - reviewed;
@@ -1926,11 +2137,10 @@ function submitReview(early) {
     submitted_early: early,
     sections: REVIEW_DATA.sections.map(s => {
       const v = rState.verdicts[s.id] || {};
-      return { id: s.id, verdict: v.verdict || 'pending', note: v.note || '',
-               ...(v.anchor && { anchor: v.anchor }),
-               ...(v.open && { open: true }),
-               ...(v.settle && { settle: true }),
-               ...(v.images && v.images.length && { images: v.images }) };
+      const comments = v.comments || [];
+      const verdict = deriveVerdict(s.id);
+      return { id: s.id, verdict,
+               ...(comments.length && { comments }) };
     })
   };
   fetch('/submit', {
@@ -2334,11 +2544,14 @@ class Handler(BaseHTTPRequestHandler):
                     rnd = 0
                 for s in data.get("sections", []):
                     if s.get("verdict") in ("changes", "info"):
+                        comments = s.get("comments") or []
+                        note = (" · ".join(c.get("note", "") for c in comments if c.get("note"))
+                                if comments else s.get("note", ""))
                         _ledger.append({
                             "round": rnd,
                             "section_title": titles.get(s.get("id"), s.get("id", "?")),
                             "verdict": s["verdict"],
-                            "note": s.get("note", ""),
+                            "note": note,
                         })
             data = extract_attachments(data, out, rnd)
             try:

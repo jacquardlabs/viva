@@ -366,14 +366,15 @@ def test_no_diff_key_round_one() -> None:
 
 
 def test_open_notes_attached_by_title() -> None:
-    # An open thread in the store attaches to the matching section by title so
-    # the server can re-present the exchange. A settled thread does not attach.
+    # An open thread in the cid-keyed store attaches to the matching section by
+    # title so the server can re-present the exchange. Settled threads drop.
     doc = "## Goals\n\nbody\n\n## Scope\n\nscope\n"
+    exchanges = [{"round": 1, "verdict": "changes", "note": "tighten", "response": "did it"}]
     store = {
-        "goals": {"title": "Goals", "status": "open", "exchanges": [
-            {"round": 1, "verdict": "changes", "note": "tighten", "response": "did it"}]},
-        "scope": {"title": "Scope", "status": "settled", "exchanges": [
-            {"round": 1, "verdict": "info", "note": "x", "response": "y"}]},
+        "goals-c1": {"cid": "goals-c1", "title": "Goals", "quote": "q", "status": "open",
+                     "exchanges": exchanges},
+        "scope-c1": {"cid": "scope-c1", "title": "Scope", "quote": "", "status": "settled",
+                     "exchanges": [{"round": 1, "verdict": "info", "note": "x", "response": "y"}]},
     }
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
@@ -389,7 +390,10 @@ def test_open_notes_attached_by_title() -> None:
         data = json.loads(out.read_text())
     goals = next(s for s in data["sections"] if s["title"] == "Goals")
     scope = next(s for s in data["sections"] if s["title"] == "Scope")
-    assert goals.get("open_notes") == store["goals"]["exchanges"], goals
+    # open_notes is now a list of thread dicts (cid, quote, status, exchanges)
+    assert len(goals.get("open_notes", [])) == 1, goals
+    assert goals["open_notes"][0]["cid"] == "goals-c1"
+    assert goals["open_notes"][0]["exchanges"] == exchanges
     assert "open_notes" not in scope, "settled thread must not attach"
 
 
