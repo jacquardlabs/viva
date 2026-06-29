@@ -758,7 +758,7 @@ body {
 
 /* ─── Multi-comment review ─── */
 .comment-add-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-.cmt-add-hint { font-size: 12px; color: var(--text3); opacity: 0.8; margin-right: auto; }
+.cmt-add-hint { font-family: 'Fragment Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text3); margin-right: auto; display: flex; align-items: center; gap: 5px; }
 .cmt-add-btn {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -773,7 +773,9 @@ mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var
 mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
 .comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
 .cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
-.cmt-pop-quote { font-style: italic; opacity: 0.7; margin: 4px 0; }
+/* Anchored-span label inside the popover — same small italic muted treatment
+   as the saved comment-row quote (.cmt-quote) and thread quote. */
+.cmt-pop-quote { font-style: italic; font-size: 10.5px; color: var(--text3); margin: 2px 0 6px; }
 .cmt-chip {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
