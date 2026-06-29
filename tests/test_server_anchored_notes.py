@@ -75,9 +75,12 @@ def main() -> None:
 
         # Derived verdict from dominant comment type; comments array preserved.
         assert s1["verdict"] == "changes" and len(s1["comments"]) == 2, s1
+        # Each comment carries its stable cid through the pipe.
+        assert [c["cid"] for c in s1["comments"]] == ["s1-c1", "s1-c2"], s1
         # Anchored comment carries offset through the pipe.
         assert s1["comments"][0]["anchor"]["offset"] == 9, s1
-        # Un-anchored comment has no `anchor` key at all.
+        # Un-anchored comment: no `anchor` key, and a lone info comment derives `info`.
+        assert s2["verdict"] == "info", s2
         assert "anchor" not in s2["comments"][0], s2
 
         # Page ships the interaction-model needles and NOT the retired ones.
