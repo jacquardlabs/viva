@@ -758,7 +758,7 @@ body {
 
 /* ─── Multi-comment review ─── */
 .comment-add-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-.cmt-add-hint { font-family: 'Fragment Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text3); margin-right: auto; display: flex; align-items: center; gap: 5px; }
+.cmt-add-hint { font-family: 'Fragment Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text3); margin-right: auto; }
 .cmt-add-btn {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -773,9 +773,17 @@ mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var
 mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
 .comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
 .cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
-/* Anchored-span label inside the popover — same small italic muted treatment
-   as the saved comment-row quote (.cmt-quote) and thread quote. */
-.cmt-pop-quote { font-style: italic; font-size: 10.5px; color: var(--text3); margin: 2px 0 6px; }
+/* The span being commented on — a focal accent callout so it reads clearly as
+   the thing being acted on, not muted context. Uses the app's accent slot. */
+.cmt-pop-quote {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--accent-dim);
+  border-left: 2px solid var(--accent);
+  padding: 5px 9px;
+  margin: 2px 0 9px;
+  overflow-wrap: anywhere;
+}
 .cmt-chip {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -1349,7 +1357,7 @@ function openThreadHTML(section) {
   if (!Array.isArray(ex) || ex.length === 0) return '';
   return ex.map(t => {
     const cid = esc(t.cid || '');
-    const quote = t.quote ? '<span class="open-thread-quote">&#9875; ' + esc(t.quote) + '</span>' : '';
+    const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
     return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
       +   '<span class="open-thread-label">open note</span>' + quote
@@ -1432,7 +1440,7 @@ function buildReviewCard(section) {
           ${diffStripHTML(section.id, section.diff)}
           <div class="section-content" id="rcontent-${section.id}"></div>
           <div class="comment-add-row">
-            <span class="cmt-add-hint">&#9875; select text above to comment</span>
+            <span class="cmt-add-hint">select text above to comment</span>
             <button type="button" class="cmt-add-btn" id="rcmtnote-${section.id}">+ add note</button>
           </div>
           <div class="actions">
@@ -1689,7 +1697,7 @@ function openCommentPopover(id, { anchor } = {}) {
     +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
     +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
     + '</div>'
-    + (anchor ? '<div class="cmt-pop-quote">&#9875; ' + esc(anchor.text) + '</div>' : '')
+    + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
@@ -1762,7 +1770,7 @@ function renderCommentList(id) {
   host.innerHTML = cs.map(c =>
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
-    +   (c.anchor?.text ? '<span class="cmt-quote">&#9875; ' + esc(c.anchor.text) + '</span>' : '')
+    +   (c.anchor?.text ? '<span class="cmt-quote">' + esc(c.anchor.text) + '</span>' : '')
     +   '<span class="cmt-note">' + esc(c.note) + '</span>'
     +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
     + '</div>').join('');
