@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.14.3 (2026-07-02)
+
+### Performance Improvements
+
+- Cut round-load latency in the review loop and SPA
+  ([#96](https://github.com/jacquardlabs/viva/pull/96),
+  [`4aa02b0`](https://github.com/jacquardlabs/viva/commit/4aa02b05c781f33b5cae8966be191ad4f1a64f89))
+
+
 ## v1.14.2 (2026-07-02)
 
 ### Bug Fixes

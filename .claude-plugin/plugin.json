@@ -1,7 +1,7 @@
 {
   "name": "viva",
   "description": "Section-by-section markdown review for Claude Code. Claude presents its work, you drill every section for correctness and understanding, Claude defends and revises, the document only passes when it all holds up.",
-  "version": "1.14.2",
+  "version": "1.14.3",
   "author": {
     "name": "Jacquard Labs",
     "url": "https://github.com/jacquardlabs"
