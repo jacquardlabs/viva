@@ -13,7 +13,7 @@ Replaces: `plan-reviewer`
 
 To enable brainstorming Q&A integration, run once in your Claude Code prompt:
 
-  ! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | head -1)"
+  ! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | sort -V | tail -1)"
 
 ---
 

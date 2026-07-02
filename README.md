@@ -55,7 +55,7 @@ If no path is given, Claude scans the current directory for a single `.md` file.
 viva adds a batch Q&A phase to the built-in `brainstorming` skill so Claude can surface key design questions before writing a spec. Run once in your Claude Code prompt to install:
 
 ```
-! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | head -1)"
+! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | sort -V | tail -1)"
 ```
 
 Re-run after any superpowers plugin update.
