@@ -94,7 +94,12 @@ class Annotation(TypedDict, total=False):
     kind: str       # required — producer tag / badge label
     severity: str   # required — info | warn | error
     message: str    # required — inline text
-    anchor: str     # optional — hover title
+    # `anchor` is overloaded (see DESIGN.md → JSON protocol conventions):
+    #   - a display string → rendered as the badge's hover `title`, OR
+    #   - another section's id → rendered as a deep-link (contradiction producer).
+    # NOT the same as a comment's `anchor`, which is a {text, offset} selection
+    # object in the OUTPUT schema (SectionVerdict.comments) — a different shape.
+    anchor: str
     basis: str      # confidence only — sourced | inferred
     level: str      # confidence only — high | medium | low
 
@@ -119,7 +124,10 @@ class ReviewInput(TypedDict, total=False):
 class SectionVerdict(TypedDict, total=False):
     id: str        # required — section id
     verdict: str   # required — one of VERDICTS
-    comments: list  # optional — typed comment threads (issue #68)
+    # optional — typed comment threads (issue #68). Each comment may carry an
+    # `anchor` object {text, offset}: the reviewer's exact selection, used to
+    # scope the rewrite. Distinct from Annotation.anchor (a string) above.
+    comments: list
 
 
 class ReviewOutput(TypedDict, total=False):

@@ -252,5 +252,9 @@ Submit button states:
   shared "ended before reviewing everything" flag in every mode — never a mode-specific
   alias like `skipped`.
 - Annotation schema: `{kind, severity, message, anchor?}`. Structured extensions (`basis`, `level` for confidence) are preserved through the shared merge in `scripts/annotate.py`, so a confidence flag routes through the same write path as any other annotation rather than bypassing it.
+- **`anchor` is overloaded — three semantics by context.** The name is reused across the input and output schemas with different meanings and consumers; keep them straight when adding an annotation kind or a consumer:
+  - *Annotation, display* (input) — a string rendered as the badge's hover `title` attribute.
+  - *Annotation, navigation* (input) — when the string matches another section's `id` (the cross-section contradiction producer), it renders as a `.annot-jump` deep-link to that section instead of a hover title.
+  - *Comment, selection* (output) — a `comment.anchor` object `{text, offset}`: the exact text the reviewer selected in the section, which the agent uses to scope its rewrite (`offset` disambiguates a repeated phrase). This is a structured object, not a string, and lives on comments in `review-r{N}.json` — a different shape from the annotation `anchor` above.
 - `GET /input` returns the current review-input merged with `ledger: [...]` — the live running ledger. The `ledger` field is injected by the server at serve time and is **not** part of the `review-input-r{N}.json` file schema that `parse_sections.py` writes.
 - The round shapes are the system's load-bearing contract, defined in one place: `scripts/schema.py` holds the TypedDicts, `section_key()` (the single section-identity normalization), `verdict_to_ledger_entry()` (the single ledger-row rule), and the boundary validators. Adding a field means updating that module and validating at the boundary (on parse write, on server read) — never at the point of use.
