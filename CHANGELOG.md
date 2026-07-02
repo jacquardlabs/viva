@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.13.0 (2026-07-02)
+
+### Features
+
+- **api**: Standardize JSON error responses; /next-round output in body
+  ([#89](https://github.com/jacquardlabs/viva/pull/89),
+  [`49f09cf`](https://github.com/jacquardlabs/viva/commit/49f09cf1c3a083c3a185e643bbca66c5205252b2))
+
+### Testing
+
+- Extract shared server harness; add orchestration smoke test
+  ([#88](https://github.com/jacquardlabs/viva/pull/88),
+  [`416a76e`](https://github.com/jacquardlabs/viva/commit/416a76ea02c3c30be8e2f0befc1998c832434e8e))
+
+
 ## v1.12.1 (2026-07-02)
 
 ### Bug Fixes
