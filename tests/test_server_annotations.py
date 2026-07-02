@@ -8,27 +8,12 @@ GET /input and the /next-round push must both preserve the annotations array,
 and the page must define the renderer that turns them into colored badges.
 """
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def post(base: str, path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        base + path,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
-
-
-def get(base: str, path: str) -> dict:
-    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import get, get_text, launch_server, post  # noqa: E402
 
 
 def main() -> None:
@@ -50,19 +35,7 @@ def main() -> None:
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
-         "--no-browser"],
-        cwd=tmp,
-    )
-    try:
-        url_file = viva / "server.url"
-        for _ in range(50):
-            if url_file.exists():
-                break
-            time.sleep(0.2)
-        base = url_file.read_text().strip()
+    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
 
         # Pass-through: GET /input preserves the annotations array verbatim.
         data = get(base, "/input")
@@ -80,7 +53,7 @@ def main() -> None:
 
         # Page ships the renderer, the strip markup hook, and the three
         # severity styles mapped onto the existing verdict color slots.
-        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        page = get_text(base, "/")
         for needle in ("function annotStripHTML", "annot-strip",
                        ".annot-info", ".annot-warn", ".annot-error",
                        "section.annotations",
@@ -90,9 +63,6 @@ def main() -> None:
             assert needle in page, f"page missing: {needle}"
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

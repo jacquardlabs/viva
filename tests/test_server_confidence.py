@@ -13,18 +13,12 @@ sort that reads basis/level off the annotation — no string-parsing. Contract:
     document order (zero-regression).
 """
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def get(base, path):
-    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import get, get_text, launch_server  # noqa: E402
 
 
 def main():
@@ -41,18 +35,7 @@ def main():
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
-         "--no-browser"], cwd=tmp)
-    try:
-        url_file = viva / "server.url"
-        for _ in range(50):
-            if url_file.exists():
-                break
-            time.sleep(0.2)
-        assert url_file.exists(), "server failed to start"
-        base = url_file.read_text().strip()
+    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
 
         # Pass-through: the structured confidence annotation survives verbatim.
         data = get(base, "/input")
@@ -60,15 +43,12 @@ def main():
         assert s1["annotations"][0] == conf, f"confidence annotation dropped: {s1}"
 
         # Page ships the sort toggle + weakness scoring keyed on basis/level.
-        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        page = get_text(base, "/")
         for needle in ("weaknessScore", "sortMode", "applyCardSort",
                        "sort-toggle", "'confidence'", "basis", "level"):
             assert needle in page, f"page missing: {needle}"
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

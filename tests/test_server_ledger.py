@@ -1,27 +1,12 @@
 #!/usr/bin/env python3
 """Integration test: server accumulates a verbatim ledger across rounds."""
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def post(base: str, path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        base + path,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
-
-
-def get(base: str, path: str) -> dict:
-    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import get, get_text, launch_server, post  # noqa: E402
 
 
 def main() -> None:
@@ -39,19 +24,7 @@ def main() -> None:
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
-         "--no-browser"],
-        cwd=tmp,
-    )
-    try:
-        url_file = viva / "server.url"
-        for _ in range(50):
-            if url_file.exists():
-                break
-            time.sleep(0.2)
-        base = url_file.read_text().strip()
+    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
 
         # Round 1 has no ledger yet
         assert get(base, "/input").get("ledger") == [], "round 1 ledger must be empty"
@@ -79,7 +52,7 @@ def main() -> None:
         assert len(ledger) == 3, f"expected 3 entries, got {len(ledger)}"
         assert ledger[2] == {"round": 2, "section_title": "Error Handling",
                              "verdict": "changes", "note": ""}
-        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        page = get_text(base, "/")
         for needle in ('id="ledger"', 'id="complete-ledger"',
                        "function renderLedger", "function ledgerRowsHTML",
                        ".ledger-verdict.v-changes"):
@@ -93,9 +66,6 @@ def main() -> None:
         assert ledger[3]["round"] == 0, f"round not coerced: {ledger[3]}"
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

@@ -13,25 +13,12 @@ on the card, and the reviewer's settle actions ride back on the verdict through
     to today (no open_notes / comments keys appear).
 """
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def post(base, path, payload):
-    req = urllib.request.Request(
-        base + path, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
-
-
-def get(base, path):
-    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import get, get_text, launch_server, post  # noqa: E402
 
 
 def main():
@@ -50,18 +37,7 @@ def main():
         ],
     }
     (viva / "in2.json").write_text(json.dumps(r2))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in2.json"), "--output", str(viva / "out2.json"),
-         "--no-browser"], cwd=tmp)
-    try:
-        url_file = viva / "server.url"
-        for _ in range(50):
-            if url_file.exists():
-                break
-            time.sleep(0.2)
-        assert url_file.exists(), "server failed to start"
-        base = url_file.read_text().strip()
+    with launch_server(viva / "in2.json", viva / "out2.json", cwd=tmp) as base:
 
         # Pass-through: open_notes preserved, bare section stays bare.
         data = get(base, "/input")
@@ -71,7 +47,7 @@ def main():
         assert "open_notes" not in s2, f"s2 must stay bare: {s2}"
 
         # Page ships the thread renderer and settle action.
-        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        page = get_text(base, "/")
         for needle in ("openNotesHTML", "open-thread", "settleOpenNotes",
                        "section.open_notes", "renderCommentList"):
             assert needle in page, f"page missing: {needle}"
@@ -88,9 +64,6 @@ def main():
         assert o1["comments"][0]["settled"] is True, f"settled flag lost: {o1}"
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

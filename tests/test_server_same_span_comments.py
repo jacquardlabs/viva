@@ -8,21 +8,12 @@ must preserve BOTH verbatim, each with its own anchor, type, and cid. The derive
 section verdict is `changes` because at least one comment is a changes comment.
 """
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def post(base, path, payload):
-    req = urllib.request.Request(
-        base + path, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"})
-    return urllib.request.urlopen(req, timeout=5).read()
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import launch_server, post  # noqa: E402
 
 
 def main():
@@ -36,18 +27,7 @@ def main():
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
-         "--no-browser"], cwd=tmp)
-    try:
-        uf = viva / "server.url"
-        for _ in range(50):
-            if uf.exists():
-                break
-            time.sleep(0.2)
-        assert uf.exists(), "server failed to start"
-        base = uf.read_text().strip()
+    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
 
         # Two comments on the SAME span "retries 3x on timeout" — distinct cids/types.
         post(base, "/submit", {"round": 1, "submitted_early": False, "sections": [
@@ -73,9 +53,6 @@ def main():
         assert s1["verdict"] == "changes", s1
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":
