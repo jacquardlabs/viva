@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.14.1 (2026-07-02)
+
+### Bug Fixes
+
+- **install**: Locate superpowers under any cache path; fail loud; add test
+  ([#92](https://github.com/jacquardlabs/viva/pull/92),
+  [`315c457`](https://github.com/jacquardlabs/viva/commit/315c457ab7682810ce49c71b895a58b88b026730))
+
+- **server**: Reject non-dict JSON bodies on /submit and /next-round
+  ([#93](https://github.com/jacquardlabs/viva/pull/93),
+  [`eadb547`](https://github.com/jacquardlabs/viva/commit/eadb5472dfc0dcbdf60baf8cde7a65968bf64c9f))
+
+
 ## v1.14.0 (2026-07-02)
 
 ### Bug Fixes
