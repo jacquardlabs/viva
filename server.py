@@ -2657,7 +2657,7 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         pass
         else:
-            self._send(404, "text/plain", b"not found")
+            self._error(404, "not found")
 
     def do_POST(self) -> None:
         global _input_data, _output_path, _server_state
@@ -2670,15 +2670,15 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin", "")
             if origin and not (origin.startswith("http://127.0.0.1")
                                or origin.startswith("http://localhost")):
-                self._send(403, "text/plain", b"forbidden origin")
+                self._error(403, "forbidden origin")
                 return
             try:
                 length = int(self.headers.get("Content-Length", 0))
             except ValueError:
-                self._send(400, "text/plain", b"invalid Content-Length")
+                self._error(400, "invalid Content-Length")
                 return
             if length > MAX_SUBMIT_BYTES:
-                self._send(413, "text/plain", b"payload too large")
+                self._error(413, "payload too large")
                 return
 
             body = self.rfile.read(length)
@@ -2686,7 +2686,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
             except json.JSONDecodeError:
-                self._send(400, "application/json", b'{"error":"invalid json"}')
+                self._error(400, "invalid json")
                 return
 
             # Validate review verdicts at the boundary. Q&A submits an `answers`
@@ -2695,8 +2695,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     schema.validate_verdicts(data)
                 except ValueError as e:
-                    self._send(400, "application/json",
-                               json.dumps({"error": f"invalid verdicts: {e}"}).encode())
+                    self._error(400, f"invalid verdicts: {e}")
                     return
 
             with _data_lock:
@@ -2716,34 +2715,38 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 write_output(out, data)
             except (IOError, OSError) as e:
-                self._send(500, "application/json", f'{{"error":"write failed: {e}"}}'.encode())
+                self._error(500, f"write failed: {e}")
                 return
 
             self._send(200, "application/json", b'{"ok":true}')
             _server_state = "processing"
             _push_sse("processing", {})
         elif path == "/next-round":
-            output = params.get("output", [None])[0]
-            if not output:
-                self._send(400, "text/plain", b"missing ?output= param")
-                return
+            # No CSRF/Origin check here: /next-round is called by the agent
+            # (curl), not the browser, so the browser-CSRF threat /submit guards
+            # against does not apply. Only browser-facing endpoints need it.
             try:
                 length = int(self.headers.get("Content-Length", 0))
             except ValueError:
-                self._send(400, "text/plain", b"invalid Content-Length")
+                self._error(400, "invalid Content-Length")
                 return
             body = self.rfile.read(length)
             try:
                 new_data = json.loads(body)
             except json.JSONDecodeError:
-                self._send(400, "application/json", b'{"error":"invalid json"}')
+                self._error(400, "invalid json")
+                return
+            # `output` travels in the JSON body like every other POST field. The
+            # legacy `?output=` query param is still honored as a fallback.
+            output = new_data.pop("output", None) or params.get("output", [None])[0]
+            if not output:
+                self._error(400, "missing 'output' in body")
                 return
             if "sections" in new_data:
                 try:
                     schema.validate_review_input(new_data)
                 except ValueError as e:
-                    self._send(400, "application/json",
-                               json.dumps({"error": f"invalid review-input: {e}"}).encode())
+                    self._error(400, f"invalid review-input: {e}")
                     return
             with _data_lock:
                 _input_data = new_data
@@ -2753,10 +2756,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
+            # No CSRF/Origin check — agent-driven endpoint (see /next-round).
             try:
                 length = int(self.headers.get("Content-Length", 0))
             except ValueError:
-                self._send(400, "text/plain", b"invalid Content-Length")
+                self._error(400, "invalid Content-Length")
                 return
             body = self.rfile.read(length) if length else b'{}'
             try:
@@ -2768,7 +2772,7 @@ class Handler(BaseHTTPRequestHandler):
             _push_sse("complete", summary)
             threading.Timer(2.0, _shutdown.set).start()
         else:
-            self._send(404, "text/plain", b"not found")
+            self._error(404, "not found")
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -2776,6 +2780,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _error(self, status: int, message: str) -> None:
+        """Send a standardized JSON error body. Every error response goes through
+        here so a client can parse any failure by content type — successes are
+        already uniformly `{"ok": true}` / JSON."""
+        self._send(status, "application/json",
+                   json.dumps({"error": message}).encode())
 
 
 if __name__ == "__main__":
