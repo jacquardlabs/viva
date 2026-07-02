@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v1.14.0 (2026-07-02)
+
+### Bug Fixes
+
+- **ui**: Tokenize error surfaces; scale card stagger; clarify labels
+  ([#91](https://github.com/jacquardlabs/viva/pull/91),
+  [`457360e`](https://github.com/jacquardlabs/viva/commit/457360e6703440b99cb898b35643df4e9c517efd))
+
+- **ui**: Tokenize error surfaces; scale card stagger; clarify labels
+  ([#90](https://github.com/jacquardlabs/viva/pull/90),
+  [`aeace7c`](https://github.com/jacquardlabs/viva/commit/aeace7c3f19022870110a0976503d0a730390ada))
+
+### Features
+
+- **api**: Standardize JSON error responses; /next-round output in body
+  ([#91](https://github.com/jacquardlabs/viva/pull/91),
+  [`457360e`](https://github.com/jacquardlabs/viva/commit/457360e6703440b99cb898b35643df4e9c517efd))
+
+- **api**: Standardize JSON error responses; /next-round output in body
+  ([#90](https://github.com/jacquardlabs/viva/pull/90),
+  [`aeace7c`](https://github.com/jacquardlabs/viva/commit/aeace7c3f19022870110a0976503d0a730390ada))
+
+### Refactoring
+
+- Dead-code & defensive hygiene pass ([#91](https://github.com/jacquardlabs/viva/pull/91),
+  [`457360e`](https://github.com/jacquardlabs/viva/commit/457360e6703440b99cb898b35643df4e9c517efd))
+
+
 ## v1.13.0 (2026-07-02)
 
 ### Features
