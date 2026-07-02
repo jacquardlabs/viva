@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.14.2 (2026-07-02)
+
+### Bug Fixes
+
+- **a11y**: Scope Tab-to-advance to the active card; add skip link
+  ([#94](https://github.com/jacquardlabs/viva/pull/94),
+  [`568eed5`](https://github.com/jacquardlabs/viva/commit/568eed5b3a921f01c5ba65714b15da84b7275a72))
+
+
 ## v1.14.1 (2026-07-02)
 
 ### Bug Fixes
