@@ -1025,6 +1025,24 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .qa-btn:hover   { --c: var(--text3); color: var(--text); }
 .qa-btn.confirm { --c: var(--teal);  color: var(--teal); }
 
+/* ─── Skip link (first Tab stop; hidden until focused) ───── */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 2000;
+  padding: 8px 12px;
+  background: var(--bg2);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-link:focus { top: 8px; outline: 1.5px solid var(--accent); outline-offset: 2px; }
+#main-content:focus { outline: none; }
+
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .card-head:focus-visible,
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
@@ -1217,9 +1235,11 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 </head>
 <body>
 
+<a class="skip-link" href="#main-content">Skip to review</a>
+
 <div class="sheet-frame" aria-hidden="true"><span class="sf-mark sf-tl">+</span><span class="sf-mark sf-tr">+</span><span class="sf-mark sf-bl">+</span><span class="sf-mark sf-br">+</span></div>
 
-<main class="shell">
+<main class="shell" id="main-content" tabindex="-1">
 
   <!-- ── Review mode ──────────────────────────────────────── -->
   <div id="review-view" style="display:none">
@@ -1303,7 +1323,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <dt><kbd>a</kbd></dt><dd>approve section</dd>
       <dt><kbd>c</kbd></dt><dd>request changes</dd>
       <dt><kbd>i</kbd></dt><dd>need info</dd>
-      <dt><kbd>Tab</kbd></dt><dd>skip / advance to next card</dd>
+      <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
@@ -2419,14 +2439,15 @@ document.addEventListener('keydown', e => {
     if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
     if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
     if (e.key === 'Tab') {
-      e.preventDefault();
-      if (rState.active) {
+      // Advance to the next card only while focus is inside the active card;
+      // otherwise let Tab navigate natively so the skip-link, bottom-bar
+      // controls, and browser chrome stay keyboard-reachable (#75).
+      const card = rState.active ? el('rcard-' + rState.active) : null;
+      if (card && card.contains(document.activeElement)) {
+        e.preventDefault();
         skipReviewCard(rState.active);
-      } else {
-        const first = REVIEW_DATA.sections.find(s => !rState.verdicts[s.id]?.verdict);
-        if (first) activateReviewCard(first.id);
+        return;
       }
-      return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       const sub = el('btn-submit');
@@ -2450,7 +2471,12 @@ document.addEventListener('keydown', e => {
         return;
       }
     }
-    if (e.key === 'Tab') { e.preventDefault(); advanceQA(qState.active); return; }
+    if (e.key === 'Tab') {
+      const card = el('qacard-' + qState.active);
+      if (card && card.contains(document.activeElement)) {
+        e.preventDefault(); advanceQA(qState.active); return;
+      }
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       const sub = el('btn-submit');
       if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }

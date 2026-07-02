@@ -43,9 +43,18 @@ def test_aria_expanded_sync_helper_exists():
 
 
 def test_main_landmark_wraps_shell():
-    assert '<main class="shell">' in HTML and "</main>" in HTML
+    assert '<main class="shell"' in HTML and "</main>" in HTML
     assert '<div class="shell">' not in HTML
     print("  ok  test_main_landmark_wraps_shell")
+
+
+def test_skip_link_targets_main():
+    # A skip link is the first focusable element and jumps to the <main> (#37).
+    assert '<a class="skip-link" href="#main-content">' in HTML
+    assert 'id="main-content"' in HTML
+    # It precedes the main content in source order (so it's the first Tab stop).
+    assert HTML.index('class="skip-link"') < HTML.index('id="main-content"')
+    print("  ok  test_skip_link_targets_main")
 
 
 def test_stats_aria_live_and_dynamic_title():
@@ -86,6 +95,7 @@ def main():
     test_card_head_is_button_with_aria()
     test_aria_expanded_sync_helper_exists()
     test_main_landmark_wraps_shell()
+    test_skip_link_targets_main()
     test_stats_aria_live_and_dynamic_title()
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
