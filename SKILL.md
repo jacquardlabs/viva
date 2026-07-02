@@ -157,7 +157,7 @@ python3 "$VIVA_DIR/scripts/open_notes.py" update \
   --verdicts .viva/review-rN.json --input .viva/review-input-rN.json
 curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
   -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
-python3 "$VIVA_DIR/scripts/revision_history.py" .viva <doc_file>
+python3 "$VIVA_DIR/scripts/revision_history.py" --viva-dir .viva --doc <doc_file>
 ```
 `revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response), keyed by `cid` and including each comment's original quoted span, and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
 

@@ -23,6 +23,12 @@ The merge is:
   - idempotent  — an identical flag already present is not re-added;
   - a no-op     — an empty sidecar leaves the input byte-identical.
 
+CONVENTION EXCEPTION: unlike every other script (which separates `--input` from
+`--output`), annotate.py modifies `--input` IN PLACE and has no `--output`. This
+is deliberate — producers pipe their flags into the same round file the server
+will read, and because the merge is additive and idempotent, re-running is safe.
+See DESIGN.md → CLI conventions.
+
 Reads the sidecar from --annotations PATH, or from stdin when the path is '-'.
 """
 from __future__ import annotations

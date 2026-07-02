@@ -19,8 +19,8 @@ def write_round(viva: Path, n: int, sections: list, verdicts: list) -> None:
 
 
 def run(viva: Path, doc: Path) -> None:
-    subprocess.run([sys.executable, str(SCRIPT), str(viva), str(doc), "2026-06-09"],
-                   check=True)
+    subprocess.run([sys.executable, str(SCRIPT), "--viva-dir", str(viva),
+                    "--doc", str(doc), "--date", "2026-06-09"], check=True)
 
 
 def main() -> None:
@@ -106,7 +106,8 @@ def main() -> None:
     original5 = "# Doc5\n\nbody\n"
     doc5.write_text(original5)
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), str(viva5), str(doc5), "2026-06-09"],
+        [sys.executable, str(SCRIPT), "--viva-dir", str(viva5),
+         "--doc", str(doc5), "--date", "2026-06-09"],
         check=False, capture_output=True, text=True,
     )
     assert result.returncode != 0, (

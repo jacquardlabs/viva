@@ -238,10 +238,10 @@ Submit button states:
 
 ## CLI conventions
 
-- All scripts use `argparse` with named flags (no `sys.argv` indexing).
+- All scripts use `argparse` with named flags (no `sys.argv` indexing) — every script, no exceptions.
 - Scripts that read-then-write use separate `--input` (read) and `--output` (write) flags.
 - Producer scripts write JSON to stdout for piping; they do not modify files.
-- Merge scripts (annotate.py) modify `--input` in place — document this explicitly.
+- **One deliberate exception: `annotate.py` modifies `--input` in place** and has no `--output`. Producers pipe their flags into the same round file the server will read, and because the merge is additive and idempotent, re-running is safe. Any new script that must mutate its input in place documents the reason the same way — the default remains separate `--input`/`--output`.
 - Optional arguments have sensible defaults; required arguments are validated with clear error messages.
 
 ## JSON protocol conventions
