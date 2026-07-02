@@ -369,6 +369,16 @@ body {
 
 /* ─── Card head ──────────────────────────────────────────── */
 .card-head {
+  /* Native <button> reset — the header is a real button (a11y) but must look
+     like the surrounding card chrome, not a default button. */
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -396,7 +406,9 @@ body {
    to the titleblock REV and the revision log. */
 .rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
 
-.card-title-wrap { flex: 1; min-width: 0; }
+/* Flex column so the title + inline-note <span>s stack as they did when divs
+   (the header is now a <button>, whose content must be phrasing-level spans). */
+.card-title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 .card-title {
   font-size: 13px;
@@ -1001,12 +1013,51 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .qa-btn.confirm { --c: var(--teal);  color: var(--teal); }
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
+.card-head:focus-visible,
 .action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
+.settle-btn:focus-visible, .diff-toggle:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ─── Keyboard shortcut legend ───────────────────────────── */
+.kbd-legend {
+  margin: 4px 2px 0;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+}
+.kbd-legend summary {
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 4px 0;
+  user-select: none;
+}
+.kbd-legend summary:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.kbd-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  align-items: center;
+}
+.kbd-list dt { margin: 0; }
+.kbd-list dd { margin: 0; color: var(--text2); }
+.kbd-list kbd {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
 }
 
 /* ─── Bottom bar ─────────────────────────────────────────── */
@@ -1155,7 +1206,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 
 <div class="sheet-frame" aria-hidden="true"><span class="sf-mark sf-tl">+</span><span class="sf-mark sf-tr">+</span><span class="sf-mark sf-bl">+</span><span class="sf-mark sf-br">+</span></div>
 
-<div class="shell">
+<main class="shell">
 
   <!-- ── Review mode ──────────────────────────────────────── -->
   <div id="review-view" style="display:none">
@@ -1182,7 +1233,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       </div>
     </div>
     <div class="sort-bar" id="sort-bar" style="display:none">
-      <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident">&#8645; document order</button>
+      <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
     <div class="cards" id="review-cards"></div>
   </div>
@@ -1233,18 +1284,30 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
     </div>
   </div>
 
-</div>
+  <details class="kbd-legend">
+    <summary>keyboard shortcuts</summary>
+    <dl class="kbd-list">
+      <dt><kbd>a</kbd></dt><dd>approve section</dd>
+      <dt><kbd>c</kbd></dt><dd>request changes</dd>
+      <dt><kbd>i</kbd></dt><dd>need info</dd>
+      <dt><kbd>Tab</kbd></dt><dd>skip / advance to next card</dd>
+      <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
+    </dl>
+  </details>
+
+</main>
 
 <!-- Bottom bar -->
 <div class="bottom-bar">
   <div class="bottom-inner">
-    <div class="stats" id="stats-area">
+    <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
     </div>
     <div class="btn-group">
-      <button class="btn-skip" id="btn-skip">&#9889; skip rest &amp; submit</button>
+      <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
       <button class="btn-submit disabled" id="btn-submit">submit all</button>
     </div>
   </div>
@@ -1389,7 +1452,7 @@ function diffStripHTML(id, diff) {
   }).join('');
   return '<div class="diff-block" id="rdiff-' + id + '">'
        + '<button type="button" class="diff-toggle" id="rdiff-toggle-' + id + '">'
-       + '&#9662; changes since last round</button>'
+       + '<span aria-hidden="true">&#9662;</span> changes since last round</button>'
        + '<div class="diff-body">' + rows + '</div></div>';
 }
 
@@ -1426,7 +1489,7 @@ function openThreadHTML(section) {
     return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
       +   '<span class="open-thread-label">open note</span>' + quote
-      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '">&#10003; settle</button>'
+      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
       + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '">'
@@ -1498,16 +1561,16 @@ function buildReviewCard(section) {
   _pendingMarkdown.set(section.id, section.content ?? section.excerpt ?? '');
 
   card.innerHTML = `
-    <div class="card-head">
+    <button type="button" class="card-head" aria-expanded="false" aria-controls="rbody-${section.id}">
       <span class="dot dot-idle" id="rdot-${section.id}"></span>
-      <div class="card-title-wrap">
-        <div class="card-title">${esc(section.title)}</div>
-        <div class="note-inline" id="rnote-inline-${section.id}" style="display:none"></div>
-      </div>
-      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}">&#9651; ${String(REVIEW_DATA.round).padStart(2,'0')}</span>` : ''}
+      <span class="card-title-wrap">
+        <span class="card-title">${esc(section.title)}</span>
+        <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
+      </span>
+      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}</span>` : ''}
       <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
-    </div>
-    <div class="card-body-wrap">
+    </button>
+    <div class="card-body-wrap" id="rbody-${section.id}">
       <div class="card-body-inner">
         <div class="card-body">
           ${annotStripHTML(section.annotations)}
@@ -1519,8 +1582,8 @@ function buildReviewCard(section) {
             <button type="button" class="cmt-add-btn" id="rcmtnote-${section.id}">+ add note</button>
           </div>
           <div class="actions">
-            <button class="action-btn is-approve" id="rbtn-primary-${section.id}">&#10003; approve</button>
-            <button class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55">&#8595; skip</button>
+            <button type="button" class="action-btn is-approve" id="rbtn-primary-${section.id}"><span aria-hidden="true">&#10003;</span> approve</button>
+            <button type="button" class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55"><span aria-hidden="true">&#8595;</span> skip</button>
           </div>
           <div class="comment-list" id="rclist-${section.id}"></div>
           <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
@@ -1576,10 +1639,21 @@ function buildReviewCard(section) {
   return card;
 }
 
+// Open/close a card, keeping the header button's aria-expanded in sync.
+// `is-active` is the single source of truth for "expanded", so every site that
+// flips it routes through here — otherwise aria-expanded desyncs on auto-advance
+// or programmatic activation and lies to screen readers.
+function setCardExpanded(cardEl, expanded) {
+  if (!cardEl) return;
+  cardEl.classList.toggle('is-active', expanded);
+  const head = cardEl.querySelector('.card-head');
+  if (head) head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
 function activateReviewCard(id) {
   // Deactivate previous
   if (rState.active && rState.active !== id) {
-    el('rcard-' + rState.active)?.classList.remove('is-active');
+    setCardExpanded(el('rcard-' + rState.active), false);
     syncReviewDot(rState.active);
     syncNoteInline(rState.active);
   }
@@ -1587,7 +1661,7 @@ function activateReviewCard(id) {
   _ensureRendered(id);
   const card = el('rcard-' + id);
   if (card) {
-    card.classList.add('is-active');
+    setCardExpanded(card, true);
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   syncReviewDot(id);
@@ -1603,7 +1677,7 @@ function _ensureRendered(id) {
 }
 
 function skipReviewCard(id) {
-  el('rcard-' + id)?.classList.remove('is-active');
+  setCardExpanded(el('rcard-' + id), false);
   rState.active = null;
   syncReviewDot(id);
   const sections = REVIEW_DATA.sections;
@@ -1615,7 +1689,7 @@ function skipReviewCard(id) {
 
 function toggleReviewCard(id) {
   if (rState.active === id) {
-    el('rcard-' + id)?.classList.remove('is-active');
+    setCardExpanded(el('rcard-' + id), false);
     rState.active = null;
     syncReviewDot(id);
     syncNoteInline(id);
@@ -1627,7 +1701,7 @@ function toggleReviewCard(id) {
 // Advance past a just-decided card: close it, add is-approved CSS, auto-advance
 // to the next unreviewed card. Does NOT call sync/stats — caller handles that.
 function advanceFrom(id) {
-  el('rcard-' + id)?.classList.remove('is-active');
+  setCardExpanded(el('rcard-' + id), false);
   el('rcard-' + id)?.classList.add('is-approved');
   rState.active = null;
   const sections = REVIEW_DATA.sections;
@@ -1790,7 +1864,7 @@ function openCommentPopover(id, { anchor } = {}) {
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
-    + '<button type="button" class="attach-btn">&#128206; attach image</button>'
+    + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
@@ -1975,14 +2049,14 @@ function buildQACard(q) {
   ).join('');
 
   card.innerHTML = `
-    <div class="card-head">
+    <button type="button" class="card-head" aria-expanded="false" aria-controls="qbody-${q.id}">
       <span class="dot dot-idle" id="qdot-${q.id}"></span>
-      <div class="card-title-wrap">
-        <div class="card-title">${esc(q.text)}</div>
-      </div>
+      <span class="card-title-wrap">
+        <span class="card-title">${esc(q.text)}</span>
+      </span>
       <span class="vbadge vbadge-approved" id="qbadge-${q.id}" style="display:none"></span>
-    </div>
-    <div class="card-body-wrap">
+    </button>
+    <div class="card-body-wrap" id="qbody-${q.id}">
       <div class="card-body-inner">
         <div class="card-body">
           <p class="section-summary">${esc(q.hint || '')}</p>
@@ -1990,11 +2064,11 @@ function buildQACard(q) {
           <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
           <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional) — or paste a screenshot"></textarea>
           <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
-          <button type="button" class="attach-btn" id="qattach-${q.id}">&#128206; attach image</button>
+          <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
           <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
           <div class="qa-actions">
-            <button class="qa-btn" id="qconfirm-${q.id}">&#10003; confirm</button>
-            <button class="qa-btn" id="qskip-${q.id}">&#8595; skip</button>
+            <button class="qa-btn" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm</button>
+            <button class="qa-btn" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip</button>
           </div>
         </div>
       </div>
@@ -2037,13 +2111,13 @@ function buildQACard(q) {
 
 function activateQACard(id) {
   if (qState.active && qState.active !== id) {
-    el('qacard-' + qState.active)?.classList.remove('is-active');
+    setCardExpanded(el('qacard-' + qState.active), false);
     syncQADot(qState.active);
   }
   qState.active = id;
   const card = el('qacard-' + id);
   if (card) {
-    card.classList.add('is-active');
+    setCardExpanded(card, true);
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   syncQADot(id);
@@ -2051,7 +2125,7 @@ function activateQACard(id) {
 
 function toggleQACard(id) {
   if (qState.active === id) {
-    el('qacard-' + id)?.classList.remove('is-active');
+    setCardExpanded(el('qacard-' + id), false);
     qState.active = null;
     syncQADot(id);
   } else {
@@ -2060,7 +2134,7 @@ function toggleQACard(id) {
 }
 
 function advanceQA(id) {
-  el('qacard-' + id)?.classList.remove('is-active');
+  setCardExpanded(el('qacard-' + id), false);
   if (qState.answers[id]?.choice) el('qacard-' + id)?.classList.add('is-approved');
   qState.active = null;
   syncQADot(id);
@@ -2273,6 +2347,7 @@ function connectSSE() {
     rState.verdicts   = {};
     rState.active     = null;
     el('round-badge').textContent = String(data.round).padStart(2, '0');
+    document.title = 'viva · review · REV ' + String(data.round).padStart(2, '0');
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
@@ -2385,6 +2460,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el('doc-path').title          = data.doc_file || '';   /* full path on hover when truncated */
         el('doc-title').innerHTML     = 'viva <em>review</em>';
         el('round-badge').textContent = String(data.round).padStart(2, '0');
+        document.title = 'viva · review · REV ' + String(data.round).padStart(2, '0');
         el('review-view').style.display = '';
         initReview();
         connectSSE();
@@ -2393,6 +2469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
         el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
         el('qa-count-badge').textContent  = `${data.questions.length} questions`;
+        document.title = 'viva · brainstorm';
         el('qa-view').style.display = '';
         initQA();
         connectSSE();
