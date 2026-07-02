@@ -35,10 +35,11 @@ HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viva</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
-<script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
@@ -1212,7 +1213,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   60%  { opacity: 1; }
   100% { opacity: 1; transform: rotate(-5deg) scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } }
 .complete-headline {
   font-size: 1.6rem;
   font-weight: 600;
@@ -1369,18 +1370,25 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* Render verbatim markdown into el. Falls back to raw monospace text
-   if the CDN renderer didn't load (offline). */
+/* Render verbatim markdown into el. Falls back to raw monospace text if
+   either CDN dependency hasn't loaded yet (slow network, or offline) — marked
+   for parsing, DOMPurify for sanitizing the result. Both are required before
+   we'll commit HTML to the DOM; parsing without sanitizing would render
+   untrusted markdown's raw HTML unescaped. Returns true on a real markdown
+   render, false on the raw fallback — callers use this to decide whether the
+   section is eligible for a later retry (see the marked-script/dompurify-script
+   'load' listeners below, which re-render any card still showing the fallback
+   once both dependencies are ready). */
 function renderMarkdown(target, md) {
-  // Render HTML only when BOTH marked and DOMPurify loaded. If DOMPurify failed
-  // to load (partial CDN failure), fall back to safe plain text rather than
-  // emitting unsanitized marked output via innerHTML.
   if (window.marked && window.DOMPurify) {
-    target.innerHTML = DOMPurify.sanitize(marked.parse(md));
-  } else {
-    target.classList.add('md-raw');
-    target.textContent = md;
+    const html = marked.parse(md);
+    target.innerHTML = DOMPurify.sanitize(html);
+    target.classList.remove('md-raw');
+    return true;
   }
+  target.classList.add('md-raw');
+  target.textContent = md;
+  return false;
 }
 
 function el(id) { return document.getElementById(id); }
@@ -1417,9 +1425,19 @@ function initReview() {
   priorApprovedSet.forEach(id => {
     rState.verdicts[id] = { verdict: 'approved', note: '' };
   });
+  let animIdx = 0;
   REVIEW_DATA.sections.forEach((s, i) => {
     const card = buildReviewCard(s);
-    card.style.animationDelay = (0.04 + i * 0.04) + 's';
+    // Cards carried forward as already-approved from a prior round appear
+    // instantly (no fade) — only new/changed cards get the staggered fade-in,
+    // re-indexed among themselves so the stagger stays tight regardless of
+    // how many sections are already approved and collapsed.
+    if (REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)) {
+      card.style.animation = 'none';
+    } else {
+      card.style.animationDelay = Math.min(0.04 + animIdx * 0.04, 0.3) + 's';
+      animIdx++;
+    }
     container.appendChild(card);
     // Apply approved CSS immediately for pre-approved cards
     if (priorApprovedSet.has(s.id)) syncReviewCard(s.id);
@@ -1706,10 +1724,37 @@ function _ensureRendered(id) {
   if (!_pendingMarkdown.has(id)) return;
   const contentEl = el('rcontent-' + id);
   if (!contentEl) return;
-  renderMarkdown(contentEl, _pendingMarkdown.get(id));
+  // If marked and/or DOMPurify aren't loaded yet, renderMarkdown left
+  // contentEl showing the raw fallback (class md-raw). Keep the entry in
+  // _pendingMarkdown so this card stays eligible for the retry once both
+  // dependencies finish loading — deleting it here would strand the card as
+  // raw text forever.
+  if (!renderMarkdown(contentEl, _pendingMarkdown.get(id))) return;
   _pendingMarkdown.delete(id);
   renderHighlights(id);
 }
+
+// One-time-per-script retry: if marked.min.js and/or dompurify's purify.min.js
+// were still loading when a card first tried to render, it fell back to raw
+// text and stayed in _pendingMarkdown (renderMarkdown requires *both* before
+// it'll render, so it's not safe to treat "marked is ready" alone as done).
+// Re-render every card still showing the fallback whenever either dependency
+// finishes loading — whichever one lands second is what actually flips
+// renderMarkdown over, but attaching to both means load order never matters.
+// Scoped to '.md-raw' specifically (not all of _pendingMarkdown) so cards that
+// simply haven't been opened yet stay lazily unrendered.
+(function retryFallbackMarkdownOnceDepsLoad() {
+  const retry = () => {
+    document.querySelectorAll('.section-content.md-raw').forEach(contentEl => {
+      const m = contentEl.id.match(/^rcontent-(.+)$/);
+      if (m) _ensureRendered(m[1]);
+    });
+  };
+  ['marked-script', 'dompurify-script'].forEach(scriptId => {
+    const script = el(scriptId);
+    if (script) script.addEventListener('load', retry, { once: true });
+  });
+})();
 
 function skipReviewCard(id) {
   setCardExpanded(el('rcard-' + id), false);
@@ -2485,41 +2530,46 @@ document.addEventListener('keydown', e => {
   }
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-  el('btn-skip').disabled   = true;
-  el('btn-submit').disabled = true;
+// Runs immediately (not on DOMContentLoaded): this inline script tag sits at
+// the very end of <body>, after every element it references, so the DOM is
+// already parsed by the time it executes. Waiting for DOMContentLoaded would
+// needlessly serialize this loopback /input fetch behind the two `defer`red
+// CDN <script> tags above (marked, DOMPurify) — the HTML spec guarantees
+// `defer` scripts finish before DOMContentLoaded fires, so a slow/unreachable
+// CDN would stall a fetch that has nothing to do with it.
+el('btn-skip').disabled   = true;
+el('btn-submit').disabled = true;
 
-  fetch('/input')
-    .then(r => r.json())
-    .then(data => {
-      el('btn-skip').disabled   = false;
-      el('btn-submit').disabled = false;
+fetch('/input')
+  .then(r => r.json())
+  .then(data => {
+    el('btn-skip').disabled   = false;
+    el('btn-submit').disabled = false;
 
-      if (data.mode === 'review') {
-        REVIEW_DATA = data;
-        el('doc-path').textContent    = data.doc_file || '';
-        el('doc-path').title          = data.doc_file || '';   /* full path on hover when truncated */
-        el('doc-title').innerHTML     = 'viva <em>review</em>';
-        el('round-badge').textContent = String(data.round).padStart(2, '0');
-        document.title = 'viva · review · REV ' + String(data.round).padStart(2, '0');
-        el('review-view').style.display = '';
-        initReview();
-        connectSSE();
-      } else {
-        QA_DATA = data;
-        el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
-        el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
-        el('qa-count-badge').textContent  = `${data.questions.length} questions`;
-        document.title = 'viva · brainstorm';
-        el('qa-view').style.display = '';
-        initQA();
-        connectSSE();
-      }
-    })
-    .catch(err => {
-      document.body.innerHTML = '<p class="load-error">Failed to load session data: ' + (err.message || 'network error') + '</p>';
-    });
-});
+    if (data.mode === 'review') {
+      REVIEW_DATA = data;
+      el('doc-path').textContent    = data.doc_file || '';
+      el('doc-path').title          = data.doc_file || '';   /* full path on hover when truncated */
+      el('doc-title').innerHTML     = 'viva <em>review</em>';
+      el('round-badge').textContent = String(data.round).padStart(2, '0');
+      document.title = 'viva · review · REV ' + String(data.round).padStart(2, '0');
+      el('review-view').style.display = '';
+      initReview();
+      connectSSE();
+    } else {
+      QA_DATA = data;
+      el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
+      el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
+      el('qa-count-badge').textContent  = `${data.questions.length} questions`;
+      document.title = 'viva · brainstorm';
+      el('qa-view').style.display = '';
+      initQA();
+      connectSSE();
+    }
+  })
+  .catch(err => {
+    document.body.innerHTML = '<p class="load-error">Failed to load session data: ' + (err.message || 'network error') + '</p>';
+  });
 </script>
 </body>
 </html>"""

@@ -98,12 +98,17 @@ Edge case: a doc too short to review (a few lines, no substantive content) → s
 
 **2. Wait for verdicts** (every round)
 
-One block both waits and prints the verdicts — read them straight from stdout, no separate file read:
+One block waits, then prints the verdicts, the round's id→title map, and the standing preferences — read all three straight from stdout; step 4 reuses this output instead of re-fetching:
 ```bash
 until [ -f .viva/review-r{N}.json ]; do sleep 0.3; done
 cat .viva/review-r{N}.json
+echo "=== id -> title ==="
+python3 -c "import json
+for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
+echo "=== standing preferences ==="
+python3 "$VIVA_DIR/scripts/preferences.py" list --store .viva/preferences.json --status standing --format json
 ```
-The server writes the file atomically (tmp + rename), so `cat` always sees complete JSON.
+The server writes the file atomically (tmp + rename), so `cat` always sees complete JSON. This wait blocks on human review time, not computation — issue it with a generous timeout (~10 min / 600000ms); a tool's default timeout (2 min) would spuriously fail mid-review. Re-issuing the identical block after a timeout is safe and idempotent — it just re-polls; the file may already exist by the retry.
 
 **3. Act on verdicts**
 
@@ -120,26 +125,18 @@ The verdict is **derived** from the section's active comments (unsettled, non-em
 
 **4. Rewrite and re-arm** (only when something changed)
 
-Now — and only now — load what the rewrite needs. Pull a compact id→heading map (no section bodies into context):
-```bash
-python3 -c "import json
-for s in json.load(open('.viva/review-input-r{N}.json'))['sections']: print(s['id'], s['title'], sep='\t')"
-```
-Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context). Loop over `comments[]` for each section and act **by type** (the hybrid rule from the verdict table): before applying or answering a comment, if `comment.attachments` is present, `Read` each listed path — the image is context for the edit or answer. For a **`changes`** comment, rewrite directly in the source file — `anchor.offset` locates the edit within the section source, `anchor.text` confirms it, and an un-anchored comment scopes to the whole section. For an **`info`** comment, **do not edit the source** — answer it in the thread response only (next paragraph). For a carried-forward open thread, act on its **latest** reviewer turn's type the same way: edit on a `changes` turn (including an `info` thread that escalated to a `changes` reply), respond-only on an `info` turn. Preserve each heading's text exactly — next-round title matching depends on it.
+Now — and only now — load what the rewrite needs. The id→title map was already printed in step 2's wait block — reuse it, don't re-fetch. Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for context). Loop over `comments[]` for each section and act **by type** (the hybrid rule from the verdict table): before applying or answering a comment, if `comment.attachments` is present, `Read` each listed path — the image is context for the edit or answer. For a **`changes`** comment, rewrite directly in the source file — `anchor.offset` locates the edit within the section source, `anchor.text` confirms it, and an un-anchored comment scopes to the whole section. For an **`info`** comment, **do not edit the source** — answer it in the thread response only (next paragraph). For a carried-forward open thread, act on its **latest** reviewer turn's type the same way: edit on a `changes` turn (including an `info` thread that escalated to a `changes` reply), respond-only on an `info` turn. Preserve each heading's text exactly — next-round title matching depends on it.
 
-**Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — pull it (`preferences.py list --store .viva/preferences.json --status standing --format json`) and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
+**Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — the standing set was already printed in step 2's wait block, reuse it — and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
 
-Then update the **open-note store** (issue #16). Each comment carries a `cid` the server assigns as `{sectionId}-c{n}` (e.g. `s2-c1` for the first comment on section `s2`) — use it verbatim; do not synthesize it. For every comment you rewrote or answered, and for every section now `approved` (which settles all of its threads), record the outcome — passing a one-line `--response "<cid>=<what you changed>"` per comment thread:
+Then update the **open-note store** (issue #16), re-parse (passing `--open-notes` so still-open threads re-present on their cards), and signal the running server, chained in one block — then loop to step 2. Each comment carries a `cid` the server assigns as `{sectionId}-c{n}` (e.g. `s2-c1` for the first comment on section `s2`) — use it verbatim; do not synthesize it. For every comment you rewrote or answered, and for every section now `approved` (which settles all of its threads), record the outcome — passing a one-line `--response "<cid>=<what you changed>"` per comment thread:
 ```bash
+# repeat --response per comment (keyed by cid); approving a section settles all its threads
 python3 "$VIVA_DIR/scripts/open_notes.py" update \
   --store .viva/open-notes.json --round {N} \
   --verdicts .viva/review-r{N}.json --input .viva/review-input-r{N}.json \
-  --response "s2-c1=Shortened the intro to two sentences"   # repeat per comment (keyed by cid); approving a section settles all its threads
-```
-
-Re-parse (passing `--open-notes` so still-open threads re-present on their cards) and signal the running server in one block, then loop to step 2:
-```bash
-python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
+  --response "s2-c1=Shortened the intro to two sentences" \
+&& python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
   --output .viva/review-input-r{N+1}.json --round {N+1} --doc-file <relative/path/to/doc.md> \
   --prior-input .viva/review-input-r{N}.json --prior-verdicts .viva/review-r{N}.json \
   --open-notes .viva/open-notes.json \
@@ -154,10 +151,10 @@ Signal completion and append the revision history in one block. Run the open-not
 ```bash
 python3 "$VIVA_DIR/scripts/open_notes.py" update \
   --store .viva/open-notes.json --round N \
-  --verdicts .viva/review-rN.json --input .viva/review-input-rN.json
-curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
-  -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
-python3 "$VIVA_DIR/scripts/revision_history.py" --viva-dir .viva --doc <doc_file>
+  --verdicts .viva/review-rN.json --input .viva/review-input-rN.json \
+&& curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
+     -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}" \
+&& python3 "$VIVA_DIR/scripts/revision_history.py" --viva-dir .viva --doc <doc_file>
 ```
 `revision_history.py` appends `## Revision History` — a summary line plus a verbatim table of every `changes`/`info` note. If any open notes were tracked, it adds an **Open notes** subsection with each thread's full exchange (every round's note → the agent's response), keyed by `cid` and including each comment's original quoted span, and its final status. If the heading already exists (re-reviewed doc), the new session's block is appended under it.
 
