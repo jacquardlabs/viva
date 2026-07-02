@@ -56,6 +56,14 @@ def main() -> None:
             assert e.headers.get("Content-Type") == "application/json", e.headers.items()
             assert json.loads(e.read())["error"] == "invalid json"
 
+        # Valid JSON but not an object (a bare string/list) must be rejected with
+        # a 400, not crash the handler on a later `.get()`/`.pop()`.
+        for bad in ("just a string", [1, 2, 3]):
+            st, ct, payload = raw(base, "/submit", "POST", body=bad)
+            assert st == 400 and "object" in payload["error"], (bad, st, payload)
+            st, ct, payload = raw(base, "/next-round", "POST", body=bad)
+            assert st == 400 and "object" in payload["error"], (bad, st, payload)
+
         # ── #54: /next-round reads `output` from the body ────────────────────
         out2 = viva / "out2.json"
         r2 = dict(r1, round=2)

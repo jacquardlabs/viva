@@ -2702,6 +2702,9 @@ class Handler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 self._error(400, "invalid json")
                 return
+            if not isinstance(data, dict):
+                self._error(400, "body must be a JSON object")
+                return
 
             # Validate review verdicts at the boundary. Q&A submits an `answers`
             # payload with no `sections`, so it is gated out (shape, not mode).
@@ -2748,6 +2751,9 @@ class Handler(BaseHTTPRequestHandler):
                 new_data = json.loads(body)
             except json.JSONDecodeError:
                 self._error(400, "invalid json")
+                return
+            if not isinstance(new_data, dict):
+                self._error(400, "body must be a JSON object")
                 return
             # `output` travels in the JSON body like every other POST field. The
             # legacy `?output=` query param is still honored as a fallback.
