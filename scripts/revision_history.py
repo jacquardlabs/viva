@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Append a Revision History block to a signed-off doc from .viva round files.
 
-Usage: revision_history.py VIVA_DIR DOC_PATH [DATE]
+Usage: revision_history.py --viva-dir .viva --doc doc.md [--date 2026-06-28]
 
 Reads review-input-rN.json / review-rN.json pairs, collects every
 changes/info verdict with its note verbatim, and appends a summary line +
@@ -10,6 +10,7 @@ appending a new session block thereafter).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -133,7 +134,15 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        sys.exit(__doc__)
-    day = sys.argv[3] if len(sys.argv) > 3 else date.today().isoformat()
-    append_history(Path(sys.argv[1]), Path(sys.argv[2]), day)
+    p = argparse.ArgumentParser(
+        description="Append a Revision History block to a signed-off doc "
+                    "from .viva round files.")
+    p.add_argument("--viva-dir", required=True,
+                   help=".viva directory holding review-input-rN/review-rN pairs")
+    p.add_argument("--doc", required=True,
+                   help="the signed-off markdown doc to append to (modified in place)")
+    p.add_argument("--date", default=None,
+                   help="ISO date for the sign-off line (defaults to today)")
+    args = p.parse_args()
+    day = args.date or date.today().isoformat()
+    append_history(Path(args.viva_dir), Path(args.doc), day)
