@@ -303,7 +303,9 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
             "exchanges": t.get("exchanges", []),
         })
     for threads in by_title.values():
-        threads.sort(key=lambda t: t.get("cid", ""))
+        # `or ""` (not a default arg): a thread whose cid is explicitly None
+        # would otherwise sort None against str and raise TypeError.
+        threads.sort(key=lambda t: t.get("cid") or "")
     for s in new_sections:
         key = schema.section_key(s.get("title"))
         if key in by_title:
