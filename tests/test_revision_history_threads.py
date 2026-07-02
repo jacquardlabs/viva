@@ -26,8 +26,20 @@ def test_threads_grouped_by_section_with_quote():
     assert "5x" in block and "why?" in block
 
 
+def test_whole_section_and_missing_field_fallbacks():
+    # A thread with no quote renders as "(whole section)"; an exchange missing
+    # round/verdict falls back to "?" rather than printing "None" (issue #67).
+    threads = [{"title": "Scope", "quote": "", "status": "open",
+                "exchanges": [{"note": "no round or verdict on this exchange"}]}]
+    block = rh.build_threads_block(threads)
+    assert "(whole section)" in block, block
+    assert "R? ?:" in block, block
+    assert "None" not in block, block
+
+
 def main():
     test_threads_grouped_by_section_with_quote()
+    test_whole_section_and_missing_field_fallbacks()
     print("OK")
 
 

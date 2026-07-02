@@ -943,7 +943,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  max-width: 60%;
 }
 
 /* ─── Comment list (this round's freshly-added comments) ─── */
@@ -1352,9 +1352,11 @@ function esc(s) {
 /* Render verbatim markdown into el. Falls back to raw monospace text
    if the CDN renderer didn't load (offline). */
 function renderMarkdown(target, md) {
-  if (window.marked) {
-    const html = marked.parse(md);
-    target.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  // Render HTML only when BOTH marked and DOMPurify loaded. If DOMPurify failed
+  // to load (partial CDN failure), fall back to safe plain text rather than
+  // emitting unsanitized marked output via innerHTML.
+  if (window.marked && window.DOMPurify) {
+    target.innerHTML = DOMPurify.sanitize(marked.parse(md));
   } else {
     target.classList.add('md-raw');
     target.textContent = md;
@@ -1571,7 +1573,7 @@ function buildReviewCard(section) {
   card.id = 'rcard-' + section.id;
 
   // Store raw markdown for lazy render on first open
-  _pendingMarkdown.set(section.id, section.content ?? section.excerpt ?? '');
+  _pendingMarkdown.set(section.id, section.content ?? '');
 
   card.innerHTML = `
     <button type="button" class="card-head" aria-expanded="false" aria-controls="rbody-${section.id}">
@@ -1988,7 +1990,7 @@ function renderCommentList(id) {
     +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
     + '</div>').join('');
   host.querySelectorAll('.cmt-del').forEach(b =>
-    b.onclick = e => { e.stopPropagation(); removeComment(id, b.dataset.cid); });
+    b.addEventListener('click', e => { e.stopPropagation(); removeComment(id, b.dataset.cid); }));
 }
 
 
@@ -2501,7 +2503,6 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
-_server_state: str = "reviewing"
 _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
@@ -2673,7 +2674,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error(404, "not found")
 
     def do_POST(self) -> None:
-        global _input_data, _output_path, _server_state
+        global _input_data, _output_path
         parsed = urlparse(self.path)
         path   = parsed.path
         params = parse_qs(parsed.query)
@@ -2732,7 +2733,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             self._send(200, "application/json", b'{"ok":true}')
-            _server_state = "processing"
             _push_sse("processing", {})
         elif path == "/next-round":
             # No CSRF/Origin check here: /next-round is called by the agent
@@ -2765,7 +2765,6 @@ class Handler(BaseHTTPRequestHandler):
                 _input_data = new_data
                 _output_path = output
                 ledger_snapshot = list(_ledger)
-            _server_state = "reviewing"
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
@@ -2780,7 +2779,6 @@ class Handler(BaseHTTPRequestHandler):
                 summary = json.loads(body) if body.strip() else {}
             except json.JSONDecodeError:
                 summary = {}
-            _server_state = "complete"
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)
             threading.Timer(2.0, _shutdown.set).start()

@@ -74,6 +74,8 @@ def update(
 
         if verdict == "approved":
             # Settle every open thread belonging to this section (by title).
+            # Mutating `thread["status"]` in place is safe: `out` holds fresh
+            # copies (`{**v, ...}` above), not aliases into the input `store`.
             for thread in out.values():
                 if (schema.section_key(thread.get("title")) == schema.section_key(title)
                         and thread.get("status") == "open"):

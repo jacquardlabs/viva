@@ -67,7 +67,7 @@ def build_threads_block(threads: list[dict]) -> str:
         for x in t.get("exchanges", []):
             note = flat(x.get("note", ""))
             resp = flat(x.get("response", ""))
-            lines.append(f"  - R{x.get('round')} {x.get('verdict')}: {note}"
+            lines.append(f"  - R{x.get('round', '?')} {x.get('verdict', '?')}: {note}"
                          + (f" → {resp}" if resp else ""))
         lines.append("")
     return "\n".join(lines).rstrip()

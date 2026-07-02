@@ -129,7 +129,7 @@ Read the target `.md` (and optionally `PRODUCT.md`, `DESIGN.md`, `CLAUDE.md` for
 
 **Apply learned preferences while you rewrite.** The doc is already open, so consulting the standing set is free — pull it (`preferences.py list --store .viva/preferences.json --status standing --format json`) and apply each relevant preference to the sections you touch, so a recurring fix is already in when the card re-presents instead of waiting for the human to flag it again (see [Learned preferences](#learned-preferences-across-sessions)). An empty store is a no-op.
 
-Then update the **open-note store** (issue #16). For every comment you rewrote or answered, and for every section now `approved` (which settles all of its threads), record the outcome — passing a one-line `--response "<cid>=<what you changed>"` per comment thread:
+Then update the **open-note store** (issue #16). Each comment carries a `cid` the server assigns as `{sectionId}-c{n}` (e.g. `s2-c1` for the first comment on section `s2`) — use it verbatim; do not synthesize it. For every comment you rewrote or answered, and for every section now `approved` (which settles all of its threads), record the outcome — passing a one-line `--response "<cid>=<what you changed>"` per comment thread:
 ```bash
 python3 "$VIVA_DIR/scripts/open_notes.py" update \
   --store .viva/open-notes.json --round {N} \
@@ -228,7 +228,7 @@ Each section in `review-input-r{N}.json` may carry an optional `annotations` arr
 - `kind` *(required)* — short producer tag shown as the badge label (e.g. `grounding`, `drift`, `checklist`).
 - `severity` *(required)* ∈ `info | warn | error` → color slot `teal | violet | orange`. Any other value renders as `info`.
 - `message` *(required)* — the inline text shown beside the badge.
-- `anchor` *(optional)* — surfaced as the badge's hover title.
+- `anchor` *(optional)* — a **string**: surfaced as the badge's hover title, or, for a contradiction flag, another section's id rendered as a jump link. This is not the same field as a **comment's** `anchor` in the output, which is a `{text, offset}` object naming the reviewer's selection (see the verdict table). Same name, two shapes, two schemas.
 
 Annotations are **advisory**: they decorate a card, they never gate a verdict — the human still decides. A `review-input` with no `annotations` renders exactly as before.
 
