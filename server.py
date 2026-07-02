@@ -345,14 +345,9 @@ body {
 @media (max-width: 720px) { .sheet-frame { display: none; } }
 .card.is-active::before, .card.is-active::after { opacity: 1; }
 
-.card:nth-child(1)  { animation-delay: 0.05s; }
-.card:nth-child(2)  { animation-delay: 0.09s; }
-.card:nth-child(3)  { animation-delay: 0.13s; }
-.card:nth-child(4)  { animation-delay: 0.17s; }
-.card:nth-child(5)  { animation-delay: 0.21s; }
-.card:nth-child(6)  { animation-delay: 0.25s; }
-.card:nth-child(7)  { animation-delay: 0.29s; }
-.card:nth-child(8)  { animation-delay: 0.33s; }
+/* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
+   in buildReviewCard/buildQACard — it scales to any doc length and, being an
+   inline style, overrides any :nth-child rule, so none are defined here. */
 
 @keyframes fadeUp {
   from { opacity:0; transform:translateY(8px); }
@@ -766,11 +761,29 @@ body {
   line-height: 18px;
   text-align: center;
   border: none;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  background: var(--bg3);
+  color: var(--text2);
   cursor: pointer;
   font-size: 12px;
   padding: 0;
+}
+/* Error surfaces — tokenized so they participate in light mode like everything
+   else (were the only components with hardcoded hex). */
+.error-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  padding: 0.6rem 1rem;
+  background: var(--orange-bg);
+  color: var(--orange);
+  border-bottom: 1px solid var(--orange);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 0.82rem;
+  z-index: 1000;
+  text-align: center;
+}
+.load-error {
+  padding: 2rem;
+  color: var(--orange);
 }
 .attach-btn {
   margin-top: 6px;
@@ -1583,7 +1596,7 @@ function buildReviewCard(section) {
           </div>
           <div class="actions">
             <button type="button" class="action-btn is-approve" id="rbtn-primary-${section.id}"><span aria-hidden="true">&#10003;</span> approve</button>
-            <button type="button" class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55"><span aria-hidden="true">&#8595;</span> skip</button>
+            <button type="button" class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55"><span aria-hidden="true">&#8595;</span> skip for now</button>
           </div>
           <div class="comment-list" id="rclist-${section.id}"></div>
           <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
@@ -1756,7 +1769,7 @@ function syncReviewCard(id) {
   if (badge) {
     if (verdict === 'approved') { badge.style.display=''; badge.className='vbadge vbadge-approved'; badge.textContent='approved'; }
     else if (verdict === 'changes') { badge.style.display=''; badge.className='vbadge vbadge-changes'; badge.textContent='changes'; }
-    else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='needs info'; }
+    else if (verdict === 'info')    { badge.style.display=''; badge.className='vbadge vbadge-info';    badge.textContent='info'; }
     else badge.style.display = 'none';
   }
 
@@ -2068,7 +2081,7 @@ function buildQACard(q) {
           <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
           <div class="qa-actions">
             <button class="qa-btn" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm</button>
-            <button class="qa-btn" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip</button>
+            <button class="qa-btn" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip for now</button>
           </div>
         </div>
       </div>
@@ -2387,7 +2400,7 @@ function connectSSE() {
     if (!el('sse-error-banner')) {
       const b = document.createElement('div');
       b.id = 'sse-error-banner';
-      b.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:0.6rem 1rem;background:#ef4444;color:#fff;font-family:monospace;font-size:0.82rem;z-index:1000;text-align:center';
+      b.className = 'error-banner';
       b.textContent = 'Connection lost — check the terminal.';
       document.body.prepend(b);
     }
@@ -2476,7 +2489,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     })
     .catch(err => {
-      document.body.innerHTML = '<p style="padding:2rem;font-family:sans-serif;color:#f87171">Failed to load session data: ' + (err.message || 'network error') + '</p>';
+      document.body.innerHTML = '<p class="load-error">Failed to load session data: ' + (err.message || 'network error') + '</p>';
     });
 });
 </script>
