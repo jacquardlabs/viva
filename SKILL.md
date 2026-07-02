@@ -143,8 +143,8 @@ python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
   --output .viva/review-input-r{N+1}.json --round {N+1} --doc-file <relative/path/to/doc.md> \
   --prior-input .viva/review-input-r{N}.json --prior-verdicts .viva/review-r{N}.json \
   --open-notes .viva/open-notes.json \
-&& curl -s -X POST "$BASE/next-round?output=.viva/review-r{N+1}.json" \
-     -H "Content-Type: application/json" -d @.viva/review-input-r{N+1}.json
+&& python3 -c "import json; d=json.load(open('.viva/review-input-r{N+1}.json')); d['output']='.viva/review-r{N+1}.json'; print(json.dumps(d))" \
+   | curl -s -X POST "$BASE/next-round" -H "Content-Type: application/json" --data-binary @-
 ```
 The browser updates in place — no new tab. The parser carries an ID forward as approved only when its title matches exactly (case-insensitive) AND its content is byte-for-byte identical; changed content requires re-review.
 
