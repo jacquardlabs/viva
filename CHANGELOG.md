@@ -2,6 +2,35 @@
 
 <!-- version list -->
 
+## v1.12.1 (2026-07-02)
+
+### Bug Fixes
+
+- **a11y**: Accessibility pass on the embedded SPA
+  ([#76](https://github.com/jacquardlabs/viva/pull/76),
+  [`19ebaef`](https://github.com/jacquardlabs/viva/commit/19ebaef51b9921ada7a4aa3e5c92d1d7b7e798c1))
+
+### Documentation
+
+- Add CLAUDE.md architecture; document anchor overloading
+  ([#77](https://github.com/jacquardlabs/viva/pull/77),
+  [`d091c25`](https://github.com/jacquardlabs/viva/commit/d091c255f64c0ac3a3f0215c09b7f5d7181ba046))
+
+- Add PRODUCT.md and DESIGN.md, refresh README for shipped features
+  ([#72](https://github.com/jacquardlabs/viva/pull/72),
+  [`b06e7c9`](https://github.com/jacquardlabs/viva/commit/b06e7c90e1dbd121fb1c5b9840aaf881fc51639f))
+
+### Refactoring
+
+- Centralize the .viva round-file schema in scripts/schema.py
+  ([#73](https://github.com/jacquardlabs/viva/pull/73),
+  [`3c69ee2`](https://github.com/jacquardlabs/viva/commit/3c69ee27b41f2bcdb1f64862c0bb1db8d8f8a938))
+
+- **cli**: Argparse for revision_history; document annotate in-place merge
+  ([#78](https://github.com/jacquardlabs/viva/pull/78),
+  [`1e13491`](https://github.com/jacquardlabs/viva/commit/1e134915a14e3c474bb3d07ffc2d0e86365a0659))
+
+
 ## v1.12.0 (2026-06-29)
 
 ### Documentation
