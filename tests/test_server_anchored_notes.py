@@ -13,23 +13,12 @@ Contract verified here:
   - Retired page needles are absent; new interaction needles are present.
 """
 import json
-import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def post(base: str, path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        base + path,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import get_text, launch_server, post  # noqa: E402
 
 
 def main() -> None:
@@ -44,20 +33,7 @@ def main() -> None:
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
-         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
-         "--no-browser"],
-        cwd=tmp,
-    )
-    try:
-        url_file = viva / "server.url"
-        for _ in range(50):
-            if url_file.exists():
-                break
-            time.sleep(0.2)
-        assert url_file.exists(), "server failed to start within 10s"
-        base = url_file.read_text().strip()
+    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
 
         # Submit s1 with two comments (changes + info, first anchored) and
         # s2 with one un-anchored info comment.
@@ -84,16 +60,13 @@ def main() -> None:
         assert "anchor" not in s2["comments"][0], s2
 
         # Page ships the interaction-model needles and NOT the retired ones.
-        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+        page = get_text(base, "/")
         for needle in ("renderHighlights", "openCommentPopover", "deriveVerdict"):
             assert needle in page, f"page missing: {needle}"
         for gone in ("anchor-chip", "rpin-", "anchorSelection"):
             assert gone not in page, f"retired control still present: {gone}"
 
         print("OK")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":
