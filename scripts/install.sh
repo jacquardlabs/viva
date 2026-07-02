@@ -7,19 +7,33 @@ TARGET_DIR="$SKILLS_DIR/brainstorming"
 TARGET="$TARGET_DIR/SKILL.md"
 VERSION_FILE="$VIVA_DIR/.brainstorm-patch-version"
 
-# Find newest brainstorming SKILL.md in plugin cache
-PLUGIN_CACHE="$HOME/.claude/plugins/cache/claude-plugins-official/superpowers"
+# Locate the upstream superpowers brainstorming SKILL.md. Do NOT hard-code the
+# marketplace/org cache dir — it has changed before and varies by install source.
+# Search every plausible root for a `*superpowers*/…/brainstorming/SKILL.md`,
+# newest version wins, and exclude our own patched copy ($TARGET) so a re-run
+# never patches an already-patched file.
+SEARCH_ROOTS=(
+  "$HOME/.claude/plugins/cache"
+  "$HOME/.claude/plugins"
+  "$HOME/.claude/skills"
+)
 
 BRAINSTORM_SRC=""
-if [[ -d "$PLUGIN_CACHE" ]]; then
-  BRAINSTORM_SRC=$(find "$PLUGIN_CACHE" -name "SKILL.md" -path "*/brainstorming/SKILL.md" 2>/dev/null \
-    | sort -t/ -V | tail -1)
-fi
+for root in "${SEARCH_ROOTS[@]}"; do
+  [[ -d "$root" ]] || continue
+  BRAINSTORM_SRC=$(find "$root" -path "*/brainstorming/SKILL.md" 2>/dev/null \
+    | grep -i superpowers \
+    | grep -vxF "$TARGET" \
+    | sort -t/ -V | tail -1 || true)
+  [[ -n "$BRAINSTORM_SRC" ]] && break
+done
 
 if [[ -z "$BRAINSTORM_SRC" ]]; then
-  echo "✗ Could not find brainstorming skill in plugin cache."
-  echo "  Make sure superpowers is installed, then re-run:"
-  echo "  ! bash ~/.claude/skills/viva/scripts/install.sh"
+  echo "✗ Could not find the superpowers brainstorming skill." >&2
+  echo "  Looked under:" >&2
+  printf '    %s\n' "${SEARCH_ROOTS[@]}" >&2
+  echo "  Install superpowers (it provides the brainstorming skill), then re-run:" >&2
+  echo "  ! bash ~/.claude/skills/viva/scripts/install.sh" >&2
   exit 1
 fi
 
@@ -48,8 +62,8 @@ When open questions remain after initial exploration, collect all answers in one
 **Version check:** At session start, run:
 ```bash
 INSTALLED=$(cat ~/.claude/skills/viva/.brainstorm-patch-version 2>/dev/null || echo "unknown")
-CURRENT=$(find ~/.claude/plugins/cache/claude-plugins-official/superpowers -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || echo "unknown")
-[[ "$INSTALLED" != "$CURRENT" ]] && echo "⚠ Brainstorming skill updated ($INSTALLED → $CURRENT). Re-run: ! bash ~/.claude/skills/viva/scripts/install.sh"
+CURRENT=$(find ~/.claude/plugins ~/.claude/skills -path "*/brainstorming/SKILL.md" 2>/dev/null | grep -i superpowers | sort -t/ -V | tail -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1 || echo "unknown")
+[[ -n "$CURRENT" && "$INSTALLED" != "$CURRENT" ]] && echo "⚠ Brainstorming skill updated ($INSTALLED → $CURRENT). Re-run: ! bash ~/.claude/skills/viva/scripts/install.sh"
 ```
 
 **When to use:** Generate batch Q&A when you have 3+ clarifying questions with discrete answers. For 1–2 quick questions, continue in-terminal.
