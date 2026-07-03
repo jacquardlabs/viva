@@ -526,6 +526,39 @@ body {
 .diff-ctx { color: var(--text2); }
 .diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
 
+/* ─── side-by-side hunk rendering (diff mode, issue #99) ─────────────────
+   Renders a git hunk (removed left / added right / context full-width)
+   as a table. Distinct .sxs- prefix — NOT the same as .diff-* above, which
+   is the unrelated round-to-round "changes since last round" strip. */
+.sxs-wrap { overflow-x: auto; }
+.sxs-table { width: 100%; border-collapse: collapse; font-family: 'Fragment Mono', monospace; font-size: 11px; line-height: 1.55; }
+.sxs-hunk-row td.sxs-hunk { color: var(--violet); opacity: 0.7; padding: 3px 9px; white-space: pre; }
+.sxs-gutter { width: 3em; text-align: right; padding: 0 6px; color: var(--text3); opacity: 0.6; user-select: none; vertical-align: top; white-space: nowrap; }
+.sxs-gutter-del { color: var(--orange); opacity: 0.85; }
+.sxs-gutter-add { color: var(--teal); opacity: 0.85; }
+.sxs-code { padding: 0; vertical-align: top; }
+.sxs-code code { display: block; white-space: pre; padding: 1px 9px; }
+.sxs-change-cell { display: flex; }
+.sxs-half { flex: 1 1 50%; min-width: 0; overflow-x: auto; }
+.sxs-half.sxs-del { background: var(--orange-bg); }
+.sxs-half.sxs-del code { color: var(--orange); }
+.sxs-half.sxs-add { background: var(--teal-bg); }
+.sxs-half.sxs-add code { color: var(--teal); }
+.sxs-half.sxs-blank { background: var(--bg2); }
+.sxs-ctx code { color: var(--text2); }
+.sxs-fold { cursor: pointer; }
+.sxs-fold-cell {
+  color: var(--text2);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  text-align: left;
+}
+.sxs-fold:hover .sxs-fold-cell { color: var(--teal); }
+
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
   display: grid;
@@ -1403,6 +1436,144 @@ function renderMarkdown(target, md) {
   return false;
 }
 
+/* File-extension → highlight.js language alias, for per-cell syntax coloring
+   in the side-by-side diff table below. Unmapped/unknown extensions fall
+   back to 'plaintext' rather than guessing. */
+const EXT_LANG = {
+  py: 'python', js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'typescript', tsx: 'typescript', json: 'json', md: 'markdown',
+  css: 'css', scss: 'scss', html: 'xml', htm: 'xml', xml: 'xml',
+  sh: 'bash', bash: 'bash', zsh: 'bash', yml: 'yaml', yaml: 'yaml',
+  go: 'go', rs: 'rust', java: 'java', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp',
+  rb: 'ruby', php: 'php', sql: 'sql', toml: 'ini',
+};
+
+// section.title for diff-mode sections is "{filepath} hunk N" (parse_diff.py).
+// Strip the " hunk N" suffix to recover the filepath. Shared by langFromTitle
+// (extension → hljs language) and diffFileHunkCounts (file-header grouping).
+function filepathFromTitle(title) {
+  return String(title || '').replace(/\s+hunk\s+\d+$/, '');
+}
+
+// Extension → hljs language, for per-cell syntax coloring in the side-by-side
+// diff table.
+function langFromTitle(title) {
+  const filepath = filepathFromTitle(title);
+  const m = filepath.match(/\.([a-zA-Z0-9]+)$/);
+  const ext = m ? m[1].toLowerCase() : '';
+  return EXT_LANG[ext] || 'plaintext';
+}
+
+function sectionTitleFor(id) {
+  const s = (REVIEW_DATA && REVIEW_DATA.sections || []).find(sec => sec.id === id);
+  return s ? s.title : '';
+}
+
+/* Render a git hunk (fenced ```diff block, git's raw +/- /space-prefixed
+   text — see parse_diff.py) as a JetBrains-style side-by-side table: removed
+   lines left (orange), added lines right (teal), context spanning the full
+   width and collapsed behind a fold row. Pure view transform — never reads
+   or writes section.content itself, which stays the verbatim fence the
+   /viva-diff skill (anchor-based edit relocation) and round-to-round
+   carry-forward (byte-for-byte content compare) depend on.
+   Returns true on success; on a malformed/unrecognized hunk, defensively
+   falls back to the normal renderMarkdown path (and propagates its return
+   value, so retry-on-CDN-load bookkeeping in _ensureRendered stays correct). */
+function renderDiffTable(target, raw, title) {
+  const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
+  const lines = body.split('\n');
+  const headerMatch = lines[0] && lines[0].match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if (!headerMatch) return renderMarkdown(target, raw);
+
+  let oldNo = parseInt(headerMatch[1], 10);
+  let newNo = parseInt(headerMatch[2], 10);
+  const lang = langFromTitle(title);
+  let rowsHtml = '<tr class="sxs-hunk-row"><td class="sxs-hunk" colspan="3">' + esc(lines[0]) + '</td></tr>';
+  let delBuf = [], addBuf = [], ctxBuf = [], groupN = 0;
+
+  function codeEl(text) {
+    return '<code class="language-' + lang + '">' + esc(text) + '</code>';
+  }
+
+  // Consecutive removed/added lines are buffered and flushed as paired rows
+  // (removed[i] ↔ added[i]), padding the shorter side with a blank cell —
+  // covers pure-add and pure-delete hunks and approximates typical
+  // remove-block-then-add-block hunks without a full LCS realignment.
+  function flushChanges() {
+    const n = Math.max(delBuf.length, addBuf.length);
+    for (let i = 0; i < n; i++) {
+      const d = delBuf[i], a = addBuf[i];
+      rowsHtml += '<tr class="sxs-row">'
+        + '<td class="sxs-gutter sxs-gutter-del">' + (d ? d.no : '') + '</td>'
+        + '<td class="sxs-gutter sxs-gutter-add">' + (a ? a.no : '') + '</td>'
+        + '<td class="sxs-code sxs-change-cell">'
+        +   '<div class="sxs-half sxs-del' + (d ? '' : ' sxs-blank') + '">' + (d ? codeEl(d.text) : '') + '</div>'
+        +   '<div class="sxs-half sxs-add' + (a ? '' : ' sxs-blank') + '">' + (a ? codeEl(a.text) : '') + '</div>'
+        + '</td></tr>';
+    }
+    delBuf = []; addBuf = [];
+  }
+
+  // Each consecutive run of context lines collapses behind a single fold
+  // row by default; the real rows are emitted right after it (hidden) so
+  // toggling is a pure class/style flip, no re-render.
+  function flushContext() {
+    if (!ctxBuf.length) return;
+    groupN++;
+    const gid = 'sxs-g' + groupN;
+    const n = ctxBuf.length;
+    rowsHtml += '<tr class="sxs-fold" data-group="' + gid + '" tabindex="0" role="button" aria-expanded="false">'
+      + '<td class="sxs-fold-cell" colspan="3"><span aria-hidden="true">&#8942;</span> '
+      + n + ' unchanged line' + (n === 1 ? '' : 's') + '</td></tr>';
+    ctxBuf.forEach(c => {
+      rowsHtml += '<tr class="sxs-row sxs-ctx-row" data-group="' + gid + '" style="display:none">'
+        + '<td class="sxs-gutter">' + c.oldNo + '</td>'
+        + '<td class="sxs-gutter">' + c.newNo + '</td>'
+        + '<td class="sxs-code sxs-ctx">' + codeEl(c.text) + '</td>'
+        + '</tr>';
+    });
+    ctxBuf = [];
+  }
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const marker = line.charAt(0);
+    if (marker === '\\') continue;   // "\ No newline at end of file" — not a content line
+    if (marker === '-') { flushContext(); delBuf.push({ no: oldNo++, text: line.slice(1) }); }
+    else if (marker === '+') { flushContext(); addBuf.push({ no: newNo++, text: line.slice(1) }); }
+    else {
+      flushChanges();
+      const text = marker === ' ' ? line.slice(1) : line;
+      ctxBuf.push({ oldNo: oldNo++, newNo: newNo++, text });
+    }
+  }
+  flushChanges();
+  flushContext();
+
+  target.innerHTML = '<div class="sxs-wrap"><table class="sxs-table"><tbody>' + rowsHtml + '</tbody></table></div>';
+  target.classList.remove('md-raw');
+  target.querySelectorAll('.sxs-fold').forEach(fold => {
+    fold.addEventListener('click', () => toggleFold(target, fold));
+    fold.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFold(target, fold); }
+    });
+  });
+  if (window.hljs) {
+    target.querySelectorAll('code[class^="language-"]').forEach(b => hljs.highlightElement(b));
+  }
+  return true;
+}
+
+function toggleFold(target, fold) {
+  const gid = fold.dataset.group;
+  const rows = target.querySelectorAll('.sxs-ctx-row[data-group="' + gid + '"]');
+  if (!rows.length) return;
+  const isHidden = rows[0].style.display === 'none';
+  rows.forEach(r => { r.style.display = isHidden ? 'table-row' : 'none'; });
+  fold.classList.toggle('is-open', isHidden);
+  fold.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+}
+
 function el(id) { return document.getElementById(id); }
 
 function ledgerRowsHTML(entries) {
@@ -1736,12 +1907,20 @@ function _ensureRendered(id) {
   if (!_pendingMarkdown.has(id)) return;
   const contentEl = el('rcontent-' + id);
   if (!contentEl) return;
+  const raw = _pendingMarkdown.get(id);
+  // Diff mode's hunk content (a fenced ```diff block) gets the side-by-side
+  // table instead of the normal single-column markdown render (issue #99).
+  // Binary-change sections have no fence (parse_diff.py's plaintext
+  // sentinel) and fall through to renderMarkdown below unchanged.
+  const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
   // If marked and/or DOMPurify aren't loaded yet, renderMarkdown left
   // contentEl showing the raw fallback (class md-raw). Keep the entry in
   // _pendingMarkdown so this card stays eligible for the retry once both
   // dependencies finish loading — deleting it here would strand the card as
-  // raw text forever.
-  if (!renderMarkdown(contentEl, _pendingMarkdown.get(id))) return;
+  // raw text forever. renderDiffTable propagates the same true/false so this
+  // holds for its own defensive renderMarkdown fallback too.
+  const rendered = isDiffHunk ? renderDiffTable(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
+  if (!rendered) return;
   _pendingMarkdown.delete(id);
   renderHighlights(id);
 }
