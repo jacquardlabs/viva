@@ -297,6 +297,19 @@ body {
 /* ─── Cards ──────────────────────────────────────────────── */
 .cards { display: flex; flex-direction: column; gap: 6px; }
 
+/* ─── diff-mode file grouping: static divider above each run of hunks
+   belonging to the same file. Landmark, not a heading — same quiet
+   typographic register as .sxs-fold-cell/.diff-toggle. ─── */
+.file-group-header {
+  color: var(--text2);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 2px 0;
+}
+
 /* ─── Confidence triage sort (issue #12) ─────────────────── */
 .sort-bar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .sort-toggle {
@@ -1600,6 +1613,19 @@ function renderLedger() {
 /* ─────────────────────────────────────────────────────────
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
+// Diff mode only: how many sections share each filepath. parse_diff.py emits
+// every hunk of a file contiguously before moving to the next file, so a
+// single pass building this map is enough to know each run's total up front —
+// no need to look ahead while iterating in the render loop below.
+function diffFileHunkCounts(sections) {
+  const counts = new Map();
+  sections.forEach(s => {
+    const fp = filepathFromTitle(s.title);
+    counts.set(fp, (counts.get(fp) || 0) + 1);
+  });
+  return counts;
+}
+
 function initReview() {
   _pendingMarkdown.clear();
   const container = el('review-cards');
@@ -1608,8 +1634,25 @@ function initReview() {
   priorApprovedSet.forEach(id => {
     rState.verdicts[id] = { verdict: 'approved', note: '' };
   });
+  // File-header grouping (diff mode only): a static divider ahead of each
+  // contiguous run of hunks sharing a filepath. hunkCounts stays null in
+  // review mode, so the check below is always false there — zero behavior
+  // change for review mode.
+  const hunkCounts = REVIEW_DATA.mode === 'diff' ? diffFileHunkCounts(REVIEW_DATA.sections) : null;
+  let lastFilepath = null;
   let animIdx = 0;
   REVIEW_DATA.sections.forEach((s, i) => {
+    if (hunkCounts) {
+      const fp = filepathFromTitle(s.title);
+      if (fp !== lastFilepath) {
+        const header = document.createElement('div');
+        header.className = 'file-group-header';
+        const n = hunkCounts.get(fp);
+        header.textContent = fp + ' · ' + n + ' hunk' + (n === 1 ? '' : 's');
+        container.appendChild(header);
+        lastFilepath = fp;
+      }
+    }
     const card = buildReviewCard(s);
     // Cards carried forward as already-approved from a prior round appear
     // instantly (no fade) — only new/changed cards get the staggered fade-in,

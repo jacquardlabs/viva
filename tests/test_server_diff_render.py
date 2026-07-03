@@ -47,6 +47,30 @@ DIFF_INPUT = {
     ],
 }
 
+GROUPED_DIFF_INPUT = {
+    "mode": "diff",
+    "doc_file": "HEAD~1..HEAD",
+    "round": 1,
+    "approved_ids": [],
+    "sections": [
+        {
+            "id": "s1",
+            "title": "src/foo.py hunk 1",
+            "content": "```diff\n@@ -1,2 +1,3 @@\n a\n+b\n c\n```",
+        },
+        {
+            "id": "s2",
+            "title": "src/foo.py hunk 2",
+            "content": "```diff\n@@ -10,2 +11,3 @@\n x\n+y\n z\n```",
+        },
+        {
+            "id": "s3",
+            "title": "src/bar.py hunk 1",
+            "content": "```diff\n@@ -1,1 +1,2 @@\n p\n+q\n```",
+        },
+    ],
+}
+
 
 def test_page_ships_side_by_side_renderer() -> None:
     """The served page embeds renderDiffTable, its .sxs- CSS, and the
@@ -86,6 +110,45 @@ def test_page_ships_filepath_helper() -> None:
     print("test_page_ships_filepath_helper: OK")
 
 
+def test_page_ships_file_group_header() -> None:
+    """The grouping logic and its CSS are shipped, gated on diff mode."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(GROUPED_DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            "function diffFileHunkCounts",
+            "file-group-header",
+            "REVIEW_DATA.mode === 'diff'",
+        ):
+            assert needle in page, f"page missing: {needle}"
+    print("test_page_ships_file_group_header: OK")
+
+
+def test_grouped_sections_stay_file_contiguous() -> None:
+    """The grouping feature assumes hunks of the same file are never
+    interleaved with another file's hunks — parse_diff.py guarantees this by
+    construction. This pins that precondition against the fixture the SPA
+    would otherwise silently mis-group if it regressed."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(GROUPED_DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        data = get(base, "/input")
+        titles = [s["title"] for s in data["sections"]]
+        filepaths = [t.rsplit(" hunk ", 1)[0] for t in titles]
+        seen = []
+        for fp in filepaths:
+            if not seen or seen[-1] != fp:
+                seen.append(fp)
+        assert seen.count("src/foo.py") == 1 and seen.count("src/bar.py") == 1, \
+            f"expected each filepath as one contiguous run, got order: {filepaths}"
+    print("test_grouped_sections_stay_file_contiguous: OK")
+
+
 def test_diff_content_served_verbatim() -> None:
     """The new renderer must never reshape what /input serves for `content` —
     anchor-based edit relocation and carry-forward both depend on the raw
@@ -107,6 +170,8 @@ def test_diff_content_served_verbatim() -> None:
 def main() -> None:
     test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
+    test_page_ships_file_group_header()
+    test_grouped_sections_stay_file_contiguous()
     test_diff_content_served_verbatim()
     print("\nAll server diff-render tests passed.")
 
