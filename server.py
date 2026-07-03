@@ -557,7 +557,6 @@ body {
 .sxs-half.sxs-del code { color: var(--orange); }
 .sxs-half.sxs-add { background: var(--teal-bg); }
 .sxs-half.sxs-add code { color: var(--teal); }
-.sxs-half.sxs-blank { background: var(--bg2); }
 .sxs-ctx code { color: var(--text2); }
 .sxs-fold-cell { padding: 0; }
 /* Real <button> filling the cell (not a <tr role="button">) so it's a
@@ -1514,39 +1513,30 @@ function sectionTitleFor(id) {
   return s ? s.title : '';
 }
 
-/* Render a git hunk (fenced ```diff block, git's raw +/- /space-prefixed
-   text — see parse_diff.py) as a JetBrains-style side-by-side table: removed
-   lines left (orange), added lines right (teal), context spanning the full
-   width and collapsed behind a fold row. Pure view transform — never reads
-   or writes section.content itself, which stays the verbatim fence the
-   /viva-diff skill (anchor-based edit relocation) and round-to-round
-   carry-forward (byte-for-byte content compare) depend on.
-   Returns true on success; on a malformed/unrecognized hunk, defensively
-   falls back to the normal renderMarkdown path (and propagates its return
-   value, so retry-on-CDN-load bookkeeping in _ensureRendered stays correct). */
 // Parse a git hunk's body lines (everything after the @@ header) into a
 // flat list of row records — no HTML in this step, see buildSxsTableHtml
-// for that. Consecutive removed/added lines buffer and flush as paired
-// 'change' records (removed[i] ↔ added[i], padding the shorter side with
-// null) — covers pure-add/pure-delete hunks and approximates typical
-// remove-block-then-add-block hunks without a full LCS realignment.
-// Consecutive context lines flush as one 'fold' record (with the real ids
-// its rows will get, for aria-controls) followed by their 'ctx' records.
-function parseHunkRows(lines, oldNo, newNo) {
+// for that. Consecutive removed/added lines buffer and flush through
+// alignBlock (LCS-based realignment below) rather than naive index-pairing,
+// so an incidentally-unchanged line inside a replace block becomes a 'same'
+// record instead of a bogus paired 'change'. Consecutive context lines
+// flush as one 'fold' record (with the real ids its rows will get, for
+// aria-controls) followed by their 'ctx' records.
+// sectionId namespaces those ids — every other generated id in this file is
+// namespaced by section/comment id (rdiff-<id>, rthread-<cid>, rcard-<id>,
+// ...); without it, every diff section's first fold group would collide on
+// the same "sxs-g1-r0", since groupN resets to 0 on each parseHunkRows call.
+function parseHunkRows(lines, oldNo, newNo, sectionId) {
   const rows = [];
   let delBuf = [], addBuf = [], ctxBuf = [], groupN = 0;
 
   function flushChanges() {
-    const n = Math.max(delBuf.length, addBuf.length);
-    for (let i = 0; i < n; i++) {
-      rows.push({ type: 'change', del: delBuf[i] || null, add: addBuf[i] || null });
-    }
+    alignBlock(delBuf, addBuf).forEach(r => rows.push(r));
     delBuf = []; addBuf = [];
   }
   function flushContext() {
     if (!ctxBuf.length) return;
     groupN++;
-    const gid = 'sxs-g' + groupN;
+    const gid = 'sxs-' + sectionId + '-g' + groupN;
     const rowIds = ctxBuf.map((_, i) => gid + '-r' + i);
     rows.push({ type: 'fold', gid, count: ctxBuf.length, rowIds });
     ctxBuf.forEach((c, i) => rows.push({
@@ -1572,6 +1562,60 @@ function parseHunkRows(lines, oldNo, newNo) {
   return rows;
 }
 
+// Standard LCS via dynamic programming — returns an ordered list of
+// {oldIdx, newIdx} pairs where oldTexts[oldIdx] === newTexts[newIdx],
+// forming the longest common subsequence. O(n*m) time/space; hunk replace
+// blocks are hunk-scale (tens of lines at most), so this is more than fast
+// enough — no need for a linear-space Myers variant.
+function lcsMatches(oldTexts, newTexts) {
+  const n = oldTexts.length, m = newTexts.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = oldTexts[i] === newTexts[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const matches = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (oldTexts[i] === newTexts[j]) { matches.push({ oldIdx: i, newIdx: j }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+    else j++;
+  }
+  return matches;
+}
+
+// Aligns one replace block's removed lines (delBuf) against its added lines
+// (addBuf) using LCS, instead of pairing purely by buffer index. LCS
+// matches (identical text on both sides) become 'same' records — this is
+// what stops an incidentally-unchanged line inside a replace block from
+// being shown as a bogus paired "change." Everything between matches (a
+// "gap," on either or both sides) falls back to positional pairing — the
+// same padding-the-shorter-side approach as before, just scoped to the
+// smaller gap instead of the whole block.
+function alignBlock(delBuf, addBuf) {
+  const matches = lcsMatches(delBuf.map(d => d.text), addBuf.map(a => a.text));
+  const records = [];
+  let oi = 0, ni = 0;
+  function flushGap(oldEnd, newEnd) {
+    const gapDel = delBuf.slice(oi, oldEnd);
+    const gapAdd = addBuf.slice(ni, newEnd);
+    const n = Math.max(gapDel.length, gapAdd.length);
+    for (let k = 0; k < n; k++) {
+      records.push({ type: 'change', del: gapDel[k] || null, add: gapAdd[k] || null });
+    }
+  }
+  matches.forEach(m => {
+    flushGap(m.oldIdx, m.newIdx);
+    records.push({ type: 'same', del: delBuf[m.oldIdx], add: addBuf[m.newIdx] });
+    oi = m.oldIdx + 1; ni = m.newIdx + 1;
+  });
+  flushGap(delBuf.length, addBuf.length);
+  return records;
+}
+
 // Row records (from parseHunkRows) plus the hunk's @@ header text → the
 // side-by-side table's inner HTML (everything inside <tbody>). This HTML is
 // assigned via innerHTML with no DOMPurify pass (unlike renderMarkdown) —
@@ -1587,13 +1631,31 @@ function buildSxsTableHtml(headerText, rows, lang) {
   rows.forEach(r => {
     if (r.type === 'change') {
       const d = r.del, a = r.add;
+      // An unpaired removal/addition (pure-add or pure-delete hunk, or the
+      // leftover tail when one side has more lines than the other) omits
+      // the other side's div entirely rather than rendering an empty
+      // 50%-wide placeholder — .sxs-half's flex-grow then lets the one
+      // present side fill the whole code cell instead of every line being
+      // squeezed into (and needing its own horizontal scroll within) half
+      // the available width while the other half sits permanently blank.
       html += '<tr class="sxs-row">'
         + '<td class="sxs-gutter sxs-gutter-del">' + (d ? d.no : '') + '</td>'
         + '<td class="sxs-gutter sxs-gutter-add">' + (a ? a.no : '') + '</td>'
         + '<td class="sxs-code sxs-change-cell">'
-        +   '<div class="sxs-half sxs-del' + (d ? '' : ' sxs-blank') + '">' + (d ? codeEl(d.text) : '') + '</div>'
-        +   '<div class="sxs-half sxs-add' + (a ? '' : ' sxs-blank') + '">' + (a ? codeEl(a.text) : '') + '</div>'
+        +   (d ? '<div class="sxs-half sxs-del">' + codeEl(d.text) + '</div>' : '')
+        +   (a ? '<div class="sxs-half sxs-add">' + codeEl(a.text) + '</div>' : '')
         + '</td></tr>';
+    } else if (r.type === 'same') {
+      // An LCS match inside a replace block: identical text on both sides.
+      // Rendered like a context row (full width, muted) and never foldable
+      // — unlike top-level context runs between blocks, these are rare
+      // (one incidentally-unchanged line inside an otherwise-real change)
+      // and always small, so fold-state management isn't worth it here.
+      html += '<tr class="sxs-row sxs-same-row">'
+        + '<td class="sxs-gutter">' + r.del.no + '</td>'
+        + '<td class="sxs-gutter">' + r.add.no + '</td>'
+        + '<td class="sxs-code sxs-ctx">' + codeEl(r.del.text) + '</td>'
+        + '</tr>';
     } else if (r.type === 'fold') {
       // Real ids so the fold button's aria-controls can name the rows it
       // expands (DESIGN.md: accordion controls need aria-expanded AND
@@ -1616,13 +1678,23 @@ function buildSxsTableHtml(headerText, rows, lang) {
   return html;
 }
 
-function renderDiffTable(target, raw, title) {
+/* Render a git hunk (fenced ```diff block, git's raw +/- /space-prefixed
+   text — see parse_diff.py) as a JetBrains-style side-by-side table: removed
+   lines left (orange), added lines right (teal), context spanning the full
+   width and collapsed behind a fold row. Pure view transform — never reads
+   or writes section.content itself, which stays the verbatim fence the
+   /viva-diff skill (anchor-based edit relocation) and round-to-round
+   carry-forward (byte-for-byte content compare) depend on.
+   Returns true on success; on a malformed/unrecognized hunk, defensively
+   falls back to the normal renderMarkdown path (and propagates its return
+   value, so retry-on-CDN-load bookkeeping in _ensureRendered stays correct). */
+function renderDiffTable(target, raw, title, sectionId) {
   const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
   const lines = body.split('\n');
   const headerMatch = lines[0] && lines[0].match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
   if (!headerMatch) return renderMarkdown(target, raw);
 
-  const rows = parseHunkRows(lines, parseInt(headerMatch[1], 10), parseInt(headerMatch[2], 10));
+  const rows = parseHunkRows(lines, parseInt(headerMatch[1], 10), parseInt(headerMatch[2], 10), sectionId);
   const html = buildSxsTableHtml(lines[0], rows, langFromTitle(title));
 
   target.innerHTML = '<div class="sxs-wrap"><table class="sxs-table"><tbody>' + html + '</tbody></table></div>';
@@ -2042,7 +2114,7 @@ function _ensureRendered(id) {
   // dependencies finish loading — deleting it here would strand the card as
   // raw text forever. renderDiffTable propagates the same true/false so this
   // holds for its own defensive renderMarkdown fallback too.
-  const rendered = isDiffHunk ? renderDiffTable(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
+  const rendered = isDiffHunk ? renderDiffTable(contentEl, raw, sectionTitleFor(id), id) : renderMarkdown(contentEl, raw);
   if (!rendered) return;
   _pendingMarkdown.delete(id);
   renderHighlights(id);
