@@ -22,6 +22,9 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts'))
+from schema import validate_review_input, validate_qa_input
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2688,6 +2691,18 @@ if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
     _input_data = load_input(args.input)
+    if args.mode in ("review", "diff"):
+        try:
+            validate_review_input(_input_data)
+        except ValueError as e:
+            print(f"viva · invalid input: {e}", file=sys.stderr, flush=True)
+            sys.exit(1)
+    elif args.mode == "qa":
+        try:
+            validate_qa_input(_input_data)
+        except ValueError as e:
+            print(f"viva · invalid qa-input: {e}", file=sys.stderr, flush=True)
+            sys.exit(1)
     _output_path = args.output
 
     port = find_free_port()
