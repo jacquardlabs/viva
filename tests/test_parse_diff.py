@@ -216,6 +216,61 @@ def test_carry_forward_changed_content_requires_review():
         print("test_carry_forward_changed_content_requires_review: OK")
 
 
+def test_carry_forward_round_3_preserves_round_1_approvals():
+    """Section approved in round 1 must survive into round 3 without re-review."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        patch = tmp / "diff.patch"
+        r1_input = tmp / "r1-input.json"
+        r1_verdicts = tmp / "r1-verdicts.json"
+        r2_input = tmp / "r2-input.json"
+        r2_verdicts = tmp / "r2-verdicts.json"
+        r3_input = tmp / "r3-input.json"
+
+        patch.write_text(TWO_HUNK_DIFF, encoding="utf-8")
+
+        # Round 1
+        subprocess.run(
+            [PYTHON, SCRIPT, str(patch), "--output", str(r1_input), "--round", "1"],
+            check=True, capture_output=True,
+        )
+        r1_verdicts.write_text(json.dumps({
+            "round": 1,
+            "sections": [
+                {"id": "s1", "verdict": "approved"},
+                {"id": "s2", "verdict": "changes", "note": "fix this"},
+            ],
+        }))
+
+        # Round 2: s1 carries forward
+        subprocess.run(
+            [PYTHON, SCRIPT, str(patch), "--output", str(r2_input), "--round", "2",
+             "--prior-input", str(r1_input), "--prior-verdicts", str(r1_verdicts)],
+            check=True, capture_output=True,
+        )
+        r2 = json.loads(r2_input.read_text())
+        assert "s1" in r2["approved_ids"], f"s1 should carry into round 2; got {r2['approved_ids']}"
+
+        # Round 2 verdicts: only s2 reviewed (s1 was collapsed, not re-reviewed)
+        r2_verdicts.write_text(json.dumps({
+            "round": 2,
+            "sections": [{"id": "s2", "verdict": "approved"}],
+        }))
+
+        # Round 3: s1 must still carry even though it's absent from round-2 verdicts
+        subprocess.run(
+            [PYTHON, SCRIPT, str(patch), "--output", str(r3_input), "--round", "3",
+             "--prior-input", str(r2_input), "--prior-verdicts", str(r2_verdicts)],
+            check=True, capture_output=True,
+        )
+        r3 = json.loads(r3_input.read_text())
+        assert "s1" in r3["approved_ids"], (
+            f"s1 must survive into round 3 without re-review; got {r3['approved_ids']}"
+        )
+        assert "s2" in r3["approved_ids"], f"s2 approved in round 2 must carry to round 3; got {r3['approved_ids']}"
+        print("test_carry_forward_round_3_preserves_round_1_approvals: OK")
+
+
 def main() -> None:
     test_single_hunk()
     test_two_hunks_same_file()
@@ -226,6 +281,7 @@ def main() -> None:
     test_default_doc_file()
     test_carry_forward_identical_content()
     test_carry_forward_changed_content_requires_review()
+    test_carry_forward_round_3_preserves_round_1_approvals()
     print("\nAll parse_diff tests passed.")
 
 

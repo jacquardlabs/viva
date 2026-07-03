@@ -129,11 +129,13 @@ def _carry_forward(
         k = section_key(s.get("title", ""))
         prior_by_key[k] = s
 
-    prior_approved_ids = {
+    pre_approved = set(prior_input.get("approved_ids", []))
+    verdict_approved = {
         sv.get("id")
         for sv in prior_verdicts.get("sections", [])
         if sv.get("verdict") == "approved"
     }
+    all_prior_approved = pre_approved | verdict_approved
 
     approved_ids: list[str] = []
     for s in sections:
@@ -141,7 +143,7 @@ def _carry_forward(
         prior_s = prior_by_key.get(k)
         if (
             prior_s is not None
-            and prior_s.get("id") in prior_approved_ids
+            and prior_s.get("id") in all_prior_approved
             and s["content"] == prior_s.get("content")
         ):
             approved_ids.append(s["id"])
