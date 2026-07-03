@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.14.4 (2026-07-03)
+
+### Bug Fixes
+
+- **ui**: Stop Q&A choice badge from crushing the card title
+  ([#97](https://github.com/jacquardlabs/viva/pull/97),
+  [`b4af98f`](https://github.com/jacquardlabs/viva/commit/b4af98f71e626fbb644343fae3b2e39f6126c50a))
+
+
 ## v1.14.3 (2026-07-02)
 
 ### Performance Improvements
