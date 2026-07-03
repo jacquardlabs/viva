@@ -433,6 +433,10 @@ body {
   padding: 3px 8px;
   border-radius: 3px;
   flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .vbadge-approved { background: var(--teal-bg);   color: var(--teal);   }
 .vbadge-changes  { background: var(--orange-bg);  color: var(--orange); }
@@ -1008,6 +1012,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 5px 12px;
   color: var(--text2);
   cursor: pointer;
+  text-align: left;
 }
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
