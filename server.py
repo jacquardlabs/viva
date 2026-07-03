@@ -301,7 +301,7 @@ body {
    belonging to the same file. Landmark, not a heading — same quiet
    typographic register as .sxs-fold-cell/.diff-toggle. ─── */
 .file-group-header {
-  color: var(--text2);
+  color: var(--text3);
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
   font-weight: 600;
@@ -559,18 +559,40 @@ body {
 .sxs-half.sxs-add code { color: var(--teal); }
 .sxs-half.sxs-blank { background: var(--bg2); }
 .sxs-ctx code { color: var(--text2); }
-.sxs-fold { cursor: pointer; }
-.sxs-fold-cell {
+.sxs-fold-cell { padding: 0; }
+/* Real <button> filling the cell (not a <tr role="button">) so it's a
+   native, keyboard-operable control by default and gets a real touch
+   target — min-height 44px per the fold row's tap-target requirement. */
+.sxs-fold-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 4px 9px;
+  font: inherit;
   color: var(--text2);
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 9px;
   text-align: left;
+  cursor: pointer;
 }
-.sxs-fold:hover .sxs-fold-cell { color: var(--teal); }
+.sxs-fold-btn:hover { color: var(--teal); }
+.sxs-fold-btn.is-open { color: var(--text); }
+/* Below 720px (this repo's existing mobile breakpoint, see .sheet-frame),
+   two 50%-wide code columns get too narrow to read. Stack removed above
+   added, full width, and drop each half's own overflow-x so only the outer
+   .sxs-wrap scrolls — two independently-scrolling nested regions per row
+   made it easy to lose left/right alignment on overflow. */
+@media (max-width: 720px) {
+  .sxs-change-cell { flex-direction: column; }
+  .sxs-half { overflow-x: visible; }
+}
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
@@ -1102,7 +1124,8 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
-.btn-skip:focus-visible, .btn-submit:focus-visible {
+.btn-skip:focus-visible, .btn-submit:focus-visible,
+.sxs-fold-btn:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1461,6 +1484,12 @@ const EXT_LANG = {
   rb: 'ruby', php: 'php', sql: 'sql', toml: 'ini',
 };
 
+// Above this many code cells in one hunk, skip hljs entirely for that hunk
+// (rows stay plain, escaped monospace — still fully readable) rather than
+// pay a highlightElement() call per line on an unbounded-size reformat or
+// generated-file diff.
+const HLJS_HIGHLIGHT_CAP = 400;
+
 // section.title for diff-mode sections is "{filepath} hunk N" (parse_diff.py).
 // Strip the " hunk N" suffix to recover the filepath. Shared by langFromTitle
 // (extension → hljs language) and diffFileHunkCounts (file-header grouping).
@@ -1477,6 +1506,9 @@ function langFromTitle(title) {
   return EXT_LANG[ext] || 'plaintext';
 }
 
+// _ensureRendered only has a section id at render time; renderDiffTable
+// needs the section's title to infer a syntax-highlighting language from
+// its filepath (see langFromTitle).
 function sectionTitleFor(id) {
   const s = (REVIEW_DATA && REVIEW_DATA.sections || []).find(sec => sec.id === id);
   return s ? s.title : '';
@@ -1492,59 +1524,34 @@ function sectionTitleFor(id) {
    Returns true on success; on a malformed/unrecognized hunk, defensively
    falls back to the normal renderMarkdown path (and propagates its return
    value, so retry-on-CDN-load bookkeeping in _ensureRendered stays correct). */
-function renderDiffTable(target, raw, title) {
-  const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
-  const lines = body.split('\n');
-  const headerMatch = lines[0] && lines[0].match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if (!headerMatch) return renderMarkdown(target, raw);
-
-  let oldNo = parseInt(headerMatch[1], 10);
-  let newNo = parseInt(headerMatch[2], 10);
-  const lang = langFromTitle(title);
-  let rowsHtml = '<tr class="sxs-hunk-row"><td class="sxs-hunk" colspan="3">' + esc(lines[0]) + '</td></tr>';
+// Parse a git hunk's body lines (everything after the @@ header) into a
+// flat list of row records — no HTML in this step, see buildSxsTableHtml
+// for that. Consecutive removed/added lines buffer and flush as paired
+// 'change' records (removed[i] ↔ added[i], padding the shorter side with
+// null) — covers pure-add/pure-delete hunks and approximates typical
+// remove-block-then-add-block hunks without a full LCS realignment.
+// Consecutive context lines flush as one 'fold' record (with the real ids
+// its rows will get, for aria-controls) followed by their 'ctx' records.
+function parseHunkRows(lines, oldNo, newNo) {
+  const rows = [];
   let delBuf = [], addBuf = [], ctxBuf = [], groupN = 0;
 
-  function codeEl(text) {
-    return '<code class="language-' + lang + '">' + esc(text) + '</code>';
-  }
-
-  // Consecutive removed/added lines are buffered and flushed as paired rows
-  // (removed[i] ↔ added[i]), padding the shorter side with a blank cell —
-  // covers pure-add and pure-delete hunks and approximates typical
-  // remove-block-then-add-block hunks without a full LCS realignment.
   function flushChanges() {
     const n = Math.max(delBuf.length, addBuf.length);
     for (let i = 0; i < n; i++) {
-      const d = delBuf[i], a = addBuf[i];
-      rowsHtml += '<tr class="sxs-row">'
-        + '<td class="sxs-gutter sxs-gutter-del">' + (d ? d.no : '') + '</td>'
-        + '<td class="sxs-gutter sxs-gutter-add">' + (a ? a.no : '') + '</td>'
-        + '<td class="sxs-code sxs-change-cell">'
-        +   '<div class="sxs-half sxs-del' + (d ? '' : ' sxs-blank') + '">' + (d ? codeEl(d.text) : '') + '</div>'
-        +   '<div class="sxs-half sxs-add' + (a ? '' : ' sxs-blank') + '">' + (a ? codeEl(a.text) : '') + '</div>'
-        + '</td></tr>';
+      rows.push({ type: 'change', del: delBuf[i] || null, add: addBuf[i] || null });
     }
     delBuf = []; addBuf = [];
   }
-
-  // Each consecutive run of context lines collapses behind a single fold
-  // row by default; the real rows are emitted right after it (hidden) so
-  // toggling is a pure class/style flip, no re-render.
   function flushContext() {
     if (!ctxBuf.length) return;
     groupN++;
     const gid = 'sxs-g' + groupN;
-    const n = ctxBuf.length;
-    rowsHtml += '<tr class="sxs-fold" data-group="' + gid + '" tabindex="0" role="button" aria-expanded="false">'
-      + '<td class="sxs-fold-cell" colspan="3"><span aria-hidden="true">&#8942;</span> '
-      + n + ' unchanged line' + (n === 1 ? '' : 's') + '</td></tr>';
-    ctxBuf.forEach(c => {
-      rowsHtml += '<tr class="sxs-row sxs-ctx-row" data-group="' + gid + '" style="display:none">'
-        + '<td class="sxs-gutter">' + c.oldNo + '</td>'
-        + '<td class="sxs-gutter">' + c.newNo + '</td>'
-        + '<td class="sxs-code sxs-ctx">' + codeEl(c.text) + '</td>'
-        + '</tr>';
-    });
+    const rowIds = ctxBuf.map((_, i) => gid + '-r' + i);
+    rows.push({ type: 'fold', gid, count: ctxBuf.length, rowIds });
+    ctxBuf.forEach((c, i) => rows.push({
+      type: 'ctx', gid, rowId: rowIds[i], oldNo: c.oldNo, newNo: c.newNo, text: c.text,
+    }));
     ctxBuf = [];
   }
 
@@ -1562,29 +1569,97 @@ function renderDiffTable(target, raw, title) {
   }
   flushChanges();
   flushContext();
+  return rows;
+}
 
-  target.innerHTML = '<div class="sxs-wrap"><table class="sxs-table"><tbody>' + rowsHtml + '</tbody></table></div>';
-  target.classList.remove('md-raw');
-  target.querySelectorAll('.sxs-fold').forEach(fold => {
-    fold.addEventListener('click', () => toggleFold(target, fold));
-    fold.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFold(target, fold); }
-    });
+// Row records (from parseHunkRows) plus the hunk's @@ header text → the
+// side-by-side table's inner HTML (everything inside <tbody>). This HTML is
+// assigned via innerHTML with no DOMPurify pass (unlike renderMarkdown) —
+// every hunk-derived string reaching this function (headerText, and each
+// row's text) MUST go through esc() or codeEl() below before concatenation.
+// It is safe today because that invariant holds at every call site; it does
+// not hold automatically for a future edit that adds a new interpolation.
+function buildSxsTableHtml(headerText, rows, lang) {
+  function codeEl(text) {
+    return '<code class="language-' + lang + '">' + esc(text) + '</code>';
+  }
+  let html = '<tr class="sxs-hunk-row"><td class="sxs-hunk" colspan="3">' + esc(headerText) + '</td></tr>';
+  rows.forEach(r => {
+    if (r.type === 'change') {
+      const d = r.del, a = r.add;
+      html += '<tr class="sxs-row">'
+        + '<td class="sxs-gutter sxs-gutter-del">' + (d ? d.no : '') + '</td>'
+        + '<td class="sxs-gutter sxs-gutter-add">' + (a ? a.no : '') + '</td>'
+        + '<td class="sxs-code sxs-change-cell">'
+        +   '<div class="sxs-half sxs-del' + (d ? '' : ' sxs-blank') + '">' + (d ? codeEl(d.text) : '') + '</div>'
+        +   '<div class="sxs-half sxs-add' + (a ? '' : ' sxs-blank') + '">' + (a ? codeEl(a.text) : '') + '</div>'
+        + '</td></tr>';
+    } else if (r.type === 'fold') {
+      // Real ids so the fold button's aria-controls can name the rows it
+      // expands (DESIGN.md: accordion controls need aria-expanded AND
+      // aria-controls) — a plain data-group attribute isn't referenceable.
+      html += '<tr class="sxs-fold" data-group="' + r.gid + '">'
+        + '<td class="sxs-fold-cell" colspan="3">'
+        +   '<button type="button" class="sxs-fold-btn" data-group="' + r.gid + '" '
+        +     'aria-expanded="false" aria-controls="' + r.rowIds.join(' ') + '">'
+        +     '<span aria-hidden="true">&#8942;</span> ' + r.count + ' unchanged line' + (r.count === 1 ? '' : 's')
+        +   '</button>'
+        + '</td></tr>';
+    } else if (r.type === 'ctx') {
+      html += '<tr class="sxs-row sxs-ctx-row" id="' + r.rowId + '" data-group="' + r.gid + '" style="display:none">'
+        + '<td class="sxs-gutter">' + r.oldNo + '</td>'
+        + '<td class="sxs-gutter">' + r.newNo + '</td>'
+        + '<td class="sxs-code sxs-ctx">' + codeEl(r.text) + '</td>'
+        + '</tr>';
+    }
   });
+  return html;
+}
+
+function renderDiffTable(target, raw, title) {
+  const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
+  const lines = body.split('\n');
+  const headerMatch = lines[0] && lines[0].match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if (!headerMatch) return renderMarkdown(target, raw);
+
+  const rows = parseHunkRows(lines, parseInt(headerMatch[1], 10), parseInt(headerMatch[2], 10));
+  const html = buildSxsTableHtml(lines[0], rows, langFromTitle(title));
+
+  target.innerHTML = '<div class="sxs-wrap"><table class="sxs-table"><tbody>' + html + '</tbody></table></div>';
+  target.classList.remove('md-raw');
+  // A native <button> handles Enter/Space activation itself — no keydown shim needed.
+  target.querySelectorAll('.sxs-fold-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleFold(target, btn));
+  });
+  // Context cells are hidden behind their fold by default, so they're
+  // deferred to first-expand (see toggleFold) rather than highlighted here.
   if (window.hljs) {
-    target.querySelectorAll('code[class^="language-"]').forEach(b => hljs.highlightElement(b));
+    const allCode = target.querySelectorAll('code[class^="language-"]');
+    target.dataset.sxsHighlight = allCode.length <= HLJS_HIGHLIGHT_CAP ? '1' : '0';
+    if (target.dataset.sxsHighlight === '1') {
+      allCode.forEach(b => { if (!b.closest('.sxs-ctx-row')) hljs.highlightElement(b); });
+    }
   }
   return true;
 }
 
-function toggleFold(target, fold) {
-  const gid = fold.dataset.group;
+function toggleFold(target, btn) {
+  const gid = btn.dataset.group;
   const rows = target.querySelectorAll('.sxs-ctx-row[data-group="' + gid + '"]');
   if (!rows.length) return;
   const isHidden = rows[0].style.display === 'none';
   rows.forEach(r => { r.style.display = isHidden ? 'table-row' : 'none'; });
-  fold.classList.toggle('is-open', isHidden);
-  fold.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+  // Lazily highlight newly-revealed context cells on first expand, unless
+  // the hunk exceeded HLJS_HIGHLIGHT_CAP (then this hunk never highlights).
+  // .hljs guards against re-processing an already-highlighted element on a
+  // later re-open.
+  if (isHidden && window.hljs && target.dataset.sxsHighlight === '1') {
+    rows.forEach(r => r.querySelectorAll('code[class^="language-"]').forEach(b => {
+      if (!b.classList.contains('hljs')) hljs.highlightElement(b);
+    }));
+  }
+  btn.classList.toggle('is-open', isHidden);
+  btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
 }
 
 function el(id) { return document.getElementById(id); }
@@ -2157,9 +2232,26 @@ document.addEventListener('mouseup', () => {
     if (!content) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
-    openCommentPopover(m[1], { anchor: { text, offset: offsetInSource(m[1], text) } });
+    // The side-by-side diff table (issue #99) renders removed/added lines as
+    // adjacent-but-separate .sxs-half cells in the same row. A drag that
+    // crosses from one half into the other (or spans rows) yields DOM-order
+    // text that interleaves unrelated removed/added lines — not a contiguous
+    // substring of the raw hunk. Anchoring a comment to that text would
+    // silently defeat both offsetInSource below and the /viva-diff skill's
+    // grep-based fallback, so a cross-half selection degrades to an
+    // unanchored whole-section note instead of a wrong anchor.
+    const crossesHalves = closestSxsHalf(sel.anchorNode) !== closestSxsHalf(sel.focusNode);
+    openCommentPopover(m[1], crossesHalves ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
   }, 0);
 });
+
+// Closest .sxs-half ancestor of a selection endpoint, or null outside the
+// side-by-side diff table (e.g. ordinary review-mode content), where this
+// check is always a no-op since both endpoints resolve to null.
+function closestSxsHalf(node) {
+  const el = node && node.nodeType === 3 ? node.parentElement : node;
+  return el && el.closest ? el.closest('.sxs-half') : null;
+}
 
 // Char offset of `text` in the section's raw markdown source — the rewrite
 // target. -1 when not found (anchor still stores text; agent falls back to grep).

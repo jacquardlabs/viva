@@ -207,6 +207,54 @@ Drafting-room gestures that extend the metaphor. All square, all monospace.
   animation. Children: `.stamp-word` ("APPROVED", `2.1rem`), `.stamp-meta` ("viva ·
   <date>"), `.stamp-sub` ("N sheets · M revisions"). All Fragment Mono.
 
+## Side-by-side hunk rendering (#99)
+
+`/viva-diff` renders each git hunk as a table instead of a single-column
+fenced code block. Distinct `.sxs-` prefix — not the same feature as the
+round-to-round `.diff-block`/`.diff-toggle` strip below "Multiple inline
+comments", which is unrelated.
+
+- **Layout** — 3 physical columns, not 4: `[old#][new#][code]`. The code
+  column flexes into `.sxs-half` del/add sub-cells for a change row
+  (`display: flex`, each `flex: 1 1 50%`), or renders unsplit for a context
+  row (`colspan` across the remaining width). A 4-column model
+  (`old-gutter, left-code, new-gutter, right-code`) can't let a context cell
+  span the full width without straddling-but-not-skipping a physical column;
+  3-column avoids that entirely.
+- **Color mapping** — reuses the verdict palette exactly: removed →
+  `--orange`/`--orange-bg`, added → `--teal`/`--teal-bg`, hunk header →
+  `--violet`, context/gutters → `--text2`/`--text3`. No new tokens.
+- **Context folding** — every run of unchanged lines collapses behind a
+  `.sxs-fold-btn` (a real `<button>`, `aria-expanded` + `aria-controls`
+  naming the real `id`s of the rows it reveals — not a `<tr role="button">`).
+  `min-height: 44px` touch target. Rows stay in the DOM (`style:
+  display:none`) so expand/collapse is a pure style flip, no re-render.
+- **Per-cell syntax highlighting** — language inferred from the section's
+  filepath (`langFromTitle`/`EXT_LANG`). Capped at `HLJS_HIGHLIGHT_CAP` (400)
+  code cells per hunk — above it, the whole hunk skips coloring rather than
+  paying one `hljs.highlightElement` call per line on an unbounded-size
+  reformat/generated-file diff. Folded context cells defer their highlight
+  call to first-expand instead of paying it upfront.
+- **Mobile** — below 720px (this repo's existing breakpoint, see
+  `.sheet-frame`), `.sxs-change-cell` stacks to a single column (removed
+  above added) and drops each half's independent horizontal scroll, so only
+  the outer `.sxs-wrap` scrolls.
+- **Binary sections** — `parse_diff.py`'s plaintext sentinel (no fence) falls
+  through to the ordinary markdown render, not this table.
+
+## File-header grouping (follow-up to #99, unreleased)
+
+A static divider — `path/to/file.py · N hunks` — above each contiguous run
+of `/viva-diff` hunk-cards sharing a filepath. `.file-group-header`: 9px
+Fragment Mono, uppercase, `--text3` (the label convention's default), a
+quiet landmark, not a heading — reads subordinate to the 13px `.card-title`.
+Static only: no sticky/pinned behavior, no collapse, no live approval count,
+filepath + hunk count only. Diff-mode-only; review mode's card list is
+unaffected (`REVIEW_DATA.mode !== 'diff'` gates it in `initReview` and, as a
+second, independent guarantee, in `setupCardSort` — the confidence-sort
+toggle is force-hidden in diff mode so its CSS `order` reordering can never
+strand a header away from its file's cards).
+
 ## Bottom bar
 
 Fixed to viewport bottom. Glass-morphism: `backdrop-filter: blur(16px) saturate(180%)`.

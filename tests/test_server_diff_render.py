@@ -21,6 +21,7 @@ check, not a subprocess+urllib one — nothing that lives in the DOM is
 exercised here.
 """
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -97,9 +98,11 @@ def test_page_ships_side_by_side_renderer() -> None:
 
 
 def test_page_ships_filepath_helper() -> None:
-    """filepathFromTitle is extracted as its own function so both the language
-    inference (langFromTitle) and the new file-grouping logic share one
-    definition of 'strip the hunk suffix off a diff-mode section title'."""
+    """filepathFromTitle is extracted as its own function, and both
+    langFromTitle (language inference) and diffFileHunkCounts (file-header
+    grouping) call it from their own function bodies — not just co-present
+    on the page, but actually reused, so the strip-hunk-suffix regex has
+    exactly one definition."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -107,6 +110,11 @@ def test_page_ships_filepath_helper() -> None:
     with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
         page = get_text(base, "/")
         assert "function filepathFromTitle" in page, "page missing: function filepathFromTitle"
+        for caller in ("langFromTitle", "diffFileHunkCounts"):
+            m = re.search(r"function " + caller + r"\(.*?\n\}", page, re.S)
+            assert m, f"page missing: function {caller}"
+            assert "filepathFromTitle(" in m.group(0), \
+                f"{caller} does not call filepathFromTitle — reuse not confirmed"
     print("test_page_ships_filepath_helper: OK")
 
 
@@ -168,10 +176,11 @@ def test_diff_content_served_verbatim() -> None:
 
 
 def test_page_ships_diff_mode_sort_toggle_guard() -> None:
-    """setupCardSort must force hasConfidence false in diff mode, unconditionally
-    — not just because diff-mode sections happen not to carry confidence
-    annotations today. Without this guard, the static file-group-header divs
-    (which carry no CSS `order`) would be stranded if the sort toggle ever
+    """setupCardSort's own function body — not just anywhere on the page —
+    must force hasConfidence false in diff mode, unconditionally, not just
+    because diff-mode sections happen not to carry confidence annotations
+    today. Without this guard, the static file-group-header divs (which
+    carry no CSS `order`) would be stranded if the sort toggle ever
     reordered cards in diff mode."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
@@ -179,9 +188,90 @@ def test_page_ships_diff_mode_sort_toggle_guard() -> None:
     (viva / "in1.json").write_text(json.dumps(GROUPED_DIFF_INPUT))
     with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
         page = get_text(base, "/")
-        assert "REVIEW_DATA.mode !== 'diff'" in page, \
-            "page missing: REVIEW_DATA.mode !== 'diff' guard in setupCardSort"
+        m = re.search(r"function setupCardSort\(.*?\n\}", page, re.S)
+        assert m, "page missing: function setupCardSort"
+        assert "REVIEW_DATA.mode !== 'diff'" in m.group(0), \
+            "setupCardSort does not guard hasConfidence on REVIEW_DATA.mode !== 'diff'"
     print("test_page_ships_diff_mode_sort_toggle_guard: OK")
+
+
+def test_page_ships_native_fold_button() -> None:
+    """The fold toggle is a real <button> (aria-controls + aria-expanded,
+    in the :focus-visible group), not a <tr role="button"> with a manual
+    keydown shim. Wiring check only — does not execute a click."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            'class="sxs-fold-btn"',
+            "aria-controls=",
+            ".sxs-fold-btn:focus-visible",
+        ):
+            assert needle in page, f"page missing: {needle}"
+        assert 'tabindex="0" role="button"' not in page, \
+            "fold row should no longer be a manually-keyboard-shimmed <tr role=button>"
+    print("test_page_ships_native_fold_button: OK")
+
+
+def test_page_ships_highlight_cap() -> None:
+    """Wiring check only: the served page ships HLJS_HIGHLIGHT_CAP and the
+    lazy-highlight-on-expand path in toggleFold, so an oversized hunk skips
+    hljs entirely instead of paying a highlightElement() call per line.
+    Does not execute the cap decision against a real DOM."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            "const HLJS_HIGHLIGHT_CAP",
+            "target.dataset.sxsHighlight",
+            "b.classList.contains('hljs')",
+        ):
+            assert needle in page, f"page missing: {needle}"
+    print("test_page_ships_highlight_cap: OK")
+
+
+def test_page_ships_mobile_stacked_layout() -> None:
+    """Wiring check only: below 720px the served CSS stacks .sxs-change-cell
+    to a single column and drops each half's independent horizontal scroll,
+    so the two-column table doesn't become unreadable/misaligned on narrow
+    viewports. Does not render or measure an actual viewport."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        assert "@media (max-width: 720px)" in page
+        mobile_block = page.split("@media (max-width: 720px)", 1)[1]
+        assert ".sxs-change-cell" in mobile_block and "flex-direction: column" in mobile_block, \
+            "mobile breakpoint missing .sxs-change-cell column-stack rule"
+    print("test_page_ships_mobile_stacked_layout: OK")
+
+
+def test_page_ships_cross_half_selection_guard() -> None:
+    """Wiring check only (no JS/browser harness in this repo): the served page
+    ships closestSxsHalf and the mouseup handler's crossesHalves check that
+    degrades a selection spanning two .sxs-half cells to an unanchored
+    whole-section note, instead of storing a garbled comment.anchor.text.
+    Does not execute the comparison against a real Selection."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            "function closestSxsHalf",
+            "closestSxsHalf(sel.anchorNode) !== closestSxsHalf(sel.focusNode)",
+        ):
+            assert needle in page, f"page missing: {needle}"
+    print("test_page_ships_cross_half_selection_guard: OK")
 
 
 def main() -> None:
@@ -191,6 +281,10 @@ def main() -> None:
     test_grouped_sections_stay_file_contiguous()
     test_diff_content_served_verbatim()
     test_page_ships_diff_mode_sort_toggle_guard()
+    test_page_ships_native_fold_button()
+    test_page_ships_highlight_cap()
+    test_page_ships_mobile_stacked_layout()
+    test_page_ships_cross_half_selection_guard()
     print("\nAll server diff-render tests passed.")
 
 
