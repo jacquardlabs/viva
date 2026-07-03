@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.15.0 (2026-07-03)
+
+### Features
+
+- Human-checkpoint primitives + diff mode (#82 #85)
+  ([#98](https://github.com/jacquardlabs/viva/pull/98),
+  [`e3345ac`](https://github.com/jacquardlabs/viva/commit/e3345ac217960678f99c03ecd536b094fcff53af))
+
+
 ## v1.14.4 (2026-07-03)
 
 ### Bug Fixes
