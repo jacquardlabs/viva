@@ -40,6 +40,7 @@ HTML = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
 <script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
@@ -1237,6 +1238,9 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
   margin-top: 1.75rem;
 }
+/* ─── highlight.js diff overrides — map to viva's verdict palette ─── */
+.hljs-addition { background: var(--teal-bg);   color: var(--teal);   }
+.hljs-deletion  { background: var(--orange-bg); color: var(--orange); }
 </style>
 </head>
 <body>
@@ -1389,6 +1393,9 @@ function renderMarkdown(target, md) {
     const html = marked.parse(md);
     target.innerHTML = DOMPurify.sanitize(html);
     target.classList.remove('md-raw');
+    if (window.hljs) {
+      target.querySelectorAll('code[class^="language-"]').forEach(b => hljs.highlightElement(b));
+    }
     return true;
   }
   target.classList.add('md-raw');
@@ -2561,6 +2568,16 @@ fetch('/input')
       el('review-view').style.display = '';
       initReview();
       connectSSE();
+    } else if (data.mode === 'diff') {
+      REVIEW_DATA = data;
+      el('doc-path').textContent    = data.doc_file || 'diff';
+      el('doc-path').title          = data.doc_file || 'diff';
+      el('doc-title').innerHTML     = 'viva <em>diff</em>';
+      el('round-badge').textContent = String(data.round).padStart(2, '0');
+      document.title = 'viva · diff · REV ' + String(data.round).padStart(2, '0');
+      el('review-view').style.display = '';
+      initReview();
+      connectSSE();
     } else {
       QA_DATA = data;
       el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
@@ -2610,7 +2627,7 @@ def _push_sse(event: str, data: dict) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="viva review server")
-    p.add_argument("--mode",       required=True, choices=["review", "qa"])
+    p.add_argument("--mode",       required=True, choices=["review", "qa", "diff"])
     p.add_argument("--input",      required=True)
     p.add_argument("--output",     required=True)
     p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
@@ -2899,6 +2916,11 @@ if __name__ == "__main__":
             schema.validate_review_input(_input_data)
         except ValueError as e:
             sys.exit(f"viva: invalid review-input {args.input}: {e}")
+    elif args.mode == "qa":
+        try:
+            schema.validate_qa_input(_input_data)
+        except ValueError as e:
+            sys.exit(f"viva: invalid qa-input {args.input}: {e}")
     _output_path = args.output
 
     port = find_free_port()

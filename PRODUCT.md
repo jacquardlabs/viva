@@ -11,12 +11,13 @@ a human the gate, section by section, and makes that gate cheap enough to use
 every time. The unit of trust is the section, not the document: nothing passes
 until a human has approved the section it lives in.
 
-The product is the set of **human checkpoints across a document's lifecycle** —
-today the review checkpoint (the core loop) and a brainstorm checkpoint (batch
-Q&A before the doc exists). Every feature either is one of those checkpoints or
-makes one cheaper to reach the right decision faster. A new feature earns its
-place by serving a checkpoint; one that fits neither belongs to a different
-product.
+The product is the set of **human checkpoints across an agent's artifact
+lifecycle** — today the review checkpoint (section-by-section doc review), a
+brainstorm checkpoint (batch Q&A before the doc exists), and a diff checkpoint
+(hunk-by-hunk code review before a commit). Every feature either is one of those
+checkpoints or makes one cheaper to reach the right decision faster. A new
+feature earns its place by serving a checkpoint; one that fits neither belongs to
+a different product.
 
 ## Personas
 
@@ -88,13 +89,11 @@ opt-in layers that all funnel through the section card:
 - Confidence triage — sourced/inferred · level, with weakest-first sort
 - Learned preferences — recurring critiques learned across sessions
 - Brainstorming Q&A — batch design questions before the spec is written
+- Diff review: hunk-by-hunk review of agent-written code before commit (/viva-diff)
 
 ## Known problems
 
-- **Brainstorming install is fragile.** A `find`-based one-liner patches the
-  superpowers brainstorming skill in place, depends on a specific plugin-cache
-  path, and must be re-run manually after any superpowers update — it can break
-  silently.
+- **README lags the product.** User-facing README documents only the core loop; several shipped feature clusters (annotations, producers, confidence triage, open notes, learned preferences, diff review) are undocumented there.
 - **Agent-side complexity.** SKILL.md carries the whole launch→wait→act→rewrite
   loop as prose with conditional round-1 branches (e.g. the standing-preference
   path splits the launch block), so the agent shoulders the orchestration the

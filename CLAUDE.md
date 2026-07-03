@@ -11,7 +11,7 @@ only by JSON files under `.viva/`:
 1. **`SKILL.md` — the orchestrator.** The launch → wait → act → rewrite loop is
    prose the Claude agent executes. There is no `main()` in code that runs the
    loop; the agent is the runtime.
-2. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `annotate`,
+2. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
    `drift`, `checklist`, `open_notes`, `preferences`, `revision_history`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
@@ -51,6 +51,10 @@ boundary validator is what turns that into a loud failure.
 
 `GET /input` serves the review-input merged with a live `ledger: [...]` key; that
 `ledger` is injected at serve time and is not part of the on-disk file schema.
+
+**New skills in this branch:** `.claude/skills/viva/brainstorming-qa.md`
+(`/viva-qa` primitive) and `.claude/skills/viva/diff.md` (`/viva-diff` skill)
+follow the same import-only-schema rule.
 
 ## Extension seams
 

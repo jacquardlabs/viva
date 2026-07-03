@@ -9,11 +9,12 @@ Section-by-section markdown review. Human signs off on every section; agent rewr
 
 Replaces: `plan-reviewer`
 
-## Setup
+## Brainstorming Q&A
 
-To enable brainstorming Q&A integration, run once in your Claude Code prompt:
-
-  ! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | sort -V | tail -1)"
+viva exposes a `/viva-qa` skill for batch Q&A sessions. The superpowers
+`brainstorming` skill calls `/viva-qa` directly when viva is installed — no
+`install.sh` patch is needed. See `.claude/skills/viva/brainstorming-qa.md`
+for the full invocation contract.
 
 ---
 
