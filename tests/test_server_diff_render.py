@@ -298,6 +298,23 @@ def test_page_ships_lcs_alignment() -> None:
     print("test_page_ships_lcs_alignment: OK")
 
 
+def test_page_ships_shared_table_scroll() -> None:
+    """Wiring check only: .sxs-half no longer sets its own overflow-x, so
+    the whole table shares one horizontal scroll region (.sxs-wrap) instead
+    of each cell scrolling independently. Does not measure rendered layout."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        m = re.search(r"\.sxs-half \{[^}]*\}", page)
+        assert m, "page missing: .sxs-half base rule"
+        assert "overflow-x" not in m.group(0), \
+            f".sxs-half should no longer set its own overflow-x, found: {m.group(0)}"
+    print("test_page_ships_shared_table_scroll: OK")
+
+
 def main() -> None:
     test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
@@ -310,6 +327,7 @@ def main() -> None:
     test_page_ships_mobile_stacked_layout()
     test_page_ships_cross_half_selection_guard()
     test_page_ships_lcs_alignment()
+    test_page_ships_shared_table_scroll()
     print("\nAll server diff-render tests passed.")
 
 

@@ -544,15 +544,22 @@ body {
    as a table. Distinct .sxs- prefix — NOT the same as .diff-* above, which
    is the unrelated round-to-round "changes since last round" strip. */
 .sxs-wrap { overflow-x: auto; }
-.sxs-table { width: 100%; border-collapse: collapse; font-family: 'Fragment Mono', monospace; font-size: 11px; line-height: 1.55; }
+.sxs-table { width: 100%; border-collapse: collapse; font-family: 'Fragment Mono', monospace; font-size: 12px; line-height: 1.6; }
 .sxs-hunk-row td.sxs-hunk { color: var(--violet); opacity: 0.7; padding: 3px 9px; white-space: pre; }
 .sxs-gutter { width: 3em; text-align: right; padding: 0 6px; color: var(--text3); opacity: 0.6; user-select: none; vertical-align: top; white-space: nowrap; }
 .sxs-gutter-del { color: var(--orange); opacity: 0.85; }
 .sxs-gutter-add { color: var(--teal); opacity: 0.85; }
 .sxs-code { padding: 0; vertical-align: top; }
-.sxs-code code { display: block; white-space: pre; padding: 1px 9px; }
+.sxs-code code { display: block; white-space: pre; padding: 3px 10px; }
 .sxs-change-cell { display: flex; }
-.sxs-half { flex: 1 1 50%; min-width: 0; overflow-x: auto; }
+/* No min-width:0 / overflow-x:auto here — removing them lets unbreakable
+   (white-space:pre) content push the whole table wider than .sxs-wrap
+   instead of creating its own nested scrollbar. table-layout:auto (the
+   default) means .sxs-table's width:100% is a minimum, not a hard cap, so
+   the table is free to grow when content demands it; .sxs-wrap
+   (overflow-x:auto) then scrolls old and new together as one unit instead
+   of each cell scrolling independently. */
+.sxs-half { flex: 1 1 50%; }
 .sxs-half.sxs-del { background: var(--orange-bg); }
 .sxs-half.sxs-del code { color: var(--orange); }
 .sxs-half.sxs-add { background: var(--teal-bg); }
@@ -584,13 +591,11 @@ body {
 .sxs-fold-btn:hover { color: var(--teal); }
 .sxs-fold-btn.is-open { color: var(--text); }
 /* Below 720px (this repo's existing mobile breakpoint, see .sheet-frame),
-   two 50%-wide code columns get too narrow to read. Stack removed above
-   added, full width, and drop each half's own overflow-x so only the outer
-   .sxs-wrap scrolls — two independently-scrolling nested regions per row
-   made it easy to lose left/right alignment on overflow. */
+   two 50%-wide code columns get too narrow to read even sharing one
+   scroll region (see .sxs-half above) — stack removed above added, full
+   width, instead. */
 @media (max-width: 720px) {
   .sxs-change-cell { flex-direction: column; }
-  .sxs-half { overflow-x: visible; }
 }
 
 /* ─── Card body (smooth height animation) ────────────────── */
