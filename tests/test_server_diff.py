@@ -1,22 +1,86 @@
+from __future__ import annotations
 #!/usr/bin/env python3
-"""Integration test: the server carries the round-to-round section `diff`
-through to the client unchanged, and the page ships the diff renderer + styles.
+"""Integration tests for diff functionality in server.py.
 
-The diff is computed by parse_sections.py and rendered inline on a rewritten
-card (added/removed lines vs the prior round). The server is a dumb pipe for it
-(load_input is verbatim), so the contract is: GET /input and the /next-round
-push preserve the diff rows, and the page defines the renderer + collapse toggle.
+Covers two distinct areas:
+  1. Round-to-round section diff pass-through in --mode review.
+  2. --mode diff: accepts DiffInput JSON and runs the full review SPA
+     with diff-mode title block and highlight.js rendering.
 """
 import json
+import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, get_text, launch_server, post  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
+
+# ─── Fixtures ────────────────────────────────────────────────────────────────
+
+DIFF_INPUT = {
+    "mode": "diff",
+    "doc_file": "HEAD~1..HEAD",
+    "round": 1,
+    "approved_ids": [],
+    "sections": [
+        {
+            "id": "s1",
+            "title": "foo.py hunk 1",
+            "content": "```diff\n@@ -1,3 +1,4 @@\n line 1\n-old line\n+new line\n+extra\n line 3\n```",
+        },
+        {
+            "id": "s2",
+            "title": "bar.py hunk 1",
+            "content": "```diff\n@@ -5,3 +5,3 @@\n context\n-removed\n+added\n context\n```",
+        },
+    ],
+}
 
 
-def main() -> None:
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def post(base: str, path: str, payload: dict) -> dict:
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    return json.loads(urllib.request.urlopen(req, timeout=5).read())
+
+
+def get(base: str, path: str) -> dict:
+    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
+
+
+def _start_server(tmp: Path, inp: dict, mode: str = "diff") -> tuple:
+    """Start server in the given mode, return (proc, base_url, output_path)."""
+    viva = tmp / ".viva"
+    viva.mkdir(exist_ok=True)
+    inp_path = viva / "review-input-r1.json"
+    out_path = viva / "review-r1.json"
+    inp_path.write_text(json.dumps(inp))
+    proc = subprocess.Popen(
+        [sys.executable, str(ROOT / "server.py"), "--mode", mode,
+         "--input", str(inp_path), "--output", str(out_path), "--no-browser"],
+        cwd=tmp,
+    )
+    url_file = viva / "server.url"
+    for _ in range(50):
+        if url_file.exists():
+            break
+        time.sleep(0.2)
+    if not url_file.exists():
+        proc.terminate()
+        raise RuntimeError("server.url not created")
+    return proc, url_file.read_text().strip(), str(out_path)
+
+
+# ─── Legacy: round-to-round diff pass-through in --mode review ───────────────
+
+def test_review_mode_diff_passthrough() -> None:
+    """Section diff rows pass through /input and /next-round verbatim."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -36,7 +100,20 @@ def main() -> None:
         ],
     }
     (viva / "in1.json").write_text(json.dumps(r1))
-    with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
+    proc = subprocess.Popen(
+        [sys.executable, str(ROOT / "server.py"), "--mode", "review",
+         "--input", str(viva / "in1.json"), "--output", str(viva / "out1.json"),
+         "--no-browser"],
+        cwd=tmp,
+    )
+    try:
+        url_file = viva / "server.url"
+        for _ in range(50):
+            if url_file.exists():
+                break
+            time.sleep(0.2)
+        base = url_file.read_text().strip()
+
         # Pass-through: GET /input preserves the diff rows verbatim.
         data = get(base, "/input")
         s1 = next(s for s in data["sections"] if s["id"] == "s1")
@@ -53,12 +130,111 @@ def main() -> None:
 
         # Page ships the renderer, the diff markup hook, the collapse toggle,
         # and the add/del line styles reusing the verdict color slots.
-        page = get_text(base, "/")
+        page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
         for needle in ("function diffStripHTML", "diff-block", "diff-toggle",
                        ".diff-add", ".diff-del", "section.diff"):
             assert needle in page, f"page missing: {needle}"
 
-        print("OK")
+        print("test_review_mode_diff_passthrough: OK")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+# ─── New: --mode diff ─────────────────────────────────────────────────────────
+
+def test_diff_mode_input_endpoint() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            data = get(base, "/input")
+            assert data["mode"] == "diff", f"expected mode=diff, got {data.get('mode')}"
+            assert len(data["sections"]) == 2
+            assert data["sections"][0]["title"] == "foo.py hunk 1"
+            assert data["sections"][1]["title"] == "bar.py hunk 1"
+            print("test_diff_mode_input_endpoint: OK")
+        finally:
+            proc.terminate()
+            proc.wait()
+
+
+def test_diff_mode_submit_writes_output() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, out_path = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            post(base, "/submit", {
+                "round": 1,
+                "sections": [
+                    {"id": "s1", "verdict": "approved"},
+                    {"id": "s2", "verdict": "changes", "note": "Use += instead"},
+                ],
+            })
+            for _ in range(20):
+                if Path(out_path).exists():
+                    break
+                time.sleep(0.1)
+            assert Path(out_path).exists(), "output file not written"
+            out = json.loads(Path(out_path).read_text())
+            verdicts = {s["id"]: s["verdict"] for s in out["sections"]}
+            assert verdicts["s1"] == "approved"
+            assert verdicts["s2"] == "changes"
+            print("test_diff_mode_submit_writes_output: OK")
+        finally:
+            proc.terminate()
+            proc.wait()
+
+
+def test_diff_mode_next_round() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            post(base, "/submit", {
+                "round": 1,
+                "sections": [
+                    {"id": "s1", "verdict": "changes", "note": "fix this"},
+                    {"id": "s2", "verdict": "approved"},
+                ],
+            })
+            r2_input = dict(DIFF_INPUT, round=2, approved_ids=["s2"])
+            r2_out = str(Path(tmp) / ".viva" / "review-r2.json")
+            post(base, f"/next-round?output={r2_out}", r2_input)
+            data = get(base, "/input")
+            assert data["round"] == 2
+            print("test_diff_mode_next_round: OK")
+        finally:
+            proc.terminate()
+            proc.wait()
+
+
+def test_diff_mode_complete_shuts_down() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            post(base, "/complete", {
+                "rounds_total": 1, "sections_total": 2, "sections_revised": 1
+            })
+            # Server shuts down ~2 seconds after /complete
+            for _ in range(35):
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+            assert proc.poll() is not None, "server should have shut down after /complete"
+            print("test_diff_mode_complete_shuts_down: OK")
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait()
+
+
+# ─── Runner ───────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    test_review_mode_diff_passthrough()
+    test_diff_mode_input_endpoint()
+    test_diff_mode_submit_writes_output()
+    test_diff_mode_next_round()
+    test_diff_mode_complete_shuts_down()
+    print("\nAll server diff tests passed.")
 
 
 if __name__ == "__main__":

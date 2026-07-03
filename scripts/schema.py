@@ -182,3 +182,59 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
             )
+
+
+# ── Q&A round shapes ──────────────────────────────────────────────────────────
+class QAQuestion(TypedDict, total=False):
+    id: str           # required
+    text: str         # required
+    hint: str         # optional — shown below the question text
+    choices: List[str]  # optional — rendered as chip buttons
+
+
+class QAInput(TypedDict, total=False):
+    mode: str                   # "qa"
+    context: str                # one-liner shown in the title block
+    questions: List[QAQuestion]
+
+
+class QAAnswer(TypedDict, total=False):
+    id: str               # question id
+    choice: str           # selected chip value
+    note: str             # free-text field value
+    attachments: List[str]  # server-written image paths
+
+
+class QAOutput(TypedDict, total=False):
+    answers: List[QAAnswer]
+    submitted_early: bool
+
+
+class DiffInput(TypedDict, total=False):
+    """Diff-mode input — same structure as ReviewInput, mode='diff'."""
+    mode: str                       # "diff"
+    doc_file: str                   # ref description shown in UI
+    round: int
+    approved_ids: List[str]
+    sections: List[ReviewSection]   # one entry per hunk
+
+
+def validate_qa_input(data: dict) -> None:
+    """Raise `ValueError` if `data` is not a structurally valid Q&A input.
+
+    Enforces that every question has `id` and `text`. Permissive about optional
+    fields (`hint`, `choices`, `context`). Call at startup when `--mode qa`.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("qa-input must be a JSON object")
+    questions = data.get("questions")
+    if not isinstance(questions, list):
+        raise ValueError("qa-input.questions must be a list")
+    for i, q in enumerate(questions):
+        if not isinstance(q, dict):
+            raise ValueError(f"qa-input.questions[{i}] must be an object")
+        for field in ("id", "text"):
+            if not isinstance(q.get(field), str):
+                raise ValueError(
+                    f"qa-input.questions[{i}] missing required string {field!r}"
+                )
