@@ -167,12 +167,30 @@ def test_diff_content_served_verbatim() -> None:
     print("test_diff_content_served_verbatim: OK")
 
 
+def test_page_ships_diff_mode_sort_toggle_guard() -> None:
+    """setupCardSort must force hasConfidence false in diff mode, unconditionally
+    — not just because diff-mode sections happen not to carry confidence
+    annotations today. Without this guard, the static file-group-header divs
+    (which carry no CSS `order`) would be stranded if the sort toggle ever
+    reordered cards in diff mode."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(GROUPED_DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        assert "REVIEW_DATA.mode !== 'diff'" in page, \
+            "page missing: REVIEW_DATA.mode !== 'diff' guard in setupCardSort"
+    print("test_page_ships_diff_mode_sort_toggle_guard: OK")
+
+
 def main() -> None:
     test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
     test_page_ships_file_group_header()
     test_grouped_sections_stay_file_contiguous()
     test_diff_content_served_verbatim()
+    test_page_ships_diff_mode_sort_toggle_guard()
     print("\nAll server diff-render tests passed.")
 
 

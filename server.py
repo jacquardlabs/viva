@@ -1826,7 +1826,12 @@ function applyCardSort() {
 function setupCardSort() {
   rState.sortMode = 'document';
   const bar = el('sort-bar');
-  const hasConfidence = REVIEW_DATA.sections.some(s => confidenceAnnot(s));
+  // Diff mode's file-header grouping depends on cards staying in fixed document
+  // order (CSS `order` would strand the static file-group-header divs, which
+  // carry no order, away from their file's cards) -- so force the toggle off
+  // here rather than relying on diff-mode sections happening not to carry
+  // confidence annotations.
+  const hasConfidence = REVIEW_DATA.mode !== 'diff' && REVIEW_DATA.sections.some(s => confidenceAnnot(s));
   if (bar) bar.style.display = hasConfidence ? '' : 'none';
   applyCardSort();
 }
