@@ -36,6 +36,7 @@ HTML = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
 <script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
@@ -1146,6 +1147,10 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
   margin-top: 1.75rem;
 }
+/* ─── highlight.js diff overrides — map to viva's verdict palette ─── */
+/* Added/removed lines use the same teal/orange tokens as verdicts.    */
+.hljs-addition { background: var(--teal-bg);   color: var(--teal);   }
+.hljs-deletion  { background: var(--orange-bg); color: var(--orange); }
 </style>
 </head>
 <body>
@@ -1276,6 +1281,9 @@ function renderMarkdown(target, md) {
   if (window.marked) {
     const html = marked.parse(md);
     target.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+    if (window.hljs) {
+      target.querySelectorAll('code[class^="language-"]').forEach(b => hljs.highlightElement(b));
+    }
   } else {
     target.classList.add('md-raw');
     target.textContent = md;
@@ -2385,6 +2393,15 @@ document.addEventListener('DOMContentLoaded', () => {
         el('review-view').style.display = '';
         initReview();
         connectSSE();
+      } else if (data.mode === 'diff') {
+        REVIEW_DATA = data;
+        el('doc-path').textContent    = data.doc_file || 'diff';
+        el('doc-path').title          = data.doc_file || 'diff';
+        el('doc-title').innerHTML     = 'viva <em>diff</em>';
+        el('round-badge').textContent = String(data.round).padStart(2, '0');
+        el('review-view').style.display = '';
+        initReview();
+        connectSSE();
       } else {
         QA_DATA = data;
         el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
@@ -2435,7 +2452,7 @@ def _push_sse(event: str, data: dict) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="viva review server")
-    p.add_argument("--mode",       required=True, choices=["review", "qa"])
+    p.add_argument("--mode",       required=True, choices=["review", "qa", "diff"])
     p.add_argument("--input",      required=True)
     p.add_argument("--output",     required=True)
     p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
