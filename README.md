@@ -52,13 +52,24 @@ If no path is given, Claude scans the current directory for a single `.md` file.
 
 ## Brainstorming integration
 
-viva adds a batch Q&A phase to the built-in `brainstorming` skill so Claude can surface key design questions before writing a spec. Run once in your Claude Code prompt to install:
+viva adds a batch Q&A phase to the `brainstorming` skill via the `/viva-qa`
+primitive. When viva is installed, the brainstorming skill calls `/viva-qa`
+directly — no install step or patching required.
 
-```
-! bash "$(find ~/.claude/skills/viva ~/.claude/plugins/cache -name install.sh -path "*/viva*" 2>/dev/null | head -1)"
+To collect Q&A answers from your own skills, write `.viva/qa-input.json` and
+invoke `/viva-qa`:
+
+```json
+{
+  "mode": "qa",
+  "context": "Topic shown in the title block",
+  "questions": [
+    {"id": "q1", "text": "Which approach?", "choices": ["A", "B", "C"]}
+  ]
+}
 ```
 
-Re-run after any superpowers plugin update.
+See `.claude/skills/viva/brainstorming-qa.md` for the full contract.
 
 ## Verdicts
 
@@ -68,6 +79,24 @@ Re-run after any superpowers plugin update.
 | `changes` | Claude rewrites the section using your note as the instruction (attached images, if any, are part of the instruction) |
 | `info` | Claude answers your question and rewrites the section incorporating that answer (attached images, if any, are included as context) |
 | `pending` | Skipped; re-presented unchanged next round |
+
+## Diff mode
+
+`/viva-diff` reviews a git diff hunk-by-hunk before a commit:
+
+```
+/viva-diff [ref]
+```
+
+`ref` is a git ref or range (`HEAD~1`, `main..feature`, etc.). Omit for
+unstaged working-tree changes. Each hunk becomes one review card with the
+same comment, anchor, and attachment support as document review. Approved
+hunks collapse; revised hunks re-present with a within-hunk diff. Sign-off
+produces a ledger formatted for a commit body or PR description.
+
+Diff mode is a separate gate from `/code-review` (which is an LLM pass).
+They compose: run `/code-review` first, apply its suggestions, then
+`/viva-diff` for human sign-off before committing.
 
 ## How it works
 
