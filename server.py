@@ -563,6 +563,14 @@ body {
 .section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
 .section-content .d2h-code-linenumber,
 .section-content .d2h-code-side-linenumber { user-select: none; }
+/* d2h's line-number cells are position:absolute; without a positioned
+   ancestor inside the card, their containing block is .card (relative) —
+   outside .card-body-inner's overflow:hidden — so they'd escape the
+   accordion's collapse clip and ghost over the page (verified via
+   computed-style inspection). The numbers use auto offsets (static
+   position), so this is visually inert when open; it only restores
+   clipping when collapsed. */
+.section-content .d2h-file-wrapper { position: relative; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {

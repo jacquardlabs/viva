@@ -250,6 +250,7 @@ def test_page_ships_d2h_guards() -> None:
         for needle in (
             ".section-content .d2h-wrapper td",
             ".section-content .d2h-code-linenumber",
+            ".section-content .d2h-file-wrapper",
             "user-select: none",
             "function closestD2hPane",
             "closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode)",
