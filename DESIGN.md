@@ -98,7 +98,8 @@ drafting geometry.
 
 Single-column shell, `max-width: 700px`, centered. Bottom bar is fixed, matches
 the shell's max-width with `bottom-inner`. Shell has `padding-bottom: 140px` to
-clear the bar. Do not exceed 700px in the shell.
+clear the bar. Do not exceed 700px in the shell (diff mode is the one exception:
+body.mode-diff widens it — see Diff-first layout).
 
 A fixed drawing-sheet frame (`.sheet-frame`, `position: fixed; inset: 16px`) wraps
 the whole viewport behind the content — see Blueprint elements. The shell sits on
@@ -207,40 +208,35 @@ Drafting-room gestures that extend the metaphor. All square, all monospace.
   animation. Children: `.stamp-word` ("APPROVED", `2.1rem`), `.stamp-meta` ("viva ·
   <date>"), `.stamp-sub` ("N sheets · M revisions"). All Fragment Mono.
 
-## Side-by-side hunk rendering (#99)
+## Diff rendering (#99, superseded in-branch by diff2html delegation)
 
-`/viva-diff` renders each git hunk as a table instead of a single-column
-fenced code block. Distinct `.sxs-` prefix — not the same feature as the
-round-to-round `.diff-block`/`.diff-toggle` strip below "Multiple inline
-comments", which is unrelated.
+`/viva-diff` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
+(MIT, `diff2html@3` on jsdelivr — same CDN precedent as marked/DOMPurify/hljs).
+The `renderDiffHunk` adapter strips the section's ` ```diff ` fence,
+synthesizes the `---/+++` preamble from the section title's filepath at
+render time (never stored — `section.content` stays byte-for-byte verbatim
+for anchors and carry-forward), and draws with `diffStyle: 'word'`
+(intra-line word-level emphasis), `matching: 'words'`, no file list, and
+`outputFormat` picked by viewport: side-by-side at ≥900px, line-by-line
+below. Output is committed through `DOMPurify.sanitize`. Fallback chain
+when the CDN is absent: fenced ` ```diff ` via `renderMarkdown` (tagged
+`d2h-pending`, upgraded in place when the script loads) → `md-raw` plain
+text. Binary sections (parse_diff.py's plaintext sentinel, no fence)
+render as prose, unchanged. viva-side guards on the diff2html DOM: a
+scoped td reset (the generic `.section-content td` editorial-table rule
+would otherwise border/pad every diff row), `user-select: none` on line
+numbers, and a cross-pane selection guard that degrades a selection
+spanning both side-by-side panes to an unanchored whole-section note.
 
-- **Layout** — 3 physical columns, not 4: `[old#][new#][code]`. The code
-  column flexes into `.sxs-half` del/add sub-cells for a change row
-  (`display: flex`, each `flex: 1 1 50%`), or renders unsplit for a context
-  row (`colspan` across the remaining width). A 4-column model
-  (`old-gutter, left-code, new-gutter, right-code`) can't let a context cell
-  span the full width without straddling-but-not-skipping a physical column;
-  3-column avoids that entirely.
-- **Color mapping** — reuses the verdict palette exactly: removed →
-  `--orange`/`--orange-bg`, added → `--teal`/`--teal-bg`, hunk header →
-  `--violet`, context/gutters → `--text2`/`--text3`. No new tokens.
-- **Context folding** — every run of unchanged lines collapses behind a
-  `.sxs-fold-btn` (a real `<button>`, `aria-expanded` + `aria-controls`
-  naming the real `id`s of the rows it reveals — not a `<tr role="button">`).
-  `min-height: 44px` touch target. Rows stay in the DOM (`style:
-  display:none`) so expand/collapse is a pure style flip, no re-render.
-- **Per-cell syntax highlighting** — language inferred from the section's
-  filepath (`langFromTitle`/`EXT_LANG`). Capped at `HLJS_HIGHLIGHT_CAP` (400)
-  code cells per hunk — above it, the whole hunk skips coloring rather than
-  paying one `hljs.highlightElement` call per line on an unbounded-size
-  reformat/generated-file diff. Folded context cells defer their highlight
-  call to first-expand instead of paying it upfront.
-- **Mobile** — below 720px (this repo's existing breakpoint, see
-  `.sheet-frame`), `.sxs-change-cell` stacks to a single column (removed
-  above added) and drops each half's independent horizontal scroll, so only
-  the outer `.sxs-wrap` scrolls.
-- **Binary sections** — `parse_diff.py`'s plaintext sentinel (no fence) falls
-  through to the ordinary markdown render, not this table.
+## Diff-first layout (mode-diff)
+
+Diff mode stamps `mode-diff` on `<body>`. Mode-scoped overrides widen
+`.shell` and `.bottom-inner` together to `min(95vw, 1600px)` and remove
+`.section-content`'s `60vh` nested scroll — page scroll is the only
+vertical scroll in diff mode. Widening the container (never escaping it)
+is the load-bearing choice: it leaves `.card-body-inner`'s
+`overflow: hidden` accordion animation untouched. Review/QA modes carry
+no `mode-diff` class and are unaffected.
 
 ## File-header grouping (follow-up to #99, unreleased)
 

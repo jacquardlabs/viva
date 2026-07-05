@@ -41,6 +41,8 @@ HTML = r"""<!DOCTYPE html>
 <script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
+<link rel="stylesheet" id="diff2html-css" href="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css">
+<script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
@@ -311,7 +313,7 @@ body {
 
 /* ─── diff-mode file grouping: static divider above each run of hunks
    belonging to the same file. Landmark, not a heading — same quiet
-   typographic register as .sxs-fold-cell/.diff-toggle. ─── */
+   typographic register as .diff-toggle. ─── */
 .file-group-header {
   color: var(--text3);
   font-family: 'Fragment Mono', monospace;
@@ -551,74 +553,16 @@ body {
 .diff-ctx { color: var(--text2); }
 .diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
 
-/* ─── side-by-side hunk rendering (diff mode, issue #99) ─────────────────
-   Renders a git hunk (removed left / added right / context full-width)
-   as a table. Distinct .sxs- prefix — NOT the same as .diff-* above, which
-   is the unrelated round-to-round "changes since last round" strip. */
-.sxs-wrap { overflow-x: auto; }
-.sxs-table { width: 100%; border-collapse: collapse; font-family: 'Fragment Mono', monospace; font-size: 12px; line-height: 1.6; }
-/* .section-content td/th (the generic "editorial markdown table" rule,
-   for an ordinary table a reviewed doc might contain) sets its own
-   border-bottom + padding, and since this table also lives inside
-   .section-content, every cell here silently inherited that divider and
-   padding too — every line read as its own individually-bordered row
-   instead of same-type runs reading as one continuous block. Each
-   selector below is deliberately qualified with .sxs-table (or already
-   has enough classes) so its specificity beats .section-content td's
-   (0,0,1,1); color alone (not a border) is what should tell one line
-   from the next. */
-.sxs-hunk-row td.sxs-hunk { color: var(--violet); opacity: 0.7; padding: 3px 9px; white-space: pre; border-bottom: none; }
-.sxs-table .sxs-gutter { width: 3em; text-align: right; padding: 0 6px; color: var(--text3); opacity: 0.6; user-select: none; vertical-align: top; white-space: nowrap; border-bottom: none; }
-.sxs-gutter-del { color: var(--orange); opacity: 0.85; }
-.sxs-gutter-add { color: var(--teal); opacity: 0.85; }
-.sxs-table .sxs-code { padding: 0; vertical-align: top; border-bottom: none; }
-.sxs-code code { display: block; white-space: pre; padding: 3px 10px; }
-.sxs-change-cell { display: flex; }
-/* No min-width:0 / overflow-x:auto here — removing them lets unbreakable
-   (white-space:pre) content push the whole table wider than .sxs-wrap
-   instead of creating its own nested scrollbar. table-layout:auto (the
-   default) means .sxs-table's width:100% is a minimum, not a hard cap, so
-   the table is free to grow when content demands it; .sxs-wrap
-   (overflow-x:auto) then scrolls old and new together as one unit instead
-   of each cell scrolling independently. */
-.sxs-half { flex: 1 1 50%; }
-.sxs-half.sxs-del { background: var(--orange-bg); }
-.sxs-half.sxs-del code { color: var(--orange); }
-.sxs-half.sxs-add { background: var(--teal-bg); }
-.sxs-half.sxs-add code { color: var(--teal); }
-.sxs-ctx code { color: var(--text2); }
-.sxs-table .sxs-fold-cell { padding: 0; border-bottom: none; }
-/* Real <button> filling the cell (not a <tr role="button">) so it's a
-   native, keyboard-operable control by default and gets a real touch
-   target — min-height 44px per the fold row's tap-target requirement. */
-.sxs-fold-btn {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-height: 44px;
-  background: none;
-  border: none;
-  margin: 0;
-  padding: 4px 9px;
-  font: inherit;
-  color: var(--text2);
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-align: left;
-  cursor: pointer;
-}
-.sxs-fold-btn:hover { color: var(--teal); }
-.sxs-fold-btn.is-open { color: var(--text); }
-/* Below 720px (this repo's existing mobile breakpoint, see .sheet-frame),
-   two 50%-wide code columns get too narrow to read even sharing one
-   scroll region (see .sxs-half above) — stack removed above added, full
-   width, instead. */
-@media (max-width: 720px) {
-  .sxs-change-cell { flex-direction: column; }
-}
+/* ─── diff2html output (diff mode) ─────────────────────────
+   Rendering is delegated to diff2html (see renderDiffHunk); these rules
+   are viva-side guards, not a theme. The scoped td reset carries the
+   specificity lesson from the hand-rolled table: .section-content td (the
+   generic editorial-markdown-table rule) would otherwise chop every diff
+   row into bordered, padded cells. Line-number cells are unselectable so
+   a drag can't capture line numbers into comment.anchor.text. */
+.section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
+.section-content .d2h-code-linenumber,
+.section-content .d2h-code-side-linenumber { user-select: none; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
@@ -1150,8 +1094,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
-.btn-skip:focus-visible, .btn-submit:focus-visible,
-.sxs-fold-btn:focus-visible {
+.btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1498,329 +1441,61 @@ function renderMarkdown(target, md) {
   return false;
 }
 
-/* File-extension → highlight.js language alias, for per-cell syntax coloring
-   in the side-by-side diff table below. Unmapped/unknown extensions fall
-   back to 'plaintext' rather than guessing. */
-const EXT_LANG = {
-  py: 'python', js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  ts: 'typescript', tsx: 'typescript', json: 'json', md: 'markdown',
-  css: 'css', scss: 'scss', html: 'xml', htm: 'xml', xml: 'xml',
-  sh: 'bash', bash: 'bash', zsh: 'bash', yml: 'yaml', yaml: 'yaml',
-  go: 'go', rs: 'rust', java: 'java', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp',
-  rb: 'ruby', php: 'php', sql: 'sql', toml: 'ini',
-};
-
-// Above this many code cells in one hunk, skip hljs entirely for that hunk
-// (rows stay plain, escaped monospace — still fully readable) rather than
-// pay a highlightElement() call per line on an unbounded-size reformat or
-// generated-file diff.
-const HLJS_HIGHLIGHT_CAP = 400;
-
 // section.title for diff-mode sections is "{filepath} hunk N" (parse_diff.py).
-// Strip the " hunk N" suffix to recover the filepath. Shared by langFromTitle
-// (extension → hljs language) and diffFileHunkCounts (file-header grouping).
+// Strip the " hunk N" suffix to recover the filepath. Shared by
+// diffFileHunkCounts (file-header grouping) and renderDiffHunk (preamble
+// synthesis).
 function filepathFromTitle(title) {
   return String(title || '').replace(/\s+hunk\s+\d+$/, '');
 }
 
-// Extension → hljs language, for per-cell syntax coloring in the side-by-side
-// diff table.
-function langFromTitle(title) {
-  const filepath = filepathFromTitle(title);
-  const m = filepath.match(/\.([a-zA-Z0-9]+)$/);
-  const ext = m ? m[1].toLowerCase() : '';
-  return EXT_LANG[ext] || 'plaintext';
-}
-
-// _ensureRendered only has a section id at render time; renderDiffTable
-// needs the section's title to infer a syntax-highlighting language from
-// its filepath (see langFromTitle).
+// _ensureRendered only has a section id at render time; renderDiffHunk
+// needs the section's title to synthesize the file preamble diff2html
+// expects.
 function sectionTitleFor(id) {
   const s = (REVIEW_DATA && REVIEW_DATA.sections || []).find(sec => sec.id === id);
   return s ? s.title : '';
 }
 
-// Parse a git hunk's body lines (everything after the @@ header) into a
-// flat list of row records — no HTML in this step, see buildSxsTableHtml
-// for that. Consecutive removed/added lines buffer and flush through
-// alignBlock (LCS-based realignment below) rather than naive index-pairing,
-// so an incidentally-unchanged line inside a replace block becomes a 'same'
-// record instead of a bogus paired 'change'. Consecutive context lines
-// flush as one 'fold' record (with the real ids its rows will get, for
-// aria-controls) followed by their 'ctx' records.
-// sectionId namespaces those ids — every other generated id in this file is
-// namespaced by section/comment id (rdiff-<id>, rthread-<cid>, rcard-<id>,
-// ...); without it, every diff section's first fold group would collide on
-// the same "sxs-g1-r0", since groupN resets to 0 on each parseHunkRows call.
-function parseHunkRows(lines, oldNo, newNo, sectionId) {
-  const rows = [];
-  let delBuf = [], addBuf = [], ctxBuf = [], groupN = 0;
-
-  function flushChanges() {
-    alignBlock(delBuf, addBuf).forEach(r => rows.push(r));
-    delBuf = []; addBuf = [];
-  }
-  function flushContext() {
-    if (!ctxBuf.length) return;
-    groupN++;
-    const gid = 'sxs-' + sectionId + '-g' + groupN;
-    const rowIds = ctxBuf.map((_, i) => gid + '-r' + i);
-    rows.push({ type: 'fold', gid, count: ctxBuf.length, rowIds });
-    ctxBuf.forEach((c, i) => rows.push({
-      type: 'ctx', gid, rowId: rowIds[i], oldNo: c.oldNo, newNo: c.newNo, text: c.text,
-    }));
-    ctxBuf = [];
-  }
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    const marker = line.charAt(0);
-    if (marker === '\\') continue;   // "\ No newline at end of file" — not a content line
-    if (marker === '-') { flushContext(); delBuf.push({ no: oldNo++, text: line.slice(1) }); }
-    else if (marker === '+') { flushContext(); addBuf.push({ no: newNo++, text: line.slice(1) }); }
-    else {
-      flushChanges();
-      const text = marker === ' ' ? line.slice(1) : line;
-      ctxBuf.push({ oldNo: oldNo++, newNo: newNo++, text });
-    }
-  }
-  flushChanges();
-  flushContext();
-  return rows;
-}
-
-// Standard LCS via dynamic programming — returns an ordered list of
-// {oldIdx, newIdx} pairs where oldTexts[oldIdx] === newTexts[newIdx],
-// forming the longest common subsequence. O(n*m) time/space; hunk replace
-// blocks are hunk-scale (tens of lines at most), so this is more than fast
-// enough — no need for a linear-space Myers variant.
-function lcsMatches(oldTexts, newTexts) {
-  const n = oldTexts.length, m = newTexts.length;
-  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = oldTexts[i] === newTexts[j]
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-  const matches = [];
-  let i = 0, j = 0;
-  while (i < n && j < m) {
-    if (oldTexts[i] === newTexts[j]) { matches.push({ oldIdx: i, newIdx: j }); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
-    else j++;
-  }
-  return matches;
-}
-
-// Word tokens in a line, deduplicated — the unit jaccardSimilarity compares.
-// Regex-based (not split on whitespace) so punctuation between identifiers
-// doesn't get swallowed into a token.
-function wordTokens(line) {
-  return new Set(line.match(/[A-Za-z0-9_]+/g) || []);
-}
-
-// Jaccard similarity between two lines' token sets: shared / union, in
-// [0, 1]. Two token-less lines (blank or punctuation-only) are defined as
-// maximally similar (both are "nothing"), rather than dividing by zero.
-function jaccardSimilarity(lineA, lineB) {
-  const a = wordTokens(lineA), b = wordTokens(lineB);
-  if (a.size === 0 && b.size === 0) return 1;
-  let shared = 0;
-  a.forEach(t => { if (b.has(t)) shared++; });
-  return shared / (a.size + b.size - shared);
-}
-
-// Above this score, two lines in a gap (see alignGap) are considered the
-// same statement with a tweak, not two unrelated lines that happen to
-// share a buffer index. Picked from a real hunk that motivated this: two
-// genuine line rewrites there scored ~0.25-0.27 similarity, while a
-// rejected pairing (an `if` statement vs. an unrelated comment) scored
-// ~0.07 — 0.2 cleanly separates them with margin on both sides.
-const SIMILARITY_THRESHOLD = 0.2;
-
-// Aligns a replace-block "gap" (old/new lines with no exact LCS match)
-// using a weighted global-alignment DP over line similarity, instead of
-// pairing purely by buffer position. score[i][j] is the best total
-// similarity aligning the first i old lines against the first j new
-// lines; a pairing that doesn't clear SIMILARITY_THRESHOLD is disallowed
-// as a DP option entirely (not merely deprioritized), so two unrelated
-// lines are forced apart rather than tempted into a low-quality match.
-// Standard traceback recovers the decision sequence in order, so pairs
-// never cross (old line N can never pair with a new line that comes
-// before old line N-1's own partner).
-function alignGap(gapDel, gapAdd) {
-  const M = gapDel.length, N = gapAdd.length;
-  const score = Array.from({ length: M + 1 }, () => new Array(N + 1).fill(0));
-  for (let i = 1; i <= M; i++) {
-    for (let j = 1; j <= N; j++) {
-      const sim = jaccardSimilarity(gapDel[i - 1].text, gapAdd[j - 1].text);
-      const pairScore = sim >= SIMILARITY_THRESHOLD ? score[i - 1][j - 1] + sim : -Infinity;
-      score[i][j] = Math.max(pairScore, score[i - 1][j], score[i][j - 1]);
-    }
-  }
-  const records = [];
-  let i = M, j = N;
-  while (i > 0 || j > 0) {
-    const sim = i > 0 && j > 0 ? jaccardSimilarity(gapDel[i - 1].text, gapAdd[j - 1].text) : -1;
-    const pairScore = i > 0 && j > 0 && sim >= SIMILARITY_THRESHOLD ? score[i - 1][j - 1] + sim : -Infinity;
-    if (i > 0 && j > 0 && score[i][j] === pairScore) {
-      records.unshift({ type: 'change', del: gapDel[i - 1], add: gapAdd[j - 1] });
-      i--; j--;
-    } else if (i > 0 && score[i][j] === score[i - 1][j]) {
-      records.unshift({ type: 'change', del: gapDel[i - 1], add: null });
-      i--;
-    } else {
-      records.unshift({ type: 'change', del: null, add: gapAdd[j - 1] });
-      j--;
-    }
-  }
-  return records;
-}
-
-// Aligns one replace block's removed lines (delBuf) against its added lines
-// (addBuf). First, LCS matches (identical text on both sides) become 'same'
-// records — this stops an incidentally-unchanged line inside a replace
-// block from being shown as a bogus paired "change." Everything between
-// matches (a "gap," on either or both sides) is then resolved by alignGap's
-// similarity-based alignment, not by buffer position — this stops an
-// unrelated old/new line pair that only shares a buffer index from being
-// shown as if they corresponded.
-function alignBlock(delBuf, addBuf) {
-  const matches = lcsMatches(delBuf.map(d => d.text), addBuf.map(a => a.text));
-  const records = [];
-  let oi = 0, ni = 0;
-  function flushGap(oldEnd, newEnd) {
-    const gapDel = delBuf.slice(oi, oldEnd);
-    const gapAdd = addBuf.slice(ni, newEnd);
-    alignGap(gapDel, gapAdd).forEach(r => records.push(r));
-  }
-  matches.forEach(m => {
-    flushGap(m.oldIdx, m.newIdx);
-    records.push({ type: 'same', del: delBuf[m.oldIdx], add: addBuf[m.newIdx] });
-    oi = m.oldIdx + 1; ni = m.newIdx + 1;
-  });
-  flushGap(delBuf.length, addBuf.length);
-  return records;
-}
-
-// Row records (from parseHunkRows) plus the hunk's @@ header text → the
-// side-by-side table's inner HTML (everything inside <tbody>). This HTML is
-// assigned via innerHTML with no DOMPurify pass (unlike renderMarkdown) —
-// every hunk-derived string reaching this function (headerText, and each
-// row's text) MUST go through esc() or codeEl() below before concatenation.
-// It is safe today because that invariant holds at every call site; it does
-// not hold automatically for a future edit that adds a new interpolation.
-function buildSxsTableHtml(headerText, rows, lang) {
-  function codeEl(text) {
-    return '<code class="language-' + lang + '">' + esc(text) + '</code>';
-  }
-  let html = '<tr class="sxs-hunk-row"><td class="sxs-hunk" colspan="3">' + esc(headerText) + '</td></tr>';
-  rows.forEach(r => {
-    if (r.type === 'change') {
-      const d = r.del, a = r.add;
-      // An unpaired removal/addition (pure-add or pure-delete hunk, or the
-      // leftover tail when one side has more lines than the other) omits
-      // the other side's div entirely rather than rendering an empty
-      // 50%-wide placeholder — .sxs-half's flex-grow then lets the one
-      // present side fill the whole code cell instead of every line being
-      // squeezed into (and needing its own horizontal scroll within) half
-      // the available width while the other half sits permanently blank.
-      html += '<tr class="sxs-row">'
-        + '<td class="sxs-gutter sxs-gutter-del">' + (d ? d.no : '') + '</td>'
-        + '<td class="sxs-gutter sxs-gutter-add">' + (a ? a.no : '') + '</td>'
-        + '<td class="sxs-code sxs-change-cell">'
-        +   (d ? '<div class="sxs-half sxs-del">' + codeEl(d.text) + '</div>' : '')
-        +   (a ? '<div class="sxs-half sxs-add">' + codeEl(a.text) + '</div>' : '')
-        + '</td></tr>';
-    } else if (r.type === 'same') {
-      // An LCS match inside a replace block: identical text on both sides.
-      // Rendered like a context row (full width, muted) and never foldable
-      // — unlike top-level context runs between blocks, these are rare
-      // (one incidentally-unchanged line inside an otherwise-real change)
-      // and always small, so fold-state management isn't worth it here.
-      html += '<tr class="sxs-row sxs-same-row">'
-        + '<td class="sxs-gutter">' + r.del.no + '</td>'
-        + '<td class="sxs-gutter">' + r.add.no + '</td>'
-        + '<td class="sxs-code sxs-ctx">' + codeEl(r.del.text) + '</td>'
-        + '</tr>';
-    } else if (r.type === 'fold') {
-      // Real ids so the fold button's aria-controls can name the rows it
-      // expands (DESIGN.md: accordion controls need aria-expanded AND
-      // aria-controls) — a plain data-group attribute isn't referenceable.
-      html += '<tr class="sxs-fold" data-group="' + r.gid + '">'
-        + '<td class="sxs-fold-cell" colspan="3">'
-        +   '<button type="button" class="sxs-fold-btn" data-group="' + r.gid + '" '
-        +     'aria-expanded="false" aria-controls="' + r.rowIds.join(' ') + '">'
-        +     '<span aria-hidden="true">&#8942;</span> ' + r.count + ' unchanged line' + (r.count === 1 ? '' : 's')
-        +   '</button>'
-        + '</td></tr>';
-    } else if (r.type === 'ctx') {
-      html += '<tr class="sxs-row sxs-ctx-row" id="' + r.rowId + '" data-group="' + r.gid + '" style="display:none">'
-        + '<td class="sxs-gutter">' + r.oldNo + '</td>'
-        + '<td class="sxs-gutter">' + r.newNo + '</td>'
-        + '<td class="sxs-code sxs-ctx">' + codeEl(r.text) + '</td>'
-        + '</tr>';
-    }
-  });
-  return html;
-}
-
-/* Render a git hunk (fenced ```diff block, git's raw +/- /space-prefixed
-   text — see parse_diff.py) as a JetBrains-style side-by-side table: removed
-   lines left (orange), added lines right (teal), context spanning the full
-   width and collapsed behind a fold row. Pure view transform — never reads
-   or writes section.content itself, which stays the verbatim fence the
-   /viva-diff skill (anchor-based edit relocation) and round-to-round
-   carry-forward (byte-for-byte content compare) depend on.
-   Returns true on success; on a malformed/unrecognized hunk, defensively
-   falls back to the normal renderMarkdown path (and propagates its return
-   value, so retry-on-CDN-load bookkeeping in _ensureRendered stays correct). */
-function renderDiffTable(target, raw, title, sectionId) {
+/* Render one git hunk via diff2html: side-by-side above 900px viewport,
+   line-by-line below, word-level intra-line diffs. Pure view transform —
+   section.content stays the verbatim fence the /viva-diff skill
+   (anchor-based edit relocation) and round-to-round carry-forward
+   (byte-for-byte compare) depend on; the ---/+++ preamble diff2html needs
+   to parse a bare @@ hunk is synthesized here at render time only, from
+   the section title's filepath, and never stored.
+   Output is committed through DOMPurify.sanitize like renderMarkdown's —
+   diff2html's static output carries no listeners we rely on, so
+   sanitizing the rendered markup is safe. Syntax coloring
+   (ui.highlightCode) is an enhancement: if it throws, the word-level
+   ins/del emphasis from diff2html itself still renders.
+   Fallback when diff2html hasn't loaded: the fenced-```diff markdown view
+   (the pre-#99 renderer), tagged d2h-pending so the load listener below
+   upgrades it in place once the script arrives. Returns renderMarkdown's
+   boolean on that path so _ensureRendered's retry bookkeeping stays
+   correct. */
+function renderDiffHunk(target, raw, title) {
   const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
-  const lines = body.split('\n');
-  const headerMatch = lines[0] && lines[0].match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if (!headerMatch) return renderMarkdown(target, raw);
-
-  const rows = parseHunkRows(lines, parseInt(headerMatch[1], 10), parseInt(headerMatch[2], 10), sectionId);
-  const html = buildSxsTableHtml(lines[0], rows, langFromTitle(title));
-
-  target.innerHTML = '<div class="sxs-wrap"><table class="sxs-table"><tbody>' + html + '</tbody></table></div>';
-  target.classList.remove('md-raw');
-  // A native <button> handles Enter/Space activation itself — no keydown shim needed.
-  target.querySelectorAll('.sxs-fold-btn').forEach(btn => {
-    btn.addEventListener('click', () => toggleFold(target, btn));
+  if (!/^@@ /.test(body)) return renderMarkdown(target, raw);
+  if (!(window.Diff2HtmlUI && window.DOMPurify)) {
+    const ok = renderMarkdown(target, raw);
+    if (ok) target.classList.add('d2h-pending');
+    return ok;
+  }
+  target.classList.remove('d2h-pending');
+  const fp = filepathFromTitle(title);
+  const diff = '--- a/' + fp + '\n+++ b/' + fp + '\n' + body;
+  const ui = new Diff2HtmlUI(target, diff, {
+    drawFileList: false,
+    matching: 'words',
+    diffStyle: 'word',
+    outputFormat: window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line',
   });
-  // Context cells are hidden behind their fold by default, so they're
-  // deferred to first-expand (see toggleFold) rather than highlighted here.
-  if (window.hljs) {
-    const allCode = target.querySelectorAll('code[class^="language-"]');
-    target.dataset.sxsHighlight = allCode.length <= HLJS_HIGHLIGHT_CAP ? '1' : '0';
-    if (target.dataset.sxsHighlight === '1') {
-      allCode.forEach(b => { if (!b.closest('.sxs-ctx-row')) hljs.highlightElement(b); });
-    }
-  }
+  ui.draw();
+  try { ui.highlightCode(); } catch (e) { /* syntax color only; word-level diff survives */ }
+  target.innerHTML = DOMPurify.sanitize(target.innerHTML);
+  target.classList.remove('md-raw');
   return true;
-}
-
-function toggleFold(target, btn) {
-  const gid = btn.dataset.group;
-  const rows = target.querySelectorAll('.sxs-ctx-row[data-group="' + gid + '"]');
-  if (!rows.length) return;
-  const isHidden = rows[0].style.display === 'none';
-  rows.forEach(r => { r.style.display = isHidden ? 'table-row' : 'none'; });
-  // Lazily highlight newly-revealed context cells on first expand, unless
-  // the hunk exceeded HLJS_HIGHLIGHT_CAP (then this hunk never highlights).
-  // .hljs guards against re-processing an already-highlighted element on a
-  // later re-open.
-  if (isHidden && window.hljs && target.dataset.sxsHighlight === '1') {
-    rows.forEach(r => r.querySelectorAll('code[class^="language-"]').forEach(b => {
-      if (!b.classList.contains('hljs')) hljs.highlightElement(b);
-    }));
-  }
-  btn.classList.toggle('is-open', isHidden);
-  btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
 }
 
 function el(id) { return document.getElementById(id); }
@@ -2192,20 +1867,19 @@ function _ensureRendered(id) {
   const contentEl = el('rcontent-' + id);
   if (!contentEl) return;
   const raw = _pendingMarkdown.get(id);
-  // Diff mode's hunk content (a fenced ```diff block) gets the side-by-side
-  // table instead of the normal single-column markdown render (issue #99).
-  // Binary-change sections have no fence (parse_diff.py's plaintext
-  // sentinel) and fall through to renderMarkdown below unchanged.
+  // Diff mode's hunk content (a fenced ```diff block) renders via diff2html
+  // (renderDiffHunk). Binary-change sections have no fence (parse_diff.py's
+  // plaintext sentinel) and fall through to renderMarkdown unchanged.
   const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
-  // If marked and/or DOMPurify aren't loaded yet, renderMarkdown left
-  // contentEl showing the raw fallback (class md-raw). Keep the entry in
-  // _pendingMarkdown so this card stays eligible for the retry once both
-  // dependencies finish loading — deleting it here would strand the card as
-  // raw text forever. renderDiffTable propagates the same true/false so this
-  // holds for its own defensive renderMarkdown fallback too.
-  const rendered = isDiffHunk ? renderDiffTable(contentEl, raw, sectionTitleFor(id), id) : renderMarkdown(contentEl, raw);
+  const rendered = isDiffHunk ? renderDiffHunk(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
   if (!rendered) return;
-  _pendingMarkdown.delete(id);
+  // A d2h-pending card rendered successfully as fenced markdown but is
+  // waiting for diff2html to load — keep its source so the diff2html-script
+  // load listener below can re-render it properly. Deleting it here would
+  // strand the card on the fallback view forever (the same
+  // late-loading-dependency lesson as the marked/DOMPurify retry, and the
+  // hljs race the gate-audit pass caught).
+  if (!contentEl.classList.contains('d2h-pending')) _pendingMarkdown.delete(id);
   renderHighlights(id);
 }
 
@@ -2229,6 +1903,21 @@ function _ensureRendered(id) {
     const script = el(scriptId);
     if (script) script.addEventListener('load', retry, { once: true });
   });
+})();
+
+// Same retry pattern for diff2html: a diff-mode card opened before
+// diff2html-ui.min.js finished loading rendered as the fenced-markdown
+// fallback (class d2h-pending, still in _pendingMarkdown). Upgrade those
+// cards in place once the script lands.
+(function retryDiffHunksOnceD2hLoads() {
+  const script = el('diff2html-script');
+  if (!script) return;
+  script.addEventListener('load', () => {
+    document.querySelectorAll('.section-content.d2h-pending').forEach(contentEl => {
+      const m = contentEl.id.match(/^rcontent-(.+)$/);
+      if (m) _ensureRendered(m[1]);
+    });
+  }, { once: true });
 })();
 
 function skipReviewCard(id) {
@@ -2393,25 +2082,23 @@ document.addEventListener('mouseup', () => {
     if (!content) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
-    // The side-by-side diff table (issue #99) renders removed/added lines as
-    // adjacent-but-separate .sxs-half cells in the same row. A drag that
-    // crosses from one half into the other (or spans rows) yields DOM-order
-    // text that interleaves unrelated removed/added lines — not a contiguous
-    // substring of the raw hunk. Anchoring a comment to that text would
-    // silently defeat both offsetInSource below and the /viva-diff skill's
-    // grep-based fallback, so a cross-half selection degrades to an
-    // unanchored whole-section note instead of a wrong anchor.
-    const crossesHalves = closestSxsHalf(sel.anchorNode) !== closestSxsHalf(sel.focusNode);
-    openCommentPopover(m[1], crossesHalves ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
+    // diff2html's side-by-side mode renders old/new as two adjacent panes.
+    // A drag crossing panes (or starting/ending outside them) yields
+    // DOM-order text that is not a contiguous substring of the raw hunk —
+    // anchoring a comment to it would silently defeat offsetInSource and
+    // the /viva-diff skill's grep fallback, so it degrades to an unanchored
+    // whole-section note. Same guard the hand-rolled table carried.
+    const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
+    openCommentPopover(m[1], crossesPanes ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
   }, 0);
 });
 
-// Closest .sxs-half ancestor of a selection endpoint, or null outside the
-// side-by-side diff table (e.g. ordinary review-mode content), where this
-// check is always a no-op since both endpoints resolve to null.
-function closestSxsHalf(node) {
+// Closest diff2html side-by-side pane ancestor of a selection endpoint, or
+// null outside one (line-by-line mode, review-mode content) — there the
+// comparison is null !== null, a no-op, preserving the anchored path.
+function closestD2hPane(node) {
   const el = node && node.nodeType === 3 ? node.parentElement : node;
-  return el && el.closest ? el.closest('.sxs-half') : null;
+  return el && el.closest ? el.closest('.d2h-file-side-diff') : null;
 }
 
 // Char offset of `text` in the section's raw markdown source — the rewrite

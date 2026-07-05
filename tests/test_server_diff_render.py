@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Integration test for side-by-side hunk rendering in --mode diff (issue #99).
+"""Integration test for diff-mode hunk rendering (issue #99).
 
-This is a wiring test, not a parse-correctness test: the two-column table is
-built client-side in JS, and this repo has no JS/browser test harness (stdlib
-Python only, no npm/node). What's verifiable from a subprocess+urllib harness
-is that:
+This is a wiring test, not a parse-correctness test: the rendered diff is
+built client-side in JS (delegated to diff2html), and this repo has no
+JS/browser test harness (stdlib Python only, no npm/node). What's verifiable
+from a subprocess+urllib harness is that:
 
-  1. The renderer and its side-by-side CSS are actually shipped in the served
-     page, gated on diff mode.
+  1. The diff2html CDN assets and the renderDiffHunk adapter are actually
+     shipped in the served page, gated on diff mode, and the deleted
+     hand-rolled renderer is truly gone (not just bypassed).
   2. A diff-mode round still serves each section's `content` as the verbatim
      fenced ```diff block, unchanged — the /viva-diff skill relocates edits by
      matching `comment.anchor.text` against the source, and round-to-round
      carry-forward compares `content` byte-for-byte (parse_diff.py
-     `_carry_forward`). The new renderer is a pure view transform; it must
-     never be allowed to alter what's actually served for `content`.
+     `_carry_forward`). The renderer is a pure view transform; it must never
+     be allowed to alter what's actually served for `content`.
 
-Manual end-to-end verification of the rendered table itself (alignment,
-context-fold, gutters, per-cell highlighting, binary fallback) is a browser
-check, not a subprocess+urllib one — nothing that lives in the DOM is
-exercised here.
+Manual end-to-end verification of the rendered diff itself (alignment,
+word-level highlighting, gutters, binary fallback) is a browser check, not a
+subprocess+urllib one — nothing that lives in the DOM is exercised here.
 """
 import json
 import re
@@ -73,36 +73,11 @@ GROUPED_DIFF_INPUT = {
 }
 
 
-def test_page_ships_side_by_side_renderer() -> None:
-    """The served page embeds renderDiffTable, its .sxs- CSS, and the
-    diff-mode gate in _ensureRendered — not just the old single-column path."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            "function renderDiffTable",
-            "function langFromTitle",
-            "function sectionTitleFor",
-            "function toggleFold",
-            ".sxs-table",
-            ".sxs-half.sxs-del",
-            ".sxs-half.sxs-add",
-            ".sxs-fold",
-            "REVIEW_DATA.mode === 'diff'",
-        ):
-            assert needle in page, f"page missing: {needle}"
-    print("test_page_ships_side_by_side_renderer: OK")
-
-
 def test_page_ships_filepath_helper() -> None:
-    """filepathFromTitle is extracted as its own function, and both
-    langFromTitle (language inference) and diffFileHunkCounts (file-header
-    grouping) call it from their own function bodies — not just co-present
-    on the page, but actually reused, so the strip-hunk-suffix regex has
-    exactly one definition."""
+    """filepathFromTitle stays the single definition of 'strip the hunk
+    suffix off a diff-mode section title' — both diffFileHunkCounts
+    (file grouping) and renderDiffHunk (preamble synthesis) call it from
+    their own function bodies."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -110,7 +85,7 @@ def test_page_ships_filepath_helper() -> None:
     with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
         page = get_text(base, "/")
         assert "function filepathFromTitle" in page, "page missing: function filepathFromTitle"
-        for caller in ("langFromTitle", "diffFileHunkCounts"):
+        for caller in ("diffFileHunkCounts", "renderDiffHunk"):
             m = re.search(r"function " + caller + r"\(.*?\n\}", page, re.S)
             assert m, f"page missing: function {caller}"
             assert "filepathFromTitle(" in m.group(0), \
@@ -195,151 +170,6 @@ def test_page_ships_diff_mode_sort_toggle_guard() -> None:
     print("test_page_ships_diff_mode_sort_toggle_guard: OK")
 
 
-def test_page_ships_native_fold_button() -> None:
-    """The fold toggle is a real <button> (aria-controls + aria-expanded,
-    in the :focus-visible group), not a <tr role="button"> with a manual
-    keydown shim. Wiring check only — does not execute a click."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            'class="sxs-fold-btn"',
-            "aria-controls=",
-            ".sxs-fold-btn:focus-visible",
-        ):
-            assert needle in page, f"page missing: {needle}"
-        assert 'tabindex="0" role="button"' not in page, \
-            "fold row should no longer be a manually-keyboard-shimmed <tr role=button>"
-    print("test_page_ships_native_fold_button: OK")
-
-
-def test_page_ships_highlight_cap() -> None:
-    """Wiring check only: the served page ships HLJS_HIGHLIGHT_CAP and the
-    lazy-highlight-on-expand path in toggleFold, so an oversized hunk skips
-    hljs entirely instead of paying a highlightElement() call per line.
-    Does not execute the cap decision against a real DOM."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            "const HLJS_HIGHLIGHT_CAP",
-            "target.dataset.sxsHighlight",
-            "b.classList.contains('hljs')",
-        ):
-            assert needle in page, f"page missing: {needle}"
-    print("test_page_ships_highlight_cap: OK")
-
-
-def test_page_ships_mobile_stacked_layout() -> None:
-    """Wiring check only: below 720px the served CSS stacks .sxs-change-cell
-    to a single column and drops each half's independent horizontal scroll,
-    so the two-column table doesn't become unreadable/misaligned on narrow
-    viewports. Does not render or measure an actual viewport."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        assert "@media (max-width: 720px)" in page
-        mobile_block = page.split("@media (max-width: 720px)", 1)[1]
-        assert ".sxs-change-cell" in mobile_block and "flex-direction: column" in mobile_block, \
-            "mobile breakpoint missing .sxs-change-cell column-stack rule"
-    print("test_page_ships_mobile_stacked_layout: OK")
-
-
-def test_page_ships_cross_half_selection_guard() -> None:
-    """Wiring check only (no JS/browser harness in this repo): the served page
-    ships closestSxsHalf and the mouseup handler's crossesHalves check that
-    degrades a selection spanning two .sxs-half cells to an unanchored
-    whole-section note, instead of storing a garbled comment.anchor.text.
-    Does not execute the comparison against a real Selection."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            "function closestSxsHalf",
-            "closestSxsHalf(sel.anchorNode) !== closestSxsHalf(sel.focusNode)",
-        ):
-            assert needle in page, f"page missing: {needle}"
-    print("test_page_ships_cross_half_selection_guard: OK")
-
-
-def test_page_ships_lcs_alignment() -> None:
-    """Wiring check only: the served page ships lcsMatches, alignBlock, and
-    the sxs-same-row class, so a replace block's line pairing goes through
-    real LCS realignment instead of naive buffer-index pairing. Does not
-    execute the algorithm against a real DOM — see the plan's manual Node
-    verification step for behavioral proof."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            "function lcsMatches",
-            "function alignBlock",
-            "sxs-same-row",
-        ):
-            assert needle in page, f"page missing: {needle}"
-        m = re.search(r"function alignBlock\(.*?\n\}", page, re.S)
-        assert m, "page missing: function alignBlock"
-        assert "lcsMatches(" in m.group(0), "alignBlock does not call lcsMatches"
-    print("test_page_ships_lcs_alignment: OK")
-
-
-def test_page_ships_shared_table_scroll() -> None:
-    """Wiring check only: .sxs-half no longer sets its own overflow-x, so
-    the whole table shares one horizontal scroll region (.sxs-wrap) instead
-    of each cell scrolling independently. Does not measure rendered layout."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        m = re.search(r"\.sxs-half \{[^}]*\}", page)
-        assert m, "page missing: .sxs-half base rule"
-        assert "overflow-x" not in m.group(0), \
-            f".sxs-half should no longer set its own overflow-x, found: {m.group(0)}"
-    print("test_page_ships_shared_table_scroll: OK")
-
-
-def test_page_ships_similarity_alignment() -> None:
-    """Wiring check only: the served page ships wordTokens, jaccardSimilarity,
-    SIMILARITY_THRESHOLD, and alignGap, and alignBlock's flushGap actually
-    calls alignGap (not the old positional loop). Does not execute the DP
-    against a real gap — see the plan's manual Node verification step for
-    behavioral proof."""
-    tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
-    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
-        page = get_text(base, "/")
-        for needle in (
-            "function wordTokens",
-            "function jaccardSimilarity",
-            "const SIMILARITY_THRESHOLD = 0.2",
-            "function alignGap",
-        ):
-            assert needle in page, f"page missing: {needle}"
-        m = re.search(r"function alignBlock\(.*?\n\}", page, re.S)
-        assert m, "page missing: function alignBlock"
-        assert "alignGap(" in m.group(0), "alignBlock's flushGap does not call alignGap"
-    print("test_page_ships_similarity_alignment: OK")
-
-
 def test_page_ships_mode_diff_layout() -> None:
     """Wiring check only: the diff dispatch branch stamps mode-diff on <body>,
     and the mode-scoped CSS overrides (wide shell/bottom bar, no nested
@@ -364,21 +194,79 @@ def test_page_ships_mode_diff_layout() -> None:
     print("test_page_ships_mode_diff_layout: OK")
 
 
+def test_page_ships_diff2html_renderer() -> None:
+    """Wiring check only: the served page loads diff2html@3 (script + css,
+    both with ids so the load-retry listener can attach), ships the
+    renderDiffHunk adapter with the spec's exact config (word-level diffs,
+    words matching, no file list, viewport-picked output format, DOMPurify
+    sanitize), and no longer ships any of the hand-rolled renderer."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            'id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui.min.js"',
+            'id="diff2html-css" href="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css"',
+        ):
+            assert needle in page, f"page missing: {needle}"
+        m = re.search(r"function renderDiffHunk\(.*?\n\}", page, re.S)
+        assert m, "page missing: function renderDiffHunk"
+        body = m.group(0)
+        for needle in (
+            "diffStyle: 'word'",
+            "matching: 'words'",
+            "drawFileList: false",
+            "window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line'",
+            "DOMPurify.sanitize",
+            "filepathFromTitle(",
+        ):
+            assert needle in body, f"renderDiffHunk missing: {needle}"
+        # The hand-rolled renderer is deleted, not just bypassed. 'sxs' had no
+        # other meaning anywhere in the page, so its total absence is the
+        # strongest cheap deletion check available to this harness.
+        for gone in ("function renderDiffTable", "function alignBlock",
+                     "function lcsMatches", "function alignGap",
+                     "function buildSxsTableHtml", "function toggleFold",
+                     "HLJS_HIGHLIGHT_CAP", "sxs"):
+            assert gone not in page, f"page still ships deleted symbol: {gone}"
+    print("test_page_ships_diff2html_renderer: OK")
+
+
+def test_page_ships_d2h_guards() -> None:
+    """Wiring check only: the three ported lessons ship — the scoped td reset
+    (specificity bleed), user-select:none on d2h line numbers (anchor
+    hygiene), the cross-pane selection guard in the mouseup handler, and
+    the d2h load-retry listener (the hljs-race lesson from gate-audit)."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            ".section-content .d2h-wrapper td",
+            ".section-content .d2h-code-linenumber",
+            "user-select: none",
+            "function closestD2hPane",
+            "closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode)",
+            "d2h-pending",
+            "el('diff2html-script')",
+        ):
+            assert needle in page, f"page missing: {needle}"
+    print("test_page_ships_d2h_guards: OK")
+
+
 def main() -> None:
-    test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
     test_page_ships_file_group_header()
     test_grouped_sections_stay_file_contiguous()
     test_diff_content_served_verbatim()
     test_page_ships_diff_mode_sort_toggle_guard()
-    test_page_ships_native_fold_button()
-    test_page_ships_highlight_cap()
-    test_page_ships_mobile_stacked_layout()
-    test_page_ships_cross_half_selection_guard()
-    test_page_ships_lcs_alignment()
-    test_page_ships_shared_table_scroll()
-    test_page_ships_similarity_alignment()
     test_page_ships_mode_diff_layout()
+    test_page_ships_diff2html_renderer()
+    test_page_ships_d2h_guards()
     print("\nAll server diff-render tests passed.")
 
 
