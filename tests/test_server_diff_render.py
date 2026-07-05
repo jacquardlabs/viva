@@ -218,6 +218,7 @@ def test_page_ships_diff2html_renderer() -> None:
             "diffStyle: 'word'",
             "matching: 'words'",
             "drawFileList: false",
+            "fileContentToggle: false",
             "colorScheme: 'auto'",
             "window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line'",
             "DOMPurify.sanitize",
@@ -249,7 +250,6 @@ def test_page_ships_d2h_guards() -> None:
         for needle in (
             ".section-content .d2h-wrapper td",
             ".section-content .d2h-code-linenumber",
-            ".section-content .d2h-file-collapse",
             "user-select: none",
             "function closestD2hPane",
             "closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode)",

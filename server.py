@@ -563,8 +563,6 @@ body {
 .section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
 .section-content .d2h-code-linenumber,
 .section-content .d2h-code-side-linenumber { user-select: none; }
-/* d2h's "Viewed" checkbox — viva has its own approve flow */
-.section-content .d2h-file-collapse { display: none; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
@@ -1489,6 +1487,7 @@ function renderDiffHunk(target, raw, title) {
   const diff = '--- a/' + fp + '\n+++ b/' + fp + '\n' + body;
   const ui = new Diff2HtmlUI(target, diff, {
     drawFileList: false,
+    fileContentToggle: false,
     colorScheme: 'auto',
     matching: 'words',
     diffStyle: 'word',
