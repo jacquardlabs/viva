@@ -315,6 +315,31 @@ def test_page_ships_shared_table_scroll() -> None:
     print("test_page_ships_shared_table_scroll: OK")
 
 
+def test_page_ships_similarity_alignment() -> None:
+    """Wiring check only: the served page ships wordTokens, jaccardSimilarity,
+    SIMILARITY_THRESHOLD, and alignGap, and alignBlock's flushGap actually
+    calls alignGap (not the old positional loop). Does not execute the DP
+    against a real gap — see the plan's manual Node verification step for
+    behavioral proof."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        for needle in (
+            "function wordTokens",
+            "function jaccardSimilarity",
+            "const SIMILARITY_THRESHOLD = 0.2",
+            "function alignGap",
+        ):
+            assert needle in page, f"page missing: {needle}"
+        m = re.search(r"function alignBlock\(.*?\n\}", page, re.S)
+        assert m, "page missing: function alignBlock"
+        assert "alignGap(" in m.group(0), "alignBlock's flushGap does not call alignGap"
+    print("test_page_ships_similarity_alignment: OK")
+
+
 def main() -> None:
     test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
@@ -328,6 +353,7 @@ def main() -> None:
     test_page_ships_cross_half_selection_guard()
     test_page_ships_lcs_alignment()
     test_page_ships_shared_table_scroll()
+    test_page_ships_similarity_alignment()
     print("\nAll server diff-render tests passed.")
 
 

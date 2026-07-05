@@ -545,11 +545,21 @@ body {
    is the unrelated round-to-round "changes since last round" strip. */
 .sxs-wrap { overflow-x: auto; }
 .sxs-table { width: 100%; border-collapse: collapse; font-family: 'Fragment Mono', monospace; font-size: 12px; line-height: 1.6; }
-.sxs-hunk-row td.sxs-hunk { color: var(--violet); opacity: 0.7; padding: 3px 9px; white-space: pre; }
-.sxs-gutter { width: 3em; text-align: right; padding: 0 6px; color: var(--text3); opacity: 0.6; user-select: none; vertical-align: top; white-space: nowrap; }
+/* .section-content td/th (the generic "editorial markdown table" rule,
+   for an ordinary table a reviewed doc might contain) sets its own
+   border-bottom + padding, and since this table also lives inside
+   .section-content, every cell here silently inherited that divider and
+   padding too — every line read as its own individually-bordered row
+   instead of same-type runs reading as one continuous block. Each
+   selector below is deliberately qualified with .sxs-table (or already
+   has enough classes) so its specificity beats .section-content td's
+   (0,0,1,1); color alone (not a border) is what should tell one line
+   from the next. */
+.sxs-hunk-row td.sxs-hunk { color: var(--violet); opacity: 0.7; padding: 3px 9px; white-space: pre; border-bottom: none; }
+.sxs-table .sxs-gutter { width: 3em; text-align: right; padding: 0 6px; color: var(--text3); opacity: 0.6; user-select: none; vertical-align: top; white-space: nowrap; border-bottom: none; }
 .sxs-gutter-del { color: var(--orange); opacity: 0.85; }
 .sxs-gutter-add { color: var(--teal); opacity: 0.85; }
-.sxs-code { padding: 0; vertical-align: top; }
+.sxs-table .sxs-code { padding: 0; vertical-align: top; border-bottom: none; }
 .sxs-code code { display: block; white-space: pre; padding: 3px 10px; }
 .sxs-change-cell { display: flex; }
 /* No min-width:0 / overflow-x:auto here — removing them lets unbreakable
@@ -565,7 +575,7 @@ body {
 .sxs-half.sxs-add { background: var(--teal-bg); }
 .sxs-half.sxs-add code { color: var(--teal); }
 .sxs-ctx code { color: var(--text2); }
-.sxs-fold-cell { padding: 0; }
+.sxs-table .sxs-fold-cell { padding: 0; border-bottom: none; }
 /* Real <button> filling the cell (not a <tr role="button">) so it's a
    native, keyboard-operable control by default and gets a real touch
    target — min-height 44px per the fold row's tap-target requirement. */
@@ -1592,14 +1602,79 @@ function lcsMatches(oldTexts, newTexts) {
   return matches;
 }
 
+// Word tokens in a line, deduplicated — the unit jaccardSimilarity compares.
+// Regex-based (not split on whitespace) so punctuation between identifiers
+// doesn't get swallowed into a token.
+function wordTokens(line) {
+  return new Set(line.match(/[A-Za-z0-9_]+/g) || []);
+}
+
+// Jaccard similarity between two lines' token sets: shared / union, in
+// [0, 1]. Two token-less lines (blank or punctuation-only) are defined as
+// maximally similar (both are "nothing"), rather than dividing by zero.
+function jaccardSimilarity(lineA, lineB) {
+  const a = wordTokens(lineA), b = wordTokens(lineB);
+  if (a.size === 0 && b.size === 0) return 1;
+  let shared = 0;
+  a.forEach(t => { if (b.has(t)) shared++; });
+  return shared / (a.size + b.size - shared);
+}
+
+// Above this score, two lines in a gap (see alignGap) are considered the
+// same statement with a tweak, not two unrelated lines that happen to
+// share a buffer index. Picked from a real hunk that motivated this: two
+// genuine line rewrites there scored ~0.25-0.27 similarity, while a
+// rejected pairing (an `if` statement vs. an unrelated comment) scored
+// ~0.07 — 0.2 cleanly separates them with margin on both sides.
+const SIMILARITY_THRESHOLD = 0.2;
+
+// Aligns a replace-block "gap" (old/new lines with no exact LCS match)
+// using a weighted global-alignment DP over line similarity, instead of
+// pairing purely by buffer position. score[i][j] is the best total
+// similarity aligning the first i old lines against the first j new
+// lines; a pairing that doesn't clear SIMILARITY_THRESHOLD is disallowed
+// as a DP option entirely (not merely deprioritized), so two unrelated
+// lines are forced apart rather than tempted into a low-quality match.
+// Standard traceback recovers the decision sequence in order, so pairs
+// never cross (old line N can never pair with a new line that comes
+// before old line N-1's own partner).
+function alignGap(gapDel, gapAdd) {
+  const M = gapDel.length, N = gapAdd.length;
+  const score = Array.from({ length: M + 1 }, () => new Array(N + 1).fill(0));
+  for (let i = 1; i <= M; i++) {
+    for (let j = 1; j <= N; j++) {
+      const sim = jaccardSimilarity(gapDel[i - 1].text, gapAdd[j - 1].text);
+      const pairScore = sim >= SIMILARITY_THRESHOLD ? score[i - 1][j - 1] + sim : -Infinity;
+      score[i][j] = Math.max(pairScore, score[i - 1][j], score[i][j - 1]);
+    }
+  }
+  const records = [];
+  let i = M, j = N;
+  while (i > 0 || j > 0) {
+    const sim = i > 0 && j > 0 ? jaccardSimilarity(gapDel[i - 1].text, gapAdd[j - 1].text) : -1;
+    const pairScore = i > 0 && j > 0 && sim >= SIMILARITY_THRESHOLD ? score[i - 1][j - 1] + sim : -Infinity;
+    if (i > 0 && j > 0 && score[i][j] === pairScore) {
+      records.unshift({ type: 'change', del: gapDel[i - 1], add: gapAdd[j - 1] });
+      i--; j--;
+    } else if (i > 0 && score[i][j] === score[i - 1][j]) {
+      records.unshift({ type: 'change', del: gapDel[i - 1], add: null });
+      i--;
+    } else {
+      records.unshift({ type: 'change', del: null, add: gapAdd[j - 1] });
+      j--;
+    }
+  }
+  return records;
+}
+
 // Aligns one replace block's removed lines (delBuf) against its added lines
-// (addBuf) using LCS, instead of pairing purely by buffer index. LCS
-// matches (identical text on both sides) become 'same' records — this is
-// what stops an incidentally-unchanged line inside a replace block from
-// being shown as a bogus paired "change." Everything between matches (a
-// "gap," on either or both sides) falls back to positional pairing — the
-// same padding-the-shorter-side approach as before, just scoped to the
-// smaller gap instead of the whole block.
+// (addBuf). First, LCS matches (identical text on both sides) become 'same'
+// records — this stops an incidentally-unchanged line inside a replace
+// block from being shown as a bogus paired "change." Everything between
+// matches (a "gap," on either or both sides) is then resolved by alignGap's
+// similarity-based alignment, not by buffer position — this stops an
+// unrelated old/new line pair that only shares a buffer index from being
+// shown as if they corresponded.
 function alignBlock(delBuf, addBuf) {
   const matches = lcsMatches(delBuf.map(d => d.text), addBuf.map(a => a.text));
   const records = [];
@@ -1607,10 +1682,7 @@ function alignBlock(delBuf, addBuf) {
   function flushGap(oldEnd, newEnd) {
     const gapDel = delBuf.slice(oi, oldEnd);
     const gapAdd = addBuf.slice(ni, newEnd);
-    const n = Math.max(gapDel.length, gapAdd.length);
-    for (let k = 0; k < n; k++) {
-      records.push({ type: 'change', del: gapDel[k] || null, add: gapAdd[k] || null });
-    }
+    alignGap(gapDel, gapAdd).forEach(r => records.push(r));
   }
   matches.forEach(m => {
     flushGap(m.oldIdx, m.newIdx);
