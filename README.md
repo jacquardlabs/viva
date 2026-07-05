@@ -92,9 +92,13 @@ Each section accepts one or more inline comments (GitHub-style threads), each ty
 
 `ref` is a git ref or range (`HEAD~1`, `main..feature`, etc.). Omit for
 unstaged working-tree changes. Each hunk becomes one review card with the
-same comment, anchor, and attachment support as document review. Approved
-hunks collapse; revised hunks re-present with a within-hunk diff. Sign-off
-produces a ledger formatted for a commit body or PR description.
+same comment, anchor, and attachment support as document review, grouped
+under per-file headers. Hunks render side-by-side with word-level
+intra-line highlighting (via diff2html; line-by-line below 900px viewports,
+dark/light aware), and diff mode widens the page to `min(95vw, 1600px)` —
+code wants more room than prose. Approved hunks collapse; revised hunks
+re-present for a fresh verdict. Sign-off produces a ledger formatted for a
+commit body or PR description.
 
 Diff mode is a separate gate from `/code-review` (which is an LLM pass).
 They compose: run `/code-review` first, apply its suggestions, then
