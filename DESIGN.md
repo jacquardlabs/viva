@@ -216,9 +216,12 @@ The `renderDiffHunk` adapter strips the section's ` ```diff ` fence,
 synthesizes the `---/+++` preamble from the section title's filepath at
 render time (never stored — `section.content` stays byte-for-byte verbatim
 for anchors and carry-forward), and draws with `diffStyle: 'word'`
-(intra-line word-level emphasis), `matching: 'words'`, no file list, and
-`outputFormat` picked by viewport: side-by-side at ≥900px, line-by-line
-below. Output is committed through `DOMPurify.sanitize`. Fallback chain
+(intra-line word-level emphasis), `matching: 'words'`, no file list,
+`colorScheme: 'auto'` (follows `prefers-color-scheme`, like the rest of
+viva), `fileContentToggle: false` (suppresses d2h's "Viewed" checkbox —
+viva has its own approve flow), and `outputFormat` picked by viewport:
+side-by-side at ≥900px, line-by-line below. Output is committed through
+`DOMPurify.sanitize`. Fallback chain
 when the CDN is absent: fenced ` ```diff ` via `renderMarkdown` (tagged
 `d2h-pending`, upgraded in place when the script loads) → `md-raw` plain
 text. Binary sections (parse_diff.py's plaintext sentinel, no fence)
