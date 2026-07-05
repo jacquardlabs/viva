@@ -2,6 +2,117 @@
 
 <!-- version list -->
 
+## v1.16.0 (2026-07-05)
+
+### Bug Fixes
+
+- **diff-mode**: Address gate-audit Critical/Important/Minor findings
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Apply gate-audit Important cluster
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Clip d2h line numbers inside the collapse accordion
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Dark-mode color scheme + hide d2h Viewed checkbox
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Force-hide the confidence-sort toggle in diff mode
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: LCS-based line realignment for replace blocks
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Shared table scroll, reduced density
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Similarity-based alignment for replace-block gaps
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Suppress Viewed toggle via fileContentToggle config
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+### Code Style
+
+- Use em dash in setupCardSort comment for consistency
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+### Documentation
+
+- Add design spec for /viva-diff file-header grouping
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add design spec for LCS-based diff block realignment
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add design spec for similarity-based gap-pairing
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add design spec for the diff-first surface ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add implementation plan for /viva-diff file-header grouping
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add implementation plan for LCS-based diff realignment
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add implementation plan for similarity-based gap pairing
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Add implementation plan for the diff-first surface
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Describe the diff-first rendering in README's Diff mode section
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- Record colorScheme + fileContentToggle in DESIGN.md's d2h config
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+### Features
+
+- Side-by-side hunk rendering for /viva-diff; extract filepathFromTitle
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Delegate hunk rendering to diff2html
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Group hunk cards under a per-file header
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+- **diff-mode**: Mode-diff layout -- wide shell, single scroll context
+  ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+### Refactoring
+
+- Apply /simplify cleanup findings ([#100](https://github.com/jacquardlabs/viva/pull/100),
+  [`b1e2f54`](https://github.com/jacquardlabs/viva/commit/b1e2f54a0f96d9efb815af091f56b57144efb8b8))
+
+
 ## v1.15.0 (2026-07-03)
 
 ### Features
