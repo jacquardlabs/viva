@@ -144,8 +144,9 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
     for needle in (
         "d2hCss.id = 'diff2html-css'",
         "d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css'",
+        "retryOnceScriptsLoad(['diff2html-css']",
     ):
-        assert needle in branch, f"diff branch missing stylesheet injection: {needle}"
+        assert needle in branch, f"diff branch missing stylesheet injection/retry: {needle}"
     m = re.search(r"\.mode-diff \.shell,\s*\.mode-diff \.bottom-inner \{[^}]*\}", page)
     assert m and "min(95vw, 1600px)" in m.group(0), \
         "page missing: mode-diff wide shell/bottom-bar rule"
@@ -156,16 +157,19 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
 
 
 def test_page_ships_diff2html_renderer(page: str) -> None:
-    """Wiring check only: the served page loads the diff2html@3 script (the
-    stylesheet is injected by the diff dispatch branch — see the layout
-    test), ships the renderDiffHunk adapter with the spec's exact config
-    (word-level diffs, words matching, no file list, viewport-picked output
-    format, DOMPurify sanitize), and no longer ships any of the hand-rolled
-    renderer."""
-    assert (
-        'id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui.min.js"'
-        in page
-    ), "page missing: diff2html-ui script tag"
+    """Wiring check only: the served page loads the diff2html@3 core +
+    slim-UI scripts (the stylesheet is injected by the diff dispatch branch
+    — see the layout test), and ships the renderDiffHunk adapter with the
+    audited pipeline: string API (Diff2Html.html), sanitize-BEFORE-DOM
+    (gate-audit: materializing first would let insertion-time payloads run
+    before removal), a CSS-readiness gate, an aria-hidden pass on line
+    numbers, and the spec's exact config. The hand-rolled renderer stays
+    gone."""
+    for tag in (
+        'id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"',
+        'id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"',
+    ):
+        assert tag in page, f"page missing script tag: {tag}"
     m = re.search(r"function renderDiffHunk\(.*?\n\}", page, re.S)
     assert m, "page missing: function renderDiffHunk"
     body = m.group(0)
@@ -173,12 +177,18 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
         "diffStyle: 'word'",
         "matching: 'words'",
         "drawFileList: false",
-        "fileContentToggle: false",
         "colorScheme: 'auto'",
         "window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line'",
-        "DOMPurify.sanitize",
+        "Diff2Html.html(",
+        "DOMPurify.sanitize(rawHtml)",
+        "cssLink.sheet",
+        "setAttribute('aria-hidden'",
     ):
         assert needle in body, f"renderDiffHunk missing: {needle}"
+    # sanitize-before-DOM order: the sanitize call must feed the innerHTML
+    # assignment directly, never read back already-materialized DOM.
+    assert "DOMPurify.sanitize(target.innerHTML)" not in body, \
+        "renderDiffHunk sanitizes after materializing — inverted order"
     # The hand-rolled renderer is deleted, not just bypassed. 'sxs' had no
     # other meaning anywhere in the page, so its total absence is the
     # strongest cheap deletion check available to this harness.
@@ -191,20 +201,27 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
 
 
 def test_page_ships_d2h_guards(page: str) -> None:
-    """Wiring check only: the three ported lessons ship — the scoped td reset
-    (specificity bleed), user-select:none on d2h line numbers (anchor
-    hygiene), the cross-pane selection guard in the mouseup handler, and
-    the shared load-retry helper wired to diff2html's script (the hljs-race
-    lesson from gate-audit)."""
+    """Wiring check only: the viva-side guards on the d2h surface ship —
+    token theming via d2h's own custom properties (light + dark families),
+    the Fragment Mono font guard, the file-name/tag dedup, the scoped td
+    reset (specificity bleed), user-select:none on line numbers (anchor
+    hygiene), the containing-block/radius rule on the file wrapper, the
+    cross-pane selection guard, and the shared load-retry helper wired to
+    both d2h scripts (the hljs-race lesson from gate-audit)."""
     for needle in (
+        "--d2h-bg-color: var(--bg)",
+        "--d2h-dark-bg-color: var(--bg)",
+        "--d2h-file-header-bg-color: var(--bg2)",
+        ".section-content .d2h-diff-table",
+        ".section-content .d2h-file-name",
         ".section-content .d2h-wrapper td",
         ".section-content .d2h-code-linenumber",
-        ".section-content .d2h-file-wrapper",
         "user-select: none",
+        "position: relative; border-radius: 6px;",
         "function closestD2hPane",
         "closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode)",
         "function retryOnceScriptsLoad",
-        "retryOnceScriptsLoad(['diff2html-script'], '.section-content.d2h-pending')",
+        "retryOnceScriptsLoad(['diff2html-script', 'diff2html-ui-script'], '.section-content.d2h-pending')",
         "retryOnceScriptsLoad(['marked-script', 'dompurify-script'], '.section-content.md-raw')",
     ):
         assert needle in page, f"page missing: {needle}"
