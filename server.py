@@ -41,7 +41,6 @@ HTML = r"""<!DOCTYPE html>
 <script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
-<link rel="stylesheet" id="diff2html-css" href="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css">
 <script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
@@ -1459,10 +1458,9 @@ function filepathFromTitle(title) {
 
 // _ensureRendered only has a section id at render time; renderDiffHunk
 // needs the section's title to synthesize the file preamble diff2html
-// expects.
+// expects. Delegates to reviewSectionTitles() — the one id→title lookup.
 function sectionTitleFor(id) {
-  const s = (REVIEW_DATA && REVIEW_DATA.sections || []).find(sec => sec.id === id);
-  return s ? s.title : '';
+  return reviewSectionTitles().get(id) || '';
 }
 
 /* Render one git hunk via diff2html: side-by-side above 900px viewport,
@@ -1893,42 +1891,30 @@ function _ensureRendered(id) {
   renderHighlights(id);
 }
 
-// One-time-per-script retry: if marked.min.js and/or dompurify's purify.min.js
-// were still loading when a card first tried to render, it fell back to raw
-// text and stayed in _pendingMarkdown (renderMarkdown requires *both* before
-// it'll render, so it's not safe to treat "marked is ready" alone as done).
-// Re-render every card still showing the fallback whenever either dependency
-// finishes loading — whichever one lands second is what actually flips
-// renderMarkdown over, but attaching to both means load order never matters.
-// Scoped to '.md-raw' specifically (not all of _pendingMarkdown) so cards that
-// simply haven't been opened yet stay lazily unrendered.
-(function retryFallbackMarkdownOnceDepsLoad() {
+// One-time-per-script retry for late-loading CDN renderers: a card opened
+// before a renderer's dependencies finished loading rendered a fallback and
+// stayed in _pendingMarkdown (marked/DOMPurify missing → raw text tagged
+// .md-raw, since renderMarkdown requires *both*; diff2html missing → fenced
+// markdown tagged .d2h-pending). Re-render every card still carrying the
+// marker class once the script(s) land — attaching to every script in the
+// list means load order never matters; whichever lands last is what flips
+// the renderer over. Scoped to the marker class (not all of
+// _pendingMarkdown) so cards that simply haven't been opened yet stay
+// lazily unrendered.
+function retryOnceScriptsLoad(scriptIds, selector) {
   const retry = () => {
-    document.querySelectorAll('.section-content.md-raw').forEach(contentEl => {
+    document.querySelectorAll(selector).forEach(contentEl => {
       const m = contentEl.id.match(/^rcontent-(.+)$/);
       if (m) _ensureRendered(m[1]);
     });
   };
-  ['marked-script', 'dompurify-script'].forEach(scriptId => {
+  scriptIds.forEach(scriptId => {
     const script = el(scriptId);
     if (script) script.addEventListener('load', retry, { once: true });
   });
-})();
-
-// Same retry pattern for diff2html: a diff-mode card opened before
-// diff2html-ui.min.js finished loading rendered as the fenced-markdown
-// fallback (class d2h-pending, still in _pendingMarkdown). Upgrade those
-// cards in place once the script lands.
-(function retryDiffHunksOnceD2hLoads() {
-  const script = el('diff2html-script');
-  if (!script) return;
-  script.addEventListener('load', () => {
-    document.querySelectorAll('.section-content.d2h-pending').forEach(contentEl => {
-      const m = contentEl.id.match(/^rcontent-(.+)$/);
-      if (m) _ensureRendered(m[1]);
-    });
-  }, { once: true });
-})();
+}
+retryOnceScriptsLoad(['marked-script', 'dompurify-script'], '.section-content.md-raw');
+retryOnceScriptsLoad(['diff2html-script'], '.section-content.d2h-pending');
 
 function skipReviewCard(id) {
   setCardExpanded(el('rcard-' + id), false);
@@ -2086,8 +2072,7 @@ document.addEventListener('mouseup', () => {
     if (!sel || sel.isCollapsed) return;
     const text = sel.toString().trim();
     if (!text) return;
-    const node = sel.anchorNode;
-    const start = node && node.nodeType === 3 ? node.parentElement : node;
+    const start = toElement(sel.anchorNode);
     const content = start && start.closest ? start.closest('.section-content') : null;
     if (!content) return;
     const m = content.id.match(/^rcontent-(.+)$/);
@@ -2103,12 +2088,17 @@ document.addEventListener('mouseup', () => {
   }, 0);
 });
 
+// A selection endpoint may be a text node; normalize to its element.
+function toElement(node) {
+  return node && node.nodeType === 3 ? node.parentElement : node;
+}
+
 // Closest diff2html side-by-side pane ancestor of a selection endpoint, or
 // null outside one (line-by-line mode, review-mode content) — there the
 // comparison is null !== null, a no-op, preserving the anchored path.
 function closestD2hPane(node) {
-  const el = node && node.nodeType === 3 ? node.parentElement : node;
-  return el && el.closest ? el.closest('.d2h-file-side-diff') : null;
+  const elem = toElement(node);
+  return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
 }
 
 // Char offset of `text` in the section's raw markdown source — the rewrite
@@ -2748,6 +2738,16 @@ fetch('/input')
     } else if (data.mode === 'diff') {
       REVIEW_DATA = data;
       document.body.classList.add('mode-diff');
+      // diff2html's stylesheet is mode-specific — injected here rather than
+      // shipped as a render-blocking <link> in <head>, so review/QA sessions
+      // never pay a CDN fetch for a diff-rendering stylesheet they can't use.
+      // (The companion diff2html-ui script tag stays in <head>: it's defer,
+      // so it doesn't block, and the d2h-pending retry keys off its load.)
+      const d2hCss = document.createElement('link');
+      d2hCss.id = 'diff2html-css';
+      d2hCss.rel = 'stylesheet';
+      d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css';
+      document.head.appendChild(d2hCss);
       el('doc-path').textContent    = data.doc_file || 'diff';
       el('doc-path').title          = data.doc_file || 'diff';
       el('doc-title').innerHTML     = 'viva <em>diff</em>';
