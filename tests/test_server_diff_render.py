@@ -340,6 +340,30 @@ def test_page_ships_similarity_alignment() -> None:
     print("test_page_ships_similarity_alignment: OK")
 
 
+def test_page_ships_mode_diff_layout() -> None:
+    """Wiring check only: the diff dispatch branch stamps mode-diff on <body>,
+    and the mode-scoped CSS overrides (wide shell/bottom bar, no nested
+    section scroll) ship in the served page. Does not measure rendered
+    layout — that's the Task 3 visual checkpoint."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    (viva / "in1.json").write_text(json.dumps(DIFF_INPUT))
+    with launch_server(viva / "in1.json", viva / "out1.json", mode="diff", cwd=tmp) as base:
+        page = get_text(base, "/")
+        m = re.search(r"mode === 'diff'\) \{(.*?)\} else", page, re.S)
+        assert m, "page missing: diff dispatch branch"
+        assert "document.body.classList.add('mode-diff')" in m.group(1), \
+            "diff branch does not stamp mode-diff on body"
+        m = re.search(r"\.mode-diff \.shell,\s*\.mode-diff \.bottom-inner \{[^}]*\}", page)
+        assert m and "min(95vw, 1600px)" in m.group(0), \
+            "page missing: mode-diff wide shell/bottom-bar rule"
+        m = re.search(r"\.mode-diff \.section-content \{[^}]*\}", page)
+        assert m and "max-height: none" in m.group(0) and "overflow-y: visible" in m.group(0), \
+            "page missing: mode-diff nested-scroll removal"
+    print("test_page_ships_mode_diff_layout: OK")
+
+
 def main() -> None:
     test_page_ships_side_by_side_renderer()
     test_page_ships_filepath_helper()
@@ -354,6 +378,7 @@ def main() -> None:
     test_page_ships_lcs_alignment()
     test_page_ships_shared_table_scroll()
     test_page_ships_similarity_alignment()
+    test_page_ships_mode_diff_layout()
     print("\nAll server diff-render tests passed.")
 
 

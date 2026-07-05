@@ -160,6 +160,18 @@ body {
   padding: 40px 20px 140px;
 }
 
+/* ─── Diff-first layout (mode-diff) ──────────────────────────
+   Code diffs want the opposite of the 700px prose column: width, and one
+   scroll context. body.mode-diff (stamped by the diff dispatch branch)
+   widens the shell and bottom bar together and removes .section-content's
+   nested 60vh scroll — a hunk with context folding doesn't need the cap an
+   arbitrary long document does, and page scroll becomes the only vertical
+   scroll. Widening the container (instead of escaping it) is what keeps
+   .card-body-inner's overflow:hidden accordion animation untouched — see
+   the Rejected Approach note in the diff-first-surface design doc. */
+.mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
+.mode-diff .section-content { max-height: none; overflow-y: visible; }
+
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
   margin-bottom: 36px;
@@ -3038,6 +3050,7 @@ fetch('/input')
       connectSSE();
     } else if (data.mode === 'diff') {
       REVIEW_DATA = data;
+      document.body.classList.add('mode-diff');
       el('doc-path').textContent    = data.doc_file || 'diff';
       el('doc-path').title          = data.doc_file || 'diff';
       el('doc-title').innerHTML     = 'viva <em>diff</em>';
