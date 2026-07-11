@@ -13,18 +13,33 @@ by its own stdout line — not by any new field on the wire payload, since
 (see docs/superpowers/specs/2026-07-11-unified-session-design.md, "Out of
 scope: Schema changes").
 
-Two things are checked:
-  1. Static assertion on the embedded SPA's JS — the browser-side gap the
-     design doc names directly: a `round` SSE event must hide `qa-view`
-     unconditionally rather than relying on a prior `processing` event having
-     already done so (that ordering isn't guaranteed — e.g. a tab reconnecting
-     mid-transition sees only `round`).
-  2. A subprocess+urllib integration run of the actual hand-off: qa phase →
+Checked here (this repo has no JS/browser test harness — stdlib Python only,
+no npm/node — so the browser-side fixes are pinned as string-needle
+assertions against the embedded HTML constant, matching the pattern in
+test_server_a11y.py / test_server_markdown_sanitize.py):
+  1. A `round` SSE event must hide `qa-view` unconditionally rather than
+     relying on a prior `processing` event having already done so (that
+     ordering isn't guaranteed — e.g. a tab reconnecting mid-transition sees
+     only `round`).
+  2. The `round` handler must populate #doc-path/#doc-title itself (via the
+     shared setDocTitleBlock() helper) — their only previous assignment site
+     was bootReviewMode(), which the qa boot path never calls, so a
+     qa-originated hand-off left the titleblock rendering blank "drawing"/
+     "title" cells and no "viva review" mode word (audit finding, Critical).
+  3. The `round` handler must reset QA_DATA/qState.active to null, and the
+     document keydown handler's qa branch must additionally gate on
+     `!REVIEW_DATA` — otherwise a leftover Q&A card selection lets a
+     post-handoff digit keystroke route through the qa branch, flip
+     btn-submit to 'ready' via updateQAStats(), and the class-gated click
+     handler calls submitReview(false), submitting the review round early
+     (audit finding, Critical).
+  4. A subprocess+urllib integration run of the actual hand-off: qa phase →
      `/next-round` → review phase → review `/submit`, all against one
      `server.py` process, with a regression check that the qa output file
      (`answers.json`) is never touched by the review round that follows it.
 """
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -57,6 +72,75 @@ def test_round_handler_hides_qa_view():
         "mid hand-off) must not leave qa-view showing underneath it"
     )
     print("  ok  test_round_handler_hides_qa_view")
+
+
+def _round_handler_slice(html: str) -> str:
+    start = html.index("es.addEventListener('round'")
+    end = html.index("es.addEventListener('complete'")
+    assert start != -1 and end != -1 and end > start
+    return html[start:end]
+
+
+def test_round_handler_populates_titleblock():
+    """Audit fix (Critical, ux-reviewer): the hand-off `round` handler must
+    populate #doc-path/#doc-title itself. Before this fix their only
+    assignment site was bootReviewMode(), called on the review/diff boot
+    paths but never on the qa boot path nor in the round handler — so a
+    qa-originated hand-off rendered the titleblock's "drawing"/"title" cells
+    blank and dropped the "viva review" mode word, even though data.doc_file
+    was present in the payload."""
+    html = server.HTML
+    round_handler = _round_handler_slice(html)
+    assert "setDocTitleBlock(" in round_handler, (
+        "the 'round' SSE handler must call setDocTitleBlock() so a "
+        "qa->review hand-off populates #doc-path/#doc-title instead of "
+        "leaving them at their qa-view blank default"
+    )
+    # setDocTitleBlock is now the single assignment site for both cells —
+    # assert it actually sets them, so gutting the helper's body couldn't
+    # leave this test green while the titleblock still renders blank.
+    fn_start = html.index("function setDocTitleBlock(")
+    fn_end = html.index("\n}", fn_start)
+    fn_body = html[fn_start:fn_end]
+    assert "el('doc-path').textContent" in fn_body, fn_body
+    assert "el('doc-title').innerHTML" in fn_body, fn_body
+    # bootReviewMode (initial review/diff boot) must still route through the
+    # same helper — the refactor must not have forked the two call sites.
+    boot_start = html.index("function bootReviewMode(")
+    boot_end = html.index("\n}", boot_start)
+    assert "setDocTitleBlock(" in html[boot_start:boot_end]
+    print("  ok  test_round_handler_populates_titleblock")
+
+
+def test_round_handler_resets_qa_state():
+    """Audit fix (Critical, frontend-reviewer): the hand-off `round` handler
+    must null QA_DATA and qState.active. Before this fix neither was ever
+    reset, so after a qa->review hand-off a stray digit keystroke (1-9) could
+    still route through the document keydown handler's qa branch, flip
+    btn-submit to 'ready' via updateQAStats() on Q&A completeness, and the
+    class-gated click handler would call submitReview(false) — submitting
+    the review round early and mislabeling it submitted_early:false."""
+    html = server.HTML
+    round_handler = _round_handler_slice(html)
+    assert re.search(r"QA_DATA\s*=\s*null;", round_handler), (
+        "the 'round' SSE handler must reset QA_DATA to null"
+    )
+    assert re.search(r"qState\.active\s*=\s*null;", round_handler), (
+        "the 'round' SSE handler must reset qState.active to null"
+    )
+    print("  ok  test_round_handler_resets_qa_state")
+
+
+def test_qa_keydown_branch_guarded_by_review_data():
+    """Defense in depth for the same audit finding: the document keydown
+    handler's qa branch must not fire while review cards are on screen,
+    independent of whether QA_DATA/qState.active happen to be stale."""
+    html = server.HTML
+    assert re.search(r"if\s*\(\s*!REVIEW_DATA\s*&&\s*QA_DATA\s*&&\s*qState\.active\s*\)", html), (
+        "the document keydown handler's qa branch must be guarded by "
+        "!REVIEW_DATA so it cannot fire while a review round is displayed"
+    )
+    print("  ok  test_qa_keydown_branch_guarded_by_review_data")
 
 
 def test_handoff_same_server_no_second_launch():
@@ -178,9 +262,12 @@ def test_standalone_qa_has_no_handoff_line():
 
 def main() -> None:
     test_round_handler_hides_qa_view()
+    test_round_handler_populates_titleblock()
+    test_round_handler_resets_qa_state()
+    test_qa_keydown_branch_guarded_by_review_data()
     test_handoff_same_server_no_second_launch()
     test_standalone_qa_has_no_handoff_line()
-    print("OK (3 tests)")
+    print("OK (6 tests)")
 
 
 if __name__ == "__main__":
