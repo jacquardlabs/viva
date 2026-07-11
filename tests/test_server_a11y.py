@@ -59,9 +59,31 @@ def test_skip_link_targets_main():
 
 def test_stats_aria_live_and_dynamic_title():
     assert 'id="stats-area" aria-live="polite"' in HTML
-    assert "document.title = 'viva · review · REV '" in HTML
-    assert "document.title = 'viva · brainstorm'" in HTML
     print("  ok  test_stats_aria_live_and_dynamic_title")
+
+
+def test_tab_title_identifies_document():
+    # Tab titles lead with the doc/topic name (basename, not full path) so
+    # concurrent viva sessions are distinguishable in the tab bar; 'viva' is
+    # a fixed trailing suffix. All five title-setting sites (review/diff/qa
+    # init, SSE round, SSE complete) route through one shared helper so a
+    # future site can't drift back to a hardcoded, doc-blind title.
+    assert "function tabDocName(path)" in HTML
+    assert "function setTabTitle(...parts)" in HTML
+    # No call site may hardcode the old doc-blind title strings.
+    assert "document.title = 'viva · review · REV '" not in HTML
+    assert "document.title = 'viva · diff · REV '" not in HTML
+    assert "document.title = 'viva · brainstorm'" not in HTML
+    # Exactly one definition + five call sites (review init, diff init, qa
+    # init, SSE round, SSE complete).
+    assert HTML.count("setTabTitle(") == 6, \
+        "expected setTabTitle def + 5 call sites (review/diff/qa init, SSE round, SSE complete)"
+    assert "setTabTitle(tabDocName(data.doc_file), 'REV ' + String(data.round).padStart(2, '0'));" in HTML
+    assert "setTabTitle(tabDocName(data.doc_file), 'diff', 'REV ' + String(data.round).padStart(2, '0'));" in HTML
+    assert "setTabTitle(data.context || 'brainstorm');" in HTML
+    assert "setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));" in HTML
+    assert "setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');" in HTML
+    print("  ok  test_tab_title_identifies_document")
 
 
 def test_decorative_emoji_are_aria_hidden():
@@ -97,10 +119,11 @@ def main():
     test_main_landmark_wraps_shell()
     test_skip_link_targets_main()
     test_stats_aria_live_and_dynamic_title()
+    test_tab_title_identifies_document()
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
-    print("OK (7 tests)")
+    print("OK (9 tests)")
 
 
 if __name__ == "__main__":
