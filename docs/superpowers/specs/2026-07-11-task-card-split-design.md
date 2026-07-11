@@ -30,17 +30,27 @@ That shape collides with how the reviewing human is served today:
 > leave one or more typed comments per section … The section is the unit of
 > trust. … The document passes only when every section is approved.
 
-`parse_sections.py`'s split level is auto-detected by counting heading
-occurrences (`_find_split_level`): the highest level that repeats. A plan
-document commonly nests headings *inside* each task (`#### Acceptance
-criteria`, `#### Files touched`) that repeat more often across the doc than
-the outer `### Task N` headings do — count-based auto-detection has no way to
-know "task" is the semantically right unit of trust here. Left to the
-default rule, a reviewer could be handed cards smaller than a task (every
-subsection reviewed independently, no per-task verdict) or, depending on
-heading shape, cards coarser than intended. Either way, the unit of trust
-Principle 1 promises doesn't line up with the unit jig's `/plan` skill and
-its human reviewer actually think in: the task.
+`parse_sections.py`'s split level is auto-detected by `_find_split_level`,
+which scans heading levels from coarsest (H1) to finest (H6) and returns the
+*first* level that occurs more than once — subsection frequency is never
+consulted, and a plan with two or more `### Task N` headings and no repeated
+coarser heading already resolves correctly to the task level today (verified
+against `_find_split_level`: for this doc's own example, H1/H2 don't repeat
+and H3 (`Task 1`, `Task 2`) does, so auto-detection already picks split level
+3 without `--split-on`). The failure that's actually reachable is the
+opposite of "cards smaller than a task": because the scan stops at the first
+repeated level and coarser levels are checked first, *any* repeated heading
+above the task level — a `## Overview` or `## Risks` aside that recurs inside
+every task, or a doc-level `## Phase N` grouping wrapping several tasks —
+wins before task headings are ever considered, and every task gets swallowed
+into whichever coarser section it falls under. Auto-detection has no way to
+know "task" is the semantically right unit of trust versus whatever coarser
+heading happens to repeat; it just picks the coarsest repeater. That's a
+guarantee `--split-on` needs to give jig, not an accident of what heading
+shapes a given plan happens to contain — the unit of trust Principle 1
+promises has to line up with the unit jig's `/plan` skill and its human
+reviewer actually think in: the task, regardless of what other headings the
+plan nests around it.
 
 Issue #110 is explicit that the fix belongs in viva, not in jig: "so
 per-task approve/changes/info works without custom parsing in the consuming
