@@ -94,6 +94,7 @@ The parser splits verbatim, runs an integrity check, and writes the file directl
 - Content before the first split-level heading becomes its own first section, titled with the H1 text (or "Preamble"). Omitted if empty.
 - No headings → one section containing the whole doc, titled with the filename.
 - A section titled `Revision History` is omitted; its lines are exempt from the integrity check.
+- `--split-on REGEX` (opt-in, e.g. for task-card plan documents): replaces the split-level heuristic entirely — a heading is a split point iff its title matches the pattern (`re.search`, any heading depth). No `--split-on` → unchanged default behavior above. Zero matches is a hard error, not a fallback to auto-detection. Section identity still goes through `schema.section_key()` unmodified, so approval/annotation/diff/open-note carry-forward need no extra handling. See `scripts/parse_sections.py`'s module docstring for the full contract.
 
 Edge case: a doc too short to review (a few lines, no substantive content) → skip the server, treat as auto-approved.
 

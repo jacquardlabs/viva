@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "parse_sections.py"
+PLAN_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "PLAN.md"
 
 
 def run(doc_text: str, extra_args: list[str] = (), prior_input: dict | None = None,
@@ -45,6 +46,22 @@ def run(doc_text: str, extra_args: list[str] = (), prior_input: dict | None = No
 
 def sections_content(data: dict) -> list[tuple[str, str]]:
     return [(s["title"], s["content"]) for s in data["sections"]]
+
+
+def run_expect_fail(doc_text: str, extra_args: list[str]) -> tuple[subprocess.CompletedProcess, bool]:
+    """Write doc to a temp file, run the parser, return (result, output_written)
+    without raising — for asserting on a nonzero exit, stderr content, and
+    that no output file was written (no silent one-section fallback). Output
+    existence is checked before the tempdir is torn down."""
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        doc = t / "doc.md"
+        doc.write_text(doc_text, encoding="utf-8")
+        out = t / ".viva" / "review-input-r1.json"
+        cmd = [sys.executable, str(SCRIPT), str(doc),
+               "--output", str(out), "--round", "1", *extra_args]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result, out.exists()
 
 
 def test_basic_h2_split() -> None:
@@ -438,6 +455,210 @@ def test_doc_file_override() -> None:
     assert data["doc_file"] == "path/to/my.md"
 
 
+def test_split_on_matches_regardless_of_depth() -> None:
+    # A `## Task 1` and a `### Task 2` (different depths) both match the same
+    # pattern and both become split points — --split-on has no depth rule,
+    # only a text-match rule.
+    doc = (
+        "# Doc\n\n"
+        "## Task 1: shallow\n\nbody one\n\n"
+        "### Task 2: deep\n\nbody two\n\n"
+        "### Aside\n\nnot a task\n"
+    )
+    data = run(doc, extra_args=["--split-on", r"^Task \d+"])
+    titles = [s["title"] for s in data["sections"]]
+    # "Doc" is the preamble section (H1 + nothing else before the first match).
+    assert titles == ["Doc", "Task 1: shallow", "Task 2: deep"], titles
+    # "Aside" content stays nested inside Task 2's section (next boundary is
+    # end of doc since Task 2 is the last split heading).
+    task2 = next(s for s in data["sections"] if s["title"] == "Task 2: deep")
+    assert "### Aside" in task2["content"]
+
+
+def test_split_on_ignores_coarser_repeated_heading() -> None:
+    # The motivating bug: a coarser heading (`## Notes`) recurs across tasks.
+    # Auto-detection would pick it (coarsest repeater wins) and swallow every
+    # task into whichever Notes block it falls under; --split-on must not.
+    doc = (
+        "# Doc\n\n"
+        "### Task 1\n\nbody 1\n\n"
+        "## Notes\n\nnote 1\n\n"
+        "### Task 2\n\nbody 2\n\n"
+        "## Notes\n\nnote 2\n"
+    )
+    # Without --split-on: auto-detect picks the coarser, twice-repeated H2
+    # ("## Notes") over the thrice... here twice-repeated H3 ("### Task N") —
+    # sorted(counts) checks H2 before H3, so H2 wins. Both tasks get swallowed
+    # into their enclosing "Notes" section, not split out individually.
+    auto = run(doc)
+    auto_titles = [s["title"] for s in auto["sections"]]
+    assert auto_titles.count("Notes") == 2, auto_titles
+    assert "Task 1" not in auto_titles and "Task 2" not in auto_titles
+
+    # With --split-on: only headings matching the pattern are split points,
+    # regardless of the coarser repeated "Notes" heading.
+    split = run(doc, extra_args=["--split-on", r"^Task \d+"])
+    split_titles = [s["title"] for s in split["sections"]]
+    assert split_titles == ["Doc", "Task 1", "Task 2"], split_titles
+    task1 = next(s for s in split["sections"] if s["title"] == "Task 1")
+    assert "## Notes\n\nnote 1" in task1["content"]
+
+
+def test_split_on_zero_matches_is_hard_error() -> None:
+    doc = "# Doc\n\n## Alpha\n\nbody\n"
+    result, output_written = run_expect_fail(doc, ["--split-on", r"^Task \d+"])
+    assert result.returncode != 0
+    # Message names both the pattern and the doc, not a generic fallback message.
+    assert "matched no heading" in result.stderr, result.stderr
+    assert "Task" in result.stderr, result.stderr
+    assert "doc.md" in result.stderr, result.stderr
+    # No silent fallback to a one-section (or auto-detected) JSON.
+    assert not output_written, "output file must not be written on a zero-match error"
+
+
+def test_split_on_invalid_regex_errors() -> None:
+    doc = "# Doc\n\n## Alpha\n\nbody\n"
+    result, output_written = run_expect_fail(doc, ["--split-on", r"(unclosed"])
+    assert result.returncode != 0
+    # A clean caller-facing message, not a raw Python traceback.
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "invalid --split-on pattern" in result.stderr, result.stderr
+    assert not output_written, "output file must not be written on an invalid pattern"
+
+
+def test_split_on_20_section_fallback_not_applied() -> None:
+    # The auto-detect coarsening fallback (>20 sections at a level → fall back
+    # one level coarser) must NOT apply to an explicit --split-on pattern —
+    # it's an instruction, not a heuristic guess.
+    tasks = "".join(f"### Task {i}\n\nbody {i}\n\n" for i in range(1, 26))
+    doc = "# Doc\n\n" + tasks
+    data = run(doc, extra_args=["--split-on", r"^Task \d+"])
+    # 25 task sections + 1 preamble ("Doc") — no coarsening fallback applied.
+    assert len(data["sections"]) == 26, len(data["sections"])
+    titles = [s["title"] for s in data["sections"]]
+    assert titles[0] == "Doc"
+    assert titles[1:] == [f"Task {i}" for i in range(1, 26)]
+
+
+def test_split_on_default_path_byte_identical_without_flag() -> None:
+    # Structural guarantee: the branch that reads --split-on is never taken
+    # when the flag is absent — same doc, same output, with or without a
+    # split_on-shaped doc, as long as the flag itself is omitted.
+    doc = "# Doc\n\n### Task 1\n\nbody 1\n\n### Task 2\n\nbody 2\n"
+    with_flag_absent = run(doc)
+    again = run(doc)
+    assert with_flag_absent == again
+
+
+def test_split_on_fixture_one_section_per_task() -> None:
+    # Acceptance criterion: a fixture PLAN.md with ### Task N blocks parses
+    # to one section per task with no custom parsing needed downstream.
+    doc = PLAN_FIXTURE.read_text(encoding="utf-8")
+    data = run(doc, extra_args=["--split-on", r"^Task \d+"])
+    titles = [s["title"] for s in data["sections"]]
+    # Preamble (H1 + intro paragraph) is its own section, then one section
+    # per task — no custom parsing needed downstream.
+    assert titles == [
+        "Sprint 12 plan",
+        "Task 1: Add the CLI flag",
+        "Task 2: Write the fixture",
+        "Task 3: Wire up tests",
+    ], titles
+    # Nested "Acceptance criteria" and recurring "Notes" headings stay inside
+    # their task's content — no separate cards, no new nesting rule.
+    task1 = next(s for s in data["sections"] if s["title"] == "Task 1: Add the CLI flag")
+    assert "#### Acceptance criteria" in task1["content"]
+    assert "## Notes" in task1["content"]
+    # Integrity check: reconstructed content matches source verbatim.
+    assert "".join(s["content"] for s in data["sections"]) == doc
+    # Preamble (H1 + intro paragraph) becomes its own first-class section,
+    # same rule as default parsing.
+    assert data["sections"][0]["title"] == "Sprint 12 plan"
+
+
+def test_split_on_fixture_round2_carries_forward_through_section_key() -> None:
+    # The fixture itself, round-tripped: round 1 parses PLAN.md with
+    # --split-on, Task 1 gets approved and Task 2 gets changes, Task 3 is
+    # untouched (pending). Round 2 reparses a doc where only Task 2's body
+    # changed — Task 1 must carry forward as approved and Task 3 must show
+    # no diff, all through schema.section_key() with no fixture-specific
+    # bookkeeping.
+    doc_r1 = PLAN_FIXTURE.read_text(encoding="utf-8")
+    r1 = run(doc_r1, extra_args=["--split-on", r"^Task \d+"])
+    task1_id = next(s["id"] for s in r1["sections"] if s["title"] == "Task 1: Add the CLI flag")
+    task2_id = next(s["id"] for s in r1["sections"] if s["title"] == "Task 2: Write the fixture")
+    task3_id = next(s["id"] for s in r1["sections"] if s["title"] == "Task 3: Wire up tests")
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": task1_id, "verdict": "approved", "note": ""},
+            {"id": task2_id, "verdict": "changes", "note": "tighten the wording"},
+            {"id": task3_id, "verdict": "pending", "note": ""},
+        ],
+    }
+    doc_r2 = doc_r1.replace(
+        "Add a `PLAN.md` fixture with `### Task N` blocks.",
+        "Add a `PLAN.md` fixture with `### Task N` blocks (tightened).",
+    )
+    assert doc_r2 != doc_r1, "fixture text for Task 2 must actually differ in round 2"
+    r2 = run(doc_r2, extra_args=["--split-on", r"^Task \d+"],
+              prior_input=r1, prior_verdicts=prior_verdicts)
+    task1 = next(s for s in r2["sections"] if s["title"] == "Task 1: Add the CLI flag")
+    task2 = next(s for s in r2["sections"] if s["title"] == "Task 2: Write the fixture")
+    task3 = next(s for s in r2["sections"] if s["title"] == "Task 3: Wire up tests")
+    assert task1["id"] in r2["approved_ids"], "approved Task 1 must carry forward"
+    assert "diff" not in task1
+    assert task2["id"] not in r2["approved_ids"]
+    diff_ops = {d["text"] for d in task2.get("diff", [])}
+    assert any("tightened" in t for t in diff_ops), task2.get("diff")
+    assert task3["id"] not in r2["approved_ids"], "pending Task 3 was never approved"
+    assert "diff" not in task3, "untouched Task 3 must show no diff"
+
+
+def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
+    # Round-to-round carry-forward (approval, annotations, diff) must work
+    # unmodified for --split-on sections — they're keyed by schema.section_key()
+    # through the exact same functions default-parsed sections use.
+    content_t1 = "### Task 1\n\ntask one body\n\n"
+    content_t2 = "### Task 2\n\ntask two body\n"
+    doc_r1 = content_t1 + content_t2
+    prior_input = {
+        "mode": "review", "doc_file": "PLAN.md", "round": 1, "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Task 1", "content": content_t1,
+             "annotations": [{"kind": "drift", "severity": "warn", "message": "check link"}]},
+            {"id": "s2", "title": "Task 2", "content": content_t2},
+        ],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "changes", "note": "expand"},
+        ],
+    }
+    new_content_t2 = "### Task 2\n\ntask two body, expanded\n"
+    doc_r2 = content_t1 + new_content_t2
+    data = run(
+        doc_r2,
+        extra_args=["--split-on", r"^Task \d+"],
+        prior_input=prior_input,
+        prior_verdicts=prior_verdicts,
+    )
+    task1 = next(s for s in data["sections"] if s["title"] == "Task 1")
+    task2 = next(s for s in data["sections"] if s["title"] == "Task 2")
+    # Task 1: byte-identical to its approved prior content → carried forward,
+    # annotation carried too.
+    assert task1["id"] in data["approved_ids"]
+    assert task1.get("annotations") == prior_input["sections"][0]["annotations"]
+    assert "diff" not in task1
+    # Task 2: content changed → not auto-approved, gets a round-to-round diff.
+    assert task2["id"] not in data["approved_ids"]
+    diff_ops = {(d["op"], d["text"]) for d in task2.get("diff", [])}
+    assert ("-", "task two body") in diff_ops, task2.get("diff")
+    assert ("+", "task two body, expanded") in diff_ops, task2.get("diff")
+
+
 def main() -> None:
     tests = [
         test_basic_h2_split,
@@ -463,6 +684,15 @@ def main() -> None:
         test_content_verbatim_no_whitespace_drift,
         test_nonzero_exit_on_missing_doc,
         test_doc_file_override,
+        test_split_on_matches_regardless_of_depth,
+        test_split_on_ignores_coarser_repeated_heading,
+        test_split_on_zero_matches_is_hard_error,
+        test_split_on_invalid_regex_errors,
+        test_split_on_20_section_fallback_not_applied,
+        test_split_on_default_path_byte_identical_without_flag,
+        test_split_on_fixture_one_section_per_task,
+        test_split_on_fixture_round2_carries_forward_through_section_key,
+        test_split_on_identity_reuses_section_key_no_new_rule,
     ]
     failed = 0
     for t in tests:
