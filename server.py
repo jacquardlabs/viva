@@ -2665,15 +2665,30 @@ function connectSSE() {
 
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
+    const modeWord = data.mode === 'diff' ? 'diff' : 'review';
     REVIEW_DATA       = data;
+    // A qa → review hand-off (#109) lands here too — the qa session this tab
+    // may have been showing is done; drop its state so leftover QA_DATA/
+    // qState.active can't be picked up by qa-branch logic (keydown handler,
+    // updateQAStats/submitQA) once REVIEW_DATA cards are what's on screen.
+    QA_DATA           = null;
+    qState.active     = null;
     rState.verdicts   = {};
     rState.active     = null;
+    setDocTitleBlock(data, modeWord, modeWord === 'diff' ? 'diff' : '');
     el('round-badge').textContent = String(data.round).padStart(2, '0');
     const rev = 'REV ' + String(data.round).padStart(2, '0');
     setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
+    // Hide qa-view unconditionally rather than relying on a prior
+    // 'processing' event having already done so: a caller that POSTs a
+    // review round-1 payload to a still-running qa server without the browser
+    // ever seeing a 'processing' event first (e.g. this tab's SSE connection
+    // reconnected mid-transition and missed it) would otherwise leave qa-view
+    // visible underneath the review cards.
+    el('qa-view').style.display         = 'none';
     el('review-view').style.display     = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
@@ -2745,7 +2760,12 @@ document.addEventListener('keydown', e => {
     }
   }
 
-  if (QA_DATA && qState.active) {
+  // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
+  // qState.active reset (#109 hand-off): belt-and-suspenders so a digit
+  // keystroke can never route through the qa branch — and flip btn-submit to
+  // 'ready' via updateQAStats(), letting the class-gated click handler call
+  // submitReview(false) early — while review cards are what's on screen.
+  if (!REVIEW_DATA && QA_DATA && qState.active) {
     const q = QA_DATA.questions.find(q => q.id === qState.active);
     if (q) {
       const n = parseInt(e.key, 10);
@@ -2784,13 +2804,21 @@ document.addEventListener('keydown', e => {
 el('btn-skip').disabled   = true;
 el('btn-submit').disabled = true;
 
+// Titleblock's doc-path/doc-title cells — shared by the initial review/diff
+// boot (bootReviewMode) and the in-place 'round' SSE hand-off/advance, so a
+// qa→review hand-off (#109) populates them exactly like a fresh review boot
+// does instead of leaving them at their qa-view blank default.
+function setDocTitleBlock(data, modeWord, docFallback) {
+  el('doc-path').textContent    = data.doc_file || docFallback;
+  el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
+  el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
+}
+
 // Shared boot tail for the two review-card modes (review and diff) — the
 // title block, round badge, view reveal, card build, and SSE hookup are
 // identical apart from the mode word and the doc-path fallback.
 function bootReviewMode(data, modeWord, docFallback) {
-  el('doc-path').textContent    = data.doc_file || docFallback;
-  el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
-  el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
+  setDocTitleBlock(data, modeWord, docFallback);
   el('round-badge').textContent = String(data.round).padStart(2, '0');
   setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));
   el('review-view').style.display = '';
@@ -2849,6 +2877,7 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+_url: str = ""  # set once at startup; reused by the /next-round hand-off log line
 _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
@@ -3114,9 +3143,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._error(400, f"invalid review-input: {e}")
                     return
             with _data_lock:
+                # Unified Q&A → review session (#109): a qa-originated review
+                # round carries no distinguishing field in the wire payload —
+                # ReviewInput's shape is deliberately unchanged by that story
+                # (see docs/superpowers/specs/2026-07-11-unified-session-design.md,
+                # "Out of scope: Schema changes"). The signal instead is
+                # operational and inferred here, never persisted: the prior
+                # round on this server was Q&A-shaped (`questions`) and this
+                # one is review-shaped (`sections`). #111's headless-contract
+                # should describe this session type as "a review round POSTed
+                # to a server launched with --mode qa", not as a payload field.
+                handoff = "questions" in _input_data and "sections" in new_data
                 _input_data = new_data
                 _output_path = output
                 ledger_snapshot = list(_ledger)
+            if handoff:
+                # Distinct from the per-mode startup line so a terminal-watching
+                # caller (or a human tailing stdout) can see the hand-off happen,
+                # not just infer it from the browser reflowing.
+                print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
@@ -3175,6 +3220,7 @@ if __name__ == "__main__":
     server = ThreadedHTTPServer(("127.0.0.1", port), Handler)
     server.timeout = 0.5
     url = f"http://127.0.0.1:{port}"
+    _url = url
 
     url_file = Path(args.output).parent / "server.url"
     _atomic_write(url_file, url)

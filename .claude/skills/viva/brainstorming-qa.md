@@ -81,3 +81,39 @@ cat .viva/answers.json
 
 Read `.viva/answers.json`. For each answer with an `attachments` field, `Read`
 each listed path before acting on the answer.
+
+## Hand off to a review session in the same tab (#109)
+
+A caller that turns the answers into review sections (e.g. jig's `/design`
+skill drafting sections from the interview before handing them to a human for
+sign-off) does not need to tear this server down and launch a second one. The
+`.viva/server.url` this skill wrote is still live — POST a round-1 review
+payload to it and the same browser tab reflows in place from Q&A cards to
+section-review cards, round 1. This is **opt-in**: a caller that never does
+this sees no difference from the steps above — the server still exits after
+`/complete` is called or is left running, exactly as today.
+
+```bash
+BASE=$(cat .viva/server.url)
+curl -s -X POST "$BASE/next-round?output=.viva/review-r1.json" \
+  -H "Content-Type: application/json" -d @.viva/review-input-r1.json
+```
+
+`review-input-r1.json` is the ordinary `ReviewInput` shape `parse_sections.py`
+produces (`{"mode": "review", "round": 1, "doc_file": ..., "sections": [...]}`)
+— nothing about its schema changes for a qa-originated round. From here the
+review proceeds exactly as `/viva`'s own loop: wait for `.viva/review-r1.json`,
+act on verdicts, `/next-round` for round 2+, `/complete` to finish.
+
+**`output` must be a path distinct from this skill's `--output`
+(`.viva/answers.json`)** — e.g. `.viva/review-r1.json`, not
+`.viva/answers.json`. `/next-round` and a review round's `/submit` both write
+to whatever `output` names; reusing the qa output path lets the first review
+`/submit` silently overwrite the answers this step just read.
+
+The server has no field marking a round as qa-originated — `ReviewInput`'s
+shape is unchanged by this hand-off. A server started `--mode qa` prints a
+distinct `viva · hand-off qa → review · <url>` stdout line the first time it
+receives a `sections`-shaped `/next-round` payload, which is the signal a
+terminal-watching caller (or a headless-contract consumer inspecting the
+process, not the payload) has for "this is that session type."
