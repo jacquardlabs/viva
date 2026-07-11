@@ -2674,6 +2674,13 @@ function connectSSE() {
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
+    // A qa → review hand-off (#109) lands here too: a caller that POSTs a
+    // review round-1 payload to a still-running qa server without the browser
+    // ever seeing a 'processing' event first (e.g. this tab's SSE connection
+    // reconnected mid-transition and missed it) would otherwise leave qa-view
+    // visible underneath the review cards. Hide it unconditionally rather than
+    // relying on 'processing' having already done so.
+    el('qa-view').style.display         = 'none';
     el('review-view').style.display     = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
@@ -2849,6 +2856,7 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+_url: str = ""  # set once at startup; reused by the /next-round hand-off log line
 _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
@@ -3114,9 +3122,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._error(400, f"invalid review-input: {e}")
                     return
             with _data_lock:
+                # Unified Q&A → review session (#109): a qa-originated review
+                # round carries no distinguishing field in the wire payload —
+                # ReviewInput's shape is deliberately unchanged by that story
+                # (see docs/superpowers/specs/2026-07-11-unified-session-design.md,
+                # "Out of scope: Schema changes"). The signal instead is
+                # operational and inferred here, never persisted: the prior
+                # round on this server was Q&A-shaped (`questions`) and this
+                # one is review-shaped (`sections`). #111's headless-contract
+                # should describe this session type as "a review round POSTed
+                # to a server launched with --mode qa", not as a payload field.
+                handoff = "questions" in _input_data and "sections" in new_data
                 _input_data = new_data
                 _output_path = output
                 ledger_snapshot = list(_ledger)
+            if handoff:
+                # Distinct from the per-mode startup line so a terminal-watching
+                # caller (or a human tailing stdout) can see the hand-off happen,
+                # not just infer it from the browser reflowing.
+                print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
@@ -3175,6 +3199,7 @@ if __name__ == "__main__":
     server = ThreadedHTTPServer(("127.0.0.1", port), Handler)
     server.timeout = 0.5
     url = f"http://127.0.0.1:{port}"
+    _url = url
 
     url_file = Path(args.output).parent / "server.url"
     _atomic_write(url_file, url)
