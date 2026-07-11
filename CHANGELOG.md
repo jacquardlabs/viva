@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.17.0 (2026-07-11)
+
+### Documentation
+
+- Add design spec for doc-identifying tab titles
+  ([#108](https://github.com/jacquardlabs/viva/pull/108),
+  [`1b2a111`](https://github.com/jacquardlabs/viva/commit/1b2a11117e0cc2ceda4e5f75a78129ca3728bb31))
+
+- Add implementation plan for doc-identifying tab titles
+  ([#108](https://github.com/jacquardlabs/viva/pull/108),
+  [`1b2a111`](https://github.com/jacquardlabs/viva/commit/1b2a11117e0cc2ceda4e5f75a78129ca3728bb31))
+
+### Features
+
+- **ui**: Identify the reviewed doc in the browser tab title
+  ([#108](https://github.com/jacquardlabs/viva/pull/108),
+  [`1b2a111`](https://github.com/jacquardlabs/viva/commit/1b2a11117e0cc2ceda4e5f75a78129ca3728bb31))
+
+
 ## v1.16.0 (2026-07-05)
 
 ### Bug Fixes
