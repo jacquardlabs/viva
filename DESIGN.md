@@ -89,6 +89,7 @@ surfaces) — each value taken from its own rule in the current CSS:
 | `.open-thread` | 5px |
 | `.section-content::-webkit-scrollbar-thumb` | 5px |
 | `.diff-block` | 6px |
+| `.d2h-file-wrapper` (diff mode, viva override) | 6px |
 
 The #69 blueprint elements (`.sheet-frame`, `.rev-tri`, `.approve-stamp` /
 `.stamp-rule`) carry no border-radius — they are square by design, extending the
@@ -98,7 +99,8 @@ drafting geometry.
 
 Single-column shell, `max-width: 700px`, centered. Bottom bar is fixed, matches
 the shell's max-width with `bottom-inner`. Shell has `padding-bottom: 140px` to
-clear the bar. Do not exceed 700px in the shell.
+clear the bar. Do not exceed 700px in the shell (diff mode is the one exception:
+body.mode-diff widens it — see Diff-first layout).
 
 A fixed drawing-sheet frame (`.sheet-frame`, `position: fixed; inset: 16px`) wraps
 the whole viewport behind the content — see Blueprint elements. The shell sits on
@@ -206,6 +208,75 @@ Drafting-room gestures that extend the metaphor. All square, all monospace.
   inner rule at `inset: 3px`), slammed on at a `-5deg` tilt via the `stamp-down`
   animation. Children: `.stamp-word` ("APPROVED", `2.1rem`), `.stamp-meta` ("viva ·
   <date>"), `.stamp-sub` ("N sheets · M revisions"). All Fragment Mono.
+
+## Diff rendering (#99, superseded in-branch by diff2html delegation)
+
+`/viva-diff` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
+(MIT, `diff2html@3` on jsdelivr — same CDN precedent as marked/DOMPurify/hljs).
+Two bundles: the core (`diff2html.min.js`, the `Diff2Html.html` string API)
+and the slim UI wrapper (`diff2html-ui-slim.min.js`, syntax highlighting
+only, fed the page's own hljs — the full UI bundle embeds a second hljs
+copy and is deliberately not used). The stylesheet is mode-specific and
+injected by the diff dispatch branch, so review/QA sessions never fetch it.
+
+The `renderDiffHunk` adapter strips the section's ` ```diff ` fence,
+synthesizes the `---/+++` preamble from the section title's filepath at
+render time (never stored — `section.content` stays byte-for-byte verbatim
+for anchors and carry-forward), and renders with `diffStyle: 'word'`
+(intra-line word-level emphasis), `matching: 'words'`, no file list,
+`colorScheme: 'auto'` (follows `prefers-color-scheme`, like the rest of
+viva), and `outputFormat` picked by viewport: side-by-side at ≥900px,
+line-by-line below. **Pipeline order is load-bearing:** `Diff2Html.html`
+produces a string, `DOMPurify.sanitize` runs on the string, and only the
+sanitized result touches the DOM — the same sanitize-before-assign order
+as `renderMarkdown` (materializing first would let insertion-time payloads
+execute before removal). The whole render is try/caught, falling back to
+the fenced view rather than stranding a card. Line numbers get
+`aria-hidden` after render (screen readers would otherwise announce them
+before every code line). Fallback chain when a CDN asset is absent —
+scripts, or the injected stylesheet, gated via `link.sheet`: fenced
+` ```diff ` via `renderMarkdown` (tagged `d2h-pending`, upgraded in place
+by load-retry listeners on all three assets) → `md-raw` plain text. Binary
+sections (parse_diff.py's plaintext sentinel, no fence) render as prose,
+unchanged.
+
+viva-side guards on the diff2html DOM: surface theming maps d2h's own
+`--d2h-*` custom properties (light and dark families) to viva tokens
+(`--bg`, `--bg2`, `--border`, `--border2`, `--text3`), leaving the ins/del
+tints as d2h's semantic green/red; `Fragment Mono` is forced on the diff
+table and file header (the two-families rule); `.d2h-file-name`/`.d2h-tag`
+are hidden (the card title and file-group header already name the file —
+only d2h's per-hunk `+N/−M` stats remain); a scoped td reset (the generic
+`.section-content td` editorial-table rule would otherwise border/pad every
+diff row); `user-select: none` on line numbers; `position: relative` +
+`border-radius: 6px` on `.d2h-file-wrapper` (the containing-block fix that
+keeps d2h's absolutely-positioned line numbers clipped inside the collapse
+accordion, plus the documented diff-surface radius); and a cross-pane
+selection guard that degrades a selection spanning both side-by-side panes
+to an unanchored whole-section note.
+
+## Diff-first layout (mode-diff)
+
+Diff mode stamps `mode-diff` on `<body>`. Mode-scoped overrides widen
+`.shell` and `.bottom-inner` together to `min(95vw, 1600px)` and remove
+`.section-content`'s `60vh` nested scroll — page scroll is the only
+vertical scroll in diff mode. Widening the container (never escaping it)
+is the load-bearing choice: it leaves `.card-body-inner`'s
+`overflow: hidden` accordion animation untouched. Review/QA modes carry
+no `mode-diff` class and are unaffected.
+
+## File-header grouping (follow-up to #99, unreleased)
+
+A static divider — `path/to/file.py · N hunks` — above each contiguous run
+of `/viva-diff` hunk-cards sharing a filepath. `.file-group-header`: 9px
+Fragment Mono, uppercase, `--text3` (the label convention's default), a
+quiet landmark, not a heading — reads subordinate to the 13px `.card-title`.
+Static only: no sticky/pinned behavior, no collapse, no live approval count,
+filepath + hunk count only. Diff-mode-only; review mode's card list is
+unaffected (`initReview` builds headers only when `REVIEW_DATA.mode === 'diff'`,
+and as a second, independent guarantee, `setupCardSort` forces the
+confidence-sort toggle off via `REVIEW_DATA.mode !== 'diff'` — so its CSS
+`order` reordering can never strand a header away from its file's cards).
 
 ## Bottom bar
 

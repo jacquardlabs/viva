@@ -65,21 +65,23 @@ def test_stats_aria_live_and_dynamic_title():
 def test_tab_title_identifies_document():
     # Tab titles lead with the doc/topic name (basename, not full path) so
     # concurrent viva sessions are distinguishable in the tab bar; 'viva' is
-    # a fixed trailing suffix. All five title-setting sites (review/diff/qa
-    # init, SSE round, SSE complete) route through one shared helper so a
-    # future site can't drift back to a hardcoded, doc-blind title.
+    # a fixed trailing suffix. All four title-setting sites (the shared
+    # review/diff boot tail, qa init, SSE round, SSE complete) route through
+    # one shared helper so a future site can't drift back to a hardcoded,
+    # doc-blind title. (Review and diff init share one call site inside
+    # bootReviewMode() rather than each carrying their own.)
     assert "function tabDocName(path)" in HTML
     assert "function setTabTitle(...parts)" in HTML
     # No call site may hardcode the old doc-blind title strings.
     assert "document.title = 'viva · review · REV '" not in HTML
     assert "document.title = 'viva · diff · REV '" not in HTML
     assert "document.title = 'viva · brainstorm'" not in HTML
-    # Exactly one definition + five call sites (review init, diff init, qa
-    # init, SSE round, SSE complete).
-    assert HTML.count("setTabTitle(") == 6, \
-        "expected setTabTitle def + 5 call sites (review/diff/qa init, SSE round, SSE complete)"
-    assert "setTabTitle(tabDocName(data.doc_file), 'REV ' + String(data.round).padStart(2, '0'));" in HTML
-    assert "setTabTitle(tabDocName(data.doc_file), 'diff', 'REV ' + String(data.round).padStart(2, '0'));" in HTML
+    assert "document.title = 'viva · ' + modeWord" not in HTML
+    # Exactly one definition + four call sites (shared review/diff boot tail,
+    # qa init, SSE round, SSE complete).
+    assert HTML.count("setTabTitle(") == 5, \
+        "expected setTabTitle def + 4 call sites (bootReviewMode, qa init, SSE round, SSE complete)"
+    assert "setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));" in HTML
     assert "setTabTitle(data.context || 'brainstorm');" in HTML
     assert "setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));" in HTML
     assert "setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');" in HTML

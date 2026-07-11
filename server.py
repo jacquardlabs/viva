@@ -41,6 +41,8 @@ HTML = r"""<!DOCTYPE html>
 <script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
+<script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"></script>
+<script defer id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"></script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
@@ -159,6 +161,18 @@ body {
   margin: 0 auto;
   padding: 40px 20px 140px;
 }
+
+/* ─── Diff-first layout (mode-diff) ──────────────────────────
+   Code diffs want the opposite of the 700px prose column: width, and one
+   scroll context. body.mode-diff (stamped by the diff dispatch branch)
+   widens the shell and bottom bar together and removes .section-content's
+   nested 60vh scroll — a hunk with context folding doesn't need the cap an
+   arbitrary long document does, and page scroll becomes the only vertical
+   scroll. Widening the container (instead of escaping it) is what keeps
+   .card-body-inner's overflow:hidden accordion animation untouched — see
+   the Rejected Approach note in the diff-first-surface design doc. */
+.mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
+.mode-diff .section-content { max-height: none; overflow-y: visible; }
 
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
@@ -296,6 +310,19 @@ body {
 
 /* ─── Cards ──────────────────────────────────────────────── */
 .cards { display: flex; flex-direction: column; gap: 6px; }
+
+/* ─── diff-mode file grouping: static divider above each run of hunks
+   belonging to the same file. Landmark, not a heading — same quiet
+   typographic register as .diff-toggle. ─── */
+.file-group-header {
+  color: var(--text3);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 2px 0;
+}
 
 /* ─── Confidence triage sort (issue #12) ─────────────────── */
 .sort-bar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
@@ -525,6 +552,57 @@ body {
 .diff-del { background: var(--orange-bg); color: var(--orange); }
 .diff-ctx { color: var(--text2); }
 .diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
+
+/* ─── diff2html output (diff mode) ─────────────────────────
+   Rendering is delegated to diff2html (see renderDiffHunk); these rules
+   bend its chrome to the blueprint without forking its stylesheet.
+   Surface theming rides d2h's own CSS custom properties — the light and
+   dark property families both map to viva tokens, which already flip via
+   prefers-color-scheme, so one block themes both modes. The ins/del/change
+   tints are deliberately left as d2h's own green/red: they encode change
+   direction, a different semantic axis than viva's teal/orange verdict
+   palette. */
+.section-content .d2h-wrapper {
+  --d2h-bg-color: var(--bg);
+  --d2h-dark-bg-color: var(--bg);
+  --d2h-border-color: var(--border);
+  --d2h-dark-border-color: var(--border);
+  --d2h-file-header-bg-color: var(--bg2);
+  --d2h-dark-file-header-bg-color: var(--bg2);
+  --d2h-file-header-border-color: var(--border2);
+  --d2h-dark-file-header-border-color: var(--border2);
+  --d2h-line-border-color: var(--border);
+  --d2h-dark-line-border-color: var(--border);
+  --d2h-dim-color: var(--text3);
+  --d2h-dark-dim-color: var(--text3);
+}
+/* DESIGN.md: two font families, no exceptions — d2h's own Menlo/Consolas
+   stack (on the diff table) and Source Sans (on the file header) yield to
+   Fragment Mono. */
+.section-content .d2h-diff-table,
+.section-content .d2h-file-header { font-family: 'Fragment Mono', monospace; }
+/* The card title and file-group header already name the file; d2h's
+   name + always-"CHANGED" tag would be a misleading third. Keep its
+   per-hunk +N/−M line stats, which nothing else shows. */
+.section-content .d2h-file-name,
+.section-content .d2h-tag { display: none; }
+/* Structural guards — each carries a lesson this surface taught:
+   - td reset: .section-content td (the generic editorial-markdown-table
+     rule) would otherwise chop every diff row into bordered, padded cells.
+   - unselectable line numbers: a drag can't capture them into
+     comment.anchor.text (renderDiffHunk also aria-hides them).
+   - position:relative on the wrapper: d2h's line-number cells are
+     position:absolute; without a positioned ancestor inside the card,
+     their containing block is .card (relative) — outside
+     .card-body-inner's overflow:hidden — so they'd escape the accordion's
+     collapse clip and ghost over the page (verified via computed-style
+     inspection). Auto offsets make this inert while open.
+   - 6px radius matches .diff-block, the incumbent documented diff-surface
+     radius, replacing d2h's own undocumented 3px. */
+.section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
+.section-content .d2h-code-linenumber,
+.section-content .d2h-code-side-linenumber { user-select: none; }
+.section-content .d2h-file-wrapper { position: relative; border-radius: 6px; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
 .card-body-wrap {
@@ -1411,6 +1489,83 @@ function renderMarkdown(target, md) {
   return false;
 }
 
+// section.title for diff-mode sections is "{filepath} hunk N" (parse_diff.py).
+// Strip the " hunk N" suffix to recover the filepath. Shared by
+// diffFileHunkCounts (file-header grouping) and renderDiffHunk (preamble
+// synthesis).
+function filepathFromTitle(title) {
+  return String(title || '').replace(/\s+hunk\s+\d+$/, '');
+}
+
+// _ensureRendered only has a section id at render time; renderDiffHunk
+// needs the section's title to synthesize the file preamble diff2html
+// expects. Delegates to reviewSectionTitles() — the one id→title lookup.
+function sectionTitleFor(id) {
+  return reviewSectionTitles().get(id) || '';
+}
+
+/* Render one git hunk via diff2html: side-by-side above 900px viewport,
+   line-by-line below, word-level intra-line diffs. Pure view transform —
+   section.content stays the verbatim fence the /viva-diff skill
+   (anchor-based edit relocation) and round-to-round carry-forward
+   (byte-for-byte compare) depend on; the ---/+++ preamble diff2html needs
+   to parse a bare @@ hunk is synthesized here at render time only, from
+   the section title's filepath, and never stored.
+   Pipeline order is load-bearing (gate-audit): Diff2Html.html() gives the
+   markup as a STRING, DOMPurify sanitizes the string, and only then does
+   it touch the DOM — same sanitize-before-assign order as renderMarkdown.
+   (Materializing first and sanitizing after would let insertion-time
+   payloads like <img onerror> execute before removal.) The whole draw is
+   try/caught: a hunk diff2html can't parse falls back to the fenced view
+   instead of stranding the card mid-activation. Syntax coloring is an
+   enhancement layered on the sanitized DOM via the slim UI wrapper and
+   the page's own hljs; when either is missing or throws, the word-level
+   ins/del emphasis from diff2html itself still renders.
+   Fallback when the CDN assets (core script, or the mode-injected
+   stylesheet — gated via link.sheet to avoid an unstyled flash when the
+   script is cache-warm but the CSS is not) haven't loaded: the
+   fenced-```diff markdown view, tagged d2h-pending so the load listeners
+   upgrade it in place. Returns renderMarkdown's boolean on that path so
+   _ensureRendered's retry bookkeeping stays correct. */
+function renderDiffHunk(target, raw, title) {
+  const body = raw.replace(/^```diff\n/, '').replace(/\n```$/, '');
+  if (!/^@@ /.test(body)) return renderMarkdown(target, raw);
+  const cssLink = el('diff2html-css');
+  if (!(window.Diff2Html && window.Diff2HtmlUI && window.DOMPurify && cssLink && cssLink.sheet)) {
+    const ok = renderMarkdown(target, raw);
+    if (ok) target.classList.add('d2h-pending');
+    return ok;
+  }
+  const fp = filepathFromTitle(title);
+  const diff = '--- a/' + fp + '\n+++ b/' + fp + '\n' + body;
+  try {
+    const rawHtml = Diff2Html.html(diff, {
+      drawFileList: false,
+      colorScheme: 'auto',
+      matching: 'words',
+      diffStyle: 'word',
+      outputFormat: window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line',
+    });
+    target.innerHTML = DOMPurify.sanitize(rawHtml);
+  } catch (e) {
+    return renderMarkdown(target, raw);
+  }
+  target.classList.remove('d2h-pending');
+  // Line numbers are visual chrome: unselectable via CSS (anchor hygiene),
+  // and hidden from screen readers here — they'd otherwise announce before
+  // every code line, twice per row in side-by-side.
+  target.querySelectorAll('.d2h-code-linenumber, .d2h-code-side-linenumber')
+    .forEach(n => n.setAttribute('aria-hidden', 'true'));
+  // Slim UI wrapper constructed with an undefined diff wraps the existing
+  // (sanitized) DOM; hljs is the page's own instance, passed in because the
+  // slim bundle deliberately doesn't embed one.
+  try {
+    new Diff2HtmlUI(target, undefined, { highlight: true }, window.hljs).highlightCode();
+  } catch (e) { /* syntax color only; word-level diff survives */ }
+  target.classList.remove('md-raw');
+  return true;
+}
+
 function el(id) { return document.getElementById(id); }
 
 function ledgerRowsHTML(entries) {
@@ -1437,6 +1592,19 @@ function renderLedger() {
 /* ─────────────────────────────────────────────────────────
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
+// Diff mode only: how many sections share each filepath. parse_diff.py emits
+// every hunk of a file contiguously before moving to the next file, so a
+// single pass building this map is enough to know each run's total up front —
+// no need to look ahead while iterating in the render loop below.
+function diffFileHunkCounts(sections) {
+  const counts = new Map();
+  sections.forEach(s => {
+    const fp = filepathFromTitle(s.title);
+    counts.set(fp, (counts.get(fp) || 0) + 1);
+  });
+  return counts;
+}
+
 function initReview() {
   _pendingMarkdown.clear();
   const container = el('review-cards');
@@ -1445,8 +1613,25 @@ function initReview() {
   priorApprovedSet.forEach(id => {
     rState.verdicts[id] = { verdict: 'approved', note: '' };
   });
+  // File-header grouping (diff mode only): a static divider ahead of each
+  // contiguous run of hunks sharing a filepath. hunkCounts stays null in
+  // review mode, so the check below is always false there — zero behavior
+  // change for review mode.
+  const hunkCounts = REVIEW_DATA.mode === 'diff' ? diffFileHunkCounts(REVIEW_DATA.sections) : null;
+  let lastFilepath = null;
   let animIdx = 0;
   REVIEW_DATA.sections.forEach((s, i) => {
+    if (hunkCounts) {
+      const fp = filepathFromTitle(s.title);
+      if (fp !== lastFilepath) {
+        const header = document.createElement('div');
+        header.className = 'file-group-header';
+        const n = hunkCounts.get(fp);
+        header.textContent = fp + ' · ' + n + ' hunk' + (n === 1 ? '' : 's');
+        container.appendChild(header);
+        lastFilepath = fp;
+      }
+    }
     const card = buildReviewCard(s);
     // Cards carried forward as already-approved from a prior round appear
     // instantly (no fade) — only new/changed cards get the staggered fade-in,
@@ -1620,7 +1805,12 @@ function applyCardSort() {
 function setupCardSort() {
   rState.sortMode = 'document';
   const bar = el('sort-bar');
-  const hasConfidence = REVIEW_DATA.sections.some(s => confidenceAnnot(s));
+  // Diff mode's file-header grouping depends on cards staying in fixed document
+  // order (CSS `order` would strand the static file-group-header divs, which
+  // carry no order, away from their file's cards) — so force the toggle off
+  // here rather than relying on diff-mode sections happening not to carry
+  // confidence annotations.
+  const hasConfidence = REVIEW_DATA.mode !== 'diff' && REVIEW_DATA.sections.some(s => confidenceAnnot(s));
   if (bar) bar.style.display = hasConfidence ? '' : 'none';
   applyCardSort();
 }
@@ -1744,37 +1934,50 @@ function _ensureRendered(id) {
   if (!_pendingMarkdown.has(id)) return;
   const contentEl = el('rcontent-' + id);
   if (!contentEl) return;
-  // If marked and/or DOMPurify aren't loaded yet, renderMarkdown left
-  // contentEl showing the raw fallback (class md-raw). Keep the entry in
-  // _pendingMarkdown so this card stays eligible for the retry once both
-  // dependencies finish loading — deleting it here would strand the card as
-  // raw text forever.
-  if (!renderMarkdown(contentEl, _pendingMarkdown.get(id))) return;
-  _pendingMarkdown.delete(id);
+  const raw = _pendingMarkdown.get(id);
+  // Diff mode's hunk content (a fenced ```diff block) renders via diff2html
+  // (renderDiffHunk). Binary-change sections have no fence (parse_diff.py's
+  // plaintext sentinel) and fall through to renderMarkdown unchanged.
+  const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
+  const rendered = isDiffHunk ? renderDiffHunk(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
+  if (!rendered) return;
+  // A d2h-pending card rendered successfully as fenced markdown but is
+  // waiting for diff2html to load — keep its source so the diff2html-script
+  // load listener below can re-render it properly. Deleting it here would
+  // strand the card on the fallback view forever (the same
+  // late-loading-dependency lesson as the marked/DOMPurify retry, and the
+  // hljs race the gate-audit pass caught).
+  if (!contentEl.classList.contains('d2h-pending')) _pendingMarkdown.delete(id);
   renderHighlights(id);
 }
 
-// One-time-per-script retry: if marked.min.js and/or dompurify's purify.min.js
-// were still loading when a card first tried to render, it fell back to raw
-// text and stayed in _pendingMarkdown (renderMarkdown requires *both* before
-// it'll render, so it's not safe to treat "marked is ready" alone as done).
-// Re-render every card still showing the fallback whenever either dependency
-// finishes loading — whichever one lands second is what actually flips
-// renderMarkdown over, but attaching to both means load order never matters.
-// Scoped to '.md-raw' specifically (not all of _pendingMarkdown) so cards that
-// simply haven't been opened yet stay lazily unrendered.
-(function retryFallbackMarkdownOnceDepsLoad() {
+// One-time-per-script retry for late-loading CDN renderers: a card opened
+// before a renderer's dependencies finished loading rendered a fallback and
+// stayed in _pendingMarkdown (marked/DOMPurify missing → raw text tagged
+// .md-raw, since renderMarkdown requires *both*; diff2html missing → fenced
+// markdown tagged .d2h-pending). Re-render every card still carrying the
+// marker class once the script(s) land — attaching to every script in the
+// list means load order never matters; whichever lands last is what flips
+// the renderer over. Scoped to the marker class (not all of
+// _pendingMarkdown) so cards that simply haven't been opened yet stay
+// lazily unrendered.
+function retryOnceScriptsLoad(scriptIds, selector) {
   const retry = () => {
-    document.querySelectorAll('.section-content.md-raw').forEach(contentEl => {
+    document.querySelectorAll(selector).forEach(contentEl => {
       const m = contentEl.id.match(/^rcontent-(.+)$/);
       if (m) _ensureRendered(m[1]);
     });
   };
-  ['marked-script', 'dompurify-script'].forEach(scriptId => {
+  scriptIds.forEach(scriptId => {
     const script = el(scriptId);
     if (script) script.addEventListener('load', retry, { once: true });
   });
-})();
+}
+retryOnceScriptsLoad(['marked-script', 'dompurify-script'], '.section-content.md-raw');
+retryOnceScriptsLoad(['diff2html-script', 'diff2html-ui-script'], '.section-content.d2h-pending');
+// The third d2h dependency — the mode-injected stylesheet — gets its retry
+// listener attached at dispatch time, when the <link> actually exists (see
+// the diff branch); attaching here would silently no-op on a null element.
 
 function skipReviewCard(id) {
   setCardExpanded(el('rcard-' + id), false);
@@ -1932,15 +2135,34 @@ document.addEventListener('mouseup', () => {
     if (!sel || sel.isCollapsed) return;
     const text = sel.toString().trim();
     if (!text) return;
-    const node = sel.anchorNode;
-    const start = node && node.nodeType === 3 ? node.parentElement : node;
+    const start = toElement(sel.anchorNode);
     const content = start && start.closest ? start.closest('.section-content') : null;
     if (!content) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
-    openCommentPopover(m[1], { anchor: { text, offset: offsetInSource(m[1], text) } });
+    // diff2html's side-by-side mode renders old/new as two adjacent panes.
+    // A drag crossing panes (or starting/ending outside them) yields
+    // DOM-order text that is not a contiguous substring of the raw hunk —
+    // anchoring a comment to it would silently defeat offsetInSource and
+    // the /viva-diff skill's grep fallback, so it degrades to an unanchored
+    // whole-section note. Same guard the hand-rolled table carried.
+    const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
+    openCommentPopover(m[1], crossesPanes ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
   }, 0);
 });
+
+// A selection endpoint may be a text node; normalize to its element.
+function toElement(node) {
+  return node && node.nodeType === 3 ? node.parentElement : node;
+}
+
+// Closest diff2html side-by-side pane ancestor of a selection endpoint, or
+// null outside one (line-by-line mode, review-mode content) — there the
+// comparison is null !== null, a no-op, preserving the anchored path.
+function closestD2hPane(node) {
+  const elem = toElement(node);
+  return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
+}
 
 // Char offset of `text` in the section's raw markdown source — the rewrite
 // target. -1 when not found (anchor still stores text; agent falls back to grep).
@@ -2562,6 +2784,20 @@ document.addEventListener('keydown', e => {
 el('btn-skip').disabled   = true;
 el('btn-submit').disabled = true;
 
+// Shared boot tail for the two review-card modes (review and diff) — the
+// title block, round badge, view reveal, card build, and SSE hookup are
+// identical apart from the mode word and the doc-path fallback.
+function bootReviewMode(data, modeWord, docFallback) {
+  el('doc-path').textContent    = data.doc_file || docFallback;
+  el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
+  el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
+  el('round-badge').textContent = String(data.round).padStart(2, '0');
+  setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));
+  el('review-view').style.display = '';
+  initReview();
+  connectSSE();
+}
+
 fetch('/input')
   .then(r => r.json())
   .then(data => {
@@ -2570,24 +2806,26 @@ fetch('/input')
 
     if (data.mode === 'review') {
       REVIEW_DATA = data;
-      el('doc-path').textContent    = data.doc_file || '';
-      el('doc-path').title          = data.doc_file || '';   /* full path on hover when truncated */
-      el('doc-title').innerHTML     = 'viva <em>review</em>';
-      el('round-badge').textContent = String(data.round).padStart(2, '0');
-      setTabTitle(tabDocName(data.doc_file), 'REV ' + String(data.round).padStart(2, '0'));
-      el('review-view').style.display = '';
-      initReview();
-      connectSSE();
+      bootReviewMode(data, 'review', '');
     } else if (data.mode === 'diff') {
       REVIEW_DATA = data;
-      el('doc-path').textContent    = data.doc_file || 'diff';
-      el('doc-path').title          = data.doc_file || 'diff';
-      el('doc-title').innerHTML     = 'viva <em>diff</em>';
-      el('round-badge').textContent = String(data.round).padStart(2, '0');
-      setTabTitle(tabDocName(data.doc_file), 'diff', 'REV ' + String(data.round).padStart(2, '0'));
-      el('review-view').style.display = '';
-      initReview();
-      connectSSE();
+      document.body.classList.add('mode-diff');
+      // diff2html's stylesheet is mode-specific — injected here rather than
+      // shipped as a render-blocking <link> in <head>, so review/QA sessions
+      // never pay a CDN fetch for a diff-rendering stylesheet they can't use.
+      // (The companion diff2html script tags stay in <head>: they're defer,
+      // so they don't block, and the boot-time d2h-pending retry keys off
+      // their loads.) renderDiffHunk gates on link.sheet, so a card opened
+      // before this stylesheet lands falls back to the fenced view; the
+      // retry attached here — where the <link> actually exists — upgrades
+      // it once the CSS arrives.
+      const d2hCss = document.createElement('link');
+      d2hCss.id = 'diff2html-css';
+      d2hCss.rel = 'stylesheet';
+      d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css';
+      document.head.appendChild(d2hCss);
+      retryOnceScriptsLoad(['diff2html-css'], '.section-content.d2h-pending');
+      bootReviewMode(data, 'diff', 'diff');
     } else {
       QA_DATA = data;
       el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
