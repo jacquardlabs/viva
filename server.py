@@ -1457,6 +1457,14 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function tabDocName(path) {
+  return (path || '').split('/').pop();
+}
+
+function setTabTitle(...parts) {
+  document.title = parts.filter(Boolean).concat('viva').join(' · ');
+}
+
 /* Render verbatim markdown into el. Falls back to raw monospace text if
    either CDN dependency hasn't loaded yet (slow network, or offline) — marked
    for parsing, DOMPurify for sanitizing the result. Both are required before
@@ -2661,7 +2669,8 @@ function connectSSE() {
     rState.verdicts   = {};
     rState.active     = null;
     el('round-badge').textContent = String(data.round).padStart(2, '0');
-    document.title = 'viva · review · REV ' + String(data.round).padStart(2, '0');
+    const rev = 'REV ' + String(data.round).padStart(2, '0');
+    setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
@@ -2677,6 +2686,7 @@ function connectSSE() {
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
+    setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');
     const r   = data.rounds_total     != null ? data.rounds_total    : '?';
     const s   = data.sections_total   != null ? data.sections_total  : '?';
     const rev = data.sections_revised != null ? data.sections_revised : null;
@@ -2782,7 +2792,7 @@ function bootReviewMode(data, modeWord, docFallback) {
   el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
   el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
   el('round-badge').textContent = String(data.round).padStart(2, '0');
-  document.title = 'viva · ' + modeWord + ' · REV ' + String(data.round).padStart(2, '0');
+  setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));
   el('review-view').style.display = '';
   initReview();
   connectSSE();
@@ -2821,7 +2831,7 @@ fetch('/input')
       el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
       el('qa-count-badge').textContent  = `${data.questions.length} questions`;
-      document.title = 'viva · brainstorm';
+      setTabTitle(data.context || 'brainstorm');
       el('qa-view').style.display = '';
       initQA();
       connectSSE();
