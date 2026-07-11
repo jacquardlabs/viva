@@ -15,9 +15,17 @@ Round 2+:
 
 Optional:
   --doc-file PATH    Relative path shown in UI (defaults to the doc argument)
+  --split-on REGEX   Split on any heading whose title matches this pattern
+                      (re.search, case-sensitive, any heading depth), instead
+                      of auto-detecting a split level. Replaces the level
+                      -counting heuristic entirely, including its >20-section
+                      coarsening fallback. Omit for today's unchanged
+                      auto-detect behavior. Zero matches is a hard error, not
+                      a silent fallback to auto-detection.
 
 Exits non-zero if the doc can't be read, parsing fails the integrity check,
-or prior round files are specified but can't be read.
+--split-on matches no heading, or prior round files are specified but can't
+be read.
 """
 from __future__ import annotations
 
@@ -38,6 +46,13 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--output", required=True, help="Path to write review-input JSON")
     p.add_argument("--round", type=int, required=True, dest="round_num")
     p.add_argument("--doc-file", help="Relative path shown in UI (defaults to --doc)")
+    p.add_argument(
+        "--split-on",
+        dest="split_on",
+        help="Regex (re.search): a heading is a split point iff its title matches, "
+             "regardless of depth. Overrides auto-detection. Omit for unchanged "
+             "default behavior.",
+    )
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
     p.add_argument("--open-notes", help="Open-note store JSON (.viva/open-notes.json)")
@@ -76,17 +91,37 @@ def _find_split_level(headings: list[tuple[int, str, int]]) -> int | None:
     return min(counts.keys())
 
 
-def _split_sections(text: str, doc_path: str) -> tuple[list[dict], int | None]:
-    """Split markdown into sections. Returns (sections, revision_history_line_idx)."""
+def _split_sections(
+    text: str, doc_path: str, split_on: str | None = None
+) -> tuple[list[dict], int | None]:
+    """Split markdown into sections. Returns (sections, revision_history_line_idx).
+
+    split_on: optional regex (re.search, case-sensitive). When given, it is the
+    sole selection rule — a heading is a split point iff its title matches,
+    regardless of `#` depth — and replaces `_find_split_level`'s level-counting
+    heuristic entirely, including its >20-section coarsening fallback (an
+    explicit caller-supplied pattern isn't a heuristic guess that needs
+    protecting from over-splitting). When omitted, this runs exactly the
+    auto-detect path it always has — that branch is untouched.
+    """
     lines = text.splitlines(keepends=True)
     headings = _heading_lines(lines)
-    split_level = _find_split_level(headings)
 
-    if split_level is None:
-        return [{"id": "s1", "title": Path(doc_path).stem, "content": text}], None
+    if split_on is not None:
+        try:
+            pattern = re.compile(split_on)
+        except re.error as e:
+            sys.exit(f"viva: invalid --split-on pattern {split_on!r}: {e}")
+        split_headings = [(lv, t, idx) for lv, t, idx in headings if pattern.search(t)]
+        if not split_headings:
+            sys.exit(f"viva: --split-on {split_on!r} matched no heading in {doc_path}")
+    else:
+        split_level = _find_split_level(headings)
+        if split_level is None:
+            return [{"id": "s1", "title": Path(doc_path).stem, "content": text}], None
+        split_headings = [(lv, t, idx) for lv, t, idx in headings if lv == split_level]
 
     h1_title = next((h[1] for h in headings if h[0] == 1), None)
-    split_headings = [(lv, t, idx) for lv, t, idx in headings if lv == split_level]
 
     rev_line: int | None = next(
         (h[2] for h in split_headings if h[1].strip().lower() == "revision history"),
@@ -320,7 +355,7 @@ def main() -> None:
     except OSError as e:
         sys.exit(f"viva: cannot read {args.doc}: {e}")
 
-    sections, rev_line = _split_sections(text, args.doc)
+    sections, rev_line = _split_sections(text, args.doc, args.split_on)
 
     if not sections:
         sys.exit(f"viva: no reviewable sections found in {args.doc}")
