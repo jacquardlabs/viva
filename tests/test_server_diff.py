@@ -226,6 +226,44 @@ def test_diff_mode_complete_shuts_down() -> None:
             proc.wait()
 
 
+def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
+    """diff.md step 4's empty-diff branch (#116): the human requests a
+    `changes` edit that fully resolves the diff before every hunk is
+    individually approved, so the loop reaches `/complete` straight from
+    step 4 instead of step 5 — never calling `/next-round` for that round.
+    The server-side handling is call-site agnostic, so this asserts the same
+    shutdown behavior `test_diff_mode_complete_shuts_down` covers for step 5,
+    exercised via the new call site's actual path (submit a `changes` verdict,
+    skip `/next-round`, go straight to `/complete`)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            post(base, "/submit", {
+                "round": 1,
+                "sections": [
+                    {"id": "s1", "verdict": "changes", "note": "revert this hunk"},
+                    {"id": "s2", "verdict": "approved"},
+                ],
+            })
+            # Step 4: re-diff comes back empty (the requested edit reverted
+            # the only outstanding hunk) — go straight to /complete, no
+            # /next-round in between.
+            post(base, "/complete", {
+                "rounds_total": 1, "sections_total": 2, "sections_revised": 1
+            })
+            for _ in range(35):
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+            assert proc.poll() is not None, \
+                "server should have shut down after /complete from the empty-diff branch"
+            print("test_diff_mode_complete_from_empty_diff_branch_shuts_down: OK")
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait()
+
+
 # ─── Runner ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -234,6 +272,7 @@ def main() -> None:
     test_diff_mode_submit_writes_output()
     test_diff_mode_next_round()
     test_diff_mode_complete_shuts_down()
+    test_diff_mode_complete_from_empty_diff_branch_shuts_down()
     print("\nAll server diff tests passed.")
 
 
