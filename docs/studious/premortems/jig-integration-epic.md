@@ -43,7 +43,40 @@ single-story risk.
    the contract doc could ship without documenting a whole session type
    even though it nominally ran after `unified-session` landed.
 
+## Addendum — amendment adding issues #112–#119 (2026-07-12)
+
+The epic reached `ready` once for the original 3 stories (#109, #110, #111);
+this amendment adds 6 more stories extending/hardening that same surface,
+found during jig's own dogfood of the shipped hand-off and split-mode
+features: `qa-next-round-hardening` (#112, #117, #118),
+`qa-recommended-choice` (#114), `task-split-coarser-heading` (#115),
+`qa-resume-signed-off-doc-docs` (#113), `qa-handoff-spinner-timeout` (#119),
+`diff-mode-process-leak` (#116). Additional cross-story failure modes for
+this batch:
+
+6. **Shared-file merge collisions.** `qa-next-round-hardening`,
+   `qa-recommended-choice`, and `qa-handoff-spinner-timeout` all touch
+   `server.py`. The driver's merge lock serializes actual merges onto the
+   epic branch, but overlapping edits between these three could still
+   produce a real conflict needing the one allowed fix attempt, or a park
+   for the user to resolve by hand.
+
+7. **Contract doc clobbering.** `docs/headless-contract.md` is touched by
+   multiple new stories (`qa-next-round-hardening`'s lifecycle/security
+   fixes, possibly `qa-recommended-choice`'s schema documentation). Each
+   story's edit must be additive to the doc, not a wholesale rewrite that
+   silently drops another story's section.
+
+8. **Undiagnosed root cause at plan time.** `diff-mode-process-leak` (#116)
+   was filed as observational, with its own issue body stating the root
+   cause is unconfirmed — it may share #112's never-calls-`/complete` shape,
+   or be distinct. If the design phase finds it's unrelated and larger than
+   scoped, the story may need to be re-scoped or dropped rather than forced
+   to land in this batch.
+
 ## Verified at epic finale
 
 `@agent-premortem-auditor` checks each item above (REALIZED / NOT REALIZED /
 CAN'T VERIFY) against the finished epic diff before the epic reaches `ready`.
+This finale re-runs after the amendment above lands, checking all 8 items
+(the original 5 plus this addendum's 3) against the fully combined diff.
