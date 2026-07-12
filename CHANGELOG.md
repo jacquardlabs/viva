@@ -2,6 +2,67 @@
 
 <!-- version list -->
 
+## v1.18.1 (2026-07-12)
+
+### Bug Fixes
+
+- Add xargs -r to $VIVA_DIR resolve for GNU xargs empty-input safety
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Register viva-qa and viva-diff as their own skills
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+### Chores
+
+- Verified /viva entry point resolves after skill registration fix
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+### Documentation
+
+- Close install-channel verification loop in skill-registration spec
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Close manual-channel shadowing gap with doc-confirmed precedence
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Close README fail-loud guard gap; make Task 3 verification single-machine
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Correct spec to symlink reality; move-not-delete plan, skill-set test
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Design spec for one-directory-per-skill registration
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Implementation plan for skill registration fix
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Pre-mortem register for skill-registration design
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Remove unverified direct-repo install channel
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Repoint cross-references to the new skill paths
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+- Revise skill-registration spec per design-review findings
+  ([#136](https://github.com/jacquardlabs/viva/pull/136),
+  [`3d929ec`](https://github.com/jacquardlabs/viva/commit/3d929ec1a2da8e5cfe027eb8a4ae85a56d90902b))
+
+
 ## v1.18.0 (2026-07-12)
 
 ### Bug Fixes
