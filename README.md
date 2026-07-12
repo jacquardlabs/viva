@@ -29,6 +29,13 @@ One browser tab stays open for the entire session. After you submit a round, a s
 
 ## Install
 
+**Previously installed via `git clone`?** Delete `~/.claude/skills/viva`
+*before* installing the plugin below. Leaving it in place registers a
+second `viva` skill — personal skills take invocation precedence over a
+plugin skill of the same name, so bare `/viva` would keep running your old
+cloned copy indefinitely while `/viva-qa` and `/viva-diff` (which the clone
+never had) run the current plugin version.
+
 Install via the Jacquard Labs marketplace:
 
 ```bash
@@ -37,13 +44,6 @@ Install via the Jacquard Labs marketplace:
 ```
 
 Requires Python 3.8+ and Claude Code.
-
-**Previously installed via `git clone`?** Delete `~/.claude/skills/viva`
-before installing the plugin above. Leaving it in place registers a second
-`viva` skill — personal skills take invocation precedence over a plugin
-skill of the same name, so bare `/viva` would keep running your old cloned
-copy indefinitely while `/viva-qa` and `/viva-diff` (which the clone never
-had) run the current plugin version.
 
 ## Usage
 
@@ -142,7 +142,7 @@ resolve every skill uses internally:
 
 ```bash
 VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
-           | xargs -0 ls -t 2>/dev/null | head -1)
+           | xargs -0 -r ls -t 2>/dev/null | head -1)
 VIVA_DIR=${VIVA_DIR%/server.py}
 [ -f "$VIVA_DIR/server.py" ] || { echo "viva: server.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
 

@@ -28,7 +28,7 @@ unstaged working-tree changes (`git diff`). For staged-only changes use
 
 ```bash
 VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
-           | xargs -0 ls -t 2>/dev/null | head -1)
+           | xargs -0 -r ls -t 2>/dev/null | head -1)
 VIVA_DIR=${VIVA_DIR%/server.py}
 [ -f "$VIVA_DIR/server.py" ] || { echo "viva-diff: server.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
 

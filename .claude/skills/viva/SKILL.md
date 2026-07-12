@@ -39,7 +39,7 @@ Do not read the `.md` into context first. The parser reads it from disk; the age
 # Resolve the skill dir from the installed plugin cache — no personal-skill
 # fallback (a leftover ~/.claude/skills/viva would shadow a fresh install).
 VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
-           | xargs -0 ls -t 2>/dev/null | head -1)
+           | xargs -0 -r ls -t 2>/dev/null | head -1)
 VIVA_DIR=${VIVA_DIR%/server.py}
 [ -f "$VIVA_DIR/server.py" ] || { echo "viva: server.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
 
