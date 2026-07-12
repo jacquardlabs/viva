@@ -88,6 +88,40 @@ python3 "$VIVA_DIR/scripts/preferences.py" list --store .viva/preferences.json -
      ```
   This is the one case where round 1 reads the doc — paid deliberately, and only once the reviewer has accumulated standing preferences.
 
+**Resuming review on an already-signed-off doc (round 1).** Distinct from round 2 of a live session (step 4) — a live session's round 2 never touches the clear-state block, because the server is still running and that round's own files are still on disk. This branch instead covers *starting a brand-new session* on a doc that already completed sign-off in a **previous** session — for example a fresh-context executor (jig's `/build` dispatch, or a new conversation) asked to review `doc.md` again after it was hand-edited since yesterday's sign-off. The clear-state block above is destructive here: a completed session's finishing round — `review-input-rN.json`/`review-rN.json` — is the only on-disk record of which sections were already approved, and it sits at exactly the paths that block deletes.
+
+Recognize this case by checking state, the same way the preferences branch above is recognized rather than by an automatic heuristic: the doc already carries a `## Revision History` heading (written by `revision_history.py` at every prior sign-off), and/or you already know from your own context that this doc was signed off in a previous session.
+- **Neither signal** → use the default block above; there is nothing to resume.
+- **Either signal** → do the following **before** the clear-state block:
+  1. Find the highest-numbered `review-input-rN.json`/`review-rN.json` pair still in `.viva/` — the prior session's finishing round. Neither file present (fresh clone, `.viva/` already cleaned since sign-off) → nothing to preserve; fall through to the default block, round 1 launches with no `--prior-input`/`--prior-verdicts`, same as today.
+  2. Copy (not move) that pair to two fixed names the clear-state glob cannot match:
+     ```bash
+     cp .viva/review-input-r{N}.json .viva/prior-review-input.json
+     cp .viva/review-r{N}.json .viva/prior-review-verdicts.json
+     ```
+  3. Run the clear-state block above unchanged — safe now, since the copies live outside its glob (`prior-review-input.json`/`prior-review-verdicts.json` start with `prior-`, not `review-input-r`/`review-r`, so `rm -f .viva/review-input-r*.json .viva/review-r*.json` cannot touch them).
+  4. Parse round 1 with two added flags pointed at the copies, then launch exactly as the default block does:
+     ```bash
+     python3 "$VIVA_DIR/scripts/parse_sections.py" <doc.md> \
+       --output .viva/review-input-r1.json --round 1 --doc-file <relative/path/to/doc.md> \
+       --prior-input .viva/prior-review-input.json \
+       --prior-verdicts .viva/prior-review-verdicts.json \
+     && {
+       python3 "$VIVA_DIR/server.py" --mode review \
+         --input .viva/review-input-r1.json --output .viva/review-r1.json &
+       for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
+     }
+     [ -f .viva/server.url ] || { echo "viva: launch failed — parse or server start"; exit 1; }
+     BASE=$(cat .viva/server.url)
+     ```
+     `--round 1` naming a *higher*-numbered prior round is expected and harmless — `_load_approved` carries approvals forward by title+content equality only, it has no round-continuity check. The `viva: wrote N sections → ... (K pre-approved)` line on stdout confirms how many sections carried forward untouched; the human reviews only what changed since sign-off.
+  5. Once this parse has succeeded, discard the copies — they've done their one job and keeping them around risks a future resume silently reading a stale, two-sessions-old pair:
+     ```bash
+     rm -f .viva/prior-review-input.json .viva/prior-review-verdicts.json
+     ```
+
+Sign-off at the end of this new session is unaffected: step 5's `revision_history.py` appends a second, separately dated block under the doc's existing `## Revision History` heading (already-documented behavior below) rather than overwriting it, and its own round-file glob only ever sees this session's own `review-input-r1.json` onward — the preserved copies from step 2 above are already gone by then. Round numbering restarting at 1 for the new session is expected, not a bug.
+
 The parser splits verbatim, runs an integrity check, and writes the file directly — never parse by hand or read its output back into context. Parsing rules it implements (for reference):
 - Split level: the highest heading level (fewest `#`s) that occurs more than once — usually `##`. If that level yields more than 20 sections, falls back one level coarser.
 - A section = one split-level heading plus everything below it up to the next split-level heading, verbatim.
