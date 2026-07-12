@@ -1096,6 +1096,26 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
 
+/* Recommended-choice badge (issue #114) — advisory only: the chip it
+   decorates is never pre-selected, focus-defaulted, or otherwise styled as
+   the primary action, so the human still picks freely. Reuses the same
+   teal token .vbadge-approved/.annot-info already use, per "prefer reuse
+   over creation" rather than inventing a new badge color. */
+.chip-badge {
+  display: inline-block;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: var(--teal-bg);
+  color: var(--teal);
+  vertical-align: middle;
+}
+
 /* QA action buttons */
 .qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .qa-btn {
@@ -2366,9 +2386,18 @@ function buildQACard(q) {
   card.className = 'card';
   card.id = 'qacard-' + q.id;
 
-  const choicesHtml = q.choices.map(c =>
-    `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}</button>`
-  ).join('');
+  // recommended_choice is optional (issue #114) — undefined-safe by
+  // construction: `c` is always a string, so this is false for every chip
+  // on a question that never sets the field, byte-identical to pre-#114
+  // rendering. Advisory only: the matching chip gets a badge, nothing else
+  // (no pre-selection, no default focus, no restyle as primary).
+  const choicesHtml = q.choices.map(c => {
+    const isRecommended = q.recommended_choice !== undefined && c === q.recommended_choice;
+    const badge = isRecommended
+      ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
+      : '';
+    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}</button>`;
+  }).join('');
 
   card.innerHTML = `
     <button type="button" class="card-head" aria-expanded="false" aria-controls="qbody-${q.id}">
