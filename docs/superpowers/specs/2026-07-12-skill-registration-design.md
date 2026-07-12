@@ -51,7 +51,7 @@ Three coordinated pieces:
 
 | Today | After |
 |-------|-------|
-| `.claude/skills/viva/SKILL.md` | unchanged |
+| `.claude/skills/viva/SKILL.md` | location unchanged; resolve block and Q&A cross-reference edited |
 | `.claude/skills/viva/brainstorming-qa.md` | `.claude/skills/viva-qa/SKILL.md` |
 | `.claude/skills/viva/diff.md` | `.claude/skills/viva-diff/SKILL.md` |
 | `SKILL.md` (repo root) | deleted |
@@ -79,24 +79,60 @@ author's machine shadows any plugin install today). The resolve block in all
 three skills becomes:
 
 ```bash
-VIVA_DIR=$(find ~/.claude/plugins/cache -name "server.py" -path "*/viva*" -maxdepth 6 2>/dev/null \
-           | xargs -I{} dirname {} | head -1)
+VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
+           | xargs -0 ls -t 2>/dev/null | head -1)
+VIVA_DIR=${VIVA_DIR%/server.py}
 [ -f "$VIVA_DIR/server.py" ] || { echo "viva: server.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
 ```
 
 (each skill keeps its own error prefix: `viva:` / `viva-qa:` / `viva-diff:`).
 A missing install is a loud, actionable error instead of silent version skew.
+Two deliberate hardenings over the old `find` fallback, which becomes the
+only path here: `-path "*/viva/*"` requires a path segment named exactly
+`viva` (the old `*/viva*` glob could match any plugin or marketplace whose
+name merely starts with "viva"), and candidates are ordered newest-mtime
+first (`ls -t`) so that when the cache retains several plugin versions side
+by side — observed live on the author's machine, where two versions of
+another plugin coexist — the most recently installed one wins
+deterministically instead of whichever `find` happens to emit first. An
+empty find leaves `$VIVA_DIR` empty and the guard fails loud.
 `$CLAUDE_PLUGIN_ROOT` is deliberately not used: docs confirm it for hooks,
 MCP, and LSP configs but are silent on skill bash blocks.
 
-Cross-references updated in the same change: viva `SKILL.md`'s Brainstorming
-Q&A section references the sibling skill by name (`/viva-qa`) with the
-repo-relative file pointer deleted; CLAUDE.md's skill-path references get the
-new paths; `docs/headless-contract.md` and two test docstrings that name
-`brainstorming-qa.md`/`diff.md` as live files get the new names. Dated specs,
-plans, and premortems are historical records and stay untouched. PRODUCT.md's
-"`/viva` entry point unverified" bullet is deleted **only after** the
-verification below passes.
+One developer-workflow consequence, stated so it isn't discovered by
+surprise: with resolution cache-only, invoking `/viva` (or either sub-skill)
+inside the viva repo itself runs the *cached plugin's* runtime, not the
+working tree. Exercising local edits to `server.py`/`scripts/` requires
+reinstalling the plugin from the checkout — exactly the verification loop in
+Operational readiness. (Project-level *registration* of the three skills in
+this repo is unaffected; this is about which `server.py` runs.)
+
+Cross-references updated in the same change:
+
+- viva `SKILL.md`'s Brainstorming Q&A section references the sibling skill
+  by name (`/viva-qa`) with the repo-relative file pointer deleted;
+- CLAUDE.md's skill-path references get the new paths;
+- README's Q&A contract pointer ("See
+  `.claude/skills/viva/brainstorming-qa.md` for the full contract") is
+  repointed to `/viva-qa` by name;
+- README's "Server CLI (advanced)" and `--split-on` examples, which hardcode
+  `python3 ~/.claude/skills/viva/server.py` and
+  `~/.claude/skills/viva/scripts/parse_sections.py` four times, are rewritten
+  atop the `$VIVA_DIR` resolve snippet above — the documented headless
+  invocation survives the channel drop instead of pointing at a path that no
+  longer exists;
+- `docs/headless-contract.md`'s live-file mentions of
+  `brainstorming-qa.md`/`diff.md` get the new names, as do the three test
+  docstrings that name them: `tests/test_server_diff.py`,
+  `tests/test_server_qa_complete_shutdown.py`,
+  `tests/test_server_qa_review_handoff.py`;
+- `server.py`'s line-27 comment naming `~/.claude/skills/viva/` as the
+  install location is updated to the plugin cache (one comment line — the
+  code itself stays out of scope).
+
+Dated specs, plans, and premortems are historical records and stay
+untouched. PRODUCT.md's "`/viva` entry point unverified" bullet is deleted
+**only after** the verification below passes.
 
 Principle alignment (PRODUCT.md): this is packaging repair in service of
 "the product is the set of human checkpoints" — it makes two documented
@@ -139,8 +175,10 @@ migration note tells them how to move.
 - **Adopting `$CLAUDE_PLUGIN_ROOT`.** Undocumented for skill bash blocks;
   revisit if docs firm it up.
 - **README feature-coverage lag** (PRODUCT.md Known problem #1) — separate
-  story; only the install section and the Q&A integration wording change
-  here.
+  story. This change touches the README's install section, Q&A integration
+  wording and contract pointer, and the Server CLI/`--split-on` example
+  paths (all enumerated above); the undocumented-feature-cluster gaps stay
+  put.
 - **`diff.md`'s legacy `?output=` query-param usage** and other adjacent
   cleanups named in `docs/headless-contract.md` — explicitly future work
   there, unchanged here.
@@ -152,7 +190,9 @@ migration note tells them how to move.
 1. **Plugin-default `skills/` directory at repo root** (drop the manifest
    key). Rejected: loses project-level registration when working in the viva
    repo itself — the dogfooding path this repo's own history leans on — and
-   churns every path reference for no functional gain.
+   churns every path reference for no functional gain. (Registration only:
+   runtime resolution is cache-only either way; see the developer-workflow
+   note in Proposed design.)
 2. **`skills` array in `plugin.json`.** Doc-confirmed to accept an array of
    paths, but discovery is still one-skill-per-subdirectory, so the array
    cannot rescue loose files; it ends up doing the same moves with extra
