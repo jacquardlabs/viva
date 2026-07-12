@@ -51,11 +51,19 @@ Three coordinated pieces:
 
 | Today | After |
 |-------|-------|
-| `.claude/skills/viva/SKILL.md` | location unchanged; resolve block and Q&A cross-reference edited |
+| `.claude/skills/viva/SKILL.md` (relative symlink → `../../../SKILL.md`) | replaced by the real file: `git rm` the symlink, `git mv` root `SKILL.md` here, then apply the resolve-block and Q&A cross-reference edits |
 | `.claude/skills/viva/brainstorming-qa.md` | `.claude/skills/viva-qa/SKILL.md` |
 | `.claude/skills/viva/diff.md` | `.claude/skills/viva-diff/SKILL.md` |
-| `SKILL.md` (repo root) | deleted |
+| `SKILL.md` (repo root — the one real copy) | moved to `.claude/skills/viva/SKILL.md`; nothing remains at root |
 | `.claude-plugin/plugin.json` | untouched — `"skills": "./.claude/skills"` now discovers three subdirectories |
+
+**Current-state note (corrected in review round 3):** the repo holds exactly
+one real `SKILL.md`, at the root; `.claude/skills/viva/SKILL.md` is a
+git-tracked relative symlink to it (added in de654f8 so the plugin and
+manual channels could share one file). The move above is therefore
+symlink-elimination — ordered as replace-then-move so there is no separate
+"delete root `SKILL.md`" step whose literal execution would leave the link
+dangling and silently deregister `/viva`.
 
 Skill `name:` frontmatter already matches the new directory names. Runtime
 files (`server.py`, `scripts/`) do not move; registration never depended on
@@ -67,9 +75,12 @@ personal-skill discovery is one level deep (doc-confirmed:
 code.claude.com/docs/en/skills), so that channel can never carry the
 sub-skills. README's manual-clone instructions are removed and replaced with
 a migration note: previously installed via git clone? Delete
-`~/.claude/skills/viva` and install the plugin. Deleting the root copy also
-ends the hand-synced duplication between root `SKILL.md` and
-`.claude/skills/viva/SKILL.md` — a drift risk nothing was checking.
+`~/.claude/skills/viva` and install the plugin. Moving the root file into
+`.claude/skills/viva/` (piece 1) also removes the symlink indirection that
+existed to serve both channels from one file — fragility, not convenience:
+git preserves the relative link, but zip downloads and Windows checkouts
+don't reliably, and any deletion of the root target would leave the link
+dangling, silently deregistering `/viva`.
 
 **3. `$VIVA_DIR` resolves from the plugin cache only, failing loud.** All
 three skills currently check `~/.claude/skills/viva` first — after this
@@ -206,8 +217,8 @@ migration note tells them how to move.
    manifest complexity. Rejected.
 3. **Keep the manual channel, degraded** (clone gets `/viva` only, README
    documents the limitation). The smallest change — rejected by decision:
-   it preserves the hand-synced root duplicate and a channel whose primary
-   observed artifact is a stale copy shadowing real installs.
+   it preserves the root-file-plus-symlink indirection and a channel whose
+   primary observed artifact is a stale copy shadowing real installs.
 4. **Full manual-channel parity via clone-anywhere + three symlinks.**
    Rejected: fiddly setup, requires resolution-logic changes, and props up a
    channel the one-command plugin install obsoletes.
@@ -225,11 +236,15 @@ New stdlib self-running test, `tests/test_skill_registration.py` (matches the
 existing `main()` + `OK` convention), asserting the structural invariant
 discovery depends on:
 
-- every directory under `.claude/skills/` contains a `SKILL.md` whose
-  frontmatter `name` equals the directory name;
+- the expected skill set is exactly `viva`, `viva-qa`, `viva-diff`: each
+  present as a directory under `.claude/skills/` containing a `SKILL.md`
+  whose frontmatter `name` equals the directory name — a vanished core
+  skill fails the test, not only a malformed extra one;
+- every `SKILL.md` is a regular file, not a symlink — guards the
+  dangling-link fragility's return;
 - no skill directory contains a sibling `.md` with skill frontmatter — the
   loose-file regression this issue exists to prevent;
-- no root `SKILL.md` — guards the duplicate's return.
+- no root `SKILL.md` — the move left nothing behind.
 
 ## Operational readiness
 
