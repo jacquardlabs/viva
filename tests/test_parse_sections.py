@@ -181,6 +181,58 @@ def test_approved_matching_same_content() -> None:
     assert approved_section["title"] == "Alpha"
 
 
+def test_approved_carries_forward_across_non_sequential_round_numbers() -> None:
+    # Resuming review on an already-signed-off doc (SKILL.md, issue #113): a
+    # new session's round 1 references a *prior session's* final round (e.g.
+    # round 2), not round 0 — the new session's numbering restarts at 1 while
+    # --prior-input/--prior-verdicts point at a higher prior round number.
+    # _load_approved must carry forward approvals by title+content equality
+    # only, with no round-continuity check, so this must carry forward
+    # exactly like an ordinary round-to-round approval.
+    content_a = "## Alpha\n\nalpha body\n\n"
+    content_b = "## Beta\n\nbeta body\n"
+    doc = content_a + content_b
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 2,
+        "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": content_a},
+            {"id": "s2", "title": "Beta",  "content": content_b},
+        ],
+    }
+    prior_verdicts = {
+        "round": 2, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ],
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        doc_file = t / "doc.md"
+        doc_file.write_text(doc, encoding="utf-8")
+        pi = t / "prior-review-input.json"
+        pi.write_text(json.dumps(prior_input), encoding="utf-8")
+        pv = t / "prior-review-verdicts.json"
+        pv.write_text(json.dumps(prior_verdicts), encoding="utf-8")
+        out = t / ".viva" / "review-input-r1.json"
+
+        subprocess.run([
+            sys.executable, str(SCRIPT), str(doc_file),
+            "--output", str(out), "--round", "1",
+            "--prior-input", str(pi), "--prior-verdicts", str(pv),
+        ], capture_output=True, check=True)
+
+        data = json.loads(out.read_text())
+    # New session's round is 1 while the prior round referenced was 2 — both
+    # sections are still byte-identical to their approved prior content, so
+    # both must carry forward despite the round number going "backwards".
+    assert data["round"] == 1
+    assert len(data["approved_ids"]) == 2
+    titles = {s["title"] for s in data["sections"] if s["id"] in data["approved_ids"]}
+    assert titles == {"Alpha", "Beta"}
+
+
 def test_approved_not_carried_if_content_changed() -> None:
     prior_content = "## Alpha\n\noriginal body\n"
     new_content = "## Alpha\n\nmodified body\n"
@@ -670,6 +722,7 @@ def main() -> None:
         test_preamble_empty_omitted,
         test_ids_are_sequential,
         test_approved_matching_same_content,
+        test_approved_carries_forward_across_non_sequential_round_numbers,
         test_approved_not_carried_if_content_changed,
         test_no_annotations_key_when_absent,
         test_annotations_carried_forward_when_unchanged,

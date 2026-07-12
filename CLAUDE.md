@@ -67,7 +67,13 @@ follow the same import-only-schema rule.
 - **State lifecycle.** `preferences.json` survives the round-1 state clear (it is
   cross-session, gitignored, per-clone); everything else under `.viva/` is
   disposable and reset each session. Don't add new state that must survive
-  without documenting why here.
+  without documenting why here. The one documented exception: SKILL.md's
+  "Resuming review on an already-signed-off doc" branch (step 1) copies a
+  completed session's finishing round to `.viva/prior-review-input.json` /
+  `.viva/prior-review-verdicts.json` just long enough to survive the
+  clear-state block and feed the new session's `--prior-input`/
+  `--prior-verdicts`, then discards them — nothing new persists past that
+  one resume.
 
 ## Tests
 
