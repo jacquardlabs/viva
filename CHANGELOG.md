@@ -2,6 +2,138 @@
 
 <!-- version list -->
 
+## v1.18.0 (2026-07-12)
+
+### Bug Fixes
+
+- Populate titleblock and reset qa state on qa→review hand-off
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Promote coarser headings to split points in auto-detect
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **diff**: Call /complete when re-diff comes back empty
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **diff**: Give empty-diff finish its own report and skip the commit prompt
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+### Documentation
+
+- Add jig-integration epic pre-mortem register
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for /next-round + /complete hardening (#112, #117, #118)
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for coarser-heading task-split absorption fix
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for diff-mode process-leak fix ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for recommended-choice flag on QA schema
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for resuming review on an already-signed-off doc
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for task-card review mode ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for the qa→review processing-spinner timeout affordance
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for the stable headless invocation contract
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Design doc for unified Q&A → review session
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Document resuming review on an already-signed-off doc
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Fix task-card-split design doc's auto-detection mechanism claim
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Pre-mortem addendum for jig-integration amendment (#112-#119)
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Restyle README with dustjacket ([#123](https://github.com/jacquardlabs/viva/pull/123),
+  [`204fb52`](https://github.com/jacquardlabs/viva/commit/204fb5289624dca241cac12a90f432e940c93a03))
+
+- Stable headless invocation contract ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **premortem**: Design-review pre-mortem for recommended-choice flag
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **premortem**: Design-review register for /next-round + /complete hardening (#112, #117, #118)
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **premortem**: Design-review register for qa-resume-signed-off-doc-docs
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **premortem**: Register for qa-handoff-spinner-timeout (design-review PROCEED TO PLAN)
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **premortem**: Register for unified Q&A → review session
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **studious**: Pre-mortem register for coarser-heading task-split fix
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **studious**: Pre-mortem register for diff-mode-process-leak (design-review PROCEED TO PLAN)
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **studious**: Pre-mortem register for task-card-split design review
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+### Features
+
+- --split-on flag for task-card plan documents
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Harden /next-round + /complete lifecycle, security, and docs
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Soft client-side timeout on the qa→review processing spinner
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- Unified Q&A → review session hand-off ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+- **qa**: Add recommended-choice flag to QAQuestion schema
+  ([#122](https://github.com/jacquardlabs/viva/pull/122),
+  [`ed004ef`](https://github.com/jacquardlabs/viva/commit/ed004ef4a0abb9d78b6949f52e92d1df060c00e5))
+
+
 ## v1.17.0 (2026-07-11)
 
 ### Documentation
