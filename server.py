@@ -3048,26 +3048,36 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
+    def _check_origin_and_length(self, cap: int) -> int | None:
+        """Shared loopback-only guard for every caller-facing POST endpoint:
+        reject a present, non-loopback `Origin` header (403, defense-in-depth
+        against a malicious page driving a local write sink via CSRF) and cap
+        `Content-Length` at `cap` (400 if not an integer, 413 if over). Sends
+        the error response itself and returns None on rejection; otherwise
+        returns the validated length for the caller to `self.rfile.read()`."""
+        origin = self.headers.get("Origin", "")
+        if origin and not (origin.startswith("http://127.0.0.1")
+                           or origin.startswith("http://localhost")):
+            self._error(403, "forbidden origin")
+            return None
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self._error(400, "invalid Content-Length")
+            return None
+        if length > cap:
+            self._error(413, "payload too large")
+            return None
+        return length
+
     def do_POST(self) -> None:
         global _input_data, _output_path
         parsed = urlparse(self.path)
         path   = parsed.path
         params = parse_qs(parsed.query)
         if path == "/submit":
-            # Loopback-only tool: reject cross-origin POSTs (defense-in-depth
-            # against a malicious page driving the local write sink via CSRF).
-            origin = self.headers.get("Origin", "")
-            if origin and not (origin.startswith("http://127.0.0.1")
-                               or origin.startswith("http://localhost")):
-                self._error(403, "forbidden origin")
-                return
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
-                return
-            if length > MAX_SUBMIT_BYTES:
-                self._error(413, "payload too large")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
 
             body = self.rfile.read(length)
@@ -3113,13 +3123,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("processing", {})
         elif path == "/next-round":
-            # No CSRF/Origin check here: /next-round is called by the agent
-            # (curl), not the browser, so the browser-CSRF threat /submit guards
-            # against does not apply. Only browser-facing endpoints need it.
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
             body = self.rfile.read(length)
             try:
@@ -3165,11 +3170,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
-            # No CSRF/Origin check — agent-driven endpoint (see /next-round).
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
             body = self.rfile.read(length) if length else b'{}'
             try:

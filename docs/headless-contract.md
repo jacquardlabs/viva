@@ -1,6 +1,6 @@
 # viva headless invocation contract
 
-**Contract version: 1**
+**Contract version: 2**
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller like jig — not for the human
@@ -36,6 +36,7 @@ Changelog:
 
 | version | date | change |
 |---|---|---|
+| 2 | 2026-07-11 | `POST /next-round` and `POST /complete` now run the same loopback-`Origin` check and `MAX_SUBMIT_BYTES` body cap `POST /submit` already had — a caller sending a non-loopback `Origin` or a body over 256 MiB now gets a `403`/`413` it previously never could (see §5's endpoint table and error-response paragraph). Fixes #117. |
 | 1 | 2026-07-11 | Initial contract, transcribing the surface shipped as of the `unified-session` (#109) and `task-card-split` (#110) stories. |
 
 ## 2. Invocation
@@ -195,17 +196,18 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 | `GET /input` | yes | Poll-once, not watched. Returns the loaded `--input` JSON merged with the live `ledger` array (§3). Most callers get everything they need from the round files directly and only use this to confirm shape. |
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
-| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field) or the legacy `?output=` query-string param (still honored as a fallback; existing skills use this form). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. |
-| `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. |
+| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `brainstorming-qa.md`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `diff.md`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
+| `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `brainstorming-qa.md` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 
 Every error response, on any endpoint, is `application/json` with body
 `{"error": "<message>"}` and a matching non-2xx status — `400` (invalid
 JSON, wrong body shape, failed `validate_review_input`/`validate_verdicts`),
-`403` (`/submit` only — forbidden cross-origin `Origin`), `413` (`/submit`
-only — body over 256 MiB), `404` (unmatched path), `500` (`/submit` —
-`IOError`/`OSError` writing the output file). A caller can distinguish any
-failure from a success by content type alone, since successes are already
-uniformly `{"ok": true}` JSON.
+`403` (forbidden cross-origin `Origin` — `/submit`, `/next-round`, and
+`/complete` all run this check), `413` (body over 256 MiB — same three
+endpoints), `404` (unmatched path), `500` (`/submit` — `IOError`/`OSError`
+writing the output file). A caller can distinguish any failure from a
+success by content type alone, since successes are already uniformly
+`{"ok": true}` JSON.
 
 ## 6. Error and timeout semantics
 
@@ -279,6 +281,13 @@ from the `--output` this session was launched with** (e.g.
 `/submit` both write to whatever `output` currently points at, and reusing
 the Q&A output path lets the first review `/submit` silently overwrite the
 answers a caller just finished reading.
+
+**A hand-off does not call `POST /complete` right after `answers.json` is
+read.** Doing so would shut down the same process the hand-off is about to
+reuse. Instead, the *eventual* review round's own `/complete` call, at
+whatever round it finishes on, ends the process — the same mechanism
+`SKILL.md`'s own review loop already uses, applied once to the whole
+qa-then-review session rather than to the qa phase alone.
 
 ### `--split-on` task-card splitting (`task-card-split`, #110)
 

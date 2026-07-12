@@ -17,11 +17,13 @@ Usage:
         assert get(base, "/input")["round"] == 1
         post(base, "/submit", {...})
 """
+import http.client
 import json
 import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
@@ -62,6 +64,43 @@ def post_status(base: str, path: str, payload: dict) -> int:
         return urllib.request.urlopen(req, timeout=5).status
     except urllib.error.HTTPError as e:
         return e.code
+
+
+def post_headers(base: str, path: str, payload: dict, headers: dict) -> int:
+    """POST a JSON payload with extra request headers (e.g. `Origin`) merged
+    in atop `Content-Type`; return the HTTP status code. For boundary tests
+    exercising the loopback-Origin guard shared by /submit, /next-round, and
+    /complete."""
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", **headers},
+    )
+    try:
+        return urllib.request.urlopen(req, timeout=5).status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def post_oversized(base: str, path: str, claimed_length: int) -> int:
+    """POST with a `Content-Length` header that *claims* `claimed_length`
+    bytes but actually sends only a couple — exercises the body-size cap
+    without transferring hundreds of MiB over the wire. The server's guard
+    reads and checks `Content-Length` before ever calling `self.rfile.read`,
+    so it responds (and the connection closes, since the server does not run
+    HTTP/1.1 keep-alive) before the declared/actual mismatch matters."""
+    parsed = urllib.parse.urlparse(base)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
+    try:
+        conn.request("POST", path, body=b"{}",
+                     headers={"Content-Type": "application/json",
+                              "Content-Length": str(claimed_length)})
+        resp = conn.getresponse()
+        status = resp.status
+        resp.read()
+        return status
+    finally:
+        conn.close()
 
 
 def wait_for_url(output_path, tries: int = 50, delay: float = 0.2) -> str:

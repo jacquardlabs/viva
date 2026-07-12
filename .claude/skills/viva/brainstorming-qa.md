@@ -82,6 +82,21 @@ cat .viva/answers.json
 Read `.viva/answers.json`. For each answer with an `attachments` field, `Read`
 each listed path before acting on the answer.
 
+**4. Finish** (standalone Q&A only — skip this step entirely when handing off
+to a review session, see below)
+
+Signal completion so the server's 2-second shutdown timer starts and the
+process exits — mirroring the pattern `SKILL.md`'s own finish step uses:
+
+```bash
+BASE=$(cat .viva/server.url)
+curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
+  -d "{\"questions_total\": N, \"questions_answered\": M}"
+```
+
+Without this call the server process (and its `.viva/server.url` file) is
+never torn down — it leaks indefinitely until something kills it by hand.
+
 ## Hand off to a review session in the same tab (#109)
 
 A caller that turns the answers into review sections (e.g. jig's `/design`
@@ -90,13 +105,20 @@ sign-off) does not need to tear this server down and launch a second one. The
 `.viva/server.url` this skill wrote is still live — POST a round-1 review
 payload to it and the same browser tab reflows in place from Q&A cards to
 section-review cards, round 1. This is **opt-in**: a caller that never does
-this sees no difference from the steps above — the server still exits after
-`/complete` is called or is left running, exactly as today.
+this instead follows step 4 above and calls `/complete` when the standalone
+Q&A finishes.
+
+**Skip step 4's `/complete` call when handing off.** The hand-off reuses this
+same server process — calling `/complete` right after reading
+`answers.json` would tear the process down out from under the review round
+about to start. The review round's own `/complete`, called at *its* eventual
+finish (`SKILL.md`'s step 5 pattern, reused verbatim by whatever caller
+drives the post-hand-off review round), ends the process instead.
 
 ```bash
 BASE=$(cat .viva/server.url)
-curl -s -X POST "$BASE/next-round?output=.viva/review-r1.json" \
-  -H "Content-Type: application/json" -d @.viva/review-input-r1.json
+python3 -c "import json; d=json.load(open('.viva/review-input-r1.json')); d['output']='.viva/review-r1.json'; print(json.dumps(d))" \
+  | curl -s -X POST "$BASE/next-round" -H "Content-Type: application/json" --data-binary @-
 ```
 
 `review-input-r1.json` is the ordinary `ReviewInput` shape `parse_sections.py`
