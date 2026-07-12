@@ -157,6 +157,37 @@ python3 ~/.claude/skills/viva/server.py \
   --output .viva/answers.json
 ```
 
+### Custom section splitting (`--split-on`)
+
+By default `parse_sections.py` auto-detects the split level (see [How it
+works](#how-it-works)). For documents with a fixed heading convention that
+auto-detection can't be trusted to pick out — a plan document's `### Task 1`,
+`### Task 2`, … blocks, for example — pass `--split-on` to split on any
+heading whose title matches a regex, regardless of heading depth:
+
+```bash
+# Round 1
+python3 ~/.claude/skills/viva/scripts/parse_sections.py PLAN.md \
+  --output .viva/review-input-r1.json --round 1 \
+  --split-on '^Task \d+'
+
+# Round 2+
+python3 ~/.claude/skills/viva/scripts/parse_sections.py PLAN.md \
+  --output .viva/review-input-r2.json --round 2 \
+  --prior-input .viva/review-input-r1.json \
+  --prior-verdicts .viva/review-r1.json \
+  --split-on '^Task \d+'
+```
+
+`--split-on` takes a Python regex (`re.search`, case-sensitive — add `(?i)`
+inline for case-insensitive matching), matched against each heading's title
+text. It's optional: omit it and parsing is byte-for-byte the default
+auto-detect behavior above; a pattern that matches no heading in the
+document is a hard error rather than a silent fallback. Section identity
+carries through `schema.section_key()` unmodified either way, so approvals,
+annotations, round-to-round diffs, and open-note threads all work across
+rounds with no extra bookkeeping on the caller's side.
+
 Add `--no-browser` to skip opening a browser tab (useful for testing).
 
 ## Contributing

@@ -865,6 +865,15 @@ body {
   z-index: 1000;
   text-align: center;
 }
+/* Soft-timeout variant (#119) — same structural rules as .error-banner, but
+   --violet/--violet-bg ("Info / question" per DESIGN.md) instead of
+   --orange, since "no event yet, connection still open" is a lighter-weight
+   signal than "the connection actually dropped". */
+.error-banner.banner-info {
+  background: var(--violet-bg);
+  color: var(--violet);
+  border-bottom: 1px solid var(--violet);
+}
 .load-error {
   padding: 2rem;
   color: var(--orange);
@@ -1095,6 +1104,26 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
+
+/* Recommended-choice badge (issue #114) — advisory only: the chip it
+   decorates is never pre-selected, focus-defaulted, or otherwise styled as
+   the primary action, so the human still picks freely. Reuses the same
+   teal token .vbadge-approved/.annot-info already use, per "prefer reuse
+   over creation" rather than inventing a new badge color. */
+.chip-badge {
+  display: inline-block;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: var(--teal-bg);
+  color: var(--teal);
+  vertical-align: middle;
+}
 
 /* QA action buttons */
 .qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
@@ -2366,9 +2395,18 @@ function buildQACard(q) {
   card.className = 'card';
   card.id = 'qacard-' + q.id;
 
-  const choicesHtml = q.choices.map(c =>
-    `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}</button>`
-  ).join('');
+  // recommended_choice is optional (issue #114) — undefined-safe by
+  // construction: `c` is always a string, so this is false for every chip
+  // on a question that never sets the field, byte-identical to pre-#114
+  // rendering. Advisory only: the matching chip gets a badge, nothing else
+  // (no pre-selection, no default focus, no restyle as primary).
+  const choicesHtml = q.choices.map(c => {
+    const isRecommended = q.recommended_choice !== undefined && c === q.recommended_choice;
+    const badge = isRecommended
+      ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
+      : '';
+    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}</button>`;
+  }).join('');
 
   card.innerHTML = `
     <button type="button" class="card-head" aria-expanded="false" aria-controls="qbody-${q.id}">
@@ -2654,6 +2692,43 @@ el('sort-toggle').addEventListener('click', () => {
 
 /* ─── Init — fetch data from server, then build cards ─── */
 /* ─── SSE client ────────────────────────────────────────── */
+// Soft, client-side-only timeout for #processing-view (#119). Neither
+// 'round' nor 'complete' is guaranteed to arrive promptly: the qa→review
+// hand-off's wait is bounded by an external caller's own synthesis step
+// (docs/headless-contract.md §6/§7), not by an LLM turn in this process, and
+// the SSE connection stays open the whole time — es.onerror only fires on an
+// actual connection drop, so it can't detect a merely-slow hand-off. This
+// constant is deliberately in the 15-30s range the design doc suggests: long
+// enough that a normal in-session revise rarely trips it, short enough that
+// a stalled hand-off isn't a silent, indefinite spinner.
+const PROCESSING_STILL_WAITING_MS = 20000;
+let processingTimer = null;
+
+// Clears the armed timeout (if any) and removes the still-waiting banner
+// (if shown) — called whenever #processing-view's own visibility changes,
+// so the timer's lifecycle never diverges from the view it describes.
+function clearProcessingTimer() {
+  if (processingTimer) { clearTimeout(processingTimer); processingTimer = null; }
+  const b = el('processing-wait-banner');
+  if (b) b.remove();
+}
+
+// Mirrors es.onerror's own banner mechanism (position: fixed banner
+// prepended to document.body, tokenized colors) so a human who already
+// recognizes "banner at the top of the tab = something needs my attention"
+// recognizes this one on sight. At most one banner at a time: skipped if
+// the connection has actually dropped in the interim (#sse-error-banner
+// already present) — the harder, more specific signal wins.
+function showStillWaitingBanner() {
+  processingTimer = null;
+  if (el('sse-error-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'processing-wait-banner';
+  b.className = 'error-banner banner-info';
+  b.textContent = 'Still waiting — check the terminal.';
+  document.body.prepend(b);
+}
+
 function connectSSE() {
   const es = new EventSource('/events');
 
@@ -2661,19 +2736,37 @@ function connectSSE() {
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
+    clearProcessingTimer();
+    processingTimer = setTimeout(showStillWaitingBanner, PROCESSING_STILL_WAITING_MS);
   });
 
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
+    const modeWord = data.mode === 'diff' ? 'diff' : 'review';
     REVIEW_DATA       = data;
+    // A qa → review hand-off (#109) lands here too — the qa session this tab
+    // may have been showing is done; drop its state so leftover QA_DATA/
+    // qState.active can't be picked up by qa-branch logic (keydown handler,
+    // updateQAStats/submitQA) once REVIEW_DATA cards are what's on screen.
+    QA_DATA           = null;
+    qState.active     = null;
     rState.verdicts   = {};
     rState.active     = null;
+    setDocTitleBlock(data, modeWord, modeWord === 'diff' ? 'diff' : '');
     el('round-badge').textContent = String(data.round).padStart(2, '0');
     const rev = 'REV ' + String(data.round).padStart(2, '0');
     setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
+    clearProcessingTimer();
+    // Hide qa-view unconditionally rather than relying on a prior
+    // 'processing' event having already done so: a caller that POSTs a
+    // review round-1 payload to a still-running qa server without the browser
+    // ever seeing a 'processing' event first (e.g. this tab's SSE connection
+    // reconnected mid-transition and missed it) would otherwise leave qa-view
+    // visible underneath the review cards.
+    el('qa-view').style.display         = 'none';
     el('review-view').style.display     = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
@@ -2683,6 +2776,7 @@ function connectSSE() {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
     el('processing-view').style.display = 'none';
+    clearProcessingTimer();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
@@ -2708,6 +2802,11 @@ function connectSSE() {
   });
 
   es.onerror = () => {
+    // The connection actually dropping is the harder, more specific signal —
+    // it supersedes any still-waiting banner already shown rather than the
+    // two stacking on top of each other at the same position: fixed; top: 0.
+    const waiting = el('processing-wait-banner');
+    if (waiting) waiting.remove();
     if (!el('sse-error-banner')) {
       const b = document.createElement('div');
       b.id = 'sse-error-banner';
@@ -2745,7 +2844,12 @@ document.addEventListener('keydown', e => {
     }
   }
 
-  if (QA_DATA && qState.active) {
+  // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
+  // qState.active reset (#109 hand-off): belt-and-suspenders so a digit
+  // keystroke can never route through the qa branch — and flip btn-submit to
+  // 'ready' via updateQAStats(), letting the class-gated click handler call
+  // submitReview(false) early — while review cards are what's on screen.
+  if (!REVIEW_DATA && QA_DATA && qState.active) {
     const q = QA_DATA.questions.find(q => q.id === qState.active);
     if (q) {
       const n = parseInt(e.key, 10);
@@ -2784,13 +2888,21 @@ document.addEventListener('keydown', e => {
 el('btn-skip').disabled   = true;
 el('btn-submit').disabled = true;
 
+// Titleblock's doc-path/doc-title cells — shared by the initial review/diff
+// boot (bootReviewMode) and the in-place 'round' SSE hand-off/advance, so a
+// qa→review hand-off (#109) populates them exactly like a fresh review boot
+// does instead of leaving them at their qa-view blank default.
+function setDocTitleBlock(data, modeWord, docFallback) {
+  el('doc-path').textContent    = data.doc_file || docFallback;
+  el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
+  el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
+}
+
 // Shared boot tail for the two review-card modes (review and diff) — the
 // title block, round badge, view reveal, card build, and SSE hookup are
 // identical apart from the mode word and the doc-path fallback.
 function bootReviewMode(data, modeWord, docFallback) {
-  el('doc-path').textContent    = data.doc_file || docFallback;
-  el('doc-path').title          = data.doc_file || docFallback;   /* full path on hover when truncated */
-  el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
+  setDocTitleBlock(data, modeWord, docFallback);
   el('round-badge').textContent = String(data.round).padStart(2, '0');
   setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));
   el('review-view').style.display = '';
@@ -2849,6 +2961,7 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+_url: str = ""  # set once at startup; reused by the /next-round hand-off log line
 _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
@@ -3019,26 +3132,36 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
+    def _check_origin_and_length(self, cap: int) -> int | None:
+        """Shared loopback-only guard for every caller-facing POST endpoint:
+        reject a present, non-loopback `Origin` header (403, defense-in-depth
+        against a malicious page driving a local write sink via CSRF) and cap
+        `Content-Length` at `cap` (400 if not an integer, 413 if over). Sends
+        the error response itself and returns None on rejection; otherwise
+        returns the validated length for the caller to `self.rfile.read()`."""
+        origin = self.headers.get("Origin", "")
+        if origin and not (origin.startswith("http://127.0.0.1")
+                           or origin.startswith("http://localhost")):
+            self._error(403, "forbidden origin")
+            return None
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self._error(400, "invalid Content-Length")
+            return None
+        if length > cap:
+            self._error(413, "payload too large")
+            return None
+        return length
+
     def do_POST(self) -> None:
         global _input_data, _output_path
         parsed = urlparse(self.path)
         path   = parsed.path
         params = parse_qs(parsed.query)
         if path == "/submit":
-            # Loopback-only tool: reject cross-origin POSTs (defense-in-depth
-            # against a malicious page driving the local write sink via CSRF).
-            origin = self.headers.get("Origin", "")
-            if origin and not (origin.startswith("http://127.0.0.1")
-                               or origin.startswith("http://localhost")):
-                self._error(403, "forbidden origin")
-                return
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
-                return
-            if length > MAX_SUBMIT_BYTES:
-                self._error(413, "payload too large")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
 
             body = self.rfile.read(length)
@@ -3084,13 +3207,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("processing", {})
         elif path == "/next-round":
-            # No CSRF/Origin check here: /next-round is called by the agent
-            # (curl), not the browser, so the browser-CSRF threat /submit guards
-            # against does not apply. Only browser-facing endpoints need it.
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
             body = self.rfile.read(length)
             try:
@@ -3114,17 +3232,30 @@ class Handler(BaseHTTPRequestHandler):
                     self._error(400, f"invalid review-input: {e}")
                     return
             with _data_lock:
+                # Unified Q&A → review session (#109): a qa-originated review
+                # round carries no distinguishing field in the wire payload —
+                # ReviewInput's shape is deliberately unchanged by that story
+                # (see docs/superpowers/specs/2026-07-11-unified-session-design.md,
+                # "Out of scope: Schema changes"). The signal instead is
+                # operational and inferred here, never persisted: the prior
+                # round on this server was Q&A-shaped (`questions`) and this
+                # one is review-shaped (`sections`). #111's headless-contract
+                # should describe this session type as "a review round POSTed
+                # to a server launched with --mode qa", not as a payload field.
+                handoff = "questions" in _input_data and "sections" in new_data
                 _input_data = new_data
                 _output_path = output
                 ledger_snapshot = list(_ledger)
+            if handoff:
+                # Distinct from the per-mode startup line so a terminal-watching
+                # caller (or a human tailing stdout) can see the hand-off happen,
+                # not just infer it from the browser reflowing.
+                print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**new_data, "ledger": ledger_snapshot})
         elif path == "/complete":
-            # No CSRF/Origin check — agent-driven endpoint (see /next-round).
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-            except ValueError:
-                self._error(400, "invalid Content-Length")
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
                 return
             body = self.rfile.read(length) if length else b'{}'
             try:
@@ -3175,6 +3306,7 @@ if __name__ == "__main__":
     server = ThreadedHTTPServer(("127.0.0.1", port), Handler)
     server.timeout = 0.5
     url = f"http://127.0.0.1:{port}"
+    _url = url
 
     url_file = Path(args.output).parent / "server.url"
     _atomic_write(url_file, url)
