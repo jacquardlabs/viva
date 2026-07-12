@@ -99,6 +99,13 @@ empty find leaves `$VIVA_DIR` empty and the guard fails loud.
 `$CLAUDE_PLUGIN_ROOT` is deliberately not used: docs confirm it for hooks,
 MCP, and LSP configs but are silent on skill bash blocks.
 
+The error hint and the README agree on one install identity: the hint names
+the primary (marketplace) form, and README's install section leads with that
+same form. The direct-repo channel, if it survives verification (see
+Operational readiness), remains documented as a clearly secondary
+alternative — the error-surfaced and documented install paths never
+diverge.
+
 One developer-workflow consequence, stated so it isn't discovered by
 surprise: with resolution cache-only, invoking `/viva` (or either sub-skill)
 inside the viva repo itself runs the *cached plugin's* runtime, not the
@@ -234,7 +241,12 @@ the `$VIVA_DIR` guard with the install hint (failing).
 - **Verification (gates the PRODUCT.md edit):** on a machine with the stale
   `~/.claude/skills/viva` removed, install the plugin from this branch's
   checkout, confirm all three skills register, and run `/viva-qa` far enough
-  to pass the `$VIVA_DIR` resolve.
+  to pass the `$VIVA_DIR` resolve. The same pass also exercises the README's
+  direct-repo channel (`/plugin marketplace add jacquardlabs/viva` +
+  `/plugin install viva@viva`): if it works it stays documented as the
+  secondary alternative; if it fails, **this change** removes or caveats
+  those README lines (a one-line fix) — a freshly rewritten install section
+  does not ship advertising an unverified channel.
 - **Rollout:** ships in the next plugin release; existing plugin users get
   all three skills on update with no action. No state migration — nothing
   under `.viva/` is touched.
@@ -245,8 +257,9 @@ the `$VIVA_DIR` guard with the install hint (failing).
 
 ## Open questions
 
-- The README also documents `/plugin marketplace add jacquardlabs/viva`
-  (direct-repo marketplace). Whether that channel works without a
-  `marketplace.json` in this repo is unverified — check during the
-  fresh-install verification; if broken, it is a separate issue, not this
-  one.
+None. The one question earlier drafts deferred — whether the README's
+direct-repo marketplace channel (`/plugin marketplace add jacquardlabs/viva`)
+actually works — is resolved *within* this change: the fresh-install
+verification exercises it, and a failure removes or caveats those README
+lines here rather than deferring to a separate issue (see Operational
+readiness).
