@@ -2,7 +2,10 @@
 
 Section-by-section markdown review for Claude Code. Named after the PhD oral exam: Claude presents its work, you drill every section, Claude defends and revises, the document only passes when it all holds up.
 
-![viva review UI](assets/screenshot.png)
+[![Tests](https://github.com/jacquardlabs/viva/actions/workflows/test.yml/badge.svg)](https://github.com/jacquardlabs/viva/actions/workflows/test.yml)
+[![Version](https://img.shields.io/github/v/tag/jacquardlabs/viva?label=version)](https://github.com/jacquardlabs/viva/releases)
+
+![viva review UI: a section card with approve, request changes, and need info actions, an inline note, and round progress in the footer](assets/screenshot.png)
 
 ## What it does
 
@@ -16,7 +19,15 @@ Section-by-section markdown review for Claude Code. Named after the PhD oral exa
 
 One browser tab stays open for the entire session. After you submit a round, a spinner appears while Claude rewrites; the next round loads in place without a page reload.
 
-## Installation
+## Commands
+
+| Command | Job |
+|---------|-----|
+| `/viva <file.md>` | Section-by-section markdown review. Human signs off on every section; agent rewrites and loops until all approved. |
+| `/viva-diff [ref]` | Hunk-by-hunk code review of a git diff. Human approves or requests changes per hunk; agent revises working-tree files and loops until all hunks are approved. |
+| `/viva-qa` | Batch Q&A human gate — present structured questions in the browser and collect answers. Used internally by the `brainstorming` skill's integration below. |
+
+## Install
 
 Install via the Jacquard Labs marketplace:
 
@@ -50,27 +61,6 @@ In Claude Code:
 
 If no path is given, Claude scans the current directory for a single `.md` file.
 
-## Brainstorming integration
-
-viva adds a batch Q&A phase to the `brainstorming` skill via the `/viva-qa`
-primitive. When viva is installed, the brainstorming skill calls `/viva-qa`
-directly — no install step or patching required.
-
-To collect Q&A answers from your own skills, write `.viva/qa-input.json` and
-invoke `/viva-qa`:
-
-```json
-{
-  "mode": "qa",
-  "context": "Topic shown in the title block",
-  "questions": [
-    {"id": "q1", "text": "Which approach?", "choices": ["A", "B", "C"]}
-  ]
-}
-```
-
-See `.claude/skills/viva/brainstorming-qa.md` for the full contract.
-
 ## Verdicts
 
 Each section accepts one or more inline comments (GitHub-style threads), each typed `changes` or `info`. The section's verdict is **derived** from its active comments — any open `changes` comment makes the section `changes`, only `info` comments make it `info`, no active comments leaves it `approved` or `pending`.
@@ -103,6 +93,27 @@ commit body or PR description.
 Diff mode is a separate gate from `/code-review` (which is an LLM pass).
 They compose: run `/code-review` first, apply its suggestions, then
 `/viva-diff` for human sign-off before committing.
+
+## Brainstorming integration
+
+viva adds a batch Q&A phase to the `brainstorming` skill via the `/viva-qa`
+primitive. When viva is installed, the brainstorming skill calls `/viva-qa`
+directly — no install step or patching required.
+
+To collect Q&A answers from your own skills, write `.viva/qa-input.json` and
+invoke `/viva-qa`:
+
+```json
+{
+  "mode": "qa",
+  "context": "Topic shown in the title block",
+  "questions": [
+    {"id": "q1", "text": "Which approach?", "choices": ["A", "B", "C"]}
+  ]
+}
+```
+
+See `.claude/skills/viva/brainstorming-qa.md` for the full contract.
 
 ## What gets carried across rounds
 
@@ -147,3 +158,19 @@ python3 ~/.claude/skills/viva/server.py \
 ```
 
 Add `--no-browser` to skip opening a browser tab (useful for testing).
+
+## Contributing
+
+Tests are stdlib-only, one file per module, each self-running via its own `main()`:
+
+```bash
+for f in tests/test_*.py; do python3 "$f"; done
+```
+
+CI (`.github/workflows/test.yml`) runs this loop across Python 3.8–3.13 on every push and pull request.
+
+## License
+
+MIT, as declared in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json).
+
+> TODO: no `LICENSE` file exists at the repo root. Add one so the declared license is enforceable and shows up on GitHub's license detector.
