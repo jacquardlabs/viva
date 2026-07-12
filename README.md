@@ -36,13 +36,6 @@ Install via the Jacquard Labs marketplace:
 /plugin install viva@jacquardlabs-marketplace
 ```
 
-Or install this plugin directly:
-
-```bash
-/plugin marketplace add jacquardlabs/viva
-/plugin install viva@viva
-```
-
 Requires Python 3.8+ and Claude Code.
 
 **Previously installed via `git clone`?** Delete `~/.claude/skills/viva`
