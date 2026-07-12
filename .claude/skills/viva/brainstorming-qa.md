@@ -21,13 +21,23 @@ The caller writes `.viva/qa-input.json` before invoking this skill:
       "id": "q1",
       "text": "The question text",
       "hint": "Optional elaboration shown below the question",
-      "choices": ["Choice A", "Choice B", "Choice C"]
+      "choices": ["Choice A", "Choice B", "Choice C"],
+      "recommended_choice": "Choice A"
     }
   ]
 }
 ```
 
 `choices` is optional — omitting it renders a free-text field only.
+
+`recommended_choice` is optional and must exactly match one entry in that
+question's own `choices` (by value, not index) — the server rejects a
+non-matching value at startup. When set, the matching chip renders with a
+small "recommended" badge. This is advisory only: the chip is never
+pre-selected, defaulted, or required, and a question that omits the field
+renders exactly as it always has. Use it for a fork question where the
+calling agent has a genuine recommendation and a reason — the reason itself
+still belongs in `hint` or the choice text, not in this field.
 
 ## Output contract
 

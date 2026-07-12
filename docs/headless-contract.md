@@ -84,7 +84,8 @@ the boundary (on write by the producer, on read by the server):
 - `validate_qa_input(data)` — called by `server.py` at startup when
   `args.mode == "qa"` (and only reached if `"sections" not in data`).
   Requires `data.questions` to be a list; every entry must carry string
-  `id`, `text`.
+  `id`, `text`. When a question carries `recommended_choice`, it must be a
+  string that exactly matches an entry in that question's own `choices`.
 
 `scripts/schema.py` is the canonical source for the field-level shapes
 (`ReviewInput`, `ReviewSection`, `SectionVerdict`, `ReviewOutput`, `QAInput`,
@@ -143,6 +144,7 @@ The full output file (`ReviewOutput`) also carries `round` and
 | `text` | **yes** | |
 | `hint` | no | Shown below the question text. |
 | `choices` | no | Rendered as chip buttons; omit for a free-text-only question. |
+| `recommended_choice` | no | Must exactly match one entry in this question's `choices` (value, not index) — `validate_qa_input` rejects it otherwise. Renders as a small badge on the matching chip. Advisory only: never pre-selected, defaulted, or required; the human may pick any chip. Absent on every question written before this field existed, which renders unchanged. |
 
 **`QAOutput`** (`answers.json`, what the server writes after the human
 submits):

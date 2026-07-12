@@ -190,6 +190,13 @@ class QAQuestion(TypedDict, total=False):
     text: str         # required
     hint: str         # optional — shown below the question text
     choices: List[str]  # optional — rendered as chip buttons
+    # optional — must exactly match one entry in `choices` (value, not index;
+    # see validate_qa_input). Renders as a small badge on that chip. Advisory
+    # only, per PRODUCT.md's "advisory, never gating" principle: never
+    # pre-selected, defaulted, or required — the human picks whichever chip
+    # they want, including a different one. Ignored/absent on every question
+    # authored before this field existed — no render change without it.
+    recommended_choice: str
 
 
 class QAInput(TypedDict, total=False):
@@ -222,8 +229,13 @@ class DiffInput(TypedDict, total=False):
 def validate_qa_input(data: dict) -> None:
     """Raise `ValueError` if `data` is not a structurally valid Q&A input.
 
-    Enforces that every question has `id` and `text`. Permissive about optional
-    fields (`hint`, `choices`, `context`). Call at startup when `--mode qa`.
+    Enforces that every question has `id` and `text`, and — when present —
+    that `recommended_choice` is a string that exactly matches an entry in
+    that same question's own `choices`. A dangling or typo'd recommendation
+    (no `choices`, or a value not in it) is a loud startup failure here,
+    never a silent no-badge misfire at render time. Permissive about other
+    optional fields (`hint`, `choices`, `context`). Call at startup when
+    `--mode qa`.
     """
     if not isinstance(data, dict):
         raise ValueError("qa-input must be a JSON object")
@@ -237,4 +249,19 @@ def validate_qa_input(data: dict) -> None:
             if not isinstance(q.get(field), str):
                 raise ValueError(
                     f"qa-input.questions[{i}] missing required string {field!r}"
+                )
+        if "recommended_choice" in q:
+            recommended = q.get("recommended_choice")
+            if not isinstance(recommended, str):
+                raise ValueError(
+                    f"qa-input.questions[{i}].recommended_choice must be a string"
+                )
+            # Presence guard before membership test: `choices` may be absent
+            # entirely, and `or` short-circuits so a non-list `choices` never
+            # reaches the `in` check below.
+            choices = q.get("choices")
+            if not isinstance(choices, list) or recommended not in choices:
+                raise ValueError(
+                    f"qa-input.questions[{i}].recommended_choice {recommended!r} "
+                    "does not match any entry in that question's own choices"
                 )
