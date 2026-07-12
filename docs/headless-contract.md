@@ -237,16 +237,24 @@ guidance `SKILL.md` gives its own agent: issue the wait with a generous
 timeout (SKILL.md uses ~10 minutes), and re-issuing the identical wait after
 a timeout is safe and idempotent, since it only re-polls.
 
-**Caveat — unbounded "processing" spinner on the qa→review hand-off.** After
-a human submits Q&A answers and a caller synthesizes a review payload for
-`POST /next-round` (§7), the browser shows an indefinite "processing"
-spinner between those two events with no client-side timeout. If the
-caller's synthesis step fails or hangs before it POSTs, the human's tab is
-stranded with no visible error — this is distinct from, and in addition to,
-whatever failure surfacing the caller's own process exit produces on its
-terminal. A caller building this hand-off should treat its synthesis step
-as needing its own bounded time budget and terminal-visible failure path,
-since the browser will not surface one.
+**Caveat — soft, client-side-only timeout on the "processing" spinner
+(#119).** After a human submits Q&A answers and a caller synthesizes a
+review payload for `POST /next-round` (§7), the browser shows a "processing"
+spinner between those two events. If neither a `round` nor `complete` SSE
+event arrives within ~20 seconds, the browser shows a `Still waiting — check
+the terminal.` banner — informational only, the spinner keeps spinning
+underneath it, and the banner disappears the moment the event eventually
+arrives. This is a **browser-side visibility signal, not a server or wire
+timeout**: the server still has no request or session timeout (above), the
+threshold is a client-side constant with no wire representation, and nothing
+about `/next-round`'s contract changes. If the caller's synthesis step fails
+or hangs before it POSTs, the human now sees that banner, but the caller's
+own process exit is still the only source of a precise error — the banner
+just says "check the terminal," it can't say what it will find there. A
+caller building this hand-off should still treat its synthesis step as
+needing its own bounded time budget and terminal-visible failure path,
+since the *reason* for the delay is never visible to the browser, only its
+duration.
 
 ## 7. Session types this contract currently produces
 

@@ -865,6 +865,15 @@ body {
   z-index: 1000;
   text-align: center;
 }
+/* Soft-timeout variant (#119) — same structural rules as .error-banner, but
+   --violet/--violet-bg ("Info / question" per DESIGN.md) instead of
+   --orange, since "no event yet, connection still open" is a lighter-weight
+   signal than "the connection actually dropped". */
+.error-banner.banner-info {
+  background: var(--violet-bg);
+  color: var(--violet);
+  border-bottom: 1px solid var(--violet);
+}
 .load-error {
   padding: 2rem;
   color: var(--orange);
@@ -2683,6 +2692,43 @@ el('sort-toggle').addEventListener('click', () => {
 
 /* ─── Init — fetch data from server, then build cards ─── */
 /* ─── SSE client ────────────────────────────────────────── */
+// Soft, client-side-only timeout for #processing-view (#119). Neither
+// 'round' nor 'complete' is guaranteed to arrive promptly: the qa→review
+// hand-off's wait is bounded by an external caller's own synthesis step
+// (docs/headless-contract.md §6/§7), not by an LLM turn in this process, and
+// the SSE connection stays open the whole time — es.onerror only fires on an
+// actual connection drop, so it can't detect a merely-slow hand-off. This
+// constant is deliberately in the 15-30s range the design doc suggests: long
+// enough that a normal in-session revise rarely trips it, short enough that
+// a stalled hand-off isn't a silent, indefinite spinner.
+const PROCESSING_STILL_WAITING_MS = 20000;
+let processingTimer = null;
+
+// Clears the armed timeout (if any) and removes the still-waiting banner
+// (if shown) — called whenever #processing-view's own visibility changes,
+// so the timer's lifecycle never diverges from the view it describes.
+function clearProcessingTimer() {
+  if (processingTimer) { clearTimeout(processingTimer); processingTimer = null; }
+  const b = el('processing-wait-banner');
+  if (b) b.remove();
+}
+
+// Mirrors es.onerror's own banner mechanism (position: fixed banner
+// prepended to document.body, tokenized colors) so a human who already
+// recognizes "banner at the top of the tab = something needs my attention"
+// recognizes this one on sight. At most one banner at a time: skipped if
+// the connection has actually dropped in the interim (#sse-error-banner
+// already present) — the harder, more specific signal wins.
+function showStillWaitingBanner() {
+  processingTimer = null;
+  if (el('sse-error-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'processing-wait-banner';
+  b.className = 'error-banner banner-info';
+  b.textContent = 'Still waiting — check the terminal.';
+  document.body.prepend(b);
+}
+
 function connectSSE() {
   const es = new EventSource('/events');
 
@@ -2690,6 +2736,8 @@ function connectSSE() {
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
+    clearProcessingTimer();
+    processingTimer = setTimeout(showStillWaitingBanner, PROCESSING_STILL_WAITING_MS);
   });
 
   es.addEventListener('round', e => {
@@ -2711,6 +2759,7 @@ function connectSSE() {
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
+    clearProcessingTimer();
     // Hide qa-view unconditionally rather than relying on a prior
     // 'processing' event having already done so: a caller that POSTs a
     // review round-1 payload to a still-running qa server without the browser
@@ -2727,6 +2776,7 @@ function connectSSE() {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
     el('processing-view').style.display = 'none';
+    clearProcessingTimer();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
@@ -2752,6 +2802,11 @@ function connectSSE() {
   });
 
   es.onerror = () => {
+    // The connection actually dropping is the harder, more specific signal —
+    // it supersedes any still-waiting banner already shown rather than the
+    // two stacking on top of each other at the same position: fixed; top: 0.
+    const waiting = el('processing-wait-banner');
+    if (waiting) waiting.remove();
     if (!el('sse-error-banner')) {
       const b = document.createElement('div');
       b.id = 'sse-error-banner';
