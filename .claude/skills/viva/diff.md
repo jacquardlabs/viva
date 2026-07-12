@@ -89,7 +89,9 @@ For each section with a `changes` comment:
 ```bash
 git diff <ref> > .viva/diff.patch 2>/dev/null
 if [ ! -s .viva/diff.patch ]; then
-  echo "viva-diff: diff is now empty — all changes were fully applied; finishing"
+  echo "viva-diff: diff is now empty — all changes were fully applied or reverted; finishing"
+  # A hunk that nets to nothing here (reverted or dropped at the human's
+  # request) counts toward sections_revised, not the approved count.
   curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
     -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
   exit 0
@@ -105,11 +107,23 @@ python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
 
 The browser updates in place — no new tab. Loop to step 2.
 
-If the diff was empty and `/complete` was just called, this session is
-finished — skip step 5's `curl` (already sent) and go straight to its report
-and commit prompt below.
+**If the diff was empty and `/complete` was just called**, this session is
+finished but did not resolve the same way step 5 below assumes: the diff only
+reached zero because at least one hunk was reverted or dropped at your
+request, not because every hunk was approved as-is. Skip step 5 entirely and
+finish here instead:
 
-**5. Finish** (all sections approved, or the empty-diff branch above already called `/complete`)
+Give this report:
+
+> "Diff fully resolved — nothing left to review. N hunks approved, K hunks
+> revised (including any reverted or dropped) across M files in R round(s)."
+
+Then state plainly: "Working tree matches `<ref>` — nothing to commit." Do
+not prompt to commit; an empty `git diff <ref>` means there is nothing to
+stage or commit.
+
+**5. Finish** (all sections approved — the empty-diff branch in step 4 above
+has its own finish and does not reach this step)
 
 ```bash
 curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
