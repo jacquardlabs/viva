@@ -45,11 +45,12 @@ Or install this plugin directly:
 
 Requires Python 3.8+ and Claude Code.
 
-Or install manually via git clone:
-
-```bash
-git clone https://github.com/jacquardlabs/viva ~/.claude/skills/viva
-```
+**Previously installed via `git clone`?** Delete `~/.claude/skills/viva`
+before installing the plugin above. Leaving it in place registers a second
+`viva` skill — personal skills take invocation precedence over a plugin
+skill of the same name, so bare `/viva` would keep running your old cloned
+copy indefinitely while `/viva-qa` and `/viva-diff` (which the clone never
+had) run the current plugin version.
 
 ## Usage
 
@@ -113,7 +114,7 @@ invoke `/viva-qa`:
 }
 ```
 
-See `.claude/skills/viva/brainstorming-qa.md` for the full contract.
+See the `/viva-qa` skill for the full contract.
 
 ## What gets carried across rounds
 
@@ -143,15 +144,22 @@ The server is a single Python file with no dependencies beyond stdlib. Claude Co
 
 ## Server CLI (advanced)
 
+Resolve `$VIVA_DIR` from the installed plugin cache first — the same
+resolve every skill uses internally:
+
 ```bash
+VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
+           | xargs -0 ls -t 2>/dev/null | head -1)
+VIVA_DIR=${VIVA_DIR%/server.py}
+
 # Review mode
-python3 ~/.claude/skills/viva/server.py \
+python3 "$VIVA_DIR/server.py" \
   --mode review \
   --input .viva/review-input-r1.json \
   --output .viva/review-r1.json
 
 # Q&A mode (brainstorming integration)
-python3 ~/.claude/skills/viva/server.py \
+python3 "$VIVA_DIR/server.py" \
   --mode qa \
   --input .viva/qa-input.json \
   --output .viva/answers.json
@@ -166,13 +174,13 @@ auto-detection can't be trusted to pick out — a plan document's `### Task 1`,
 heading whose title matches a regex, regardless of heading depth:
 
 ```bash
-# Round 1
-python3 ~/.claude/skills/viva/scripts/parse_sections.py PLAN.md \
+# Round 1 ($VIVA_DIR resolved as in Server CLI above)
+python3 "$VIVA_DIR/scripts/parse_sections.py" PLAN.md \
   --output .viva/review-input-r1.json --round 1 \
   --split-on '^Task \d+'
 
 # Round 2+
-python3 ~/.claude/skills/viva/scripts/parse_sections.py PLAN.md \
+python3 "$VIVA_DIR/scripts/parse_sections.py" PLAN.md \
   --output .viva/review-input-r2.json --round 2 \
   --prior-input .viva/review-input-r1.json \
   --prior-verdicts .viva/review-r1.json \

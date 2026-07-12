@@ -2,12 +2,12 @@
 """Integration test: a standalone qa-mode session's process actually exits
 (and server.url is deleted) once the finish sequence calls /complete (#112).
 
-Before this fix, `brainstorming-qa.md`'s documented finish steps read
+Before this fix, `/viva-qa`'s documented finish steps read
 `.viva/answers.json` and stopped — nothing ever called `POST /complete`, so
 the server process (and its 2-second shutdown timer, which only starts
 inside that handler) ran forever. This drives the fixed sequence directly
 against `server.py`: launch `--mode qa`, submit answers, POST `/complete`
-(mirroring `brainstorming-qa.md`'s corrected step 4), and assert the process
+(mirroring `/viva-qa`'s corrected step 4), and assert the process
 exits and `server.url` is removed — exactly as `--mode diff`'s and
 `--mode review`'s finish paths already do today.
 """
@@ -51,7 +51,7 @@ def main() -> None:
         })
         assert poll_for(out), "answers.json never written"
 
-        # Mirrors brainstorming-qa.md's fixed step 4: /complete once
+        # Mirrors /viva-qa's fixed step 4: /complete once
         # answers.json exists (standalone finish, no hand-off).
         post(base, "/complete", {"questions_total": 1, "questions_answered": 1})
 
