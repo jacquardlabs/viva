@@ -27,11 +27,10 @@ unstaged working-tree changes (`git diff`). For staged-only changes use
 **1. Capture diff and launch** (round 1 — one bash block)
 
 ```bash
-VIVA_DIR=~/.claude/skills/viva
-[ -f "$VIVA_DIR/server.py" ] || \
-  VIVA_DIR=$(find ~/.claude/plugins/cache -name "server.py" -path "*/viva*" -maxdepth 6 2>/dev/null \
-             | xargs -I{} dirname {} | head -1)
-[ -f "$VIVA_DIR/server.py" ] || { echo "viva-diff: cannot locate server.py"; exit 1; }
+VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
+           | xargs -0 ls -t 2>/dev/null | head -1)
+VIVA_DIR=${VIVA_DIR%/server.py}
+[ -f "$VIVA_DIR/server.py" ] || { echo "viva-diff: server.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
 
 [ -f .viva/server.url ] && { echo "viva-diff: a prior session may still be running (.viva/server.url exists)"; exit 1; }
 
