@@ -227,7 +227,7 @@ def test_diff_mode_complete_shuts_down() -> None:
 
 
 def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
-    """diff.md step 4's empty-diff branch (#116): the human requests a
+    """/viva-diff step 4's empty-diff branch (#116): the human requests a
     `changes` edit that fully resolves the diff before every hunk is
     individually approved, so the loop reaches `/complete` straight from
     step 4 instead of step 5 — never calling `/next-round` for that round.

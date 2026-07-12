@@ -60,15 +60,14 @@ object `GET /input` serves (`data.mode === 'review' | 'diff'`, else Q&A).
 Nothing in `server.py` enforces that the two agree — a caller that launches
 `--mode qa` but writes `"mode": "review"` into the input JSON gets
 undefined-by-contract behavior. Every existing caller (`SKILL.md`,
-`.claude/skills/viva/brainstorming-qa.md`, `.claude/skills/viva/diff.md`)
-keeps them in sync by convention, not by an enforced invariant — a new
-caller needs to keep them in sync too.
+`/viva-qa`, `/viva-diff`) keeps them in sync by convention, not by an
+enforced invariant — a new caller needs to keep them in sync too.
 
 ## 3. `.viva/` round-file naming and shapes
 
 The `.viva/` directory and filenames like `review-input-r{N}.json`,
 `review-r{N}.json`, `qa-input.json`, `answers.json` are a **convention** the
-existing skills (`SKILL.md`, `brainstorming-qa.md`, `diff.md`) follow, not
+existing skills (`SKILL.md`, `/viva-qa`, `/viva-diff`) follow, not
 something `server.py` enforces — `--input`/`--output` accept any path. What
 *is* enforced is the shape, by `scripts/schema.py`'s validators, called at
 the boundary (on write by the producer, on read by the server):
@@ -198,8 +197,8 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 | `GET /input` | yes | Poll-once, not watched. Returns the loaded `--input` JSON merged with the live `ledger` array (§3). Most callers get everything they need from the round files directly and only use this to confirm shape. |
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
-| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `brainstorming-qa.md`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `diff.md`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
-| `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `brainstorming-qa.md` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `/viva-qa`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-diff`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
+| `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 
 Every error response, on any endpoint, is `application/json` with body
 `{"error": "<message>"}` and a matching non-2xx status — `400` (invalid
@@ -263,8 +262,8 @@ duration.
 ### qa → review hand-off (`unified-session`, #109)
 
 This is **not** a third `--mode` value. A caller launches `--mode qa`
-exactly as `.claude/skills/viva/brainstorming-qa.md` does today, waits for
-`answers.json`, and — instead of tearing the server down — POSTs an
+exactly as `/viva-qa` does today, waits for `answers.json`, and — instead
+of tearing the server down — POSTs an
 ordinary `sections`-shaped `ReviewInput` payload (§3) to the same server's
 still-running `/next-round`. The same browser tab reflows in place from Q&A
 cards to review cards, round 1.

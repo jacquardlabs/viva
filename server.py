@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 # The sibling `scripts/` dir holds the shared schema contract (section_key, the
 # ledger rule, boundary validation). It sits beside server.py in both the repo
-# and the installed skill (`~/.claude/skills/viva/{server.py,scripts/}`).
+# and the installed plugin cache (`~/.claude/plugins/cache/**/viva/{server.py,scripts/}`).
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 import schema  # noqa: E402
 

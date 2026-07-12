@@ -214,7 +214,7 @@ def test_handoff_same_server_no_second_launch():
             out, _ = proc.communicate(timeout=5)
 
     # ── The hand-off's only signal is operational (stdout), never a wire
-    #    field — see brainstorming-qa.md "Hand off to a review session in the
+    #    field — see /viva-qa "Hand off to a review session in the
     #    same tab (#109)". ──
     assert "viva · qa mode ·" in out, out
     assert "viva · hand-off qa → review ·" in out, out

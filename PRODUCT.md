@@ -98,8 +98,6 @@ opt-in layers that all funnel through the section card:
   loop as prose with conditional round-1 branches (e.g. the standing-preference
   path splits the launch block), so the agent shoulders the orchestration the
   code does not.
-- **`/viva` entry point unverified.** Documented as a slash command; the plugin
-  ships a skill with no commands manifest — confirm the invocation resolves.
 
 ## Feature tracker
 
