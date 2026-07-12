@@ -624,32 +624,78 @@ docstrings are repointed to the new file names."
 
 ### Task 3: Manual install verification, then close the loop
 
-This task cannot be scripted inside a coding session — `/plugin marketplace add`, `/plugin install`, and skill invocation are interactive Claude Code actions performed in a live session, not shell commands a test suite can drive. **Perform Steps 1–3 by hand in a real Claude Code session on a machine you control**, then apply Steps 4–6 based on what you observe.
+This task cannot be scripted inside a coding session — `/plugin marketplace add`, `/plugin install`, and skill invocation are interactive Claude Code actions performed in a live session, not shell commands a test suite can drive. **Perform Steps 1–3 by hand in a real Claude Code session**, then apply Steps 4–6 based on what you observe.
 
 **Files:**
 - Modify: `README.md` (conditionally — only if Step 3 finds the direct-repo channel broken)
 - Modify: `PRODUCT.md` (only after Steps 1–2 both pass)
 
 **Interfaces:**
-- Consumes: a plugin release built from this branch (or a local dev install pointed at this checkout) and a machine with (or without) a stale `~/.claude/skills/viva` present, per pass.
+- Consumes: this branch's checkout, installed locally as a plugin via a local-marketplace path (Steps 1–2 toggle `~/.claude/skills/viva`'s presence on one machine — no second machine needed); the real `jacquardlabs/viva` GitHub repo for Step 3's channel check.
 - Produces: the two-pass verification evidence the design's Operational readiness section requires, and the PRODUCT.md caveat removal it gates.
 
-- [ ] **Step 1: MANUAL — clean-machine pass**
+**No second machine required.** Both passes run on one machine by toggling
+the *state* the design cares about (personal clone present vs. absent), not
+by finding separate hardware. Do not use `claude --plugin-dir` for this —
+doc-confirmed, that flag loads straight from disk and never touches
+`~/.claude/plugins/cache`, so it would exercise skill discovery correctly
+but give a **false** `server.py not found` on the `$VIVA_DIR` guard (which
+deliberately only searches the cache) even though the plugin is loaded
+correctly. Use a **local marketplace path** instead — doc-confirmed to copy
+into `~/.claude/plugins/cache` at install time, exactly like a real
+consumer install, so it exercises the actual resolve logic this design
+ships. Run everything below from *outside* this worktree (a fresh shell in
+your home directory is fine) so project-level skill discovery inside the
+viva repo itself can't mask a plugin-level registration failure.
 
-On a machine (or account) with no `~/.claude/skills/viva` present:
-1. Install the viva plugin from this branch's checkout (e.g. `/plugin marketplace add jacquardlabs/marketplace` then `/plugin install viva@jacquardlabs-marketplace`, pointed at this branch, or your team's normal dev-install flow).
-2. Confirm all three skills are listed in the skill registry: `viva`, `viva-qa`, `viva-diff`.
-3. Write a minimal `.viva/qa-input.json` (see `.claude/skills/viva-qa/SKILL.md`'s Input contract) and invoke `/viva-qa` far enough to confirm the `$VIVA_DIR` resolve succeeds (server starts, browser tab opens) rather than hitting the `server.py not found` guard.
+- [ ] **Step 1: MANUAL — clean-machine pass (personal clone absent)**
 
-Record the outcome (pass/fail) before continuing.
+```bash
+# Get the stale clone out of the way — don't delete it yet, Step 2 reuses it.
+mv ~/.claude/skills/viva ~/.claude/skills/viva.bak 2>/dev/null || true
+```
 
-- [ ] **Step 2: MANUAL — shadowing-case pass**
+In a Claude Code session, from a directory outside this worktree:
+```
+/plugin marketplace add /Users/bryan/Projects/viva/.claude/worktrees/101
+```
+Note the marketplace name it reports registering under (likely `viva`, the
+plugin's own name — use whatever it actually prints), then:
+```
+/plugin install viva@<reported-marketplace-name>
+```
+1. Confirm all three skills are listed in the skill registry: `viva`,
+   `viva-qa`, `viva-diff`.
+2. Write a minimal `.viva/qa-input.json` (see
+   `.claude/skills/viva-qa/SKILL.md`'s Input contract) and invoke
+   `/viva-qa` far enough to confirm the `$VIVA_DIR` resolve succeeds
+   (server starts, browser tab opens) rather than hitting the `server.py
+   not found` guard.
 
-On a machine with a stale personal clone deliberately present (`git clone https://github.com/jacquardlabs/viva ~/.claude/skills/viva` using the pre-this-branch `main`, or simulate by placing an old copy there):
-1. Install the plugin as in Step 1 without deleting the clone first.
-2. Invoke bare `/viva` and confirm it resolves to the **personal** skill (the old clone) — the doc-confirmed precedence this design's migration note now warns about.
-3. Invoke `/viva-qa` or `/viva-diff` and confirm they resolve to the **plugin** version (the clone never had these).
-4. Delete `~/.claude/skills/viva` and confirm bare `/viva` now resolves to the plugin version.
+Record the outcome (pass/fail) before continuing. Leave the plugin
+installed — Step 2 reuses it.
+
+- [ ] **Step 2: MANUAL — shadowing-case pass (personal clone present)**
+
+```bash
+# Restore the stale clone — this is the actual pre-existing personal
+# skill this design's migration note warns about, not a simulated one.
+mv ~/.claude/skills/viva.bak ~/.claude/skills/viva
+```
+
+With the plugin still installed from Step 1 and the clone now back:
+1. Invoke bare `/viva` and confirm it resolves to the **personal** skill
+   (the old clone) — the doc-confirmed precedence this design's migration
+   note now warns about.
+2. Invoke `/viva-qa` or `/viva-diff` and confirm they resolve to the
+   **plugin** version (the clone never had these).
+3. Delete the clone for real this time (matching the actual README
+   migration instruction, not the temporary rename from Step 1):
+   ```bash
+   rm -rf ~/.claude/skills/viva
+   ```
+4. Invoke bare `/viva` again and confirm it now resolves to the plugin
+   version.
 
 Record the outcome before continuing.
 
