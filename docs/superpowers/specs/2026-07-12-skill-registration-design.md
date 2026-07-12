@@ -74,8 +74,23 @@ only so `git clone → ~/.claude/skills/viva` would register the core skill;
 personal-skill discovery is one level deep (doc-confirmed:
 code.claude.com/docs/en/skills), so that channel can never carry the
 sub-skills. README's manual-clone instructions are removed and replaced with
-a migration note: previously installed via git clone? Delete
-`~/.claude/skills/viva` and install the plugin. Moving the root file into
+a migration note: previously installed via git clone? **Delete
+`~/.claude/skills/viva` before installing the plugin.** Leaving it in place
+does not just risk a stale copy — it deterministically shadows the plugin's
+core skill: personal skills take invocation precedence over a plugin skill
+of the same bare name (doc-confirmed:
+code.claude.com/docs/en/skills — "enterprise overrides personal, personal
+overrides project, and any of these override bundled skills"; plugin skills
+sit outside that chain and are reached by bare name only when nothing
+higher registers the same name, else via the namespaced
+`<plugin-name>:<skill-name>` form). So a leftover clone means bare `/viva`
+runs the stale clone's old prose indefinitely, while `/viva-qa` and
+`/viva-diff` — which the clone never had — run current prose from the
+plugin. This is the same "stale copy shadows a fresh install" failure that
+motivates piece 3's resolution change (below), resurfacing one layer up at
+skill *invocation* instead of `$VIVA_DIR` resolution — closing it here is
+one sentence, so it closes here rather than staying an open risk. Moving
+the root file into
 `.claude/skills/viva/` (piece 1) also removes the symlink indirection that
 existed to serve both channels from one file — fragility, not convenience:
 git preserves the relative link, but zip downloads and Windows checkouts
@@ -253,11 +268,16 @@ failing signal is direct: after a fresh install, the skill registry lists
 `viva`, `viva-qa`, and `viva-diff` (working), or an invocation fails loud at
 the `$VIVA_DIR` guard with the install hint (failing).
 
-- **Verification (gates the PRODUCT.md edit):** on a machine with the stale
-  `~/.claude/skills/viva` removed, install the plugin from this branch's
-  checkout, confirm all three skills register, and run `/viva-qa` far enough
-  to pass the `$VIVA_DIR` resolve. The same pass also exercises the README's
-  direct-repo channel (`/plugin marketplace add jacquardlabs/viva` +
+- **Verification (gates the PRODUCT.md edit):** two passes, not one. First,
+  on a machine with the stale `~/.claude/skills/viva` removed, install the
+  plugin from this branch's checkout, confirm all three skills register, and
+  run `/viva-qa` far enough to pass the `$VIVA_DIR` resolve. Second, with
+  the stale clone deliberately left in place, install the plugin and confirm
+  bare `/viva` still resolves to the personal skill (the shadowing the
+  migration note now warns about) while `/viva-qa`/`/viva-diff` resolve to
+  the plugin — matching the doc-confirmed precedence above, not a surprise
+  at ship time. The same run also exercises the README's direct-repo
+  channel (`/plugin marketplace add jacquardlabs/viva` +
   `/plugin install viva@viva`): if it works it stays documented as the
   secondary alternative; if it fails, **this change** removes or caveats
   those README lines (a one-line fix) — a freshly rewritten install section
