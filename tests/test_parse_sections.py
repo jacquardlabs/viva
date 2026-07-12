@@ -659,6 +659,126 @@ def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
     assert ("+", "task two body, expanded") in diff_ops, task2.get("diff")
 
 
+def test_coarser_trailing_heading_gets_own_card() -> None:
+    # #115: a coarser heading after the last split-level heading must not be
+    # silently absorbed into the preceding card.
+    doc = (
+        "# jig PLAN.md\n\n"
+        "### Task 1: First\n\nBody text for task 1.\n\n"
+        "### Task 2: Second\n\nBody text for task 2.\n\n"
+        "## Not-here follow-ups\n\n"
+        "These are out-of-scope items noticed while planning but not part of "
+        "this\nplan's tasks.\n\n"
+        "- Follow-up A\n- Follow-up B\n"
+    )
+    data = run(doc)
+    titles = [s["title"] for s in data["sections"]]
+    assert titles == ["jig PLAN.md", "Task 1: First", "Task 2: Second", "Not-here follow-ups"], titles
+    task2 = next(s for s in data["sections"] if s["title"] == "Task 2: Second")
+    assert "Not-here follow-ups" not in task2["content"], task2["content"]
+    followups = next(s for s in data["sections"] if s["title"] == "Not-here follow-ups")
+    assert "Follow-up A" in followups["content"]
+    # Integrity check still holds (every source char in exactly one section).
+    assert "".join(s["content"] for s in data["sections"]) == doc
+
+
+def test_coarser_interleaved_heading_becomes_own_card() -> None:
+    # A coarser heading between two split-level headings (not just trailing)
+    # is promoted too, and doesn't swallow either neighbor.
+    doc = (
+        "# Doc\n\n"
+        "### Task 1\n\nbody one\n\n"
+        "## Aside\n\naside text\n\n"
+        "### Task 2\n\nbody two\n"
+    )
+    data = run(doc)
+    titles = [s["title"] for s in data["sections"]]
+    assert titles == ["Doc", "Task 1", "Aside", "Task 2"], titles
+    task1 = next(s for s in data["sections"] if s["title"] == "Task 1")
+    aside = next(s for s in data["sections"] if s["title"] == "Aside")
+    assert "Aside" not in task1["content"]
+    assert "aside text" in aside["content"]
+    assert "".join(s["content"] for s in data["sections"]) == doc
+
+
+def test_coarser_heading_before_first_split_stays_in_preamble() -> None:
+    # Pre-mortem lane 2's negative case: a coarser heading that occurs BEFORE
+    # the first split-level heading must stay folded into the preamble — the
+    # `idx > first_split_idx` guard must not promote it too. Otherwise a
+    # document's own `# Title` (or any coarser lead-in) would fragment into
+    # its own one-line card, breaking preamble handling broadly.
+    doc = (
+        "# Doc\n\n"
+        "## Overview\n\nAn overview aside before any task.\n\n"
+        "### Task 1\n\nbody one\n\n"
+        "### Task 2\n\nbody two\n"
+    )
+    data = run(doc)
+    titles = [s["title"] for s in data["sections"]]
+    assert titles == ["Doc", "Task 1", "Task 2"], titles
+    preamble = data["sections"][0]
+    assert "## Overview" in preamble["content"]
+    assert "overview aside" in preamble["content"]
+    assert "".join(s["content"] for s in data["sections"]) == doc
+
+
+def test_coarser_trailing_revision_history_excluded_not_absorbed() -> None:
+    # Pre-mortem lane 3: a coarser trailing "## Revision History" is now
+    # recognized as the ledger boundary (excluded, integrity-exempt) instead
+    # of silently absorbed into the last task card.
+    doc = (
+        "# Doc\n\n"
+        "### Task 1\n\nbody one\n\n"
+        "### Task 2\n\nbody two\n\n"
+        "## Revision History\n\n| Round | Note |\n|---|---|\n"
+    )
+    data = run(doc)
+    titles = [s["title"] for s in data["sections"]]
+    assert "Revision History" not in titles, titles
+    assert titles == ["Doc", "Task 1", "Task 2"], titles
+    task2 = next(s for s in data["sections"] if s["title"] == "Task 2")
+    assert "Revision History" not in task2["content"]
+    rh_start = doc.index("## Revision History")
+    expected_source = doc[:rh_start]
+    assert "".join(s["content"] for s in data["sections"]) == expected_source
+
+
+def test_coarser_heading_approval_not_carried_when_boundary_moves() -> None:
+    # Pre-mortem lane 6: for a doc already mid-round when this fix ships, an
+    # approved task whose boundary moves (content byte-identity breaks) must
+    # not silently carry its approval forward — same "changed content
+    # requires re-review" rule _load_approved already documents elsewhere.
+    old_task2_content = (
+        "### Task 2\n\nbody two\n\n"
+        "## Not-here follow-ups\n\nfollow-up text\n"
+    )
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Task 1", "content": "### Task 1\n\nbody one\n\n"},
+            {"id": "s2", "title": "Task 2", "content": old_task2_content},
+        ],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ],
+    }
+    # Same doc text, reparsed with the fix: Task 2's boundary now ends before
+    # "## Not-here follow-ups" instead of absorbing it.
+    new_doc = "### Task 1\n\nbody one\n\n" + old_task2_content
+    data = _run_round2(new_doc, prior_input, prior_verdicts)
+    task2 = next(s for s in data["sections"] if s["title"] == "Task 2")
+    followups = next(s for s in data["sections"] if s["title"] == "Not-here follow-ups")
+    assert task2["id"] not in data["approved_ids"], (
+        "Task 2's boundary moved (content is no longer byte-identical to the "
+        "prior approved blob) — approval must not carry forward"
+    )
+    assert followups["id"] not in data["approved_ids"], "new card was never approved"
+
+
 def main() -> None:
     tests = [
         test_basic_h2_split,
@@ -693,6 +813,11 @@ def main() -> None:
         test_split_on_fixture_one_section_per_task,
         test_split_on_fixture_round2_carries_forward_through_section_key,
         test_split_on_identity_reuses_section_key_no_new_rule,
+        test_coarser_trailing_heading_gets_own_card,
+        test_coarser_interleaved_heading_becomes_own_card,
+        test_coarser_heading_before_first_split_stays_in_preamble,
+        test_coarser_trailing_revision_history_excluded_not_absorbed,
+        test_coarser_heading_approval_not_carried_when_boundary_moves,
     ]
     failed = 0
     for t in tests:

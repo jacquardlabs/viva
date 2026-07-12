@@ -120,6 +120,21 @@ def _split_sections(
         if split_level is None:
             return [{"id": "s1", "title": Path(doc_path).stem, "content": text}], None
         split_headings = [(lv, t, idx) for lv, t, idx in headings if lv == split_level]
+        # Promote any heading coarser than the detected split level to a split
+        # point too, as long as it occurs after the first split-level heading
+        # (before that is preamble/title territory — see design doc's
+        # "Alternatives considered" #2 for why the idx guard matters). Per
+        # `_find_split_level`'s "coarsest repeater wins" contract, every level
+        # coarser than `split_level` occurs at most once in the whole
+        # document, so this can only ever add distinct, singleton headings —
+        # never re-trigger a coarsest-repeater ambiguity.
+        first_split_idx = split_headings[0][2]
+        coarser = [
+            (lv, t, idx) for lv, t, idx in headings
+            if lv < split_level and idx > first_split_idx
+        ]
+        if coarser:
+            split_headings = sorted(split_headings + coarser, key=lambda h: h[2])
 
     h1_title = next((h[1] for h in headings if h[0] == 1), None)
 
