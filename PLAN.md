@@ -65,7 +65,7 @@ Done means:
 
 Evidence: verify-step transcripts, captured by /build.
 
-### Task 5 — Between-rounds state replaces the spinner
+### Task 5 — Between-rounds state replaces the spinner [PASS]
 
 Why now:    Independent of Tasks 2-4; interacts with the #119 soft-timeout machinery, so it carries its own regression holds; second half of the phase's kernel.
 Read first: `server.py:1408-1413`, `server.py:2623-2642`, `server.py:2694-2741`, `tests/test_server_processing_timeout.py`
