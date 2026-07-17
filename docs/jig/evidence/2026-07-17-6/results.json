@@ -1,0 +1,27 @@
+{
+  "task": "6",
+  "overall": "PASS",
+  "items": [
+    {
+      "id": "1",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:56543\nviva \u00b7 review mode \u00b7 http://127.0.0.1:56548\ntest_design_md_matches_shipped_surface: OK\ntest_draft_plan_superseded: OK\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_page_ships_recap_overlay: OK\ntest_ready_submit_routes_through_recap: OK\ntest_page_ships_between_rounds_card: OK\ntest_between_rounds_snapshot_wiring: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (14 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "2",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:56553\nviva \u00b7 review mode \u00b7 http://127.0.0.1:56556\ntest_design_md_matches_shipped_surface: OK\ntest_draft_plan_superseded: OK\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_page_ships_recap_overlay: OK\ntest_ready_submit_routes_through_recap: OK\ntest_page_ships_between_rounds_card: OK\ntest_between_rounds_snapshot_wiring: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (14 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "3",
+      "kind": "hold",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_headless_contract_doc.py\nexit code: 0\n--- stdout ---\n  ok  test_doc_exists\n  ok  test_contract_version_marker_present_and_parses\n  ok  test_mode_choices_match_argparse\n  ok  test_submit_size_cap_matches_doc\n  ok  test_exit_code_2_is_argparse_usage_error\nOK (5 tests)\n\n--- stderr ---\n"
+    }
+  ]
+}
