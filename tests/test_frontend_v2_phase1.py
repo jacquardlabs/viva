@@ -31,11 +31,17 @@ the 'processing' SSE handler renders #processing-view as a pulsing dot over
 zero rows (or a qa submit, which never snapshots) fall back to the minimal
 processing line; the snapshot is deliberately in-memory only, so a tab
 reload during revision re-boots into the prior round exactly as before.
+Task 6 closes the phase with docs alignment: DESIGN.md documents the shipped
+surface (sheet ground values, transmittal row grammar + attribution rule,
+recap gate, between-rounds state, carried approvals) with zero grid-paper/
+sheet-frame/spinner residue, and the pre-jig draft plan is deleted so
+PLAN.md is the branch's only live plan artifact.
 
 These are wiring checks against the served page (the HTML constant is static,
 so one review-mode boot serves every mode's CSS/JS; GET /input carries the
 round data that drives which sections render carried); rendered layout is a
-browser check, not a subprocess + urllib one.
+browser check, not a subprocess + urllib one. The Task 6 checks are static
+file assertions — no server boot.
 """
 import json
 import re
@@ -45,6 +51,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _server_harness import get, get_text, launch_server, post  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
 
 # Round-1 review fixture — deliberately plain (no diff/open_notes/annotations/
 # approved_ids content) so later tasks can layer round-2 fixtures beside it.
@@ -497,7 +505,64 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
     print("test_between_rounds_snapshot_wiring: OK")
 
 
+def test_design_md_matches_shipped_surface() -> None:
+    """Cap: DESIGN.md documents the shipped phase-1 surface. Every value it
+    states for the sheet ground is a literal the served HTML also carries
+    (--table hexes, the 7px inner rule, the diff-mode widening), the four new
+    surfaces (transmittal slip with its attribution rule, recap gate,
+    between-rounds state, carried approvals) each have their row grammar /
+    gate strings documented, and the retired constructs — grid paper, the
+    fixed .sheet-frame, the spinner — leave zero references behind."""
+    design = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
+    html = (ROOT / "server.py").read_text(encoding="utf-8")
+
+    # Sheet ground — each documented value must also be shipped verbatim.
+    for literal in ("#060e1a", "#e2e8f1", "inset: 7px", "min(95vw, 1600px)"):
+        assert literal in design, f"DESIGN.md missing sheet-ground value {literal!r}"
+        assert literal in html, f"DESIGN.md documents {literal!r} but server.py no longer ships it"
+    assert "`--table`" in design, "DESIGN.md missing the --table token"
+    assert "#paper" in design, "DESIGN.md missing the #paper sheet"
+    assert "edge coordinate" in design, "DESIGN.md missing the edge coordinates"
+
+    # Transmittal slip — row grammar plus the attribution rule's two labels.
+    assert "revised to your note" in design, "DESIGN.md missing the attributed revised row"
+    assert "flagged & unreviewed" in design, "DESIGN.md missing the flagged row"
+    assert "approved & unchanged" in design, "DESIGN.md missing the carried row"
+    assert "transmittal" in design.lower(), "DESIGN.md missing the transmittal slip"
+
+    # Recap gate, between-rounds state, carried approvals.
+    assert "confirm & submit" in design, "DESIGN.md missing the recap confirm control"
+    assert "recap" in design.lower(), "DESIGN.md missing the recap overlay"
+    assert "submitted — the agent is revising" in design, \
+        "DESIGN.md missing the between-rounds heading"
+    assert "withdraw approval" in design, "DESIGN.md missing the withdraw control"
+    assert "is-carried" in design, "DESIGN.md missing the carried card class"
+
+    # Retired constructs leave no residue: the grid-paper metaphor, the fixed
+    # .sheet-frame, the 24px grid, and the deleted spinner (including its
+    # border-radius table row).
+    assert "grid paper" not in design, "DESIGN.md still says grid paper"
+    assert "grid-paper" not in design, "DESIGN.md still says grid-paper"
+    assert "sheet-frame" not in design, "DESIGN.md still documents .sheet-frame"
+    assert "24px" not in design, "DESIGN.md still carries a 24px grid reference"
+    assert "spinner" not in design.lower(), "DESIGN.md still documents the spinner"
+    print("test_design_md_matches_shipped_surface: OK")
+
+
+def test_draft_plan_superseded() -> None:
+    """Cap: the pre-jig draft plan is deleted — PLAN.md is the branch's only
+    live plan artifact."""
+    draft = ROOT / "docs" / "superpowers" / "plans" / "2026-07-16-frontend-v2-phase1.md"
+    assert not draft.exists(), f"superseded draft plan still on the branch: {draft}"
+    assert (ROOT / "PLAN.md").is_file(), "PLAN.md (the live plan artifact) is missing"
+    print("test_draft_plan_superseded: OK")
+
+
 def main() -> None:
+    # Task 6 docs alignment — static file checks, no server boot.
+    test_design_md_matches_shipped_surface()
+    test_draft_plan_superseded()
+
     # Round-1 boot — sheet ground plus the zero-carried hold. Its own tmp dir:
     # wait_for_url polls for `server.url` beside the output file, so each boot
     # gets a fresh directory rather than racing a stale url file.
@@ -530,7 +595,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (12 tests)")
+    print("\nOK (14 tests)")
 
 
 if __name__ == "__main__":
