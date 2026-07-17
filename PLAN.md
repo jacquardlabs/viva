@@ -35,7 +35,7 @@ Done means:
 
 Evidence: verify-step transcripts, captured by /build.
 
-### Task 3 — Transmittal slip on round >= 2, review mode only
+### Task 3 — Transmittal slip on round >= 2, review mode only [PASS]
 
 Why now:    The kernel of the phase (the decide gate named it); consumes Task 2's carried semantics for its ▣ row and jump behavior.
 Read first: `server.py:1361-1389`, `server.py:1703-1793`, `server.py:1637-1686`, `tests/test_server_qa.py`
