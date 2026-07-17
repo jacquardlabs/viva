@@ -80,7 +80,7 @@ Done means:
 
 Evidence: verify-step transcripts, captured by /build.
 
-### Task 6 — DESIGN.md rewrite and draft-plan supersession
+### Task 6 — DESIGN.md rewrite and draft-plan supersession [PASS]
 
 Why now:    Documents only shipped behavior, so it must run last; also retires the pre-jig draft plan so the branch carries exactly one plan artifact.
 Read first: `DESIGN.md`, `docs/superpowers/plans/2026-07-16-frontend-v2-phase1.md`, `docs/superpowers/specs/2026-07-16-frontend-v2-target-design.md`
