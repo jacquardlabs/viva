@@ -275,6 +275,61 @@ body {
 .ledger.ledger-static .ledger-head:hover { background: none; }
 .complete-inner .ledger { width: 100%; max-width: 560px; text-align: left; margin-top: 1.5rem; }
 
+/* ─── Transmittal slip (round >= 2, review mode only) ────────
+   The cover slip on a returned drawing: one jump-link row per section
+   attributing what changed at this revision — revised to your note, bare
+   revised, flagged & unreviewed, approved & unchanged. Reuses the verdict
+   color slots: revised → orange (the rev-tri), flag error → orange, flag
+   warn → violet, approved → teal. */
+.transmittal {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease both;
+}
+.transmittal-head { padding: 8px 14px 0; }
+.transmittal-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.transmittal-rows { padding: 4px 14px 10px; }
+.transmittal-row {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.transmittal-row:hover { background: var(--bg3); }
+.transmittal-row:hover .tr-title { color: var(--accent); }
+.tr-marker { flex-shrink: 0; font-size: 11px; }
+.tr-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.tr-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tr-revised-note .tr-marker, .tr-revised-note .tr-label,
+.tr-revised .tr-marker,      .tr-revised .tr-label,
+.tr-flag-error .tr-marker,   .tr-flag-error .tr-label { color: var(--orange); }
+.tr-flag-warn .tr-marker,    .tr-flag-warn .tr-label  { color: var(--violet); }
+.tr-approved .tr-marker,     .tr-approved .tr-label   { color: var(--teal); }
+
 .progress-track {
   flex: 1;
   height: 2px;
@@ -1216,6 +1271,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
+.transmittal-row:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1437,6 +1493,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
         </div>
       </div>
     </div>
+    <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
     <div class="sort-bar" id="sort-bar" style="display:none">
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
@@ -1675,6 +1732,73 @@ function renderLedger() {
   el('ledger-head').onclick = () => el('ledger').classList.toggle('is-collapsed');
 }
 
+/* ─── Transmittal slip (round >= 2, review mode only) ────────
+   The cover slip on a returned drawing: one row per section attributing
+   what changed at this revision and why — `revised to your note` (a diff
+   answering an open note), bare `revised` (a silent diff), `flagged &
+   unreviewed` (error before warn annotations; info advises, it doesn't
+   flag), `approved & unchanged` (carried approvals). Each row jump-links
+   to its card; carried targets scroll + reveal rather than activate
+   (activateReviewCard's carried branch). transmittalHTML is pure over the
+   review-input shape — classification and ordering only, no DOM;
+   renderTransmittal owns the mount and the jump wiring. Diff mode ships
+   no slip: hunk identity is positional across rounds. */
+const FLAG_RANK = { error: 0, warn: 1 };
+
+// Strongest flag severity on a section: 0 (error), 1 (warn), or null.
+function flagRank(section) {
+  const ranks = ((section && section.annotations) || [])
+    .map(a => FLAG_RANK[(a || {}).severity])
+    .filter(r => r !== undefined);
+  return ranks.length ? Math.min(...ranks) : null;
+}
+
+function transmittalHTML(data) {
+  if (!data || data.mode !== 'review' || !(data.round > 1)) return '';
+  const approved = new Set(data.approved_ids || []);
+  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [], carried = [];
+  (data.sections || []).forEach(s => {
+    const hasDiff  = Array.isArray(s.diff) && s.diff.length > 0;
+    const hasNotes = Array.isArray(s.open_notes) && s.open_notes.length > 0;
+    if (hasDiff) { (hasNotes ? revisedNoted : revisedBare).push(s); return; }
+    const rank = flagRank(s);
+    if (rank !== null && !approved.has(s.id)) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
+    if (approved.has(s.id)) carried.push(s);
+  });
+  const row = (s, cls, marker, label) =>
+    '<button type="button" class="transmittal-row ' + cls + '" data-target="' + esc(s.id) + '">'
+    + '<span class="tr-marker" aria-hidden="true">' + marker + '</span>'
+    + '<span class="tr-label">' + label + '</span>'
+    + '<span class="tr-title">' + esc(s.title) + '</span></button>';
+  // A revised row names its cause when the diff answers the reviewer's own
+  // open note; a silent revision stays bare.
+  const revisedRow = s => {
+    const noted = Array.isArray(s.open_notes) && s.open_notes.length > 0;
+    return row(s, noted ? 'tr-revised-note' : 'tr-revised', '&#9651;',
+               noted ? 'revised to your note' : 'revised');
+  };
+  const rows = revisedNoted.concat(revisedBare).map(revisedRow).concat(
+    flaggedErr.map(s => row(s, 'tr-flag-error', '&#9873;', 'flagged &amp; unreviewed')),
+    flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
+    carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
+  if (!rows.length) return '';
+  return '<div class="transmittal-head"><span class="transmittal-title">Transmittal &middot; REV '
+    + esc(String(data.round).padStart(2, '0')) + '</span></div>'
+    + '<div class="transmittal-rows">' + rows.join('') + '</div>';
+}
+
+function renderTransmittal() {
+  const panel = el('transmittal');
+  if (!panel) return;
+  const html = transmittalHTML(REVIEW_DATA);
+  if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.innerHTML = html;
+  panel.style.display = '';
+  panel.querySelectorAll('.transmittal-row').forEach(btn => {
+    btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
+  });
+}
+
 /* ─────────────────────────────────────────────────────────
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
@@ -1743,6 +1867,7 @@ function initReview() {
   else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
   updateReviewStats();
   renderLedger();
+  renderTransmittal();
   setupCardSort();
 }
 

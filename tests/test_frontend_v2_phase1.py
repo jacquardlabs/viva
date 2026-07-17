@@ -3,8 +3,8 @@
 approvals).
 
 This is the phase's shared test file: the review fixtures below and the
-subprocess + urllib boot are the harness later phase-1 tasks (transmittal,
-recap, between-rounds) extend with their own page-ships checks. Task 1's
+subprocess + urllib boot are the harness later phase-1 tasks (recap,
+between-rounds) extend with their own page-ships checks. Task 1's
 coverage is the sheet ground: the served review page frames the shell in a
 bounded #paper sheet — edge border, 1px inner rule at 7px inset, aria-hidden
 coordinate/corner decoration — on a flat --table ground, the 24px drafting
@@ -12,7 +12,13 @@ grid and the fixed .sheet-frame are gone at every layer, and diff mode widens
 the sheet in lockstep with the shell. Task 2 adds the carried-approval
 surface: round >= 2 `approved_ids` members collapse to head-only carried
 cards (mono APPROVED mini-stamp, read-only reveal, withdraw-to-pending), and
-the submit payload keeps recording them as `"verdict": "approved"`.
+the submit payload keeps recording them as `"verdict": "approved"`. Task 3
+adds the transmittal slip: a pure builder over the review-input, mounted
+between the ledger and #review-cards on round > 1 in review mode only,
+attributing each section — `revised to your note` (diff answering an open
+note), bare `revised` (silent diff), `flagged & unreviewed` (error before
+warn annotations), `approved & unchanged` (carried) — with every row
+jump-linking through activateReviewCard.
 
 These are wiring checks against the served page (the HTML constant is static,
 so one review-mode boot serves every mode's CSS/JS; GET /input carries the
@@ -20,6 +26,7 @@ round data that drives which sections render carried); rendered layout is a
 browser check, not a subprocess + urllib one.
 """
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -203,6 +210,74 @@ def test_round2_submit_records_carried_approved(base: str, viva: Path) -> None:
     print("test_round2_submit_records_carried_approved: OK")
 
 
+def test_round2_serves_transmittal_slip(page: str, data: dict) -> None:
+    """Cap: the transmittal slip ships for the round-2 fixture. GET /input
+    carries the slip's raw material intact — per-section `diff`,
+    `open_notes`, `annotations`, and the top-level `approved_ids` — and the
+    page ships the pure builder with both attribution branches (`revised to
+    your note` for a diff answering an open note, bare `revised` for a
+    silent diff), flag rows partitioned error before warn, `approved &
+    unchanged` rows for carried members, and jump wiring routed through
+    activateReviewCard (whose carried branch scrolls + reveals rather than
+    activates)."""
+    # /input carries the raw material for every attribution branch intact.
+    by_id = {s["id"]: s for s in data["sections"]}
+    fixture = {s["id"]: s for s in REVIEW_INPUT_R2["sections"]}
+    assert data["approved_ids"] == REVIEW_INPUT_R2["approved_ids"], data
+    assert by_id["s4"]["diff"] == fixture["s4"]["diff"], by_id["s4"]
+    assert by_id["s4"]["open_notes"] == fixture["s4"]["open_notes"], by_id["s4"]
+    assert by_id["s5"]["diff"] == fixture["s5"]["diff"], by_id["s5"]
+    assert "open_notes" not in by_id["s5"], by_id["s5"]
+    assert by_id["s6"]["annotations"] == fixture["s6"]["annotations"], by_id["s6"]
+    assert by_id["s7"]["annotations"] == fixture["s7"]["annotations"], by_id["s7"]
+
+    # The slip mounts between the ledger and the card list.
+    assert page.index('id="ledger"') < page.index('id="transmittal"') \
+        < page.index('id="review-cards"'), "slip must mount between ledger and cards"
+
+    # The page ships the pure builder, guarded to review mode + round > 1.
+    assert 'function transmittalHTML(' in page, "page missing transmittalHTML"
+    assert "if (!data || data.mode !== 'review' || !(data.round > 1)) return '';" in page, \
+        "transmittalHTML missing its round > 1 + review-mode guard"
+    # Both attribution branches of a revised row ship as one decision.
+    assert "noted ? 'revised to your note' : 'revised'" in page, \
+        "slip missing the revised-to-your-note / bare-revised attribution"
+    # Flag rows come from error/warn annotations, error partition first.
+    assert 'const FLAG_RANK = { error: 0, warn: 1 };' in page, \
+        "slip missing the error/warn flag ranking"
+    assert "flaggedErr.map(s => row(s, 'tr-flag-error', '&#9873;', 'flagged &amp; unreviewed'))" in page
+    assert "flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed'))" in page
+    assert page.index("flaggedErr.map") < page.index("flaggedWarn.map"), \
+        "error flags must row before warn flags"
+    # Carried approvals close the slip as approved & unchanged.
+    assert "carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged'))" in page
+    # Every row jump-links through activateReviewCard — its carried branch
+    # scrolls + reveals rather than activates, so carried targets behave.
+    assert "panel.querySelectorAll('.transmittal-row').forEach(btn => {" in page
+    assert "btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));" in page
+    # initReview renders the slip alongside the ledger.
+    assert 'renderTransmittal();' in page, "initReview must render the slip"
+    print("test_round2_serves_transmittal_slip: OK")
+
+
+def test_round1_zero_transmittal_markers(page: str, data: dict) -> None:
+    """Cap: the slip is guarded to round > 1 and review mode — the round-1
+    fixture serves an empty, hidden mount, zero rendered slip rows, and a
+    builder whose only render path bails on round 1 or a non-review mode."""
+    assert data["round"] == 1, data
+    # The static mount ships empty and hidden — no slip markers rendered.
+    assert ('<nav class="transmittal" id="transmittal" '
+            'aria-label="What changed this round" style="display:none"></nav>') in page, \
+        "transmittal mount must ship empty and hidden"
+    assert not re.search(r'class="transmittal-row [a-z-]+"', page), \
+        "static page must never carry a rendered slip row"
+    # The only populate path is the guarded pure builder …
+    assert "if (!data || data.mode !== 'review' || !(data.round > 1)) return '';" in page
+    # … and the mount collapses back to hidden when the builder returns ''.
+    assert "if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }" in page
+    print("test_round1_zero_transmittal_markers: OK")
+
+
 def test_round1_zero_carried_markers(page: str, data: dict) -> None:
     """Hold: the round-1 fixture (no approved_ids) serves zero carried
     markers — GET /input carries no approved ids and the carried builder is
@@ -238,6 +313,7 @@ def main() -> None:
         test_grid_gone_at_every_layer(page)
         test_mode_diff_paper_widens(page)
         test_round1_zero_carried_markers(page, data)
+        test_round1_zero_transmittal_markers(page, data)
 
     # Round-2 boot — carried cards collapse in place, submit stays approved.
     tmp2 = Path(tempfile.mkdtemp())
@@ -249,8 +325,9 @@ def main() -> None:
         data = get(base, "/input")
         test_round2_serves_carried_markup(page, data)
         test_round2_submit_records_carried_approved(base, viva2)
+        test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (6 tests)")
+    print("\nOK (8 tests)")
 
 
 if __name__ == "__main__":
