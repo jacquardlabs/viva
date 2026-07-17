@@ -50,7 +50,7 @@ Done means:
 
 Evidence: verify-step transcripts, captured by /build.
 
-### Task 4 — Recap overlay as the submit gate
+### Task 4 — Recap overlay as the submit gate [PASS]
 
 Why now:    Independent of the slip; rewires the shared submit button, so it lands before Task 6 documents the final submit flow; the pre-mortem's qa-guard failure mode (#3) is checked here.
 Read first: `server.py:2356-2375`, `server.py:2537-2552`, `server.py:2677-2686`, `server.py:2821-2879`, `server.py:1437-1447`
