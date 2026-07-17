@@ -51,6 +51,7 @@ HTML = r"""<!DOCTYPE html>
   --bg:        #0a1727;
   --bg2:       #0f1f33;
   --bg3:       #152840;
+  --table:     #060e1a;
   --border:    #1d324e;
   --border2:   #2a4768;
   --text:      #d8e7f5;
@@ -73,6 +74,7 @@ HTML = r"""<!DOCTYPE html>
     --bg:        #f3f6fa;
     --bg2:       #e9eef5;
     --bg3:       #dde5ef;
+    --table:     #e2e8f1;
     --border:    #cdd9e8;
     --border2:   #a8bdd4;
     --text:      #13293f;
@@ -86,13 +88,6 @@ HTML = r"""<!DOCTYPE html>
     --orange-bg: rgba(207,63,29,0.07);
     --violet:    #9a6b00;
     --violet-bg: rgba(154,107,0,0.08);
-  }
-
-  body {
-    background-image:
-      linear-gradient(rgba(168,189,212,0.30) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(168,189,212,0.30) 1px, transparent 1px);
-    background-size: 24px 24px;
   }
 
   .progress-fill {
@@ -144,15 +139,11 @@ html { scroll-behavior: smooth; }
 
 body {
   font-family: 'Bricolage Grotesque', sans-serif;
-  background: var(--bg);
+  /* the flat drafting table the sheet sits on — no background grid */
+  background: var(--table);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  /* drafting grid paper */
-  background-image:
-    linear-gradient(rgba(42,71,104,0.28) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(42,71,104,0.28) 1px, transparent 1px);
-  background-size: 24px 24px;
 }
 
 /* ─── Shell ──────────────────────────────────────────────── */
@@ -165,13 +156,14 @@ body {
 /* ─── Diff-first layout (mode-diff) ──────────────────────────
    Code diffs want the opposite of the 700px prose column: width, and one
    scroll context. body.mode-diff (stamped by the diff dispatch branch)
-   widens the shell and bottom bar together and removes .section-content's
+   widens the sheet, shell, and bottom bar together and removes .section-content's
    nested 60vh scroll — a hunk with context folding doesn't need the cap an
    arbitrary long document does, and page scroll becomes the only vertical
    scroll. Widening the container (instead of escaping it) is what keeps
    .card-body-inner's overflow:hidden accordion animation untouched — see
    the Rejected Approach note in the diff-first-surface design doc. */
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
+.mode-diff #paper { max-width: min(95vw, 1600px); }
 .mode-diff .section-content { max-height: none; overflow-y: visible; }
 
 /* ─── Header ─────────────────────────────────────────────── */
@@ -364,14 +356,22 @@ body {
 .card::before { top: -7px; left: -6px; }
 .card::after  { bottom: -7px; right: -6px; }
 
-/* The drawing sheet: a bordered field framing the whole review, registration
-   marks at its corners — the work sits on a sheet, not in a void. */
-.sheet-frame { position: fixed; inset: 16px; z-index: 30; pointer-events: none; border: 1px solid var(--border2); }
-.sheet-frame::before { content: ''; position: absolute; inset: 5px; border: 1px solid var(--border); }
-.sf-mark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
-.sf-tl { top: -7px; left: -7px; } .sf-tr { top: -7px; right: -7px; }
-.sf-bl { bottom: -7px; left: -7px; } .sf-br { bottom: -7px; right: -7px; }
-@media (max-width: 720px) { .sheet-frame { display: none; } }
+/* The drawing sheet: the document is a bounded sheet on the flat table —
+   edge border, inner rule, corner registration marks, edge coordinate
+   letters/numbers. Content-bounded (#paper wraps main.shell and grows with
+   it), not a fixed viewport frame; the decoration hangs just outside the
+   edge and hides where the sheet meets the viewport. */
+#paper { position: relative; max-width: 700px; margin: 32px auto 96px; background: var(--bg); border: 1px solid var(--border2); }
+#paper::before { content: ''; position: absolute; inset: 7px; border: 1px solid var(--border); pointer-events: none; }
+.paper-marks { position: absolute; inset: 0; pointer-events: none; }
+.pmark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
+.pm-tl { top: -7px; left: -7px; } .pm-tr { top: -7px; right: -7px; }
+.pm-bl { bottom: -7px; left: -7px; } .pm-br { bottom: -7px; right: -7px; }
+.pcoord { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 10px; line-height: 1; letter-spacing: 0.08em; color: var(--text3); }
+.pc-n { top: -16px; transform: translateX(-50%); }
+.pc-w { left: -16px; transform: translateY(-50%); }
+.pc-e { right: -16px; transform: translateY(-50%); }
+@media (max-width: 740px) { .paper-marks { display: none; } }
 .card.is-active::before, .card.is-active::after { opacity: 1; }
 
 /* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
@@ -1354,7 +1354,9 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 
 <a class="skip-link" href="#main-content">Skip to review</a>
 
-<div class="sheet-frame" aria-hidden="true"><span class="sf-mark sf-tl">+</span><span class="sf-mark sf-tr">+</span><span class="sf-mark sf-bl">+</span><span class="sf-mark sf-br">+</span></div>
+<div id="paper">
+
+<div class="paper-marks" aria-hidden="true"><span class="pmark pm-tl">+</span><span class="pmark pm-tr">+</span><span class="pmark pm-bl">+</span><span class="pmark pm-br">+</span><span class="pcoord pc-n" style="left:12.5%">1</span><span class="pcoord pc-n" style="left:37.5%">2</span><span class="pcoord pc-n" style="left:62.5%">3</span><span class="pcoord pc-n" style="left:87.5%">4</span><span class="pcoord pc-w" style="top:12.5%">A</span><span class="pcoord pc-w" style="top:37.5%">B</span><span class="pcoord pc-w" style="top:62.5%">C</span><span class="pcoord pc-w" style="top:87.5%">D</span><span class="pcoord pc-e" style="top:12.5%">A</span><span class="pcoord pc-e" style="top:37.5%">B</span><span class="pcoord pc-e" style="top:62.5%">C</span><span class="pcoord pc-e" style="top:87.5%">D</span></div>
 
 <main class="shell" id="main-content" tabindex="-1">
 
@@ -1447,6 +1449,8 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   </details>
 
 </main>
+
+</div><!-- /#paper -->
 
 <!-- Bottom bar -->
 <div class="bottom-bar">

@@ -8,6 +8,11 @@ decorative emoji are aria-hidden (#38), the focus-visible group covers the new
 controls (#52), action-btns carry type="button" (#51), and a keyboard legend
 ships (#39). These are string-needle checks against the HTML constant; the
 aria-expanded *toggle* behavior is verified manually in a browser.
+
+Frontend v2 phase 1 adds the sheet-ground chrome checks: the review sits on a
+bounded #paper sheet (edge border, inner rule, aria-hidden coordinate/corner
+decoration) over a flat --table ground, and the 24px grid + fixed .sheet-frame
+are gone at every layer.
 """
 import sys
 from pathlib import Path
@@ -115,6 +120,46 @@ def test_keyboard_legend_present_and_real():
     print("  ok  test_keyboard_legend_present_and_real")
 
 
+def test_sheet_ground_ships():
+    # The review sits on a bounded drawing sheet (#paper) over a flat table:
+    # --table ground token in both theme blocks, body painted with it, the
+    # sheet's edge border + 1px inner rule at 7px inset, and all coordinate/
+    # corner decoration inside one aria-hidden container.
+    assert '--table:     #060e1a;' in HTML, "dark token block missing --table"
+    assert '--table:     #e2e8f1;' in HTML, "light token block missing --table"
+    assert HTML.count('--table:') == 2, "--table must be defined once per theme block"
+    assert 'background: var(--table);' in HTML, "body must paint the flat table ground"
+    assert '<div id="paper">' in HTML
+    assert ('#paper { position: relative; max-width: 700px; margin: 32px auto 96px; '
+            'background: var(--bg); border: 1px solid var(--border2); }') in HTML, \
+        "#paper must carry the 1px var(--border2) edge on a content-bounded sheet"
+    assert ("#paper::before { content: ''; position: absolute; inset: 7px; "
+            "border: 1px solid var(--border); pointer-events: none; }") in HTML, \
+        "#paper must carry the 1px inner rule at 7px inset"
+    assert '<div class="paper-marks" aria-hidden="true">' in HTML, \
+        "sheet decoration must be aria-hidden"
+    assert HTML.count('class="pmark') == 4, "expected 4 corner registration marks"
+    assert '<span class="pcoord pc-n" style="left:12.5%">1</span>' in HTML, \
+        "missing edge coordinate numbers"
+    assert '<span class="pcoord pc-w" style="top:12.5%">A</span>' in HTML, \
+        "missing edge coordinate letters"
+    # The sheet bounds the content: main.shell nests inside #paper.
+    assert HTML.index('<div id="paper">') < HTML.index('<main class="shell"')
+    assert HTML.index('</main>') < HTML.index('</div><!-- /#paper -->')
+    # Diff mode widens the sheet in lockstep with the shell.
+    assert '.mode-diff #paper { max-width: min(95vw, 1600px); }' in HTML
+    print("  ok  test_sheet_ground_ships")
+
+
+def test_grid_and_sheet_frame_gone():
+    # The 24px drafting grid and the fixed .sheet-frame are gone at every
+    # layer — no grid background at any theme, no legacy frame CSS or markup.
+    assert 'background-size: 24px 24px' not in HTML, "24px grid background must be gone"
+    assert 'sheet-frame' not in HTML, ".sheet-frame must be gone (CSS and markup)"
+    assert 'sf-mark' not in HTML, "legacy .sf-mark corner marks must be gone"
+    print("  ok  test_grid_and_sheet_frame_gone")
+
+
 def main():
     test_card_head_is_button_with_aria()
     test_aria_expanded_sync_helper_exists()
@@ -125,7 +170,9 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
-    print("OK (9 tests)")
+    test_sheet_ground_ships()
+    test_grid_and_sheet_frame_gone()
+    print("OK (11 tests)")
 
 
 if __name__ == "__main__":
