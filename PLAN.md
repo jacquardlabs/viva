@@ -4,7 +4,7 @@ Derived from `docs/superpowers/specs/2026-07-16-frontend-v2-target-design.md` (P
 
 Spine: Task 1 -> Task 2 -> Task 3; Task 4 and Task 5 run any time after Task 1; Task 6 runs last and rests on Tasks 1-5.
 
-### Task 1 — Sheet ground replaces grid and sheet-frame
+### Task 1 — Sheet ground replaces grid and sheet-frame [PASS]
 
 Why now:    Foundation chrome every later page-ships assertion renders against; lowest risk; also creates this phase's shared test file so Tasks 2-6 have a lintable method.
 Read first: `server.py:50-96`, `server.py:145-156`, `server.py:369-374`, `docs/superpowers/specs/2026-07-16-frontend-v2-target-design.md`, `tests/test_server_a11y.py`
