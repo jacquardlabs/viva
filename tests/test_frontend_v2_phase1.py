@@ -23,7 +23,14 @@ the submit gate: a hidden dialog indexing every section (id, title, verdict
 dot + label, note count), toggled by `o`, closed by Escape, opened by
 btn-submit's ready click in review/diff mode; only its `confirm & submit`
 control calls submitReview(false), while btn-skip keeps submitReview(true)
-and Q&A keeps its direct submitQA(false) path.
+and Q&A keeps its direct submitQA(false) path. Task 5 replaces the spinner
+with the between-rounds card: submitReview snapshots the just-submitted
+changes/info rows ({sectionTitle, type, note}) from rState before the POST,
+the 'processing' SSE handler renders #processing-view as a pulsing dot over
+`REV 0N submitted — the agent is revising` plus those rows verbatim, and
+zero rows (or a qa submit, which never snapshots) fall back to the minimal
+processing line; the snapshot is deliberately in-memory only, so a tab
+reload during revision re-boots into the prior round exactly as before.
 
 These are wiring checks against the served page (the HTML constant is static,
 so one review-mode boot serves every mode's CSS/JS; GET /input carries the
@@ -404,6 +411,92 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
     print("test_ready_submit_routes_through_recap: OK")
 
 
+def test_page_ships_between_rounds_card(page: str) -> None:
+    """Cap: #processing-view ships as the between-rounds card — a pulsing dot
+    (the spinner is replaced, not accompanied), the `REV 0N submitted — the
+    agent is revising` heading template, and the verbatim request-row
+    template — with the minimal processing line as the zero-row fallback."""
+    # Static scaffold: pulsing dot, heading defaulting to the minimal line,
+    # and an empty hidden rows mount.
+    assert '<div class="processing-dot" aria-hidden="true"></div>' in page, \
+        "processing view missing its pulsing dot"
+    assert ('<div class="processing-text" id="processing-heading">'
+            'Claude is revising…</div>') in page, \
+        "processing heading must default to the minimal line"
+    assert ('<div class="processing-requests" id="processing-requests" '
+            'style="display:none"></div>') in page, \
+        "request-rows mount must ship empty and hidden"
+    # The spinner is gone at every layer: markup, CSS rule, and keyframes.
+    assert 'class="spinner"' not in page, "spinner markup still served"
+    assert '.spinner {' not in page, "spinner CSS still served"
+    assert 'viva-spin' not in page, "spinner keyframes still served"
+    # The dot pulses, with a reduced-motion opt-out.
+    assert '@keyframes viva-pulse' in page, "page missing the pulse keyframes"
+    assert 'animation: viva-pulse' in page, "processing dot must pulse"
+    assert '.processing-dot { animation: none; }' in page, \
+        "pulsing dot missing its reduced-motion opt-out"
+    # The heading template names the just-submitted round.
+    assert ("'REV ' + String(betweenRounds.round).padStart(2, '0') "
+            "+ ' submitted — the agent is revising'") in page, \
+        "page missing the between-rounds heading template"
+    # The verbatim row template: type slot, section title, untruncated note.
+    assert "'<div class=\"pr-row pr-' + esc(r.type) + '\">'" in page, \
+        "request row missing its type-classed container"
+    assert "'<span class=\"pr-type\">' + esc(r.type) + '</span>'" in page, \
+        "request row missing its type column"
+    assert "'<span class=\"pr-title\">' + esc(r.sectionTitle) + '</span>'" in page, \
+        "request row missing its section-title column"
+    assert "'<span class=\"pr-note\">' + esc(r.note) + '</span>'" in page, \
+        "request row missing its verbatim note column"
+    # Zero rows fall back to the minimal processing line.
+    assert "heading.textContent = 'Claude is revising…';" in page, \
+        "renderProcessingView missing its minimal-line fallback"
+    print("test_page_ships_between_rounds_card: OK")
+
+
+def test_between_rounds_snapshot_wiring(page: str) -> None:
+    """Cap: submitReview snapshots the changes/info rows from rState before
+    the POST, the 'processing' handler renders from the snapshot, the
+    'round' handler consumes it, and qa submits never snapshot — while the
+    snapshot stays in-memory only (a tab reload during revision re-boots
+    into the prior round, exactly as before)."""
+    # In-memory only: declared null, and no web-storage API in the page.
+    assert 'let betweenRounds = null;' in page, \
+        "page missing the betweenRounds snapshot declaration"
+    assert 'localStorage' not in page and 'sessionStorage' not in page, \
+        "the snapshot must never persist across a reload"
+    # The snapshot is taken inside submitReview, before the POST…
+    fn = page.index('function submitReview(early)')
+    snap = page.index('snapshotBetweenRounds();')
+    post_idx = page.index("fetch('/submit'", fn)
+    assert fn < snap < post_idx, \
+        "submitReview must snapshot rState before the POST"
+    # …and maps activeComments to verbatim {sectionTitle, type, note} rows —
+    # settled/empty comments (and approved sections) contribute nothing.
+    assert ('activeComments(s.id).map(c => '
+            '({ sectionTitle: s.title, type: c.type, note: c.note }))') in page, \
+        "snapshot rows must map active comments to {sectionTitle, type, note}"
+    # The 'processing' handler renders the view from the snapshot…
+    proc = page.index("es.addEventListener('processing'")
+    round_h = page.index("es.addEventListener('round'")
+    assert proc < page.index('renderProcessingView();', proc) < round_h, \
+        "the 'processing' handler must render the between-rounds card"
+    # …and the 'round' handler consumes it, so a later processing event with
+    # no fresh submit behind it falls back to the minimal line.
+    complete_h = page.index("es.addEventListener('complete'")
+    assert round_h < page.index('betweenRounds = null;', round_h) < complete_h, \
+        "the 'round' handler must consume the snapshot"
+    # A qa submit never snapshots — the minimal processing variant (the
+    # qa→review hand-off suite holds against this same page).
+    qa_fn = page.index('function submitQA(early)')
+    qa_end = page.index("el('btn-skip').addEventListener", qa_fn)
+    assert 'betweenRounds' not in page[qa_fn:qa_end], \
+        "submitQA must not touch the between-rounds snapshot"
+    assert 'snapshotBetweenRounds' not in page[qa_fn:qa_end], \
+        "submitQA must not snapshot"
+    print("test_between_rounds_snapshot_wiring: OK")
+
+
 def main() -> None:
     # Round-1 boot — sheet ground plus the zero-carried hold. Its own tmp dir:
     # wait_for_url polls for `server.url` beside the output file, so each boot
@@ -422,6 +515,8 @@ def main() -> None:
         test_round1_zero_transmittal_markers(page, data)
         test_page_ships_recap_overlay(page)
         test_ready_submit_routes_through_recap(page)
+        test_page_ships_between_rounds_card(page)
+        test_between_rounds_snapshot_wiring(page)
 
     # Round-2 boot — carried cards collapse in place, submit stays approved.
     tmp2 = Path(tempfile.mkdtemp())
@@ -435,7 +530,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (10 tests)")
+    print("\nOK (12 tests)")
 
 
 if __name__ == "__main__":

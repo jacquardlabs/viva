@@ -1473,7 +1473,16 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 
 /* ─── Processing / Complete states ──────────────────────── */
-@keyframes viva-spin { to { transform: rotate(360deg); } }
+/* Between-rounds card — the round is in the agent's hands. A pulsing dot
+   (alive, not busy — the spinner is gone) over the reviewer's own
+   just-submitted changes/info requests, echoed verbatim. Zero rows (a qa
+   submit, a round with no feedback) fall back to the minimal line. Row
+   typography matches the transmittal slip; type colors reuse the verdict
+   slots (changes → orange, info → violet). */
+@keyframes viva-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
 
 .processing-inner {
   display: flex;
@@ -1482,12 +1491,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 8rem 2rem;
   color: var(--text2);
 }
-.spinner {
-  width: 44px; height: 44px;
-  border: 3px solid var(--border2);
-  border-top-color: var(--accent);
+.processing-dot {
+  width: 10px; height: 10px;
   border-radius: 50%;
-  animation: viva-spin 0.75s linear infinite;
+  background: var(--accent);
+  box-shadow: 0 0 9px rgba(92,200,255,0.55);
+  animation: viva-pulse 1.6s ease-in-out infinite;
   margin-bottom: 1.5rem;
 }
 .processing-text {
@@ -1495,6 +1504,34 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   font-size: 1rem;
   letter-spacing: 0.02em;
 }
+.processing-requests {
+  width: min(520px, 100%);
+  margin-top: 2rem;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  text-align: left;
+}
+.pr-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.pr-row:first-child { border-top: none; }
+.pr-type {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.pr-changes .pr-type { color: var(--orange); }
+.pr-info    .pr-type { color: var(--violet); }
+.pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
+.pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 
 .complete-inner {
   display: flex;
@@ -1522,7 +1559,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   60%  { opacity: 1; }
   100% { opacity: 1; transform: rotate(-5deg) scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } .processing-dot { animation: none; } }
 .complete-headline {
   font-size: 1.6rem;
   font-weight: 600;
@@ -1603,11 +1640,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
     <div class="cards" id="qa-cards"></div>
   </div>
 
-  <!-- ── Processing state ─────────────────────────────────── -->
+  <!-- ── Processing / between-rounds state ────────────────── -->
   <div id="processing-view" style="display:none">
     <div class="processing-inner">
-      <div class="spinner"></div>
-      <div class="processing-text">Claude is revising…</div>
+      <div class="processing-dot" aria-hidden="true"></div>
+      <div class="processing-text" id="processing-heading">Claude is revising…</div>
+      <div class="processing-requests" id="processing-requests" style="display:none"></div>
     </div>
   </div>
 
@@ -2989,9 +3027,25 @@ function wireCapture(stateGetter, textarea, stripEl, attachBtn, fileInput, card)
 }
 
 /* ─── Submit handlers ──────────────────────────────────────── */
+// Between-rounds snapshot — the changes/info rows the reviewer just sent,
+// captured from rState at submit time so the 'processing' view can echo
+// them back verbatim while the agent revises. Deliberately in-memory only
+// (never written to .viva/): a tab reload during revision re-boots into
+// the prior round exactly as before, not into this card.
+let betweenRounds = null;
+
+function snapshotBetweenRounds() {
+  betweenRounds = {
+    round: REVIEW_DATA.round,
+    rows: REVIEW_DATA.sections.flatMap(s =>
+      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type, note: c.note })))
+  };
+}
+
 function submitReview(early) {
   el('btn-skip').disabled   = true;
   el('btn-submit').disabled = true;
+  snapshotBetweenRounds();  // before the POST — 'processing' renders from it
   const result = {
     round: REVIEW_DATA.round,
     submitted_early: early,
@@ -3168,11 +3222,37 @@ function showStillWaitingBanner() {
   document.body.prepend(b);
 }
 
+// Renders #processing-view for its two variants: the between-rounds card
+// (pulsing dot, `REV 0N submitted — the agent is revising`, the reviewer's
+// just-submitted changes/info rows verbatim) when submitReview snapshotted
+// rows, else the minimal processing line — a qa submit never snapshots, and
+// a zero-row review submit has nothing to echo.
+function renderProcessingView() {
+  const heading = el('processing-heading');
+  const list    = el('processing-requests');
+  const rows    = (betweenRounds && betweenRounds.rows) || [];
+  if (!rows.length) {
+    heading.textContent = 'Claude is revising…';
+    list.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  heading.textContent = 'REV ' + String(betweenRounds.round).padStart(2, '0') + ' submitted — the agent is revising';
+  list.innerHTML = rows.map(r =>
+    '<div class="pr-row pr-' + esc(r.type) + '">'
+    + '<span class="pr-type">' + esc(r.type) + '</span>'
+    + '<span class="pr-title">' + esc(r.sectionTitle) + '</span>'
+    + '<span class="pr-note">' + esc(r.note) + '</span>'
+    + '</div>').join('');
+  list.style.display = '';
+}
+
 function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
     closeRecap();  // the review it recapped is gone from under it
+    renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
@@ -3193,6 +3273,10 @@ function connectSSE() {
     qState.active     = null;
     rState.verdicts   = {};
     rState.active     = null;
+    // The snapshot's round is over — a later 'processing' event with no
+    // fresh submit behind it falls back to the minimal line, never a stale
+    // card.
+    betweenRounds = null;
     setDocTitleBlock(data, modeWord, modeWord === 'diff' ? 'diff' : '');
     el('round-badge').textContent = String(data.round).padStart(2, '0');
     const rev = 'REV ' + String(data.round).padStart(2, '0');
