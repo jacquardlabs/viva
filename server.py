@@ -1272,6 +1272,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
 .transmittal-row:focus-visible,
+.recap-row:focus-visible, .recap-close:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1385,6 +1386,92 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
   cursor: not-allowed;
 }
+
+/* ─── Recap overlay (submit gate — review/diff modes) ──────
+   The pre-flight index over every section: id, title, verdict dot + label,
+   active-note count. btn-submit's ready click opens this instead of
+   submitting; only #recap-confirm calls submitReview(false). Reuses the
+   card dot slots; row typography matches the transmittal slip. */
+.recap-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(6,14,26,0.72);
+}
+.recap-panel {
+  width: min(640px, 92vw); max-height: 82vh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+}
+.recap-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.recap-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.recap-close {
+  border: none; background: none; cursor: pointer;
+  color: var(--text3);
+  font-size: 16px; line-height: 1;
+  padding: 2px 6px;
+}
+.recap-close:hover { color: var(--text); }
+.recap-grid { overflow-y: auto; padding: 4px 14px; }
+.recap-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 52px;
+  gap: 10px; align-items: center;
+  width: 100%;
+  padding: 6px 0; margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit; font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.recap-row:first-child { border-top: none; }
+.recap-row:hover { background: var(--bg3); }
+.recap-row:hover .recap-row-title { color: var(--accent); }
+.recap-id {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+}
+.recap-row-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recap-verdict {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rv-approved { color: var(--teal); }
+.rv-changes  { color: var(--orange); }
+.rv-info     { color: var(--violet); }
+.rv-pending  { color: var(--text3); }
+.recap-notes {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  color: var(--text3);
+  text-align: right;
+}
+.recap-actions {
+  display: flex; justify-content: flex-end;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
 /* ─── Processing / Complete states ──────────────────────── */
 @keyframes viva-spin { to { transform: rotate(360deg); } }
 
@@ -1554,6 +1641,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
+      <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
   </details>
@@ -1573,6 +1661,22 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
       <button class="btn-submit disabled" id="btn-submit">submit all</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recap overlay — the submit gate for review/diff modes. Ships hidden;
+     openRecap() rebuilds the index grid from live verdict state each open.
+     Q&A never opens it: the done → path submits directly. -->
+<div class="recap-overlay" id="recap-overlay" role="dialog" aria-modal="true" aria-labelledby="recap-title" style="display:none">
+  <div class="recap-panel">
+    <div class="recap-head">
+      <span class="recap-title" id="recap-title">Recap &middot; REV <span id="recap-round"></span></span>
+      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap">&times;</button>
+    </div>
+    <div class="recap-grid" id="recap-grid"></div>
+    <div class="recap-actions">
+      <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
     </div>
   </div>
 </div>
@@ -2946,8 +3050,78 @@ el('btn-skip').addEventListener('click', () => {
 
 el('btn-submit').addEventListener('click', () => {
   if (el('btn-submit').classList.contains('disabled')) return;
-  if (REVIEW_DATA) submitReview(false);
+  // Review/diff route through the recap gate — only #recap-confirm calls
+  // submitReview(false). Q&A keeps its direct done → path.
+  if (REVIEW_DATA) openRecap();
   else             submitQA(false);
+});
+
+/* ─── Recap overlay — the submit gate (review/diff modes) ────
+   btn-submit's ready click opens this index of every section — id, title,
+   verdict dot + label, active-note count — instead of submitting; only
+   #recap-confirm calls submitReview(false). `o` toggles it, Escape closes
+   it, a row click closes-and-activates its section. Q&A ships no recap:
+   the done → button stays wired straight to submitQA(false), and btn-skip
+   keeps its direct submitReview(true) escape hatch. */
+const RECAP_VERDICTS = {
+  approved: { dot: 'dot-approved', cls: 'rv-approved', label: 'approved' },
+  changes: { dot: 'dot-changes', cls: 'rv-changes', label: 'changes' },
+  info: { dot: 'dot-info', cls: 'rv-info', label: 'info' },
+  pending: { dot: 'dot-idle', cls: 'rv-pending', label: 'pending' },
+};
+
+function recapRowsHTML() {
+  return REVIEW_DATA.sections.map(s => {
+    const v = RECAP_VERDICTS[deriveVerdict(s.id)] || RECAP_VERDICTS.pending;
+    const notes = activeComments(s.id).length;
+    return '<button type="button" class="recap-row" data-target="' + esc(s.id) + '">'
+      + '<span class="recap-id">' + esc(s.id) + '</span>'
+      + '<span class="recap-row-title">' + esc(s.title) + '</span>'
+      + '<span class="recap-verdict ' + v.cls + '"><span class="dot ' + v.dot + '" aria-hidden="true"></span>' + v.label + '</span>'
+      + '<span class="recap-notes">' + (notes ? notes + ' note' + (notes === 1 ? '' : 's') : '&mdash;') + '</span>'
+      + '</button>';
+  }).join('');
+}
+
+function recapIsOpen() { return el('recap-overlay').style.display !== 'none'; }
+
+function openRecap() {
+  // Q&A ships no recap, and a hidden review-view (processing/complete) has
+  // nothing to recap — the `o` shortcut lands here too, not just the
+  // class-gated btn-submit click.
+  if (!REVIEW_DATA || el('review-view').style.display === 'none') return;
+  el('recap-round').textContent = String(REVIEW_DATA.round).padStart(2, '0');
+  const grid = el('recap-grid');
+  grid.innerHTML = recapRowsHTML();
+  grid.querySelectorAll('.recap-row').forEach(btn => {
+    btn.addEventListener('click', () => { closeRecap(); activateReviewCard(btn.dataset.target); });
+  });
+  // The confirm control mirrors btn-submit's readiness, so a recap opened
+  // mid-review via `o` can't submit a round the bottom bar wouldn't.
+  const ready = el('btn-submit').classList.contains('ready');
+  el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
+  el('recap-overlay').style.display = '';
+  el('recap-confirm').focus();
+}
+
+function closeRecap() {
+  const overlay = el('recap-overlay');
+  if (overlay.style.display === 'none') return;
+  // Don't strand keyboard focus inside a hidden subtree.
+  if (overlay.contains(document.activeElement)) el('btn-submit').focus();
+  overlay.style.display = 'none';
+}
+
+function toggleRecap() { if (recapIsOpen()) closeRecap(); else openRecap(); }
+
+el('recap-confirm').addEventListener('click', () => {
+  if (el('recap-confirm').classList.contains('disabled')) return;
+  closeRecap();
+  submitReview(false);
+});
+el('recap-close').addEventListener('click', closeRecap);
+el('recap-overlay').addEventListener('click', e => {
+  if (e.target === el('recap-overlay')) closeRecap();   /* backdrop click */
 });
 
 el('sort-toggle').addEventListener('click', () => {
@@ -2998,6 +3172,7 @@ function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
+    closeRecap();  // the review it recapped is gone from under it
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
@@ -3008,6 +3183,7 @@ function connectSSE() {
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
+    closeRecap();  // a stale grid must never sit over a fresh round's cards
     REVIEW_DATA       = data;
     // A qa → review hand-off (#109) lands here too — the qa session this tab
     // may have been showing is done; drop its state so leftover QA_DATA/
@@ -3088,6 +3264,14 @@ document.addEventListener('keydown', e => {
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
   if (REVIEW_DATA) {
+    if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
+    if (e.key === 'Escape' && recapIsOpen()) { closeRecap(); return; }
+    if (recapIsOpen()) {
+      // The recap is modal — card shortcuts stay inert under it; ⌘/Ctrl+Enter
+      // keeps its "submit" meaning by driving the gate's own confirm control.
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); el('recap-confirm').click(); }
+      return;
+    }
     if (e.key === 'a' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'approved'); return; }
     if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
     if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
@@ -3112,8 +3296,8 @@ document.addEventListener('keydown', e => {
   // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
   // qState.active reset (#109 hand-off): belt-and-suspenders so a digit
   // keystroke can never route through the qa branch — and flip btn-submit to
-  // 'ready' via updateQAStats(), letting the class-gated click handler call
-  // submitReview(false) early — while review cards are what's on screen.
+  // 'ready' via updateQAStats(), arming the class-gated click handler (the
+  // recap gate) early — while review cards are what's on screen.
   if (!REVIEW_DATA && QA_DATA && qState.active) {
     const q = QA_DATA.questions.find(q => q.id === qState.active);
     if (q) {

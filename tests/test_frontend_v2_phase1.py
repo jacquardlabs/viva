@@ -18,7 +18,12 @@ between the ledger and #review-cards on round > 1 in review mode only,
 attributing each section — `revised to your note` (diff answering an open
 note), bare `revised` (silent diff), `flagged & unreviewed` (error before
 warn annotations), `approved & unchanged` (carried) — with every row
-jump-linking through activateReviewCard.
+jump-linking through activateReviewCard. Task 4 adds the recap overlay as
+the submit gate: a hidden dialog indexing every section (id, title, verdict
+dot + label, note count), toggled by `o`, closed by Escape, opened by
+btn-submit's ready click in review/diff mode; only its `confirm & submit`
+control calls submitReview(false), while btn-skip keeps submitReview(true)
+and Q&A keeps its direct submitQA(false) path.
 
 These are wiring checks against the served page (the HTML constant is static,
 so one review-mode boot serves every mode's CSS/JS; GET /input carries the
@@ -298,6 +303,107 @@ def test_round1_zero_carried_markers(page: str, data: dict) -> None:
     print("test_round1_zero_carried_markers: OK")
 
 
+def test_page_ships_recap_overlay(page: str) -> None:
+    """Cap: the served page ships the recap overlay container — a hidden
+    dialog whose grid indexes every section (id, title, verdict dot + label,
+    note count) with a `confirm & submit` control — and the kbd legend gains
+    the `o` shortcut row, with `o`-toggle, Escape-close, and row
+    close-and-activate wiring shipped in the review keydown branch."""
+    # Static container: hidden dialog, empty grid mount, confirm control.
+    assert ('<div class="recap-overlay" id="recap-overlay" role="dialog" '
+            'aria-modal="true" aria-labelledby="recap-title" '
+            'style="display:none">') in page, \
+        "page missing the hidden recap overlay dialog"
+    assert '<div class="recap-grid" id="recap-grid"></div>' in page, \
+        "recap grid mount must ship empty"
+    assert ('<button type="button" class="btn-submit ready" id="recap-confirm">'
+            'confirm &amp; submit</button>') in page, \
+        "recap overlay missing its confirm & submit control"
+    # Rows exist only in the builder's source string — never pre-rendered
+    # into the static page (the grid mount above ships empty).
+    assert page.count('class="recap-row"') == 1, \
+        "static page must never carry a rendered recap row"
+    # The row builder indexes all four columns: id, title, verdict dot +
+    # label (one shared slot map), and active-note count.
+    assert 'function recapRowsHTML()' in page, "page missing recapRowsHTML"
+    assert "approved: { dot: 'dot-approved', cls: 'rv-approved', label: 'approved' }" in page
+    assert "changes: { dot: 'dot-changes', cls: 'rv-changes', label: 'changes' }" in page
+    assert "info: { dot: 'dot-info', cls: 'rv-info', label: 'info' }" in page
+    assert "pending: { dot: 'dot-idle', cls: 'rv-pending', label: 'pending' }" in page
+    assert "const v = RECAP_VERDICTS[deriveVerdict(s.id)] || RECAP_VERDICTS.pending;" in page, \
+        "recap rows must derive their verdict slot per section"
+    assert "const notes = activeComments(s.id).length;" in page, \
+        "recap rows must count active comments"
+    assert "'<span class=\"recap-id\">' + esc(s.id) + '</span>'" in page, \
+        "recap row missing its section-id column"
+    assert "'<span class=\"recap-row-title\">' + esc(s.title) + '</span>'" in page, \
+        "recap row missing its title column"
+    assert "'<span class=\"recap-verdict ' + v.cls + '\">" in page, \
+        "recap row missing its verdict column"
+    assert "<span class=\"dot ' + v.dot + '\" aria-hidden=\"true\"></span>' + v.label" in page, \
+        "recap verdict column missing its dot + label pair"
+    assert "(notes ? notes + ' note' + (notes === 1 ? '' : 's') : '&mdash;')" in page, \
+        "recap row missing its note-count column"
+    # Q&A ships no recap: openRecap bails without REVIEW_DATA (or with the
+    # review view hidden, e.g. processing).
+    assert "if (!REVIEW_DATA || el('review-view').style.display === 'none') return;" in page, \
+        "openRecap missing its review-mode guard"
+    # A row click closes the overlay and activates its section.
+    assert ("btn.addEventListener('click', () => "
+            "{ closeRecap(); activateReviewCard(btn.dataset.target); });") in page, \
+        "recap rows must close-and-activate on click"
+    # The kbd legend gains the `o` row.
+    assert '<dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>' in page, \
+        "kbd legend missing the `o` shortcut row"
+    # `o` toggles and Escape closes, wired inside the review keydown branch
+    # (before the qa branch — never reachable from it).
+    kd = page.index("document.addEventListener('keydown'")
+    o_idx = page.index("if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) "
+                       "{ e.preventDefault(); toggleRecap(); return; }")
+    esc_idx = page.index("if (e.key === 'Escape' && recapIsOpen()) { closeRecap(); return; }")
+    qa_branch = page.index("if (!REVIEW_DATA && QA_DATA && qState.active)")
+    assert kd < o_idx < qa_branch, "`o` toggle must sit in the review keydown branch"
+    assert kd < esc_idx < qa_branch, "Escape close must sit in the review keydown branch"
+    print("test_page_ships_recap_overlay: OK")
+
+
+def test_ready_submit_routes_through_recap(page: str) -> None:
+    """Cap: the ready-submit path routes through the recap — btn-submit's
+    review/diff click branch opens the overlay, and the overlay's confirm
+    control is the page's only submitReview(false) call site — while
+    btn-skip keeps calling submitReview(true) directly and the qa branch
+    keeps its direct submitQA(false) path (hold)."""
+    # btn-submit's class-gated click: review/diff opens the gate, qa submits.
+    submit_handler = page.index("el('btn-submit').addEventListener('click'")
+    open_call = page.index("if (REVIEW_DATA) openRecap();")
+    qa_call = page.index("else             submitQA(false);")
+    assert submit_handler < open_call < qa_call, \
+        "btn-submit click must route review/diff to openRecap, qa to submitQA(false)"
+    # Only the overlay's confirm control invokes submitReview(false) — the
+    # statement form (trailing `;`) counts call sites, not prose comments.
+    assert page.count("submitReview(false);") == 1, \
+        "submitReview(false) must have exactly one call site (the recap confirm)"
+    confirm_handler = page.index("el('recap-confirm').addEventListener('click'")
+    close_wiring = page.index("el('recap-close').addEventListener('click', closeRecap);")
+    assert confirm_handler < page.index("submitReview(false);") < close_wiring, \
+        "the single submitReview(false) call site must be the recap confirm handler"
+    # The confirm control is class-gated like btn-submit, so a recap opened
+    # mid-review via `o` can't submit a round the bottom bar wouldn't.
+    assert "if (el('recap-confirm').classList.contains('disabled')) return;" in page, \
+        "recap confirm must stay class-gated"
+    assert "el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');" in page, \
+        "recap confirm must mirror btn-submit readiness at open"
+    # The early-submit escape hatch is untouched: btn-skip → submitReview(true).
+    skip_handler = page.index("el('btn-skip').addEventListener('click'")
+    skip_call = page.index("if (REVIEW_DATA) submitReview(true);")
+    assert skip_handler < skip_call < submit_handler, \
+        "btn-skip must keep calling submitReview(true) directly"
+    # Q&A keeps exactly one direct submitQA(false) path — the qa click branch.
+    assert page.count("submitQA(false);") == 1, \
+        "submitQA(false) must keep its single direct call site (qa click branch)"
+    print("test_ready_submit_routes_through_recap: OK")
+
+
 def main() -> None:
     # Round-1 boot — sheet ground plus the zero-carried hold. Its own tmp dir:
     # wait_for_url polls for `server.url` beside the output file, so each boot
@@ -314,6 +420,8 @@ def main() -> None:
         test_mode_diff_paper_widens(page)
         test_round1_zero_carried_markers(page, data)
         test_round1_zero_transmittal_markers(page, data)
+        test_page_ships_recap_overlay(page)
+        test_ready_submit_routes_through_recap(page)
 
     # Round-2 boot — carried cards collapse in place, submit stays approved.
     tmp2 = Path(tempfile.mkdtemp())
@@ -327,7 +435,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (8 tests)")
+    print("\nOK (10 tests)")
 
 
 if __name__ == "__main__":
