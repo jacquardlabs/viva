@@ -19,7 +19,7 @@ Done means:
 
 Evidence: verify-step transcripts of both named test files, captured by /build.
 
-### Task 2 — Carried approvals collapse in place
+### Task 2 — Carried approvals collapse in place [PASS]
 
 Why now:    Freezes the carried-card DOM and the submit-payload invariant that Task 3's jump targets and Task 4's recap labels build against; touches the highest-risk surface (verdict flow) while only one task deep.
 Read first: `server.py:1637-1686`, `server.py:1847-1932`, `server.py:2047-2075`, `docs/studious/premortems/2026-07-16-frontend-v2-target-design.md`, `tests/_server_harness.py`
