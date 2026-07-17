@@ -1,0 +1,27 @@
+{
+  "task": "4",
+  "overall": "PASS",
+  "items": [
+    {
+      "id": "1",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:54208\nviva \u00b7 review mode \u00b7 http://127.0.0.1:54211\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_page_ships_recap_overlay: OK\ntest_ready_submit_routes_through_recap: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (10 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "2",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:54215\nviva \u00b7 review mode \u00b7 http://127.0.0.1:54218\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_page_ships_recap_overlay: OK\ntest_ready_submit_routes_through_recap: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (10 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "3",
+      "kind": "hold",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_server_qa_review_handoff.py\nexit code: 0\n--- stdout ---\n  ok  test_round_handler_hides_qa_view\n  ok  test_round_handler_populates_titleblock\n  ok  test_round_handler_resets_qa_state\n  ok  test_qa_keydown_branch_guarded_by_review_data\n  ok  test_handoff_same_server_no_second_launch\n  ok  test_standalone_qa_has_no_handoff_line\nOK (6 tests)\n\n--- stderr ---\n"
+    }
+  ]
+}
