@@ -386,6 +386,58 @@ body {
 .card.is-approved { opacity: 0.42; }
 .card.is-approved:hover { opacity: 0.72; transition: opacity 0.2s; }
 
+/* Carried card (round >= 2 prior approval): a dimmed head-only line — kept a
+   touch brighter than is-approved so the reveal and withdraw affordances
+   stay discoverable — with the mono APPROVED mini-stamp echoing the
+   completion stamp motif. */
+.card.is-carried { opacity: 0.55; }
+.card.is-carried:hover, .card.is-carried:focus-within { opacity: 0.9; transition: opacity 0.2s; }
+.carried-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  min-height: 48px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.carried-head:hover { background: var(--bg3); }
+.carried-head .card-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.carried-marker {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.carried-show, .carried-withdraw {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+.carried-show { text-decoration: underline dotted; text-underline-offset: 3px; }
+.carried-show:hover { color: var(--accent); }
+.carried-withdraw:hover { color: var(--orange); }
+.carried-stamp {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: 2px;
+  padding: 2px 7px;
+  transform: rotate(-2deg);
+  flex-shrink: 0;
+}
+.carried-body { padding: 0 14px 14px; }
+
 .card.is-active {
   border-color: var(--border2);
   box-shadow: 0 0 0 1px var(--border2), 0 4px 24px rgba(0,0,0,0.4);
@@ -1163,6 +1215,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
+.carried-show:focus-visible, .carried-withdraw:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1665,20 +1718,24 @@ function initReview() {
         lastFilepath = fp;
       }
     }
-    const card = buildReviewCard(s);
-    // Cards carried forward as already-approved from a prior round appear
-    // instantly (no fade) — only new/changed cards get the staggered fade-in,
-    // re-indexed among themselves so the stagger stays tight regardless of
-    // how many sections are already approved and collapsed.
-    if (REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)) {
+    // Sections approved in a prior round (round >= 2) collapse to carried
+    // cards — a head-only line with the read-only content one reveal away.
+    // Round 1 keeps the normal-card path even when a resume pre-approves ids.
+    const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
+    const card = isCarried ? buildCarriedCard(s) : buildReviewCard(s);
+    // Carried cards appear instantly (no fade) — only new/changed cards get
+    // the staggered fade-in, re-indexed among themselves so the stagger stays
+    // tight regardless of how many sections are already carried.
+    if (isCarried) {
       card.style.animation = 'none';
     } else {
       card.style.animationDelay = Math.min(0.04 + animIdx * 0.04, 0.3) + 's';
       animIdx++;
     }
     container.appendChild(card);
-    // Apply approved CSS immediately for pre-approved cards
-    if (priorApprovedSet.has(s.id)) syncReviewCard(s.id);
+    // Apply approved CSS immediately for round-1 pre-approved normal cards;
+    // carried cards bake their collapsed state into their own markup.
+    if (!isCarried && priorApprovedSet.has(s.id)) syncReviewCard(s.id);
   });
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
@@ -1935,6 +1992,76 @@ function buildReviewCard(section) {
   return card;
 }
 
+/* ─── Carried cards (round >= 2 prior approvals) ────────────────
+   A section approved in a prior round collapses to a dimmed, head-only line:
+   `carried` marker, title, an "unchanged since your stamp — show" reveal of
+   the read-only content, the mono APPROVED mini-stamp, and a withdraw
+   control. No comment machinery — a carried card is settled unless
+   withdrawn, at which point it becomes a normal accordion card again. */
+function buildCarriedCard(section) {
+  const card = document.createElement('div');
+  card.className = 'card is-carried';
+  card.id = 'rcard-' + section.id;
+
+  // Keep raw markdown for lazy render on first reveal (same path live cards use).
+  _pendingMarkdown.set(section.id, section.content ?? '');
+
+  card.innerHTML = `
+    <div class="carried-head">
+      <span class="carried-marker">carried</span>
+      <span class="card-title">${esc(section.title)}</span>
+      <button type="button" class="carried-show" id="rcarried-show-${section.id}" aria-expanded="false" aria-controls="rcarried-body-${section.id}">unchanged since your stamp &mdash; show</button>
+      <span class="carried-stamp">APPROVED</span>
+      <button type="button" class="carried-withdraw" id="rcarried-withdraw-${section.id}" title="withdraw approval &mdash; reopen this section for review"><span aria-hidden="true">&times;</span> withdraw approval</button>
+    </div>
+    <div class="carried-body" id="rcarried-body-${section.id}" hidden>
+      <div class="section-content" id="rcontent-${section.id}"></div>
+    </div>`;
+
+  // The whole head line toggles the reveal (mouse convenience); the show
+  // button is the focusable, aria-wired affordance for the same action.
+  card.querySelector('.carried-head').addEventListener('click', () => {
+    setCarriedShown(section.id, el('rcarried-body-' + section.id).hidden);
+  });
+  card.querySelector('#rcarried-show-' + section.id).addEventListener('click', e => {
+    e.stopPropagation();
+    setCarriedShown(section.id, el('rcarried-body-' + section.id).hidden);
+  });
+  card.querySelector('#rcarried-withdraw-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); withdrawApproval(section.id);
+  });
+  return card;
+}
+
+// Reveal/hide a carried card's read-only content, keeping the show button's
+// label and aria-expanded in sync. Rendering stays lazy via _ensureRendered.
+function setCarriedShown(id, shown) {
+  const body = el('rcarried-body-' + id); if (!body) return;
+  body.hidden = !shown;
+  if (shown) _ensureRendered(id);
+  const btn = el('rcarried-show-' + id);
+  if (btn) {
+    btn.setAttribute('aria-expanded', shown ? 'true' : 'false');
+    btn.innerHTML = 'unchanged since your stamp &mdash; ' + (shown ? 'hide' : 'show');
+  }
+}
+
+// Withdraw a carried approval: clear the verdict back to pending and swap the
+// collapsed carried card for a normal accordion card, opened for re-review.
+// The fresh card replaces the carried one in place — document order is
+// canonical, withdrawn cards never reorder.
+function withdrawApproval(id) {
+  if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
+  const section = REVIEW_DATA.sections.find(s => s.id === id);
+  const old = el('rcard-' + id);
+  if (!section || !old) return;
+  // buildReviewCard re-arms _pendingMarkdown, so content re-renders lazily
+  // even if the carried reveal already consumed it.
+  old.replaceWith(buildReviewCard(section));
+  activateReviewCard(id);
+  updateReviewStats();
+}
+
 // Open/close a card, keeping the header button's aria-expanded in sync.
 // `is-active` is the single source of truth for "expanded", so every site that
 // flips it routes through here — otherwise aria-expanded desyncs on auto-advance
@@ -1947,6 +2074,15 @@ function setCardExpanded(cardEl, expanded) {
 }
 
 function activateReviewCard(id) {
+  // A carried card has no accordion body to activate — reveal its read-only
+  // content and scroll to it instead (annotation jumps, all-carried resumes).
+  // It never becomes rState.active: active means "under review".
+  const target = el('rcard-' + id);
+  if (target && target.classList.contains('is-carried')) {
+    setCarriedShown(id, true);
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
   // Deactivate previous
   if (rState.active && rState.active !== id) {
     setCardExpanded(el('rcard-' + rState.active), false);
