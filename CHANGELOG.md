@@ -2,6 +2,103 @@
 
 <!-- version list -->
 
+## v1.19.0 (2026-07-18)
+
+### Bug Fixes
+
+- Address the five audit Important findings ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Recap gate must not re-arm after submit (audit Critical)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Recover the submit bar on a failed POST; restore focus after inert (audit round 2)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Scrim token, transmittal first-row seam, and slip staleness on withdraw
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+### Chores
+
+- Remove phase-1 build scaffolding (PLAN.md) ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 1 evidence (verify results, inspector report)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 2 evidence (verify results, inspector report)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 3 evidence (verify results, inspector report)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 4 evidence (verify results, inspector report)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 5 evidence (verify results, inspector report)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Task 6 evidence (verify results) ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+### Documentation
+
+- DESIGN.md documents the shipped sheet-on-table surface
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Frontend v2 phase 1 build report ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Frontend v2 target design, phase 1 plan, demo captures, and pre-mortem register
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- PLAN.md for frontend v2 phase 1 (viva-signed, plan-lint clean)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+### Features
+
+- Between-rounds card replaces the processing spinner
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Carried approvals collapse in place (round >= 2)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Frontend v2 phase 1 — transmittal rounds and sheet ground
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Recap overlay gates the ready submit in review and diff modes
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Sheet ground replaces the 24px grid and fixed sheet-frame
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+- Transmittal slip attributes round changes (round >= 2, review mode)
+  ([#154](https://github.com/jacquardlabs/viva/pull/154),
+  [`a934c87`](https://github.com/jacquardlabs/viva/commit/a934c8764f1d448bbd4bd72e3bd9d914762246bf))
+
+### Testing
+
+- Cover the $VIVA_DIR resolve pipeline; fix pre-mortem lane tags
+  ([#137](https://github.com/jacquardlabs/viva/pull/137),
+  [`f062cdf`](https://github.com/jacquardlabs/viva/commit/f062cdfe5bc6a3b5f7c25245648962d93e6c91ce))
+
+
 ## v1.18.1 (2026-07-12)
 
 ### Bug Fixes
