@@ -51,6 +51,7 @@ HTML = r"""<!DOCTYPE html>
   --bg:        #0a1727;
   --bg2:       #0f1f33;
   --bg3:       #152840;
+  --table:     #060e1a;
   --border:    #1d324e;
   --border2:   #2a4768;
   --text:      #d8e7f5;
@@ -58,6 +59,7 @@ HTML = r"""<!DOCTYPE html>
   --text3:     #48648a;
   --accent:    #5cc8ff;
   --accent-dim:rgba(92,200,255,0.08);
+  --scrim:     rgba(6,14,26,0.72);
   --teal:      #43e0a8;
   --teal-bg:   rgba(67,224,168,0.06);
   --orange:    #ff5a36;
@@ -73,6 +75,7 @@ HTML = r"""<!DOCTYPE html>
     --bg:        #f3f6fa;
     --bg2:       #e9eef5;
     --bg3:       #dde5ef;
+    --table:     #e2e8f1;
     --border:    #cdd9e8;
     --border2:   #a8bdd4;
     --text:      #13293f;
@@ -80,19 +83,13 @@ HTML = r"""<!DOCTYPE html>
     --text3:     #8aa0b8;
     --accent:    #1271b8;
     --accent-dim:rgba(18,113,184,0.08);
+    --scrim:     rgba(19,41,63,0.32);   /* blue-ink wash over white vellum, not midnight */
     --teal:      #0c8a63;
     --teal-bg:   rgba(12,138,99,0.07);
     --orange:    #cf3f1d;
     --orange-bg: rgba(207,63,29,0.07);
     --violet:    #9a6b00;
     --violet-bg: rgba(154,107,0,0.08);
-  }
-
-  body {
-    background-image:
-      linear-gradient(rgba(168,189,212,0.30) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(168,189,212,0.30) 1px, transparent 1px);
-    background-size: 24px 24px;
   }
 
   .progress-fill {
@@ -144,15 +141,11 @@ html { scroll-behavior: smooth; }
 
 body {
   font-family: 'Bricolage Grotesque', sans-serif;
-  background: var(--bg);
+  /* the flat drafting table the sheet sits on — no background grid */
+  background: var(--table);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  /* drafting grid paper */
-  background-image:
-    linear-gradient(rgba(42,71,104,0.28) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(42,71,104,0.28) 1px, transparent 1px);
-  background-size: 24px 24px;
 }
 
 /* ─── Shell ──────────────────────────────────────────────── */
@@ -165,13 +158,14 @@ body {
 /* ─── Diff-first layout (mode-diff) ──────────────────────────
    Code diffs want the opposite of the 700px prose column: width, and one
    scroll context. body.mode-diff (stamped by the diff dispatch branch)
-   widens the shell and bottom bar together and removes .section-content's
+   widens the sheet, shell, and bottom bar together and removes .section-content's
    nested 60vh scroll — a hunk with context folding doesn't need the cap an
    arbitrary long document does, and page scroll becomes the only vertical
    scroll. Widening the container (instead of escaping it) is what keeps
    .card-body-inner's overflow:hidden accordion animation untouched — see
    the Rejected Approach note in the diff-first-surface design doc. */
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
+.mode-diff #paper { max-width: min(95vw, 1600px); }
 .mode-diff .section-content { max-height: none; overflow-y: visible; }
 
 /* ─── Header ─────────────────────────────────────────────── */
@@ -283,6 +277,62 @@ body {
 .ledger.ledger-static .ledger-head:hover { background: none; }
 .complete-inner .ledger { width: 100%; max-width: 560px; text-align: left; margin-top: 1.5rem; }
 
+/* ─── Transmittal slip (round >= 2, review mode only) ────────
+   The cover slip on a returned drawing: one jump-link row per section
+   attributing what changed at this revision — revised to your note, bare
+   revised, flagged & unreviewed, approved & unchanged. Reuses the verdict
+   color slots: revised → orange (the rev-tri), flag error → orange, flag
+   warn → violet, approved → teal. */
+.transmittal {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease both;
+}
+.transmittal-head { padding: 8px 14px 0; }
+.transmittal-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.transmittal-rows { padding: 4px 14px 10px; }
+.transmittal-row {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.transmittal-row:first-child { border-top: none; }
+.transmittal-row:hover { background: var(--bg3); }
+.transmittal-row:hover .tr-title { color: var(--accent); }
+.tr-marker { flex-shrink: 0; font-size: 11px; }
+.tr-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.tr-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tr-revised-note .tr-marker, .tr-revised-note .tr-label,
+.tr-revised .tr-marker,      .tr-revised .tr-label,
+.tr-flag-error .tr-marker,   .tr-flag-error .tr-label { color: var(--orange); }
+.tr-flag-warn .tr-marker,    .tr-flag-warn .tr-label  { color: var(--violet); }
+.tr-approved .tr-marker,     .tr-approved .tr-label   { color: var(--teal); }
+
 .progress-track {
   flex: 1;
   height: 2px;
@@ -364,14 +414,22 @@ body {
 .card::before { top: -7px; left: -6px; }
 .card::after  { bottom: -7px; right: -6px; }
 
-/* The drawing sheet: a bordered field framing the whole review, registration
-   marks at its corners — the work sits on a sheet, not in a void. */
-.sheet-frame { position: fixed; inset: 16px; z-index: 30; pointer-events: none; border: 1px solid var(--border2); }
-.sheet-frame::before { content: ''; position: absolute; inset: 5px; border: 1px solid var(--border); }
-.sf-mark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
-.sf-tl { top: -7px; left: -7px; } .sf-tr { top: -7px; right: -7px; }
-.sf-bl { bottom: -7px; left: -7px; } .sf-br { bottom: -7px; right: -7px; }
-@media (max-width: 720px) { .sheet-frame { display: none; } }
+/* The drawing sheet: the document is a bounded sheet on the flat table —
+   edge border, inner rule, corner registration marks, edge coordinate
+   letters/numbers. Content-bounded (#paper wraps main.shell and grows with
+   it), not a fixed viewport frame; the decoration hangs just outside the
+   edge and hides where the sheet meets the viewport. */
+#paper { position: relative; max-width: 700px; margin: 32px auto 96px; background: var(--bg); border: 1px solid var(--border2); }
+#paper::before { content: ''; position: absolute; inset: 7px; border: 1px solid var(--border); pointer-events: none; }
+.paper-marks { position: absolute; inset: 0; pointer-events: none; }
+.pmark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
+.pm-tl { top: -7px; left: -7px; } .pm-tr { top: -7px; right: -7px; }
+.pm-bl { bottom: -7px; left: -7px; } .pm-br { bottom: -7px; right: -7px; }
+.pcoord { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 10px; line-height: 1; letter-spacing: 0.08em; color: var(--text3); }
+.pc-n { top: -16px; transform: translateX(-50%); }
+.pc-w { left: -16px; transform: translateY(-50%); }
+.pc-e { right: -16px; transform: translateY(-50%); }
+@media (max-width: 740px) { .paper-marks { display: none; } }
 .card.is-active::before, .card.is-active::after { opacity: 1; }
 
 /* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
@@ -385,6 +443,58 @@ body {
 
 .card.is-approved { opacity: 0.42; }
 .card.is-approved:hover { opacity: 0.72; transition: opacity 0.2s; }
+
+/* Carried card (round >= 2 prior approval): a dimmed head-only line — kept a
+   touch brighter than is-approved so the reveal and withdraw affordances
+   stay discoverable — with the mono APPROVED mini-stamp echoing the
+   completion stamp motif. */
+.card.is-carried { opacity: 0.55; }
+.card.is-carried:hover, .card.is-carried:focus-within { opacity: 0.9; transition: opacity 0.2s; }
+.carried-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  min-height: 48px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.carried-head:hover { background: var(--bg3); }
+.carried-head .card-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.carried-marker {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.carried-show, .carried-withdraw {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+.carried-show { text-decoration: underline dotted; text-underline-offset: 3px; }
+.carried-show:hover { color: var(--accent); }
+.carried-withdraw:hover { color: var(--orange); }
+.carried-stamp {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: 2px;
+  padding: 2px 7px;
+  transform: rotate(-2deg);
+  flex-shrink: 0;
+}
+.carried-body { padding: 0 14px 14px; }
 
 .card.is-active {
   border-color: var(--border2);
@@ -764,6 +874,7 @@ body {
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
 .card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
 .section-content, .choice-chip, .qa-btn,
+.transmittal-row, .recap-row,
 .progress-track, .progress-fill { border-radius: 0; }
 
 /* ─── Reticle: drafting crop-mark corners ─────────────────────
@@ -1163,6 +1274,9 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
+.carried-show:focus-visible, .carried-withdraw:focus-visible,
+.transmittal-row:focus-visible,
+.recap-row:focus-visible, .recap-close:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1276,8 +1390,103 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
   cursor: not-allowed;
 }
+
+/* ─── Recap overlay (submit gate — review/diff modes) ──────
+   The pre-flight index over every section: id, title, verdict dot + label,
+   active-note count. btn-submit's ready click opens this instead of
+   submitting; only #recap-confirm calls submitReview(false). Reuses the
+   card dot slots; row typography matches the transmittal slip. */
+.recap-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+.recap-panel {
+  width: min(640px, 92vw); max-height: 82vh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+}
+.recap-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.recap-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.recap-close {
+  border: none; background: none; cursor: pointer;
+  color: var(--text3);
+  font-size: 16px; line-height: 1;
+  padding: 2px 6px;
+}
+.recap-close:hover { color: var(--text); }
+.recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
+.recap-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 52px;
+  gap: 10px; align-items: center;
+  width: 100%;
+  padding: 6px 0; margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit; font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.recap-row:first-child { border-top: none; }
+.recap-row:hover { background: var(--bg3); }
+.recap-row:hover .recap-row-title { color: var(--accent); }
+.recap-id {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+}
+.recap-row-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recap-verdict {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rv-approved { color: var(--teal); }
+.rv-changes  { color: var(--orange); }
+.rv-info     { color: var(--violet); }
+.rv-pending  { color: var(--text3); }
+.recap-notes {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  color: var(--text3);
+  text-align: right;
+}
+.recap-actions {
+  display: flex; justify-content: flex-end;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
 /* ─── Processing / Complete states ──────────────────────── */
-@keyframes viva-spin { to { transform: rotate(360deg); } }
+/* Between-rounds card — the round is in the agent's hands. A pulsing dot
+   (alive, not busy — the spinner is gone) over the reviewer's own
+   just-submitted changes/info requests, echoed verbatim. Zero rows (a qa
+   submit, a round with no feedback) fall back to the minimal line. Row
+   typography matches the transmittal slip; type colors reuse the verdict
+   slots (changes → orange, info → violet). */
+@keyframes viva-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
 
 .processing-inner {
   display: flex;
@@ -1286,12 +1495,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 8rem 2rem;
   color: var(--text2);
 }
-.spinner {
-  width: 44px; height: 44px;
-  border: 3px solid var(--border2);
-  border-top-color: var(--accent);
+.processing-dot {
+  width: 10px; height: 10px;
   border-radius: 50%;
-  animation: viva-spin 0.75s linear infinite;
+  background: var(--accent);
+  box-shadow: 0 0 9px rgba(92,200,255,0.55);
+  animation: viva-pulse 1.6s ease-in-out infinite;
   margin-bottom: 1.5rem;
 }
 .processing-text {
@@ -1299,6 +1508,34 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   font-size: 1rem;
   letter-spacing: 0.02em;
 }
+.processing-requests {
+  width: min(520px, 100%);
+  margin-top: 2rem;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  text-align: left;
+}
+.pr-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.pr-row:first-child { border-top: none; }
+.pr-type {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.pr-changes .pr-type { color: var(--orange); }
+.pr-info    .pr-type { color: var(--violet); }
+.pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
+.pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 
 .complete-inner {
   display: flex;
@@ -1326,7 +1563,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   60%  { opacity: 1; }
   100% { opacity: 1; transform: rotate(-5deg) scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } .processing-dot { animation: none; } }
 .complete-headline {
   font-size: 1.6rem;
   font-weight: 600;
@@ -1352,9 +1589,11 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 </head>
 <body>
 
-<a class="skip-link" href="#main-content">Skip to review</a>
+<a class="skip-link" id="skip-link-a" href="#main-content">Skip to review</a>
 
-<div class="sheet-frame" aria-hidden="true"><span class="sf-mark sf-tl">+</span><span class="sf-mark sf-tr">+</span><span class="sf-mark sf-bl">+</span><span class="sf-mark sf-br">+</span></div>
+<div id="paper">
+
+<div class="paper-marks" aria-hidden="true"><span class="pmark pm-tl">+</span><span class="pmark pm-tr">+</span><span class="pmark pm-bl">+</span><span class="pmark pm-br">+</span><span class="pcoord pc-n" style="left:12.5%">1</span><span class="pcoord pc-n" style="left:37.5%">2</span><span class="pcoord pc-n" style="left:62.5%">3</span><span class="pcoord pc-n" style="left:87.5%">4</span><span class="pcoord pc-w" style="top:12.5%">A</span><span class="pcoord pc-w" style="top:37.5%">B</span><span class="pcoord pc-w" style="top:62.5%">C</span><span class="pcoord pc-w" style="top:87.5%">D</span><span class="pcoord pc-e" style="top:12.5%">A</span><span class="pcoord pc-e" style="top:37.5%">B</span><span class="pcoord pc-e" style="top:62.5%">C</span><span class="pcoord pc-e" style="top:87.5%">D</span></div>
 
 <main class="shell" id="main-content" tabindex="-1">
 
@@ -1382,6 +1621,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
         </div>
       </div>
     </div>
+    <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
     <div class="sort-bar" id="sort-bar" style="display:none">
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
@@ -1404,11 +1644,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
     <div class="cards" id="qa-cards"></div>
   </div>
 
-  <!-- ── Processing state ─────────────────────────────────── -->
+  <!-- ── Processing / between-rounds state ────────────────── -->
   <div id="processing-view" style="display:none">
     <div class="processing-inner">
-      <div class="spinner"></div>
-      <div class="processing-text">Claude is revising…</div>
+      <div class="processing-dot" aria-hidden="true"></div>
+      <div class="processing-text" id="processing-heading">Claude is revising…</div>
+      <div class="processing-requests" id="processing-requests" style="display:none"></div>
     </div>
   </div>
 
@@ -1442,14 +1683,17 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
+      <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
   </details>
 
 </main>
 
+</div><!-- /#paper -->
+
 <!-- Bottom bar -->
-<div class="bottom-bar">
+<div class="bottom-bar" id="bottom-bar-el">
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
@@ -1459,6 +1703,22 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
       <button class="btn-submit disabled" id="btn-submit">submit all</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recap overlay — the submit gate for review/diff modes. Ships hidden;
+     openRecap() rebuilds the index grid from live verdict state each open.
+     Q&A never opens it: the done → path submits directly. -->
+<div class="recap-overlay" id="recap-overlay" role="dialog" aria-modal="true" aria-labelledby="recap-title" style="display:none">
+  <div class="recap-panel">
+    <div class="recap-head">
+      <span class="recap-title" id="recap-title">Recap &middot; REV <span id="recap-round"></span></span>
+      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap">&times;</button>
+    </div>
+    <div class="recap-grid" id="recap-grid"></div>
+    <div class="recap-actions">
+      <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
     </div>
   </div>
 </div>
@@ -1618,6 +1878,78 @@ function renderLedger() {
   el('ledger-head').onclick = () => el('ledger').classList.toggle('is-collapsed');
 }
 
+/* ─── Transmittal slip (round >= 2, review mode only) ────────
+   The cover slip on a returned drawing: one row per section attributing
+   what changed at this revision and why — `revised to your note` (a diff
+   answering an open note), bare `revised` (a silent diff), `flagged &
+   unreviewed` (error before warn annotations; info advises, it doesn't
+   flag), `approved & unchanged` (carried approvals). Each row jump-links
+   to its card; carried targets scroll + reveal rather than activate
+   (activateReviewCard's carried branch). transmittalHTML is pure over the
+   review-input shape — classification and ordering only, no DOM;
+   renderTransmittal owns the mount and the jump wiring. Diff mode ships
+   no slip: hunk identity is positional across rounds. */
+const FLAG_RANK = { error: 0, warn: 1 };
+
+// Strongest flag severity on a section: 0 (error), 1 (warn), or null.
+function flagRank(section) {
+  const ranks = ((section && section.annotations) || [])
+    .map(a => FLAG_RANK[(a || {}).severity])
+    .filter(r => r !== undefined);
+  return ranks.length ? Math.min(...ranks) : null;
+}
+
+function transmittalHTML(data) {
+  if (!data || data.mode !== 'review' || !(data.round > 1)) return '';
+  const approved = new Set(data.approved_ids || []);
+  // A carried row reflects a prior-round stamp that still stands. A withdrawn
+  // approval clears its rState verdict, so it drops out of the carried bucket
+  // (and, if it carries annotations, reappears as flagged) — the slip tracks
+  // the live verdict, not just the static approved_ids the round shipped with.
+  const carriedNow = id => approved.has(id) && rState.verdicts[id]?.verdict === 'approved';
+  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [], carried = [];
+  (data.sections || []).forEach(s => {
+    const hasDiff  = Array.isArray(s.diff) && s.diff.length > 0;
+    const hasNotes = Array.isArray(s.open_notes) && s.open_notes.length > 0;
+    if (hasDiff) { (hasNotes ? revisedNoted : revisedBare).push(s); return; }
+    if (carriedNow(s.id)) { carried.push(s); return; }
+    const rank = flagRank(s);
+    if (rank !== null) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
+  });
+  const row = (s, cls, marker, label) =>
+    '<button type="button" class="transmittal-row ' + cls + '" data-target="' + esc(s.id) + '">'
+    + '<span class="tr-marker" aria-hidden="true">' + marker + '</span>'
+    + '<span class="tr-label">' + label + '</span>'
+    + '<span class="tr-title">' + esc(s.title) + '</span></button>';
+  // A revised row names its cause when the diff answers the reviewer's own
+  // open note; a silent revision stays bare.
+  const revisedRow = s => {
+    const noted = Array.isArray(s.open_notes) && s.open_notes.length > 0;
+    return row(s, noted ? 'tr-revised-note' : 'tr-revised', '&#9651;',
+               noted ? 'revised to your note' : 'revised');
+  };
+  const rows = revisedNoted.concat(revisedBare).map(revisedRow).concat(
+    flaggedErr.map(s => row(s, 'tr-flag-error', '&#9873;', 'flagged &amp; unreviewed')),
+    flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
+    carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
+  if (!rows.length) return '';
+  return '<div class="transmittal-head"><span class="transmittal-title">Transmittal &middot; REV '
+    + esc(String(data.round).padStart(2, '0')) + '</span></div>'
+    + '<div class="transmittal-rows">' + rows.join('') + '</div>';
+}
+
+function renderTransmittal() {
+  const panel = el('transmittal');
+  if (!panel) return;
+  const html = transmittalHTML(REVIEW_DATA);
+  if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.innerHTML = html;
+  panel.style.display = '';
+  panel.querySelectorAll('.transmittal-row').forEach(btn => {
+    btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
+  });
+}
+
 /* ─────────────────────────────────────────────────────────
    REVIEW MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
@@ -1661,20 +1993,24 @@ function initReview() {
         lastFilepath = fp;
       }
     }
-    const card = buildReviewCard(s);
-    // Cards carried forward as already-approved from a prior round appear
-    // instantly (no fade) — only new/changed cards get the staggered fade-in,
-    // re-indexed among themselves so the stagger stays tight regardless of
-    // how many sections are already approved and collapsed.
-    if (REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)) {
+    // Sections approved in a prior round (round >= 2) collapse to carried
+    // cards — a head-only line with the read-only content one reveal away.
+    // Round 1 keeps the normal-card path even when a resume pre-approves ids.
+    const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
+    const card = isCarried ? buildCarriedCard(s) : buildReviewCard(s);
+    // Carried cards appear instantly (no fade) — only new/changed cards get
+    // the staggered fade-in, re-indexed among themselves so the stagger stays
+    // tight regardless of how many sections are already carried.
+    if (isCarried) {
       card.style.animation = 'none';
     } else {
       card.style.animationDelay = Math.min(0.04 + animIdx * 0.04, 0.3) + 's';
       animIdx++;
     }
     container.appendChild(card);
-    // Apply approved CSS immediately for pre-approved cards
-    if (priorApprovedSet.has(s.id)) syncReviewCard(s.id);
+    // Apply approved CSS immediately for round-1 pre-approved normal cards;
+    // carried cards bake their collapsed state into their own markup.
+    if (!isCarried && priorApprovedSet.has(s.id)) syncReviewCard(s.id);
   });
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
@@ -1682,6 +2018,7 @@ function initReview() {
   else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
   updateReviewStats();
   renderLedger();
+  renderTransmittal();
   setupCardSort();
 }
 
@@ -1931,6 +2268,77 @@ function buildReviewCard(section) {
   return card;
 }
 
+/* ─── Carried cards (round >= 2 prior approvals) ────────────────
+   A section approved in a prior round collapses to a dimmed, head-only line:
+   `carried` marker, title, an "unchanged since your stamp — show" reveal of
+   the read-only content, the mono APPROVED mini-stamp, and a withdraw
+   control. No comment machinery — a carried card is settled unless
+   withdrawn, at which point it becomes a normal accordion card again. */
+function buildCarriedCard(section) {
+  const card = document.createElement('div');
+  card.className = 'card is-carried';
+  card.id = 'rcard-' + section.id;
+
+  // Keep raw markdown for lazy render on first reveal (same path live cards use).
+  _pendingMarkdown.set(section.id, section.content ?? '');
+
+  card.innerHTML = `
+    <div class="carried-head">
+      <span class="carried-marker">carried</span>
+      <span class="card-title">${esc(section.title)}</span>
+      <button type="button" class="carried-show" id="rcarried-show-${section.id}" aria-expanded="false" aria-controls="rcarried-body-${section.id}">unchanged since your stamp &mdash; show</button>
+      <span class="carried-stamp">APPROVED</span>
+      <button type="button" class="carried-withdraw" id="rcarried-withdraw-${section.id}" title="withdraw approval &mdash; reopen this section for review"><span aria-hidden="true">&times;</span> withdraw approval</button>
+    </div>
+    <div class="carried-body" id="rcarried-body-${section.id}" hidden>
+      <div class="section-content" id="rcontent-${section.id}"></div>
+    </div>`;
+
+  // The whole head line toggles the reveal (mouse convenience); the show
+  // button is the focusable, aria-wired affordance for the same action.
+  card.querySelector('.carried-head').addEventListener('click', () => {
+    setCarriedShown(section.id, el('rcarried-body-' + section.id).hidden);
+  });
+  card.querySelector('#rcarried-show-' + section.id).addEventListener('click', e => {
+    e.stopPropagation();
+    setCarriedShown(section.id, el('rcarried-body-' + section.id).hidden);
+  });
+  card.querySelector('#rcarried-withdraw-' + section.id).addEventListener('click', e => {
+    e.stopPropagation(); withdrawApproval(section.id);
+  });
+  return card;
+}
+
+// Reveal/hide a carried card's read-only content, keeping the show button's
+// label and aria-expanded in sync. Rendering stays lazy via _ensureRendered.
+function setCarriedShown(id, shown) {
+  const body = el('rcarried-body-' + id); if (!body) return;
+  body.hidden = !shown;
+  if (shown) _ensureRendered(id);
+  const btn = el('rcarried-show-' + id);
+  if (btn) {
+    btn.setAttribute('aria-expanded', shown ? 'true' : 'false');
+    btn.innerHTML = 'unchanged since your stamp &mdash; ' + (shown ? 'hide' : 'show');
+  }
+}
+
+// Withdraw a carried approval: clear the verdict back to pending and swap the
+// collapsed carried card for a normal accordion card, opened for re-review.
+// The fresh card replaces the carried one in place — document order is
+// canonical, withdrawn cards never reorder.
+function withdrawApproval(id) {
+  if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
+  const section = REVIEW_DATA.sections.find(s => s.id === id);
+  const old = el('rcard-' + id);
+  if (!section || !old) return;
+  // buildReviewCard re-arms _pendingMarkdown, so content re-renders lazily
+  // even if the carried reveal already consumed it.
+  old.replaceWith(buildReviewCard(section));
+  activateReviewCard(id);
+  updateReviewStats();
+  renderTransmittal();   // the withdrawn section is no longer "approved & unchanged"
+}
+
 // Open/close a card, keeping the header button's aria-expanded in sync.
 // `is-active` is the single source of truth for "expanded", so every site that
 // flips it routes through here — otherwise aria-expanded desyncs on auto-advance
@@ -1943,6 +2351,15 @@ function setCardExpanded(cardEl, expanded) {
 }
 
 function activateReviewCard(id) {
+  // A carried card has no accordion body to activate — reveal its read-only
+  // content and scroll to it instead (annotation jumps, all-carried resumes).
+  // It never becomes rState.active: active means "under review".
+  const target = el('rcard-' + id);
+  if (target && target.classList.contains('is-carried')) {
+    setCarriedShown(id, true);
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
   // Deactivate previous
   if (rState.active && rState.active !== id) {
     setCardExpanded(el('rcard-' + rState.active), false);
@@ -2620,9 +3037,47 @@ function wireCapture(stateGetter, textarea, stripEl, attachBtn, fileInput, card)
 }
 
 /* ─── Submit handlers ──────────────────────────────────────── */
+// Between-rounds snapshot — the changes/info rows the reviewer just sent,
+// captured from rState at submit time so the 'processing' view can echo
+// them back verbatim while the agent revises. Deliberately in-memory only
+// (never written to .viva/): a tab reload during revision re-boots into
+// the prior round exactly as before, not into this card.
+let betweenRounds = null;
+
+function snapshotBetweenRounds() {
+  betweenRounds = {
+    round: REVIEW_DATA.round,
+    rows: REVIEW_DATA.sections.flatMap(s =>
+      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type, note: c.note })))
+  };
+}
+
+// POST a round/answer payload to /submit, surface failure, and re-enable the
+// bar so the reviewer can retry. fetch() resolves (never rejects) on a 4xx/5xx,
+// so a non-2xx is turned into a throw here; and because the bar's `disabled`
+// attribute is the in-flight signal the recap gate reads, a failed submit that
+// left it set would strand the reviewer with no retry path but a page reload
+// (which loses the round's verdicts). On success the buttons stay disabled —
+// the round is genuinely in flight and the SSE 'processing'/'round' events
+// drive the next view.
+function sendSubmit(result) {
+  fetch('/submit', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(result)
+  })
+    .then(r => { if (!r.ok) throw new Error('server returned ' + r.status); })
+    .catch(err => {
+      alert('Submit failed: ' + (err.message || 'network error'));
+      el('btn-skip').disabled   = false;
+      el('btn-submit').disabled = false;
+    });
+}
+
 function submitReview(early) {
   el('btn-skip').disabled   = true;
   el('btn-submit').disabled = true;
+  snapshotBetweenRounds();  // before the POST — 'processing' renders from it
   const result = {
     round: REVIEW_DATA.round,
     submitted_early: early,
@@ -2634,11 +3089,7 @@ function submitReview(early) {
                ...(comments.length && { comments }) };
     })
   };
-  fetch('/submit', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(result)
-  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+  sendSubmit(result);
 }
 
 function submitQA(early) {
@@ -2667,11 +3118,7 @@ function submitQA(early) {
       }),
     submitted_early: early
   };
-  fetch('/submit', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(result)
-  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+  sendSubmit(result);
 }
 
 el('btn-skip').addEventListener('click', () => {
@@ -2681,8 +3128,101 @@ el('btn-skip').addEventListener('click', () => {
 
 el('btn-submit').addEventListener('click', () => {
   if (el('btn-submit').classList.contains('disabled')) return;
-  if (REVIEW_DATA) submitReview(false);
+  // Review/diff route through the recap gate — only #recap-confirm calls
+  // submitReview(false). Q&A keeps its direct done → path.
+  if (REVIEW_DATA) openRecap();
   else             submitQA(false);
+});
+
+/* ─── Recap overlay — the submit gate (review/diff modes) ────
+   btn-submit's ready click opens this index of every section — id, title,
+   verdict dot + label, active-note count — instead of submitting; only
+   #recap-confirm calls submitReview(false). `o` toggles it, Escape closes
+   it, a row click closes-and-activates its section. Q&A ships no recap:
+   the done → button stays wired straight to submitQA(false), and btn-skip
+   keeps its direct submitReview(true) escape hatch. */
+const RECAP_VERDICTS = {
+  approved: { dot: 'dot-approved', cls: 'rv-approved', label: 'approved' },
+  changes: { dot: 'dot-changes', cls: 'rv-changes', label: 'changes' },
+  info: { dot: 'dot-info', cls: 'rv-info', label: 'info' },
+  pending: { dot: 'dot-idle', cls: 'rv-pending', label: 'pending' },
+};
+
+function recapRowsHTML() {
+  return REVIEW_DATA.sections.map(s => {
+    const v = RECAP_VERDICTS[deriveVerdict(s.id)] || RECAP_VERDICTS.pending;
+    const notes = activeComments(s.id).length;
+    return '<button type="button" class="recap-row" data-target="' + esc(s.id) + '">'
+      + '<span class="recap-id">' + esc(s.id) + '</span>'
+      + '<span class="recap-row-title">' + esc(s.title) + '</span>'
+      + '<span class="recap-verdict ' + v.cls + '"><span class="dot ' + v.dot + '" aria-hidden="true"></span>' + v.label + '</span>'
+      + '<span class="recap-notes">' + (notes ? notes + ' note' + (notes === 1 ? '' : 's') : '&mdash;') + '</span>'
+      + '</button>';
+  }).join('');
+}
+
+function recapIsOpen() { return el('recap-overlay').style.display !== 'none'; }
+
+function openRecap() {
+  // Q&A ships no recap, and a hidden review-view (processing/complete) has
+  // nothing to recap — the `o` shortcut lands here too, not just the
+  // class-gated btn-submit click.
+  if (!REVIEW_DATA || el('review-view').style.display === 'none') return;
+  el('recap-round').textContent = String(REVIEW_DATA.round).padStart(2, '0');
+  const grid = el('recap-grid');
+  grid.innerHTML = recapRowsHTML();
+  grid.querySelectorAll('.recap-row').forEach(btn => {
+    btn.addEventListener('click', () => { closeRecap(); activateReviewCard(btn.dataset.target); });
+  });
+  // The confirm control mirrors btn-submit's readiness, so a recap opened
+  // mid-review via `o` can't submit a round the bottom bar wouldn't. The
+  // `.disabled` attribute is the in-flight signal: submitReview sets it
+  // before the POST and the 'round' handler clears it, so mirroring it here
+  // keeps a recap reopened after a submit (SSE still up, or dropped) from
+  // re-arming a second POST that would duplicate the ledger rows.
+  const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;
+  el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
+  el('recap-overlay').style.display = '';
+  setBackgroundInert(true);   // trap focus + block interaction behind the modal
+  el('recap-confirm').focus();
+}
+
+// The recap is a modal (aria-modal="true"): mark everything behind it inert
+// while it's open, so Tab can't walk into the sheet or bottom bar and a
+// background click can't reach a card. inert removes the whole subtree from
+// the tab order, which makes the overlay's own controls the only focusable
+// region — a focus trap without hand-rolled Tab-wrap bookkeeping.
+function setBackgroundInert(on) {
+  ['skip-link-a', 'paper', 'bottom-bar-el'].forEach(id => {
+    const node = el(id);
+    if (node) node.inert = on;
+  });
+}
+
+function closeRecap() {
+  const overlay = el('recap-overlay');
+  if (overlay.style.display === 'none') return;
+  const hadFocus = overlay.contains(document.activeElement);
+  overlay.style.display = 'none';
+  setBackgroundInert(false);   // clear inert BEFORE restoring focus — focus()
+                               // on an element inside an inert subtree no-ops
+  // Don't strand keyboard focus on the now-hidden overlay.
+  if (hadFocus) el('btn-submit').focus();
+}
+
+function toggleRecap() { if (recapIsOpen()) closeRecap(); else openRecap(); }
+
+el('recap-confirm').addEventListener('click', () => {
+  // Belt-and-suspenders with openRecap's readiness mirror: never submit while
+  // one is already in flight (btn-submit.disabled), so a fast reopen can't
+  // fire a duplicate POST between submit and the 'processing'/'round' events.
+  if (el('recap-confirm').classList.contains('disabled') || el('btn-submit').disabled) return;
+  closeRecap();
+  submitReview(false);
+});
+el('recap-close').addEventListener('click', closeRecap);
+el('recap-overlay').addEventListener('click', e => {
+  if (e.target === el('recap-overlay')) closeRecap();   /* backdrop click */
 });
 
 el('sort-toggle').addEventListener('click', () => {
@@ -2729,10 +3269,37 @@ function showStillWaitingBanner() {
   document.body.prepend(b);
 }
 
+// Renders #processing-view for its two variants: the between-rounds card
+// (pulsing dot, `REV 0N submitted — the agent is revising`, the reviewer's
+// just-submitted changes/info rows verbatim) when submitReview snapshotted
+// rows, else the minimal processing line — a qa submit never snapshots, and
+// a zero-row review submit has nothing to echo.
+function renderProcessingView() {
+  const heading = el('processing-heading');
+  const list    = el('processing-requests');
+  const rows    = (betweenRounds && betweenRounds.rows) || [];
+  if (!rows.length) {
+    heading.textContent = 'Claude is revising…';
+    list.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  heading.textContent = 'REV ' + String(betweenRounds.round).padStart(2, '0') + ' submitted — the agent is revising';
+  list.innerHTML = rows.map(r =>
+    '<div class="pr-row pr-' + esc(r.type) + '">'
+    + '<span class="pr-type">' + esc(r.type) + '</span>'
+    + '<span class="pr-title">' + esc(r.sectionTitle) + '</span>'
+    + '<span class="pr-note">' + esc(r.note) + '</span>'
+    + '</div>').join('');
+  list.style.display = '';
+}
+
 function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
+    closeRecap();  // the review it recapped is gone from under it
+    renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
@@ -2743,6 +3310,7 @@ function connectSSE() {
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
+    closeRecap();  // a stale grid must never sit over a fresh round's cards
     REVIEW_DATA       = data;
     // A qa → review hand-off (#109) lands here too — the qa session this tab
     // may have been showing is done; drop its state so leftover QA_DATA/
@@ -2752,6 +3320,10 @@ function connectSSE() {
     qState.active     = null;
     rState.verdicts   = {};
     rState.active     = null;
+    // The snapshot's round is over — a later 'processing' event with no
+    // fresh submit behind it falls back to the minimal line, never a stale
+    // card.
+    betweenRounds = null;
     setDocTitleBlock(data, modeWord, modeWord === 'diff' ? 'diff' : '');
     el('round-badge').textContent = String(data.round).padStart(2, '0');
     const rev = 'REV ' + String(data.round).padStart(2, '0');
@@ -2823,6 +3395,14 @@ document.addEventListener('keydown', e => {
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
   if (REVIEW_DATA) {
+    if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
+    if (e.key === 'Escape' && recapIsOpen()) { closeRecap(); return; }
+    if (recapIsOpen()) {
+      // The recap is modal — card shortcuts stay inert under it; ⌘/Ctrl+Enter
+      // keeps its "submit" meaning by driving the gate's own confirm control.
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); el('recap-confirm').click(); }
+      return;
+    }
     if (e.key === 'a' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'approved'); return; }
     if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
     if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
@@ -2847,8 +3427,8 @@ document.addEventListener('keydown', e => {
   // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
   // qState.active reset (#109 hand-off): belt-and-suspenders so a digit
   // keystroke can never route through the qa branch — and flip btn-submit to
-  // 'ready' via updateQAStats(), letting the class-gated click handler call
-  // submitReview(false) early — while review cards are what's on screen.
+  // 'ready' via updateQAStats(), arming the class-gated click handler (the
+  // recap gate) early — while review cards are what's on screen.
   if (!REVIEW_DATA && QA_DATA && qState.active) {
     const q = QA_DATA.questions.find(q => q.id === qState.active);
     if (q) {

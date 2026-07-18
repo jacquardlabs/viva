@@ -8,13 +8,20 @@ decorative emoji are aria-hidden (#38), the focus-visible group covers the new
 controls (#52), action-btns carry type="button" (#51), and a keyboard legend
 ships (#39). These are string-needle checks against the HTML constant; the
 aria-expanded *toggle* behavior is verified manually in a browser.
+
+Frontend v2 phase 1 adds the sheet-ground chrome checks: the review sits on a
+bounded #paper sheet (edge border, inner rule, aria-hidden coordinate/corner
+decoration) over a flat --table ground, and the 24px grid + fixed .sheet-frame
+are gone at every layer.
 """
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 import server  # noqa: E402
+from _server_harness import assert_grid_gone, assert_sheet_ground  # noqa: E402
 
 HTML = server.HTML
 
@@ -50,7 +57,9 @@ def test_main_landmark_wraps_shell():
 
 def test_skip_link_targets_main():
     # A skip link is the first focusable element and jumps to the <main> (#37).
-    assert '<a class="skip-link" href="#main-content">' in HTML
+    # Matched by attributes (class + href), not the exact tag string, so the
+    # inert-helper's id= addition doesn't break this check.
+    assert 'class="skip-link"' in HTML and 'href="#main-content"' in HTML
     assert 'id="main-content"' in HTML
     # It precedes the main content in source order (so it's the first Tab stop).
     assert HTML.index('class="skip-link"') < HTML.index('id="main-content"')
@@ -115,6 +124,22 @@ def test_keyboard_legend_present_and_real():
     print("  ok  test_keyboard_legend_present_and_real")
 
 
+def test_sheet_ground_ships():
+    # The review sits on a bounded drawing sheet (#paper) over a flat table.
+    # The needle set is shared with test_frontend_v2_phase1 via
+    # assert_sheet_ground (one owner for the sheet-chrome contract), checked
+    # here against the HTML constant.
+    assert_sheet_ground(HTML)
+    print("  ok  test_sheet_ground_ships")
+
+
+def test_grid_and_sheet_frame_gone():
+    # The 24px drafting grid and the fixed .sheet-frame (CSS + markup +
+    # .sf-mark corners) are gone at every layer — shared negative check.
+    assert_grid_gone(HTML)
+    print("  ok  test_grid_and_sheet_frame_gone")
+
+
 def main():
     test_card_head_is_button_with_aria()
     test_aria_expanded_sync_helper_exists()
@@ -125,7 +150,9 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
-    print("OK (9 tests)")
+    test_sheet_ground_ships()
+    test_grid_and_sheet_frame_gone()
+    print("OK (11 tests)")
 
 
 if __name__ == "__main__":

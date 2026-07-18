@@ -1,0 +1,27 @@
+{
+  "task": "3",
+  "overall": "PASS",
+  "items": [
+    {
+      "id": "1",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:53038\nviva \u00b7 review mode \u00b7 http://127.0.0.1:53041\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (8 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "2",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_frontend_v2_phase1.py\nexit code: 0\n--- stdout ---\nviva \u00b7 review mode \u00b7 http://127.0.0.1:53045\nviva \u00b7 review mode \u00b7 http://127.0.0.1:53048\ntest_page_ships_sheet_ground: OK\ntest_grid_gone_at_every_layer: OK\ntest_mode_diff_paper_widens: OK\ntest_round1_zero_carried_markers: OK\ntest_round1_zero_transmittal_markers: OK\ntest_round2_serves_carried_markup: OK\ntest_round2_submit_records_carried_approved: OK\ntest_round2_serves_transmittal_slip: OK\n\nOK (8 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "3",
+      "kind": "hold",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_server_qa.py\nexit code: 0\n--- stdout ---\nviva \u00b7 qa mode \u00b7 http://127.0.0.1:53052\nOK\n\n--- stderr ---\n"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ Usage:
 """
 import http.client
 import json
+import re
 import subprocess
 import sys
 import time
@@ -30,6 +31,49 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server.py"
+
+
+def assert_sheet_ground(text: str) -> None:
+    """Shared sheet-ground needle checks — the single owner of the bounded
+    #paper-sheet-on-flat-table contract, so a chrome change edits one place
+    (was duplicated verbatim across test_server_a11y and this suite). CSS-rule
+    checks are whitespace-tolerant regexes: the values are the design contract,
+    the source alignment is not — reformatting the token block or the rule must
+    not break the test. Structural markup and aria literals stay exact, because
+    there the literal *is* the contract. `text` is the served page or the HTML
+    constant (byte-identical: the server serves HTML.encode())."""
+    assert re.search(r'--table:\s+#060e1a;', text), "dark token block missing --table"
+    assert re.search(r'--table:\s+#e2e8f1;', text), "light token block missing --table"
+    assert text.count('--table:') == 2, "--table must be defined once per theme block"
+    assert 'background: var(--table);' in text, "body must sit on the flat table"
+    assert '<div id="paper">' in text, "missing the #paper sheet"
+    assert re.search(r'#paper\s*\{[^}]*max-width:\s*700px[^}]*'
+                     r'border:\s*1px solid var\(--border2\)', text), \
+        "#paper missing its content-bounded 700px edge"
+    assert re.search(r'#paper::before\s*\{[^}]*inset:\s*7px[^}]*'
+                     r'border:\s*1px solid var\(--border\)', text), \
+        "#paper missing the 1px inner rule at 7px inset"
+    assert '<div class="paper-marks" aria-hidden="true">' in text, \
+        "sheet decoration must be aria-hidden"
+    assert text.count('class="pmark') == 4, "expected 4 corner registration marks"
+    assert '<span class="pcoord pc-n" style="left:12.5%">1</span>' in text, \
+        "missing edge coordinate numbers"
+    assert '<span class="pcoord pc-w" style="top:12.5%">A</span>' in text, \
+        "missing edge coordinate letters"
+    assert text.index('<div id="paper">') < text.index('<main class="shell"'), \
+        "#paper must open before main.shell"
+    assert text.index('</main>') < text.index('</div><!-- /#paper -->'), \
+        "#paper must close after main"
+    assert re.search(r'\.mode-diff #paper\s*\{\s*max-width:\s*min\(95vw, 1600px\)', text), \
+        "missing the diff-mode #paper widening rule"
+
+
+def assert_grid_gone(text: str) -> None:
+    """Shared negative check — the 24px drafting grid and the fixed
+    .sheet-frame (CSS, markup, and .sf-mark corners) are gone at every layer."""
+    assert 'background-size: 24px 24px' not in text, "24px grid still present"
+    assert 'sheet-frame' not in text, ".sheet-frame still present"
+    assert 'sf-mark' not in text, "legacy .sf-mark corner marks still present"
 
 
 def get(base: str, path: str) -> dict:

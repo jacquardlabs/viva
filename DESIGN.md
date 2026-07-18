@@ -3,10 +3,12 @@
 ## Metaphor
 
 Blueprint/drafting-table. Dark mode: drafting board illuminated in cyan linework
-on midnight blue. Light mode: blueline print on white vellum. Every visual decision
-flows from this metaphor: square corners, registration-mark crop ticks on active
-cards, monospace labels, subtle grid paper background, a drawing-sheet frame, and
-drafting-room gestures — revision triangles and an approval stamp.
+on midnight blue. Light mode: blueline print on white vellum. The document is a
+bounded drawing sheet resting on a flat table — no background grid at any layer.
+Every visual decision flows from this metaphor: square corners, registration-mark
+crop ticks on active cards, monospace labels, the sheet's edge coordinates and
+corner marks, and drafting-room gestures — revision triangles, a transmittal slip
+on re-issue, and an approval stamp.
 
 ## Color tokens
 
@@ -15,9 +17,10 @@ All colors are CSS custom properties defined in `:root` with a full `@media
 
 | Token | Dark | Light | Semantic role |
 |-------|------|-------|---------------|
-| `--bg` | #0a1727 | #f3f6fa | Page background |
+| `--bg` | #0a1727 | #f3f6fa | Sheet fill (and inset panels) |
 | `--bg2` | #0f1f33 | #e9eef5 | Card / panel background |
 | `--bg3` | #152840 | #dde5ef | Hover state |
+| `--table` | #060e1a | #e2e8f1 | Flat table the sheet sits on (body background) |
 | `--border` | #1d324e | #cdd9e8 | Default border |
 | `--border2` | #2a4768 | #a8bdd4 | Emphasized border |
 | `--text` | #d8e7f5 | #13293f | Primary text |
@@ -25,6 +28,7 @@ All colors are CSS custom properties defined in `:root` with a full `@media
 | `--text3` | #48648a | #8aa0b8 | Tertiary / disabled |
 | `--accent` | #5cc8ff | #1271b8 | Interactive / selected |
 | `--accent-dim` | rgba(92,200,255,.08) | rgba(18,113,184,.08) | Accent wash |
+| `--scrim` | rgba(6,14,26,.72) | rgba(19,41,63,.32) | Recap-overlay modal scrim (midnight dark; blue-ink over vellum light) |
 | `--teal` | #43e0a8 | #0c8a63 | **Approved** verdict |
 | `--teal-bg` | rgba(67,224,168,.06) | rgba(12,138,99,.07) | Approved wash |
 | `--orange` | #ff5a36 | #cf3f1d | **Changes / error** verdict |
@@ -81,7 +85,8 @@ surfaces) — each value taken from its own rule in the current CSS:
 | Selector | Radius |
 |----------|--------|
 | `.dot` | 50% |
-| `.spinner` | 50% |
+| `.processing-dot` | 50% |
+| `.carried-stamp` | 2px |
 | `.sort-toggle` | 3px |
 | `.settle-btn` | 3px |
 | `.comment-popover` | 4px (#68) |
@@ -91,20 +96,41 @@ surfaces) — each value taken from its own rule in the current CSS:
 | `.diff-block` | 6px |
 | `.d2h-file-wrapper` (diff mode, viva override) | 6px |
 
-The #69 blueprint elements (`.sheet-frame`, `.rev-tri`, `.approve-stamp` /
-`.stamp-rule`) carry no border-radius — they are square by design, extending the
-drafting geometry.
+The blueprint gestures (`.rev-tri`, `.approve-stamp` / `.stamp-rule`) and the
+sheet itself (`#paper` and its `.paper-marks` decoration) carry no
+border-radius — they are square by design, extending the drafting geometry.
 
 ## Layout
+
+### Sheet on table — the ground
+
+`<body>` is the flat drafting table: `background: var(--table)` and nothing
+else — no background grid at any layer. The document is a bounded drawing
+sheet, `#paper`, that wraps `<main class="shell">` and grows with it
+(content-bounded, not a fixed viewport frame):
+
+- **Sheet edge**: `#paper` — `position: relative; max-width: 700px;
+  margin: 32px auto 96px; background: var(--bg);
+  border: 1px solid var(--border2)`.
+- **Inner rule**: `#paper::before` — `1px solid var(--border)` at `inset: 7px`,
+  `pointer-events: none`.
+- **Decoration** (`.paper-marks`, `aria-hidden="true"`, hidden below 740px):
+  four corner `+` registration marks (`.pmark` — Fragment Mono 13px,
+  `var(--accent)` at 0.7 opacity, hanging 7px outside each corner) and edge
+  coordinates (`.pcoord` — Fragment Mono 10px, `var(--text3)`): numbers 1–4
+  across the top edge (`.pc-n`), letters A–D down both side edges
+  (`.pc-w` / `.pc-e`).
+
+The skip link, bottom bar, and recap overlay sit outside `#paper`; everything
+that scrolls sits on the sheet.
+
+### Shell
 
 Single-column shell, `max-width: 700px`, centered. Bottom bar is fixed, matches
 the shell's max-width with `bottom-inner`. Shell has `padding-bottom: 140px` to
 clear the bar. Do not exceed 700px in the shell (diff mode is the one exception:
-body.mode-diff widens it — see Diff-first layout).
-
-A fixed drawing-sheet frame (`.sheet-frame`, `position: fixed; inset: 16px`) wraps
-the whole viewport behind the content — see Blueprint elements. The shell sits on
-the sheet, not in a void.
+`body.mode-diff` widens `.shell`, `.bottom-inner`, **and `#paper`** together to
+`min(95vw, 1600px)` — see Diff-first layout).
 
 ## Interactive controls
 
@@ -133,11 +159,14 @@ States:
 All interactive controls must be in the `:focus-visible` group rule. Use
 `outline: 1.5px solid var(--accent); outline-offset: 2px`. Do not add custom
 focus styles to individual controls — add them to the group selector. Current
-membership matches the reticle group plus `.btn-skip, .btn-submit`:
+membership is the reticle group plus every other focusable control:
 
 ```
-.action-btn, .qa-btn, .choice-chip, .attach-btn,
+.card-head, .action-btn, .qa-btn, .choice-chip, .attach-btn,
 .cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel,
+.settle-btn, .diff-toggle,
+.carried-show, .carried-withdraw, .transmittal-row,
+.recap-row, .recap-close,
 .btn-skip, .btn-submit
 ```
 
@@ -151,6 +180,7 @@ membership matches the reticle group plus `.btn-skip, .btn-submit`:
 - **Progress bar**: `width 0.6s cubic-bezier(0.4,0,0.2,1)`.
 - **Approved card fade**: `opacity 0.35s` — cards dim to 0.42 on approve, restore to 0.72 on hover.
 - **Approval stamp**: `stamp-down` — `0.42s cubic-bezier(0.2,1.4,0.4,1)`, scales from 2.1 down to 1 at a fixed `-5deg` tilt. Suppressed under `prefers-reduced-motion: reduce`.
+- **Between-rounds pulse**: `viva-pulse` — `opacity 1 → 0.25 → 1`, `1.6s ease-in-out infinite` on `.processing-dot`. Suppressed under `prefers-reduced-motion: reduce` (as are card entrances and the stamp).
 
 ## Card accordion
 
@@ -161,6 +191,116 @@ A card has three states:
 
 Only one card is active at a time. Approval auto-advances to the next unreviewed card
 with an 80ms delay. The same 80ms delay applies to skip.
+
+On round ≥ 2, sections approved in a prior round don't render as accordion
+cards at all — see Carried approvals.
+
+## Carried approvals (frontend v2 phase 1, unreleased)
+
+On round ≥ 2, a section in `approved_ids` renders as a **carried card**
+(`buildCarriedCard`) instead of an accordion card: `.card.is-carried`, a dimmed
+head-only line — `opacity: 0.55`, `0.9` on hover/focus-within, kept brighter
+than `.is-approved`'s 0.42 so the affordances stay discoverable. The head
+carries the `carried` marker (label convention), the section title, an
+`unchanged since your stamp — show` reveal (aria-expanded/aria-controls,
+toggling a hidden read-only `.carried-body` whose markdown renders lazily on
+first reveal), the mono `APPROVED` mini-stamp (`.carried-stamp` — Fragment Mono
+9px, `var(--teal)` text and border, 2px radius, `-2deg` rotate, echoing the
+completion stamp), and the `× withdraw approval` control.
+
+Rules:
+
+- **Gate**: `REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)` — a round-1
+  boot can never render a carried card, and the accordion card markup is
+  unchanged beside it.
+- **Withdraw** clears the verdict back to pending and swaps in a normal
+  accordion card **in place** (document order is canonical — withdrawn cards
+  never reorder), opened for re-review.
+- Carried cards render with no entrance fade (a long carried tail stays
+  quiet) and never become `rState.active` — `activateReviewCard`'s carried
+  branch scrolls + reveals instead of activating.
+- The wire is untouched: prior approvals pre-populate `rState`, so submit
+  records a carried section exactly as carry-forward always has — a bare
+  `{id, verdict: "approved"}`, no comments.
+
+## Transmittal slip (frontend v2 phase 1, unreleased)
+
+The cover slip on a returned drawing: in **review mode at round ≥ 2**, a
+`<nav class="transmittal">` mounts between the ledger and `#review-cards`. It
+ships empty and hidden; `transmittalHTML(data)` is a pure function over the
+review-input — classification and ordering only, no DOM — and
+`renderTransmittal` owns the mount and the jump wiring. Header:
+`Transmittal · REV 0N` (uppercased by the label style).
+
+**Row grammar** — each section lands in exactly one row family, checked in
+this order (diff first, then flags, then carried). Each row is a jump-link
+`<button class="transmittal-row">` carrying a marker glyph, a mono label, and
+the section title:
+
+| Row label | Condition | Glyph | Color |
+|---|---|---|---|
+| `revised to your note` | `diff` present **and** `open_notes` present | △ | `--orange` |
+| `revised` | `diff` present, no `open_notes` | △ | `--orange` |
+| `flagged & unreviewed` | strongest annotation severity `error`, not carried | ⚑ | `--orange` |
+| `flagged & unreviewed` | strongest annotation severity `warn`, not carried | ⚑ | `--violet` |
+| `approved & unchanged` | member of `approved_ids` | ▣ | `--teal` |
+
+**Attribution rule**: a revised row claims the reviewer's note as its cause
+(`revised to your note`) only when `open_notes` stand behind the diff — a
+silent diff renders the bare `revised`. The slip never asserts causation the
+data doesn't carry. `info` annotations advise, they don't flag — only
+`error`/`warn` produce flag rows, and the error partition rows before warn.
+
+Empty families drop; all families empty → no slip. Round 1 → no slip,
+unconditionally. Every row jump-activates its section through
+`activateReviewCard` (whose carried branch scrolls + reveals). **Diff mode
+ships no slip**: hunk identity is positional across rounds
+(`{filepath} hunk N`), so a re-cut diff can renumber hunks and break the
+attribution.
+
+## Recap overlay — the submit gate (frontend v2 phase 1, unreleased)
+
+Submit never fires blind in review/diff mode. `#recap-overlay` is a hidden
+`role="dialog" aria-modal="true"` shipped in the static page; `openRecap()`
+rebuilds its grid from live verdict state on every open. Each `.recap-row`
+(a jump-link button) indexes one section: mono id, title, verdict dot + label
+(reusing the card dot slots, colored `rv-approved` / `rv-changes` / `rv-info`
+/ `rv-pending`), and active-note count (or `—`).
+
+- `btn-submit`'s ready click in review/diff opens the overlay instead of
+  submitting; the page's **only** `submitReview(false)` call site is the
+  overlay's `confirm & submit` control (`#recap-confirm`), which mirrors
+  `btn-submit`'s readiness class at open — a recap opened mid-review via `o`
+  can't submit a round the bottom bar wouldn't.
+- `o` toggles the overlay anytime in review; Escape, the `×` close, and a
+  backdrop click close it; a row click closes-and-activates its section.
+  Focus moves to the confirm control on open and returns to `btn-submit` on
+  close if it was inside the overlay.
+- `skip rest & submit` (`btn-skip`) stays a direct `submitReview(true)`
+  escape hatch — no recap. Q&A ships no recap: its done → path calls
+  `submitQA(false)` directly, and `openRecap` bails without `REVIEW_DATA` or
+  with the review view hidden.
+- The SSE `processing`/`round` handlers close a stale recap — the review it
+  indexed is gone from under it.
+
+## Between rounds (frontend v2 phase 1, unreleased)
+
+No full-view takeover while the agent revises: `#processing-view` is the
+between-rounds card. A pulsing accent dot (`.processing-dot`, 10px,
+`viva-pulse`) sits over the heading `REV 0N submitted — the agent is revising`
+and `.processing-requests` — the reviewer's just-submitted `changes`/`info`
+rows verbatim (`.pr-row`: mono type colored `--orange`/`--violet`, section
+title, untruncated note).
+
+`submitReview` snapshots `{sectionTitle, type, note}` rows from the active
+comments **before** the POST; the `processing` SSE handler renders from that
+snapshot, and the `round` handler consumes it. The snapshot is deliberately
+in-memory only (never written to `.viva/`): a tab reload during revision
+re-boots into the prior round's view exactly as before. Zero rows — an
+all-approved submit, or any Q&A submit (`submitQA` never snapshots) — fall
+back to the minimal `Claude is revising…` line. The #119 soft-timeout banners
+(`Still waiting — check the terminal.` / `Connection lost — check the
+terminal.`) overlay this card exactly as they overlaid the old view.
 
 ## Multiple inline comments (#68, v1.10.0)
 
@@ -193,13 +333,9 @@ Design elements:
 ## Blueprint elements (#69, v1.11.0)
 
 Drafting-room gestures that extend the metaphor. All square, all monospace.
+(The drawing sheet itself — `#paper` and its coordinate/corner decoration —
+is the ground these gestures sit on; see Layout.)
 
-- **Sheet frame** (`.sheet-frame`) — a fixed double-ruled border framing the whole
-  viewport: `position: fixed; inset: 16px; z-index: 30; pointer-events: none;
-  1px solid var(--border2)`, with a `::before` inner rule at `inset: 5px;
-  1px solid var(--border)`. Corner registration marks (`.sf-mark`, the `+` glyphs)
-  pin the active sheet to the table. Hidden below 720px (`@media (max-width: 720px)`).
-  Marked `aria-hidden="true"`.
 - **Revision triangle** (`.rev-tri`) — drafting's "this region changed at this rev"
   flag. Rendered as `△ NN` in Fragment Mono, `11px`, `color: var(--orange)`, keyed to
   the titleblock REV. Shown on a section head only when the section carries a diff.
@@ -258,7 +394,7 @@ to an unanchored whole-section note.
 ## Diff-first layout (mode-diff)
 
 Diff mode stamps `mode-diff` on `<body>`. Mode-scoped overrides widen
-`.shell` and `.bottom-inner` together to `min(95vw, 1600px)` and remove
+`.shell`, `.bottom-inner`, and `#paper` together to `min(95vw, 1600px)` and remove
 `.section-content`'s `60vh` nested scroll — page scroll is the only
 vertical scroll in diff mode. Widening the container (never escaping it)
 is the load-bearing choice: it leaves `.card-body-inner`'s
@@ -288,6 +424,10 @@ Submit button states:
 - `btn-submit disabled` — visually grayed, cursor not-allowed, click blocked in handler.
 - `btn-submit ready` — `var(--accent)` background, glow shadow, slightly raised on hover.
 
+In review/diff mode a ready click opens the recap overlay rather than
+submitting (see Recap overlay); Q&A's done → click submits directly.
+`btn-skip` submits directly in every mode.
+
 ## Accessibility requirements
 
 1. Every interactive element must be a native `<button>` or `<a>` — never a `<div>` with onclick.
@@ -295,10 +435,10 @@ Submit button states:
 3. Dynamic stat updates must be in an `aria-live` region.
 4. Page `<title>` must reflect current mode and round.
 5. Decorative emoji in button text must be wrapped in `<span aria-hidden="true">`.
-6. Decorative chrome (the sheet frame) must carry `aria-hidden="true"`.
+6. Decorative chrome (the sheet's `.paper-marks` decoration) must carry `aria-hidden="true"`.
 7. Design system tokens must be used for all colors — no hardcoded hex in component styles.
 8. A `<main>` landmark must wrap the scrollable shell.
-9. Entrance and stamp animations must be suppressed under `prefers-reduced-motion: reduce`.
+9. Entrance, stamp, and between-rounds pulse animations must be suppressed under `prefers-reduced-motion: reduce`.
 
 ## API conventions
 

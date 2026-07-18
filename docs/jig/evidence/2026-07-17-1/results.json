@@ -1,0 +1,27 @@
+{
+  "task": "1",
+  "overall": "PASS",
+  "items": [
+    {
+      "id": "1",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_server_a11y.py\nexit code: 0\n--- stdout ---\n  ok  test_card_head_is_button_with_aria\n  ok  test_aria_expanded_sync_helper_exists\n  ok  test_main_landmark_wraps_shell\n  ok  test_skip_link_targets_main\n  ok  test_stats_aria_live_and_dynamic_title\n  ok  test_tab_title_identifies_document\n  ok  test_decorative_emoji_are_aria_hidden\n  ok  test_focus_visible_group_and_button_types\n  ok  test_keyboard_legend_present_and_real\n  ok  test_sheet_ground_ships\n  ok  test_grid_and_sheet_frame_gone\nOK (11 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "2",
+      "kind": "cap",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_server_a11y.py\nexit code: 0\n--- stdout ---\n  ok  test_card_head_is_button_with_aria\n  ok  test_aria_expanded_sync_helper_exists\n  ok  test_main_landmark_wraps_shell\n  ok  test_skip_link_targets_main\n  ok  test_stats_aria_live_and_dynamic_title\n  ok  test_tab_title_identifies_document\n  ok  test_decorative_emoji_are_aria_hidden\n  ok  test_focus_visible_group_and_button_types\n  ok  test_keyboard_legend_present_and_real\n  ok  test_sheet_ground_ships\n  ok  test_grid_and_sheet_frame_gone\nOK (11 tests)\n\n--- stderr ---\n"
+    },
+    {
+      "id": "3",
+      "kind": "hold",
+      "tier": "test-backed",
+      "status": "PASS",
+      "detail": "command: python3 tests/test_server_diff_render.py\nexit code: 0\n--- stdout ---\nviva \u00b7 diff mode \u00b7 http://127.0.0.1:51322\ntest_page_ships_filepath_helper: OK\ntest_page_ships_file_group_header: OK\ntest_grouped_sections_stay_file_contiguous: OK\ntest_diff_content_served_verbatim: OK\ntest_page_ships_diff_mode_sort_toggle_guard: OK\ntest_page_ships_mode_diff_layout: OK\ntest_page_ships_diff2html_renderer: OK\ntest_page_ships_d2h_guards: OK\n\nAll server diff-render tests passed.\n\n--- stderr ---\n"
+    }
+  ]
+}
