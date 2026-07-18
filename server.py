@@ -3151,8 +3151,12 @@ function openRecap() {
     btn.addEventListener('click', () => { closeRecap(); activateReviewCard(btn.dataset.target); });
   });
   // The confirm control mirrors btn-submit's readiness, so a recap opened
-  // mid-review via `o` can't submit a round the bottom bar wouldn't.
-  const ready = el('btn-submit').classList.contains('ready');
+  // mid-review via `o` can't submit a round the bottom bar wouldn't. The
+  // `.disabled` attribute is the in-flight signal: submitReview sets it
+  // before the POST and the 'round' handler clears it, so mirroring it here
+  // keeps a recap reopened after a submit (SSE still up, or dropped) from
+  // re-arming a second POST that would duplicate the ledger rows.
+  const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;
   el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
   el('recap-overlay').style.display = '';
   el('recap-confirm').focus();
@@ -3169,7 +3173,10 @@ function closeRecap() {
 function toggleRecap() { if (recapIsOpen()) closeRecap(); else openRecap(); }
 
 el('recap-confirm').addEventListener('click', () => {
-  if (el('recap-confirm').classList.contains('disabled')) return;
+  // Belt-and-suspenders with openRecap's readiness mirror: never submit while
+  // one is already in flight (btn-submit.disabled), so a fast reopen can't
+  // fire a duplicate POST between submit and the 'processing'/'round' events.
+  if (el('recap-confirm').classList.contains('disabled') || el('btn-submit').disabled) return;
   closeRecap();
   submitReview(false);
 });

@@ -403,8 +403,10 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
     assert confirm_handler < page.index("submitReview(false);") < close_wiring, \
         "the single submitReview(false) call site must be the recap confirm handler"
     # The confirm control is class-gated like btn-submit, so a recap opened
-    # mid-review via `o` can't submit a round the bottom bar wouldn't.
-    assert "if (el('recap-confirm').classList.contains('disabled')) return;" in page, \
+    # mid-review via `o` can't submit a round the bottom bar wouldn't. (Guard
+    # asserted as a substring so the in-flight `|| btn-submit.disabled` term
+    # test_recap_confirm_blocks_duplicate_submit pins doesn't break this check.)
+    assert "el('recap-confirm').classList.contains('disabled')" in page, \
         "recap confirm must stay class-gated"
     assert "el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');" in page, \
         "recap confirm must mirror btn-submit readiness at open"
@@ -417,6 +419,26 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
     assert page.count("submitQA(false);") == 1, \
         "submitQA(false) must keep its single direct call site (qa click branch)"
     print("test_ready_submit_routes_through_recap: OK")
+
+
+def test_recap_confirm_blocks_duplicate_submit(page: str) -> None:
+    """Regression (audit Critical): the recap gate must not re-arm after a
+    submit. submitReview disables btn-submit via the `disabled` attribute but
+    never drops the `ready` class, so a readiness mirror keyed on the class
+    alone would let a recap reopened via `o` (before the 'processing'/'round'
+    events, or indefinitely if SSE dropped) fire a second POST /submit and
+    duplicate the ledger rows. The fix mirrors the in-flight `disabled`
+    attribute in both the open-time readiness computation and the confirm
+    handler's guard."""
+    # openRecap's readiness must AND in the in-flight attribute, not the class
+    # alone — a submit in flight renders the reopened confirm disabled.
+    assert "const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;" in page, \
+        "openRecap readiness must mirror btn-submit's in-flight disabled attribute, not just the ready class"
+    # The confirm handler double-checks the in-flight attribute, so a fast
+    # reopen can't slip a duplicate submit between submit and the SSE events.
+    assert "el('recap-confirm').classList.contains('disabled') || el('btn-submit').disabled" in page, \
+        "recap confirm handler must also block while a submit is in flight"
+    print("test_recap_confirm_blocks_duplicate_submit: OK")
 
 
 def test_page_ships_between_rounds_card(page: str) -> None:
@@ -580,6 +602,7 @@ def main() -> None:
         test_round1_zero_transmittal_markers(page, data)
         test_page_ships_recap_overlay(page)
         test_ready_submit_routes_through_recap(page)
+        test_recap_confirm_blocks_duplicate_submit(page)
         test_page_ships_between_rounds_card(page)
         test_between_rounds_snapshot_wiring(page)
 
@@ -595,7 +618,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (14 tests)")
+    print("\nOK (15 tests)")
 
 
 if __name__ == "__main__":
