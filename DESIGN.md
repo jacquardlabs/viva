@@ -28,6 +28,7 @@ All colors are CSS custom properties defined in `:root` with a full `@media
 | `--text3` | #48648a | #8aa0b8 | Tertiary / disabled |
 | `--accent` | #5cc8ff | #1271b8 | Interactive / selected |
 | `--accent-dim` | rgba(92,200,255,.08) | rgba(18,113,184,.08) | Accent wash |
+| `--scrim` | rgba(6,14,26,.72) | rgba(19,41,63,.32) | Recap-overlay modal scrim (midnight dark; blue-ink over vellum light) |
 | `--teal` | #43e0a8 | #0c8a63 | **Approved** verdict |
 | `--teal-bg` | rgba(67,224,168,.06) | rgba(12,138,99,.07) | Approved wash |
 | `--orange` | #ff5a36 | #cf3f1d | **Changes / error** verdict |

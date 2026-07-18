@@ -455,6 +455,23 @@ def test_close_recap_clears_inert_before_focus(page: str) -> None:
     print("test_close_recap_clears_inert_before_focus: OK")
 
 
+def test_withdraw_refreshes_transmittal(page: str) -> None:
+    """Track fix: withdrawing a carried approval must drop it from the
+    transmittal slip. transmittalHTML keys the carried bucket on the live
+    rState verdict (not just the static approved_ids the round shipped with),
+    and withdrawApproval re-renders the slip — so a withdrawn section leaves
+    'approved & unchanged' (reappearing as flagged only if it has annotations)."""
+    fn = page.index('function transmittalHTML(')
+    nxt = page.index('function ', fn + 1)
+    assert "rState.verdicts[id]?.verdict === 'approved'" in page[fn:nxt], \
+        "carried bucket must track the live rState verdict, not just approved_ids"
+    wa = page.index('function withdrawApproval(')
+    wend = page.index('function ', wa + 1)
+    assert 'renderTransmittal();' in page[wa:wend], \
+        "withdrawApproval must re-render the slip so the withdrawn row drops"
+    print("test_withdraw_refreshes_transmittal: OK")
+
+
 def test_recap_modal_traps_focus(page: str) -> None:
     """Audit Important (a11y): the recap is aria-modal, so it must trap focus
     and block background interaction while open. openRecap marks the page
@@ -659,6 +676,7 @@ def main() -> None:
         test_close_recap_clears_inert_before_focus(page)
         test_recap_modal_traps_focus(page)
         test_activate_carried_scrolls_not_activates(page)
+        test_withdraw_refreshes_transmittal(page)
         test_page_ships_between_rounds_card(page)
         test_between_rounds_snapshot_wiring(page)
 
@@ -674,7 +692,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (18 tests)")
+    print("\nOK (19 tests)")
 
 
 if __name__ == "__main__":

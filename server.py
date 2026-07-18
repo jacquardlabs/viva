@@ -59,6 +59,7 @@ HTML = r"""<!DOCTYPE html>
   --text3:     #48648a;
   --accent:    #5cc8ff;
   --accent-dim:rgba(92,200,255,0.08);
+  --scrim:     rgba(6,14,26,0.72);
   --teal:      #43e0a8;
   --teal-bg:   rgba(67,224,168,0.06);
   --orange:    #ff5a36;
@@ -82,6 +83,7 @@ HTML = r"""<!DOCTYPE html>
     --text3:     #8aa0b8;
     --accent:    #1271b8;
     --accent-dim:rgba(18,113,184,0.08);
+    --scrim:     rgba(19,41,63,0.32);   /* blue-ink wash over white vellum, not midnight */
     --teal:      #0c8a63;
     --teal-bg:   rgba(12,138,99,0.07);
     --orange:    #cf3f1d;
@@ -312,6 +314,7 @@ body {
   text-align: left;
   cursor: pointer;
 }
+.transmittal-row:first-child { border-top: none; }
 .transmittal-row:hover { background: var(--bg3); }
 .transmittal-row:hover .tr-title { color: var(--accent); }
 .tr-marker { flex-shrink: 0; font-size: 11px; }
@@ -1397,7 +1400,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   position: fixed; inset: 0; z-index: 200;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  background: rgba(6,14,26,0.72);
+  background: var(--scrim);
 }
 .recap-panel {
   width: min(640px, 92vw); max-height: 82vh;
@@ -1899,14 +1902,19 @@ function flagRank(section) {
 function transmittalHTML(data) {
   if (!data || data.mode !== 'review' || !(data.round > 1)) return '';
   const approved = new Set(data.approved_ids || []);
+  // A carried row reflects a prior-round stamp that still stands. A withdrawn
+  // approval clears its rState verdict, so it drops out of the carried bucket
+  // (and, if it carries annotations, reappears as flagged) — the slip tracks
+  // the live verdict, not just the static approved_ids the round shipped with.
+  const carriedNow = id => approved.has(id) && rState.verdicts[id]?.verdict === 'approved';
   const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [], carried = [];
   (data.sections || []).forEach(s => {
     const hasDiff  = Array.isArray(s.diff) && s.diff.length > 0;
     const hasNotes = Array.isArray(s.open_notes) && s.open_notes.length > 0;
     if (hasDiff) { (hasNotes ? revisedNoted : revisedBare).push(s); return; }
+    if (carriedNow(s.id)) { carried.push(s); return; }
     const rank = flagRank(s);
-    if (rank !== null && !approved.has(s.id)) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
-    if (approved.has(s.id)) carried.push(s);
+    if (rank !== null) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
   });
   const row = (s, cls, marker, label) =>
     '<button type="button" class="transmittal-row ' + cls + '" data-target="' + esc(s.id) + '">'
@@ -2328,6 +2336,7 @@ function withdrawApproval(id) {
   old.replaceWith(buildReviewCard(section));
   activateReviewCard(id);
   updateReviewStats();
+  renderTransmittal();   // the withdrawn section is no longer "approved & unchanged"
 }
 
 // Open/close a card, keeping the header button's aria-expanded in sync.
