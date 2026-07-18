@@ -50,7 +50,8 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, get_text, launch_server, post  # noqa: E402
+from _server_harness import (  # noqa: E402
+    assert_grid_gone, assert_sheet_ground, get, get_text, launch_server, post)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -102,48 +103,20 @@ REVIEW_INPUT_R2 = {
 
 
 def test_page_ships_sheet_ground(page: str) -> None:
-    """The served page frames the review in the bounded #paper sheet: --table
-    ground in both theme token blocks, body painted with it, edge border,
-    inner rule at 7px inset, and aria-hidden coordinate/corner decoration."""
-    assert '--table:     #060e1a;' in page, "dark token block missing --table"
-    assert '--table:     #e2e8f1;' in page, "light token block missing --table"
-    assert 'background: var(--table);' in page, "body must sit on the flat table"
-    assert '<div id="paper">' in page, "page missing the #paper sheet"
-    assert ('#paper { position: relative; max-width: 700px; margin: 32px auto 96px; '
-            'background: var(--bg); border: 1px solid var(--border2); }') in page, \
-        "#paper missing its content-bounded edge"
-    assert ("#paper::before { content: ''; position: absolute; inset: 7px; "
-            "border: 1px solid var(--border); pointer-events: none; }") in page, \
-        "#paper missing the 1px inner rule at 7px inset"
-    assert '<div class="paper-marks" aria-hidden="true">' in page, \
-        "sheet decoration must be aria-hidden"
-    assert page.count('class="pmark') == 4, "expected 4 corner registration marks"
-    assert '<span class="pcoord pc-n" style="left:12.5%">1</span>' in page, \
-        "missing edge coordinate numbers"
-    assert '<span class="pcoord pc-w" style="top:12.5%">A</span>' in page, \
-        "missing edge coordinate letters"
-    # The sheet bounds the content: main.shell opens after #paper and closes
-    # before it.
-    assert page.index('<div id="paper">') < page.index('<main class="shell"')
-    assert page.index('</main>') < page.index('</div><!-- /#paper -->')
+    """The served page frames the review in the bounded #paper sheet on the
+    flat --table ground. Shares the needle set (and the diff-mode widening
+    check) with test_server_a11y via assert_sheet_ground — one owner for the
+    sheet-chrome contract, checked here against the wire-served page."""
+    assert_sheet_ground(page)
     print("test_page_ships_sheet_ground: OK")
 
 
 def test_grid_gone_at_every_layer(page: str) -> None:
     """No 24px drafting grid at any theme layer, and the fixed .sheet-frame
-    (CSS and markup, including its .sf-mark corners) is deleted outright."""
-    assert 'background-size: 24px 24px' not in page, "24px grid still served"
-    assert 'sheet-frame' not in page, ".sheet-frame still served"
-    assert 'sf-mark' not in page, "legacy .sf-mark corner marks still served"
+    (CSS + markup + .sf-mark corners) is deleted outright — served-page side of
+    the shared assert_grid_gone check."""
+    assert_grid_gone(page)
     print("test_grid_gone_at_every_layer: OK")
-
-
-def test_mode_diff_paper_widens(page: str) -> None:
-    """Diff mode widens the sheet with the shell it wraps — the mode-scoped
-    override ships in the static CSS (served identically in every mode)."""
-    assert '.mode-diff #paper { max-width: min(95vw, 1600px); }' in page, \
-        "page missing: .mode-diff #paper widening rule"
-    print("test_mode_diff_paper_widens: OK")
 
 
 def test_round2_serves_carried_markup(page: str, data: dict) -> None:
@@ -391,7 +364,10 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
     # btn-submit's class-gated click: review/diff opens the gate, qa submits.
     submit_handler = page.index("el('btn-submit').addEventListener('click'")
     open_call = page.index("if (REVIEW_DATA) openRecap();")
-    qa_call = page.index("else             submitQA(false);")
+    # Ordering by the bare call (not the whitespace-aligned `else … ` source
+    # form) — the contract is "the qa branch submits directly," not its
+    # indentation.
+    qa_call = page.index("submitQA(false);")
     assert submit_handler < open_call < qa_call, \
         "btn-submit click must route review/diff to openRecap, qa to submitQA(false)"
     # Only the overlay's confirm control invokes submitReview(false) — the
@@ -439,6 +415,43 @@ def test_recap_confirm_blocks_duplicate_submit(page: str) -> None:
     assert "el('recap-confirm').classList.contains('disabled') || el('btn-submit').disabled" in page, \
         "recap confirm handler must also block while a submit is in flight"
     print("test_recap_confirm_blocks_duplicate_submit: OK")
+
+
+def test_recap_modal_traps_focus(page: str) -> None:
+    """Audit Important (a11y): the recap is aria-modal, so it must trap focus
+    and block background interaction while open. openRecap marks the page
+    behind it inert (the sheet, the skip link, the bottom bar) and closeRecap
+    clears it — inert removes the whole background subtree from the tab order,
+    so the overlay's own controls are the only focusable region. The grid
+    contains its own scroll. All three background containers carry the ids the
+    inert helper toggles."""
+    assert "function setBackgroundInert(on)" in page, "missing the inert focus-trap helper"
+    assert "setBackgroundInert(true)" in page and "setBackgroundInert(false)" in page, \
+        "openRecap must set inert on open and closeRecap must clear it"
+    for anchor in ("id=\"skip-link-a\"", "id=\"paper\"", "id=\"bottom-bar-el\""):
+        assert anchor in page, f"inert target {anchor} must exist in the markup"
+    assert re.search(r"\.recap-grid\s*\{[^}]*overscroll-behavior:\s*contain", page), \
+        "recap grid must contain its own scroll (overscroll-behavior: contain)"
+    print("test_recap_modal_traps_focus: OK")
+
+
+def test_activate_carried_scrolls_not_activates(page: str) -> None:
+    """Audit Important (coverage): a jump to a carried section (transmittal
+    row, annotation deep-link, all-carried resume) must reveal + scroll it, not
+    push a body-less carried card into rState.active. Pins the carried early
+    return inside activateReviewCard — dropping it would strand a jump on an
+    'under review' card with no accordion body, and every existing test would
+    still pass."""
+    fn = page.index("function activateReviewCard(id)")
+    nxt = page.index("function ", fn + 1)
+    body = page[fn:nxt]
+    assert "classList.contains('is-carried')" in body, \
+        "activateReviewCard must special-case carried cards"
+    assert "setCarriedShown(id, true)" in body, "carried jump must reveal the content"
+    guard = body.index("classList.contains('is-carried')")
+    assert body.index("return;", guard) < body.index("rState.active = id", guard), \
+        "the carried branch must return before rState.active is set"
+    print("test_activate_carried_scrolls_not_activates: OK")
 
 
 def test_page_ships_between_rounds_card(page: str) -> None:
@@ -597,12 +610,13 @@ def main() -> None:
         data = get(base, "/input")
         test_page_ships_sheet_ground(page)
         test_grid_gone_at_every_layer(page)
-        test_mode_diff_paper_widens(page)
         test_round1_zero_carried_markers(page, data)
         test_round1_zero_transmittal_markers(page, data)
         test_page_ships_recap_overlay(page)
         test_ready_submit_routes_through_recap(page)
         test_recap_confirm_blocks_duplicate_submit(page)
+        test_recap_modal_traps_focus(page)
+        test_activate_carried_scrolls_not_activates(page)
         test_page_ships_between_rounds_card(page)
         test_between_rounds_snapshot_wiring(page)
 
@@ -618,7 +632,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (15 tests)")
+    print("\nOK (16 tests)")
 
 
 if __name__ == "__main__":

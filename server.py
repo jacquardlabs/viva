@@ -871,6 +871,7 @@ body {
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
 .card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
 .section-content, .choice-chip, .qa-btn,
+.transmittal-row, .recap-row,
 .progress-track, .progress-fill { border-radius: 0; }
 
 /* ─── Reticle: drafting crop-mark corners ─────────────────────
@@ -1424,7 +1425,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 2px 6px;
 }
 .recap-close:hover { color: var(--text); }
-.recap-grid { overflow-y: auto; padding: 4px 14px; }
+.recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
 .recap-row {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto 52px;
@@ -1585,7 +1586,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 </head>
 <body>
 
-<a class="skip-link" href="#main-content">Skip to review</a>
+<a class="skip-link" id="skip-link-a" href="#main-content">Skip to review</a>
 
 <div id="paper">
 
@@ -1689,7 +1690,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 </div><!-- /#paper -->
 
 <!-- Bottom bar -->
-<div class="bottom-bar">
+<div class="bottom-bar" id="bottom-bar-el">
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
@@ -3159,7 +3160,20 @@ function openRecap() {
   const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;
   el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
   el('recap-overlay').style.display = '';
+  setBackgroundInert(true);   // trap focus + block interaction behind the modal
   el('recap-confirm').focus();
+}
+
+// The recap is a modal (aria-modal="true"): mark everything behind it inert
+// while it's open, so Tab can't walk into the sheet or bottom bar and a
+// background click can't reach a card. inert removes the whole subtree from
+// the tab order, which makes the overlay's own controls the only focusable
+// region — a focus trap without hand-rolled Tab-wrap bookkeeping.
+function setBackgroundInert(on) {
+  ['skip-link-a', 'paper', 'bottom-bar-el'].forEach(id => {
+    const node = el(id);
+    if (node) node.inert = on;
+  });
 }
 
 function closeRecap() {
@@ -3168,6 +3182,7 @@ function closeRecap() {
   // Don't strand keyboard focus inside a hidden subtree.
   if (overlay.contains(document.activeElement)) el('btn-submit').focus();
   overlay.style.display = 'none';
+  setBackgroundInert(false);
 }
 
 function toggleRecap() { if (recapIsOpen()) closeRecap(); else openRecap(); }
