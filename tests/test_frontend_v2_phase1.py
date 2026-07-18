@@ -417,6 +417,44 @@ def test_recap_confirm_blocks_duplicate_submit(page: str) -> None:
     print("test_recap_confirm_blocks_duplicate_submit: OK")
 
 
+def test_submit_failure_reenables_bar(page: str) -> None:
+    """Regression (audit round-2 Critical): a failed /submit must re-enable the
+    bar so the reviewer can retry. fetch() doesn't reject on 4xx/5xx, so the
+    shared sendSubmit helper turns a non-2xx into a throw and its failure
+    handler clears the in-flight `disabled` signal on both buttons. Without
+    this, the recap confirm (gated on btn-submit.disabled) reopens permanently
+    disabled after a failed submit — a dead-end recoverable only by a reload
+    that loses the round's verdicts. Both submitReview and submitQA must route
+    through the one helper so neither swallows a non-2xx."""
+    fn = page.index("function sendSubmit(result)")
+    nxt = page.index("function ", fn + 1)
+    body = page[fn:nxt]
+    assert "if (!r.ok) throw" in body, \
+        "sendSubmit must turn a non-2xx response into a throw (fetch won't reject on 4xx/5xx)"
+    assert "el('btn-submit').disabled = false" in body and "el('btn-skip').disabled" in body, \
+        "sendSubmit's failure path must re-enable the bar so the reviewer can retry"
+    # Both submit paths funnel through the one helper — the old swallow-only
+    # fetch is gone from both.
+    assert page.count("sendSubmit(result);") == 2, \
+        "submitReview and submitQA must both route through sendSubmit"
+    assert "alert('Submit failed: " in body and page.count("alert('Submit failed: ") == 1, \
+        "the submit-failure alert lives once, in the shared helper"
+    print("test_submit_failure_reenables_bar: OK")
+
+
+def test_close_recap_clears_inert_before_focus(page: str) -> None:
+    """Regression (audit round-2 Important): closeRecap must clear inert on the
+    background BEFORE restoring focus to btn-submit — btn-submit lives inside
+    the inert bottom-bar-el, and focus() on an element in an inert subtree is a
+    no-op, so focusing first would drop focus to <body> on every close."""
+    fn = page.index("function closeRecap()")
+    nxt = page.index("function ", fn + 1)
+    body = page[fn:nxt]
+    assert body.index("setBackgroundInert(false)") < body.index("el('btn-submit').focus()"), \
+        "closeRecap must clear inert before restoring focus, or the focus() no-ops"
+    print("test_close_recap_clears_inert_before_focus: OK")
+
+
 def test_recap_modal_traps_focus(page: str) -> None:
     """Audit Important (a11y): the recap is aria-modal, so it must trap focus
     and block background interaction while open. openRecap marks the page
@@ -508,10 +546,12 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
         "page missing the betweenRounds snapshot declaration"
     assert 'localStorage' not in page and 'sessionStorage' not in page, \
         "the snapshot must never persist across a reload"
-    # The snapshot is taken inside submitReview, before the POST…
+    # The snapshot is taken inside submitReview, before the POST — the POST is
+    # the sendSubmit(result) call at the tail (the fetch itself lives in the
+    # shared sendSubmit helper).
     fn = page.index('function submitReview(early)')
     snap = page.index('snapshotBetweenRounds();')
-    post_idx = page.index("fetch('/submit'", fn)
+    post_idx = page.index('sendSubmit(result);', fn)
     assert fn < snap < post_idx, \
         "submitReview must snapshot rState before the POST"
     # …and maps activeComments to verbatim {sectionTitle, type, note} rows —
@@ -615,6 +655,8 @@ def main() -> None:
         test_page_ships_recap_overlay(page)
         test_ready_submit_routes_through_recap(page)
         test_recap_confirm_blocks_duplicate_submit(page)
+        test_submit_failure_reenables_bar(page)
+        test_close_recap_clears_inert_before_focus(page)
         test_recap_modal_traps_focus(page)
         test_activate_carried_scrolls_not_activates(page)
         test_page_ships_between_rounds_card(page)
@@ -632,7 +674,7 @@ def main() -> None:
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
 
-    print("\nOK (16 tests)")
+    print("\nOK (18 tests)")
 
 
 if __name__ == "__main__":

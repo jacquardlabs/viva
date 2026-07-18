@@ -3043,6 +3043,28 @@ function snapshotBetweenRounds() {
   };
 }
 
+// POST a round/answer payload to /submit, surface failure, and re-enable the
+// bar so the reviewer can retry. fetch() resolves (never rejects) on a 4xx/5xx,
+// so a non-2xx is turned into a throw here; and because the bar's `disabled`
+// attribute is the in-flight signal the recap gate reads, a failed submit that
+// left it set would strand the reviewer with no retry path but a page reload
+// (which loses the round's verdicts). On success the buttons stay disabled —
+// the round is genuinely in flight and the SSE 'processing'/'round' events
+// drive the next view.
+function sendSubmit(result) {
+  fetch('/submit', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(result)
+  })
+    .then(r => { if (!r.ok) throw new Error('server returned ' + r.status); })
+    .catch(err => {
+      alert('Submit failed: ' + (err.message || 'network error'));
+      el('btn-skip').disabled   = false;
+      el('btn-submit').disabled = false;
+    });
+}
+
 function submitReview(early) {
   el('btn-skip').disabled   = true;
   el('btn-submit').disabled = true;
@@ -3058,11 +3080,7 @@ function submitReview(early) {
                ...(comments.length && { comments }) };
     })
   };
-  fetch('/submit', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(result)
-  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+  sendSubmit(result);
 }
 
 function submitQA(early) {
@@ -3091,11 +3109,7 @@ function submitQA(early) {
       }),
     submitted_early: early
   };
-  fetch('/submit', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(result)
-  }).catch(err => alert('Submit failed: ' + (err.message || 'network error')));
+  sendSubmit(result);
 }
 
 el('btn-skip').addEventListener('click', () => {
@@ -3179,10 +3193,12 @@ function setBackgroundInert(on) {
 function closeRecap() {
   const overlay = el('recap-overlay');
   if (overlay.style.display === 'none') return;
-  // Don't strand keyboard focus inside a hidden subtree.
-  if (overlay.contains(document.activeElement)) el('btn-submit').focus();
+  const hadFocus = overlay.contains(document.activeElement);
   overlay.style.display = 'none';
-  setBackgroundInert(false);
+  setBackgroundInert(false);   // clear inert BEFORE restoring focus — focus()
+                               // on an element inside an inert subtree no-ops
+  // Don't strand keyboard focus on the now-hidden overlay.
+  if (hadFocus) el('btn-submit').focus();
 }
 
 function toggleRecap() { if (recapIsOpen()) closeRecap(); else openRecap(); }
