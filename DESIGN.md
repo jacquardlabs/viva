@@ -480,15 +480,21 @@ live announcement to the one-line status instead of the whole list avoids a
 screen reader reading out every row's text on open, not just the one status
 change after a mute.
 
-**Muted-row copy.** Every `muted` row carries two static lines: "takes
-effect next session" (a *future* round-1 pre-flight pass stops re-flagging
-it; a badge already on screen this round is untouched) and the terminal
-command that reverses it (`python3 "$VIVA_DIR/scripts/preferences.py" set
---store .viva/preferences.json --id <id> --status standing` —
-`preferences.py` is not on PATH, so the row spells out the same
-`$VIVA_DIR/scripts/` invocation SKILL.md uses throughout) — mute is one-way
-from this panel (decision prefs-inspector-1), so the recovery path has to
-be visible on the row, not just known to exist.
+**Muted-row copy.** Every `muted` row carries two static lines: that badges
+already shown this round stay as a record and nothing further is flagged or
+applied for that preference (no "next session" claim — `--status standing`
+has three SKILL.md readers, not one, including step 4's post-submit rewrite
+consult, so a mute during round N can still reach round N's own rewrite; the
+only true claim is "not retroactive to a badge already on screen") and the
+terminal command that reverses it. That command interpolates the server's
+own resolved path (`Path(__file__).resolve().parent / "scripts" /
+"preferences.py"`, `server.py:28-41`) rather than the shell variable
+`$VIVA_DIR` — that name is local to the `find` SKILL.md's own bash block
+computes it with (`.claude/skills/viva/SKILL.md:41-43`) and is never
+exported, so a literal `"$VIVA_DIR/..."` pasted into a fresh terminal 404s —
+mute is one-way from this panel (decision prefs-inspector-1), so the
+recovery path has to be visible on the row, and runnable, not just known to
+exist.
 
 **Badge-to-entry link.** A `kind:"preference"` annotation's `.annot-jump`
 badge (the existing anchor-jump control, extended) grows a second variant

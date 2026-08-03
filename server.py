@@ -29,6 +29,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 import schema  # noqa: E402
 import preferences  # noqa: E402
 
+# Absolute path to preferences.py, resolved from this file's own on-disk
+# location — never the shell variable $VIVA_DIR: SKILL.md computes that with
+# a local `find` inside its own bash block (.claude/skills/viva/SKILL.md:41-43)
+# and never exports it, so a copy-pasted "$VIVA_DIR/..." command fails with
+# "No such file" in a fresh terminal. Same resolution style as the sys.path
+# insert above. Escaped for embedding inside the JS single-quoted string
+# literal it's substituted into below — a path containing `'` or `\` would
+# otherwise terminate that string early and blank the whole panel.
+_PREFS_SCRIPT_PATH = str(Path(__file__).resolve().parent / "scripts" / "preferences.py")
+_PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\\'")
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3430,13 +3441,17 @@ function prefStatusLabel(status) {
 
 // Static recovery copy for a muted row — mute is one-way from this panel
 // (decision prefs-inspector-1), so the CLI command that reverses it has to
-// be visible on the row itself, not just known to exist. "takes effect next
-// session" heads off the read that a still-visible badge on this round's
-// card means the mute silently failed — it doesn't; pre-flight only reads
-// the store at a *future* round 1 (SKILL.md:71).
+// be visible on the row itself, not just known to exist. A still-visible
+// badge on this round's card is not a sign the mute silently failed, but the
+// copy makes no next-session claim either: `--status standing` has three
+// SKILL.md readers, not one — round-1 pre-flight (:71), step 2's wait block
+// (:146), and step 4's rewrite consult (:366) — so a mute during this round
+// can still reach this same round's rewrite. The copy only says that
+// badges already shown this round are a historical record.
 function prefMutedNoteHTML(id) {
-  return '<div class="pref-muted-note">muted &mdash; takes effect next session. '
-    + 'restore from a terminal: <code>python3 "$VIVA_DIR/scripts/preferences.py" set '
+  return '<div class="pref-muted-note">muted &mdash; badges already shown this round '
+    + 'stay as a record; nothing further is flagged or applied for this preference. '
+    + 'restore from a terminal: <code>python3 "__PREFS_SCRIPT_PATH__" set '
     + '--store .viva/preferences.json --id ' + esc(id) + ' --status standing</code></div>';
 }
 
@@ -3508,7 +3523,8 @@ function mutePreference(id) {
       const pref = PREFS_BY_ID.get(id);
       if (pref) pref.status = 'muted';
       markPrefRowMuted(id);
-      el('prefs-status').textContent = ((pref && pref.label) || id) + ' muted — takes effect next session.';
+      el('prefs-status').textContent = ((pref && pref.label) || id)
+        + ' muted — badges already shown this round stay as a record; nothing further is flagged or applied for it.';
     })
     .catch(err => {
       btn.disabled = false;
@@ -3884,7 +3900,7 @@ Promise.all([
   });
 </script>
 </body>
-</html>"""
+</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS)
 
 _HTML_BYTES = HTML.encode()
 

@@ -186,19 +186,29 @@ Consumer: product-reviewer Q3; `/plan`'s task-boundary decisions.
    now has that preference's `status` field as `"muted"` — checkable directly,
    independent of what the browser shows, which is the acceptance criterion's
    own verification method.
-7. **Effect is next-session, not retroactive.** The card that's already on
-   screen keeps its badge — muting doesn't un-flag a section mid-round, only
-   a *future* round-1 pre-flight pass reads `--status standing`
-   (SKILL.md:71), so this session's already-rendered flags are a historical
-   record of what the reviewer was shown, not a live subscription. The next
-   session's round 1 simply won't re-flag anything on this critique.
+7. **Already-shown badges stay as a record; nothing further is flagged or
+   applied.** The card that's already on screen keeps its badge — muting
+   doesn't retroactively clear it, and the panel makes no claim that it
+   does. `--status standing` has three readers in SKILL.md, not one:
+   round-1 pre-flight (`SKILL.md:71`), step 2's wait block (`SKILL.md:146`),
+   and step 4's rewrite consult (`SKILL.md:366`). Step 4 runs after the
+   reviewer submits, so a mute during round N can still reach round N's own
+   rewrite — the effect isn't "next session," it's "not retroactive to a
+   badge already on screen."
 8. **Failure path — corrupt or missing store.** If `.viva/preferences.json`
    doesn't exist yet (no preferences learned this clone) or fails to parse
    (a truncated write, hand-editing gone wrong), `GET /preferences` returns an
-   empty list rather than erroring — the panel opens to "no preferences yet"
-   and the bottom-bar button stays reachable and harmless. The server process
-   itself never exits on this, in deliberate contrast to `preferences.py`'s
-   own CLI loader.
+   empty list rather than erroring, and the server process itself never
+   exits on this, in deliberate contrast to `preferences.py`'s own CLI
+   loader. With an empty list there's nothing to inspect or mute, so the
+   bottom-bar toggle ships hidden and reveals itself at boot only once
+   `PREFS_DATA` is non-empty (the same treatment the confidence-sort toggle
+   already gets) — a badge-driven jump into the panel is equally unavailable,
+   since a badge only grows its jump-control variant when it matches a
+   fetched preference. An empty or corrupt store has no route into the panel
+   at all, toggle or badge. `renderPrefsList`'s "No preferences learned yet."
+   text stays in the code as a defensive fallback for a state the shipped UI
+   currently has no path to reach, not a scenario a reviewer will see.
 9. **Failure path — mute request fails.** A dropped connection or an unknown
    id (already muted by a concurrent CLI `set` in another terminal, say)
    returns an error rather than `{"ok": true}`; the row's status and Mute

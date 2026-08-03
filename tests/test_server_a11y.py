@@ -248,20 +248,34 @@ def test_prefs_status_is_the_only_live_region_in_the_panel():
     print("  ok  test_prefs_status_is_the_only_live_region_in_the_panel")
 
 
-def test_muted_row_names_the_unmute_recovery_and_next_session_effect():
+def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
     # Pre-mortem lanes 5 and 6: mute is one-way from the UI (decision
     # prefs-inspector-1) with no confirmation step, so a muted row must
-    # carry static copy naming both the recovery command and that the
-    # effect is next-session, not retroactive to the card already on screen.
-    assert "takes effect next session" in HTML
+    # carry static copy naming both the recovery command and that badges
+    # already shown this round are a record, not retroactively cleared.
+    # No "next session" claim: --status standing has three SKILL.md readers
+    # (round-1 pre-flight :71, step 2's wait block :146, step 4's rewrite
+    # consult :366), so a mute during round N can still reach round N's own
+    # rewrite — "next session" was simply wrong, not just an early claim.
+    assert "takes effect next session" not in HTML
+    assert "stay as a record" in HTML
     # The command must actually run from a terminal: preferences.py is not on
-    # PATH — SKILL.md always invokes it as
-    # python3 "$VIVA_DIR/scripts/preferences.py" (SKILL.md:71,200,366) — so
-    # the recovery copy needs the same prefix, or it fails "command not found".
-    assert 'python3 "$VIVA_DIR/scripts/preferences.py" set' in HTML
+    # PATH, and "$VIVA_DIR" is a local bash variable SKILL.md computes with
+    # its own `find` and never exports (.claude/skills/viva/SKILL.md:41-43) —
+    # a copy-pasted "$VIVA_DIR/..." command 404s in a fresh terminal. The
+    # server substitutes its own resolved absolute path at import time
+    # (server.py's _PREFS_SCRIPT_PATH), so assert against that same
+    # resolution rather than any hardcoded literal — a test that computed its
+    # own separate "the right answer" and compared strings is exactly how the
+    # broken $VIVA_DIR command shipped green last round.
+    assert "$VIVA_DIR" not in HTML, "no shell-variable path may appear in the shipped recovery command"
+    expected_script_path = str(ROOT / "scripts" / "preferences.py")
+    assert f'python3 "{expected_script_path}" set' in HTML
+    assert Path(expected_script_path).is_file(), \
+        "the path embedded in the recovery command must name a real file, not just match a string"
     assert "--store .viva/preferences.json" in HTML and "--status standing</code>" in HTML
     assert "function prefMutedNoteHTML(id)" in HTML
-    print("  ok  test_muted_row_names_the_unmute_recovery_and_next_session_effect")
+    print("  ok  test_muted_row_names_the_unmute_recovery_and_this_round_effect")
 
 
 def test_mute_button_only_on_standing_rows():
@@ -326,7 +340,7 @@ def main():
     test_prefs_panel_swallows_card_shortcuts_while_open()
     test_prefs_panel_closes_on_sse_view_swaps()
     test_prefs_status_is_the_only_live_region_in_the_panel()
-    test_muted_row_names_the_unmute_recovery_and_next_session_effect()
+    test_muted_row_names_the_unmute_recovery_and_this_round_effect()
     test_mute_button_only_on_standing_rows()
     test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
     test_preference_badge_reuses_annot_jump_never_the_raw_id()
