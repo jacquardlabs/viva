@@ -235,6 +235,14 @@ round-file pairs, so there's no new failure mode to add alarms for.
 
 ## Open questions
 
+- The multiplier widens `.rev-tri`, a `flex-shrink: 0` sibling of
+  `.card-title-wrap` in the card-head flex row (`server.py:541`). This repo
+  has already shipped a fix for exactly this failure shape —
+  `b4af98f fix(ui): stop Q&A choice badge from crushing the card title (#97)`
+  — for a different badge in the same row. The build phase should confirm a
+  long section title still truncates gracefully before `.rev-tri` gets
+  squeezed, at the narrow end of the viewport range, now that the element can
+  run to ~8 characters (`△ 03 2×`) instead of ~5 (`△ 03`).
 - Exact separator between the round number and the multiplier inside
   `.rev-tri` (`△ 03 3×` vs. `△ 03 · 3×`) — cosmetic, left to the build phase
   within the label-convention constraints (8–10px Fragment Mono,
