@@ -2201,7 +2201,7 @@ function buildReviewCard(section) {
         <span class="card-title">${esc(section.title)}</span>
         <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
       </span>
-      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
+      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? ` · ${section.revision_count} content revisions this session` : ''}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
       <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
     </button>
     <div class="card-body-wrap" id="rbody-${section.id}">

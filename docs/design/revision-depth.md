@@ -139,6 +139,26 @@ feature (PRODUCT.md's feature map) — same loop, one richer card.
    stalling the round — the card still shows whatever triangle its own
    round's `diff` earns it, just without crediting that one historical round
    toward the multiplier.
+7. **Failure path — retitled section.** The count keys on
+   `schema.section_key(title)` (`server.py:3630`, `server.py:3660`) — the
+   same identity approvals and carried annotations already use (CLAUDE.md,
+   "The schema is the contract"), not the section's `id`
+   (`scripts/parse_sections.py:173` assigns `id` positionally as `s{i+1}`,
+   which is less stable across a reorder than the title). A section revised
+   at rounds 2 and 3 (cumulative 2, `△ 03 2×`) that gets both retitled *and*
+   content-edited at round 4 breaks that key: `_compute_diffs`'s title
+   lookup (`scripts/parse_sections.py:317-324`) finds no prior-round match
+   under the new title, so round 4 gets no `diff` and no triangle at all —
+   the same treatment any brand-new section already gets. If round 5 leaves
+   the new title unchanged, round 5's `diff` lands against round 4 and the
+   card shows a bare `△ 05` — but `_revision_counts`'s historical walk
+   (`server.py:3620-3636`) finds no round keyed under the new title before
+   round 4, so the cumulative count resets to 1. A section revised four
+   times total then renders as if revised once. This is not a defect to fix
+   here — it is the same title-identity behavior every other carried-forward
+   signal in this codebase already has — but it does mean the acceptance
+   criterion "a section revised 2+ times shows a cumulative count" does not
+   hold across a retitle.
 
 ## Out of scope
 

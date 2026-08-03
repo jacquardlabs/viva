@@ -157,6 +157,15 @@ def main() -> None:
                        'font-size: 9px; color: var(--text3)', '&times;'):
             assert needle in page, f"page missing: {needle}"
 
+        # The `2×` multiplier's only affordance is the `.rev-tri` title
+        # attribute, so it must name the cumulative count too, not just the
+        # round (rev-tri-tooltip-omits-count). Must not reuse the bare "N
+        # revisions" wording the sign-off stamp already uses for
+        # `rounds_total` (a different quantity) — assert the exact phrase
+        # rather than a substring that word would also satisfy.
+        assert 'content revisions this session' in page, \
+            "rev-tri title must name the cumulative count, distinct from rounds_total's wording"
+
         print("OK")
 
 
