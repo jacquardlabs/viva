@@ -280,22 +280,51 @@ at-threshold and below-threshold cases directly.
 
 ## Open questions
 
-- The multiplier widens `.rev-tri`, a `flex-shrink: 0` sibling of
-  `.card-title-wrap` in the card-head flex row (`server.py:541`). This repo
-  has already shipped a fix for exactly this failure shape —
-  `b4af98f fix(ui): stop Q&A choice badge from crushing the card title (#97)`
-  — for a different badge in the same row. The build phase should confirm a
-  long section title still truncates gracefully before `.rev-tri` gets
-  squeezed, at the narrow end of the viewport range, now that the element can
-  run to ~8 characters (`△ 03 2×`) instead of ~5 (`△ 03`).
-- Exact separator between the round number and the multiplier inside
-  `.rev-tri` (`△ 03 3×` vs. `△ 03 · 3×`) — cosmetic, left to the build phase
-  within the label-convention constraints (8–10px Fragment Mono,
-  `var(--text3)`).
-- Whether the existing `title="revised at REV NN"` tooltip should also name
-  the cumulative count (e.g. "revised at REV 03 · 3 revisions this
-  session") — a nice-to-have that doesn't change the acceptance criteria;
-  left to the build phase's judgment.
+- **Resolved (acceptance-fix-2).** Checked whether the multiplier's growth
+  crushes `.card-title` the way #97 crushed it for `.vbadge`: it doesn't, and
+  the fix isn't the same shape. `.vbadge` was reachable for #97 because Q&A
+  mode put *raw user text* of unbounded length in a `flex-shrink: 0` element;
+  `b4af98f` capped that badge to `max-width: 45%` with ellipsis truncation.
+  `.rev-tri` carries no user text — its content is `△` + a zero-padded
+  2-digit round + at most ` NN×`, so ~8 characters is its ceiling, not a
+  floor. `.card-title-wrap` is `flex: 1; min-width: 0`, so as the head row
+  narrows the title column yields; `.card-title` itself carries no
+  `white-space: nowrap`, so a long title wraps to a second line instead of
+  overflowing or overlapping `.rev-tri` — there is no crush to fix, and no
+  `max-width` cap on `.rev-tri` is warranted.
+  Deliberately did **not** mirror `.carried-head .card-title`'s
+  single-line-ellipsis rule (`server.py:463`) onto the active card's
+  `.card-title` (`server.py:552-557`), despite the visual precedent sitting
+  right there: the two elements aren't the same kind of title. A carried
+  card is a collapsed, read-only preview — truncating it is the point. The
+  active card is the one the reviewer is actively reading, and `.card-title`
+  is its *only* on-screen render of that text for a Q&A card
+  (`server.py:2859`, `q.text` — the question itself, with no second render
+  site in the card body); for a review section the full title does reappear,
+  verbatim, in `.section-content` once expanded (the markdown heading line
+  survives round-trip in `content`, per `scripts/parse_sections.py`), but
+  the Q&A case alone rules out a blanket ellipsis rule on the shared class.
+  Multi-line wrap on the active head is accepted, not merely tolerated: the
+  head is `min-height: 48px`, not fixed-height, so it grows to fit.
+  This was checked by source inspection of the flex/overflow rules and the
+  `b4af98f` precedent, not a live narrow-viewport screenshot (no browser
+  available in the build environment for this round) — the CSS properties
+  involved (`flex: 1`/`min-width: 0` on the yielding sibling, no `nowrap` on
+  the title, a bounded-length neighbor) are what determine wrap-vs-overflow
+  regardless of viewport, so this is not treated as a gap.
+- **Resolved (build).** Separator between the round number and the
+  multiplier inside `.rev-tri`: a plain space, no punctuation —
+  `` ${section.revision_count}&times; `` renders as `△ 03 2×`
+  (`server.py:2226`).
+- **Resolved (acceptance-fix-1, `c07061d`).** The `title="revised at REV NN"`
+  tooltip now names the cumulative count at 2+: `revTriTooltip`
+  (`server.py:1764-1774`) appends `· N content revisions this session` (or
+  the partial-history variants added in `da3d7d6`), deliberately worded
+  "content revisions" rather than bare "N revisions" so it doesn't collide
+  with the sign-off stamp's existing "N revisions" wording for
+  `rounds_total` — a different quantity (open ledger finding
+  `revisions-word-overloaded-tooltip-vs-stamp` tracks finishing that
+  differentiation elsewhere; not reopened here).
 - Whether a resumed session's round-1 diff (carried over from a *prior*
   session's sign-off) should count toward this session's multiplier at all,
   versus always starting cold at round 1. This doc defaults to counting it
