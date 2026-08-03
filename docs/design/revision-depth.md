@@ -95,9 +95,13 @@ untouched) — req #7, no hardcoded hex.
 Leans on PRODUCT.md principle 3 ("Advisory, never gating" — the count
 decorates, never affects a verdict), principle 4 ("No-op when absent" — a
 missing or unparseable historical round file makes that round contribute
-zero, never an error, so the worst case is today's plain-triangle rendering),
-and principle 6 ("Local and keyless" — computed in-process from files already
-on the reviewer's machine, no new service, no telemetry).
+zero, never an error, so the worst case is a `.rev-tri` tooltip that flags
+the round as having partial history — "≥N revisions, partial history" when
+a count still clears the threshold, a number-free "partial history, revision
+count unavailable" when it doesn't — instead of asserting a number it can no
+longer vouch for, or silently showing no signal at all), and principle 6
+("Local and keyless" — computed in-process from files already on the
+reviewer's machine, no new service, no telemetry).
 
 ## User journey
 
@@ -133,14 +137,22 @@ feature (PRODUCT.md's feature map) — same loop, one richer card.
    never persisted as round files this session can read. This matches every
    other session boundary already in this codebase.
 6. **Failure path — unreadable round file.** If `.viva/review-input-r2.json`
-   is missing or its JSON fails to parse by the time round 4 is served (a
-   truncated write, an unconventional caller that never wrote that file),
-   that round simply contributes zero rather than raising an error or
-   stalling the round — the card still shows whatever triangle its own
-   round's `diff` earns it, just without crediting that one historical round
-   toward the multiplier.
+   is missing, its JSON fails to parse, or it parses but its `sections` key
+   isn't a list, by the time round 4 is served (a truncated write, an
+   unconventional caller that never wrote that file), that round simply
+   contributes zero rather than raising an error or stalling the round — but
+   because the total is now a lower bound, not an exact count, every section
+   with a `diff` this round (`_with_revision_counts`, `server.py`) carries
+   that caveat, not only ones whose count still clears the 2+ threshold. A
+   section whose count reaches 2+ shows "≥N revisions, partial history" in
+   place of "N content revisions this session"; a section whose count would
+   have crossed 2+ *only* via the unreadable round — the multiplier that
+   would otherwise vanish with no signal at all — instead shows a
+   number-free "partial history, revision count unavailable" caveat on its
+   still-bare `△ NN`. The triangle and multiplier glyph themselves are
+   unchanged in either case — only the tooltip's wording degrades.
 7. **Failure path — retitled section.** The count keys on
-   `schema.section_key(title)` (`server.py:3630`, `server.py:3660`) — the
+   `schema.section_key(title)` (`server.py:3678`, `server.py:3724`) — the
    same identity approvals and carried annotations already use (CLAUDE.md,
    "The schema is the contract"), not the section's `id`
    (`scripts/parse_sections.py:173` assigns `id` positionally as `s{i+1}`,
@@ -152,7 +164,7 @@ feature (PRODUCT.md's feature map) — same loop, one richer card.
    the same treatment any brand-new section already gets. If round 5 leaves
    the new title unchanged, round 5's `diff` lands against round 4 and the
    card shows a bare `△ 05` — but `_revision_counts`'s historical walk
-   (`server.py:3620-3636`) finds no round keyed under the new title before
+   (`server.py:3657-3681`) finds no round keyed under the new title before
    round 4, so the cumulative count resets to 1. A section revised four
    times total then renders as if revised once. This is not a defect to fix
    here — it is the same title-identity behavior every other carried-forward
@@ -247,11 +259,24 @@ N/A — no migration and no rollout beyond the normal plugin version bump. The
 count is a stateless, serve-time-computed decoration over round files
 already on disk; there's no new file, no new endpoint, and no schema version
 to migrate. If a session's round files don't follow the
-`review-input-r{N}.json` naming, or a historical one is missing or corrupt,
-that round's computation silently contributes zero and the card falls back
-to exactly today's plain-triangle rendering — the same tolerance
-`scripts/revision_history.py` already has for a session with gaps in its
-round-file pairs, so there's no new failure mode to add alarms for.
+`review-input-r{N}.json` naming, or a historical one is missing, corrupt, or
+carries a non-list `sections` key, that round's computation contributes zero
+rather than raising — but unlike `scripts/revision_history.py`'s tolerance
+for a session with gaps in its round-file pairs, this isn't a silent
+fallback to exactly today's plain-triangle rendering: `_revision_counts`
+(`server.py`) tracks that the total is now a lower bound and
+`_with_revision_counts` threads that through as `revision_count_partial` on
+every section with a `diff` this round, not only ones whose count still
+clears the 2+ threshold — a below-threshold section gets the caveat too,
+because the unreadable round could just as easily have been the one that
+would have pushed it over 2. A section whose count clears the threshold
+shows "≥N revisions, partial history" in its `.rev-tri` tooltip; one that
+doesn't shows a number-free "partial history, revision count unavailable"
+instead of a bare, uncaveated `△ NN`. Either way, the server never asserts a
+number it can no longer vouch for, and never lets a possible undercount pass
+completely unsignaled. That is the one new failure mode this story adds an
+alarm for; `tests/test_server_revision_count.py` exercises both the
+at-threshold and below-threshold cases directly.
 
 ## Open questions
 
