@@ -273,7 +273,7 @@ def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
     assert f'python3 "{expected_script_path}" set' in HTML
     assert Path(expected_script_path).is_file(), \
         "the path embedded in the recovery command must name a real file, not just match a string"
-    assert "--store .viva/preferences.json" in HTML and "--status standing</code>" in HTML
+    assert "--store __PREFS_STORE_PATH__" in HTML and "--status standing</code>" in HTML
     assert "function prefMutedNoteHTML(id)" in HTML
     print("  ok  test_muted_row_names_the_unmute_recovery_and_this_round_effect")
 

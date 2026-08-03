@@ -39,6 +39,9 @@ import preferences  # noqa: E402
 # otherwise terminate that string early and blank the whole panel.
 _PREFS_SCRIPT_PATH = str(Path(__file__).resolve().parent / "scripts" / "preferences.py")
 _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\\'")
+# Store path is set once at startup from _viva_dir; a placeholder is replaced
+# after _viva_dir lands, mirroring the pattern for _PREFS_SCRIPT_PATH above.
+_PREFS_STORE_PATH: str = ""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -1531,7 +1534,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   border: 1px solid var(--border2);
 }
 .prefs-head {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; flex-direction: column; gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -1543,6 +1546,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   text-transform: uppercase;
   color: var(--text2);
 }
+.prefs-help {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text3);
+}
+.prefs-help strong { color: var(--text2); font-weight: 600; }
 .prefs-close {
   border: none; background: none; cursor: pointer;
   color: var(--text3);
@@ -1864,8 +1873,11 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 <div class="prefs-overlay" id="prefs-overlay" role="dialog" aria-modal="true" aria-labelledby="prefs-title" style="display:none">
   <div class="prefs-panel">
     <div class="prefs-head">
-      <span class="prefs-title" id="prefs-title">Learned Preferences</span>
-      <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span class="prefs-title" id="prefs-title">Learned Preferences</span>
+        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
+      </div>
+      <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, will be applied &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
     </div>
     <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
     <div class="prefs-list" id="prefs-list"></div>
@@ -3452,7 +3464,7 @@ function prefMutedNoteHTML(id) {
   return '<div class="pref-muted-note">muted &mdash; badges already shown this round '
     + 'stay as a record; nothing further is flagged or applied for this preference. '
     + 'restore from a terminal: <code>python3 "__PREFS_SCRIPT_PATH__" set '
-    + '--store .viva/preferences.json --id ' + esc(id) + ' --status standing</code></div>';
+    + '--store __PREFS_STORE_PATH__ --id ' + esc(id) + ' --status standing</code></div>';
 }
 
 function prefRowHTML(p) {
@@ -4448,6 +4460,11 @@ if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
     _viva_dir = Path(args.input).resolve().parent
+    # Resolve the preferences store path and update _HTML_BYTES with the
+    # absolute path, mirroring the pattern for _PREFS_SCRIPT_PATH above.
+    _PREFS_STORE_PATH = str(_viva_dir / "preferences.json")
+    _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
+    _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
     _input_data = load_input(args.input)
     # Validate review-input on read at the boundary. Q&A input has `questions`,
     # not `sections`, so it is gated out (shape, not mode); a malformed
