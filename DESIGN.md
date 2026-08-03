@@ -444,7 +444,11 @@ Submit button states:
 A `.prefs-toggle` button sits in the bottom bar's `#stats-area`, alongside the
 approved/pending counters — a static label ("preferences"), never an
 interpolated count in its own text, so it never competes with the counters
-for that region's `aria-live="polite"` announcement. Clicking it opens
+for that region's `aria-live="polite"` announcement. It ships `display:none`
+and is revealed only once the boot fetch confirms the store holds at least
+one preference — the same empty-store treatment the confidence-sort toggle
+already gets (a clone with nothing to inspect or mute gets no control that
+opens onto an empty panel). Clicking it opens
 `#prefs-overlay`, a second modal built on the exact `openRecap`/`closeRecap`/
 `setBackgroundInert` shape the Recap overlay established: `role="dialog"
 aria-modal="true"`, Escape/backdrop-click/`×` all dismiss it, the background
@@ -479,9 +483,12 @@ change after a mute.
 **Muted-row copy.** Every `muted` row carries two static lines: "takes
 effect next session" (a *future* round-1 pre-flight pass stops re-flagging
 it; a badge already on screen this round is untouched) and the terminal
-command that reverses it (`preferences.py set --id <id> --status
-standing`) — mute is one-way from this panel (decision prefs-inspector-1),
-so the recovery path has to be visible on the row, not just known to exist.
+command that reverses it (`python3 "$VIVA_DIR/scripts/preferences.py" set
+--store .viva/preferences.json --id <id> --status standing` —
+`preferences.py` is not on PATH, so the row spells out the same
+`$VIVA_DIR/scripts/` invocation SKILL.md uses throughout) — mute is one-way
+from this panel (decision prefs-inspector-1), so the recovery path has to
+be visible on the row, not just known to exist.
 
 **Badge-to-entry link.** A `kind:"preference"` annotation's `.annot-jump`
 badge (the existing anchor-jump control, extended) grows a second variant

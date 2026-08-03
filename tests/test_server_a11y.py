@@ -144,13 +144,33 @@ def test_prefs_toggle_is_native_button_static_label():
     # #142's bottom-bar control: a native button inside the aria-live
     # #stats-area, with a static label — no interpolated count baked into
     # its own text (pre-mortem lane 4: that would double-announce on every
-    # counter update).
-    assert '<button type="button" class="prefs-toggle" id="prefs-toggle">preferences</button>' in HTML
+    # counter update). Ships display:none — see
+    # test_prefs_toggle_gated_on_empty_store for why and where it's shown.
+    assert ('<button type="button" class="prefs-toggle" id="prefs-toggle" '
+            'style="display:none">preferences</button>') in HTML
     stats_open = HTML.index('id="stats-area"')
     stats_close = HTML.index('</div>', stats_open)
     assert 'id="prefs-toggle"' in HTML[stats_open:stats_close], \
         "prefs-toggle must live inside #stats-area (decision prefs-inspector-2)"
     print("  ok  test_prefs_toggle_is_native_button_static_label")
+
+
+def test_prefs_toggle_gated_on_empty_store():
+    # Acceptance-gate fix (Important, prefs-toggle-shown-with-empty-store): a
+    # clone with no store — every clone, until a session records a
+    # preference — has nothing to inspect or mute, so the control must not
+    # ship live (PRODUCT.md principle 4; the sibling confidence-sort toggle
+    # gets the identical treatment, SKILL.md:322 "a doc with none hides the
+    # toggle entirely"). The toggle ships hidden (checked above); the boot
+    # handler is the only thing that ever reveals it, and only once
+    # PREFS_DATA has actually been assigned from the fetched response.
+    assert "el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';" in HTML
+    boot_start = HTML.index("Promise.all([")
+    assign_at = HTML.index("PREFS_DATA  = Array.isArray(prefs)", boot_start)
+    gate_at = HTML.index("el('prefs-toggle').style.display", boot_start)
+    assert boot_start < assign_at < gate_at, \
+        "prefs-toggle visibility must be gated after PREFS_DATA is assigned in the boot handler"
+    print("  ok  test_prefs_toggle_gated_on_empty_store")
 
 
 def test_prefs_overlay_is_dialog_mirrors_recap():
@@ -173,6 +193,49 @@ def test_prefs_and_recap_are_mutually_exclusive():
     print("  ok  test_prefs_and_recap_are_mutually_exclusive")
 
 
+def test_prefs_panel_swallows_card_shortcuts_while_open():
+    # Acceptance-gate fix (BLOCKER, prefs-panel-open-verdict-shortcuts-live):
+    # the panel is a full-screen modal — inert on #paper blocks pointer/Tab
+    # into the background but not this document keydown listener, and focus
+    # inside the panel lands on #prefs-close or a .pref-row, neither TEXTAREA
+    # nor INPUT, so the tag-based guard at the top of the handler never
+    # catches it. Without a blanket swallow, a/c/i, Tab, digits, and
+    # Cmd/Ctrl+Enter all fall through to whatever section card sits behind
+    # the backdrop. The fix is a single unconditional `return` gated on
+    # prefsIsOpen(), sitting ahead of both the review and QA branches (the
+    # Escape case is handled just above it, so it isn't swallowed too).
+    kd = HTML.index("document.addEventListener('keydown'")
+    esc_idx = HTML.index(
+        "if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }", kd)
+    guard_idx = HTML.index("if (prefsIsOpen()) return;", kd)
+    review_branch = HTML.index("if (REVIEW_DATA) {", kd)
+    qa_branch = HTML.index("if (!REVIEW_DATA && QA_DATA && qState.active)", kd)
+    assert kd < esc_idx < guard_idx < review_branch < qa_branch, \
+        ("prefsIsOpen()'s Escape-close and blanket return must both sit ahead "
+         "of the review and QA keydown branches")
+    print("  ok  test_prefs_panel_swallows_card_shortcuts_while_open")
+
+
+def test_prefs_panel_closes_on_sse_view_swaps():
+    # Acceptance-gate fix (Important, prefs-panel-survives-round-swap): the
+    # panel is a full-screen backdrop, so a 'processing'/'round'/'complete'
+    # SSE event that swaps in a new view while it's still open would render
+    # that view entirely behind an open modal. Mirrors closeRecap()'s
+    # existing per-handler treatment in each of the three handlers.
+    proc_start = HTML.index("es.addEventListener('processing'")
+    round_start = HTML.index("es.addEventListener('round'", proc_start)
+    complete_start = HTML.index("es.addEventListener('complete'", round_start)
+    onerror_start = HTML.index("es.onerror = ", complete_start)
+    assert proc_start < round_start < complete_start < onerror_start
+    assert "closePrefsPanel();" in HTML[proc_start:round_start], \
+        "'processing' handler must close the prefs panel"
+    assert "closePrefsPanel();" in HTML[round_start:complete_start], \
+        "'round' handler must close the prefs panel"
+    assert "closePrefsPanel();" in HTML[complete_start:onerror_start], \
+        "'complete' handler must close the prefs panel"
+    print("  ok  test_prefs_panel_closes_on_sse_view_swaps")
+
+
 def test_prefs_status_is_the_only_live_region_in_the_panel():
     # Pre-mortem lane 3: the whole list must never be the live region — a
     # freshly opened panel with several rows would announce every row's text
@@ -191,7 +254,12 @@ def test_muted_row_names_the_unmute_recovery_and_next_session_effect():
     # carry static copy naming both the recovery command and that the
     # effect is next-session, not retroactive to the card already on screen.
     assert "takes effect next session" in HTML
-    assert "preferences.py set --store" in HTML and "--status standing</code>" in HTML
+    # The command must actually run from a terminal: preferences.py is not on
+    # PATH — SKILL.md always invokes it as
+    # python3 "$VIVA_DIR/scripts/preferences.py" (SKILL.md:71,200,366) — so
+    # the recovery copy needs the same prefix, or it fails "command not found".
+    assert 'python3 "$VIVA_DIR/scripts/preferences.py" set' in HTML
+    assert "--store .viva/preferences.json" in HTML and "--status standing</code>" in HTML
     assert "function prefMutedNoteHTML(id)" in HTML
     print("  ok  test_muted_row_names_the_unmute_recovery_and_next_session_effect")
 
@@ -252,14 +320,17 @@ def main():
     test_sheet_ground_ships()
     test_grid_and_sheet_frame_gone()
     test_prefs_toggle_is_native_button_static_label()
+    test_prefs_toggle_gated_on_empty_store()
     test_prefs_overlay_is_dialog_mirrors_recap()
     test_prefs_and_recap_are_mutually_exclusive()
+    test_prefs_panel_swallows_card_shortcuts_while_open()
+    test_prefs_panel_closes_on_sse_view_swaps()
     test_prefs_status_is_the_only_live_region_in_the_panel()
     test_muted_row_names_the_unmute_recovery_and_next_session_effect()
     test_mute_button_only_on_standing_rows()
     test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
     test_preference_badge_reuses_annot_jump_never_the_raw_id()
-    print("OK (19 tests)")
+    print("OK (22 tests)")
 
 
 if __name__ == "__main__":

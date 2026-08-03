@@ -1820,7 +1820,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
-      <button type="button" class="prefs-toggle" id="prefs-toggle">preferences</button>
+      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">preferences</button>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -3436,8 +3436,8 @@ function prefStatusLabel(status) {
 // the store at a *future* round 1 (SKILL.md:71).
 function prefMutedNoteHTML(id) {
   return '<div class="pref-muted-note">muted &mdash; takes effect next session. '
-    + 'restore from a terminal: <code>preferences.py set --store '
-    + '.viva/preferences.json --id ' + esc(id) + ' --status standing</code></div>';
+    + 'restore from a terminal: <code>python3 "$VIVA_DIR/scripts/preferences.py" set '
+    + '--store .viva/preferences.json --id ' + esc(id) + ' --status standing</code></div>';
 }
 
 function prefRowHTML(p) {
@@ -3617,7 +3617,8 @@ function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
-    closeRecap();  // the review it recapped is gone from under it
+    closeRecap();       // the review it recapped is gone from under it
+    closePrefsPanel();  // ditto — no full-screen backdrop survives a view swap
     renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
@@ -3629,7 +3630,8 @@ function connectSSE() {
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
-    closeRecap();  // a stale grid must never sit over a fresh round's cards
+    closeRecap();        // a stale grid must never sit over a fresh round's cards
+    closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
     REVIEW_DATA       = data;
     // A qa → review hand-off (#109) lands here too — the qa session this tab
     // may have been showing is done; drop its state so leftover QA_DATA/
@@ -3666,6 +3668,7 @@ function connectSSE() {
   es.addEventListener('complete', e => {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
+    closePrefsPanel();  // no full-screen backdrop survives into complete-view
     el('processing-view').style.display = 'none';
     clearProcessingTimer();
     el('review-view').style.display     = 'none';
@@ -3717,6 +3720,13 @@ document.addEventListener('keydown', e => {
   // sits ahead of the REVIEW_DATA-gated block below (the recap overlay's
   // equivalent check lives inside it, since recap is review/diff-only).
   if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }
+  // Modal, like the recap overlay: every other key is swallowed here so it
+  // can never reach the card/QA shortcuts behind the backdrop. inert (on
+  // #paper) blocks pointer/Tab into the background but not this document
+  // keydown listener, and focus inside the panel sits on #prefs-close or a
+  // .pref-row — neither TEXTAREA nor INPUT — so the guard above this block
+  // doesn't catch it either; this is the only thing that does.
+  if (prefsIsOpen()) return;
 
   if (REVIEW_DATA) {
     if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
@@ -3828,6 +3838,11 @@ Promise.all([
   .then(([data, prefs]) => {
     PREFS_DATA  = Array.isArray(prefs) ? prefs : [];
     PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));
+    // Ships hidden (same treatment as the confidence sort toggle,
+    // SKILL.md:322 "a doc with none hides the toggle entirely"): a clone
+    // with an empty/absent store has nothing to inspect or mute, so the
+    // control stays off rather than opening onto an empty panel.
+    el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
 
