@@ -459,7 +459,10 @@ and preferences aren't review-specific.
 **Contents.** Every preference from `GET /preferences` (all statuses,
 label-sorted server-side via `preferences.select(store, "all")`), each row
 carrying its status (`.pref-status-standing|candidate|muted`), label,
-guidance, and session count. Only a `standing` row renders a **mute**
+guidance, and observation/session detail — `.pref-meta` renders the
+observation count *and* the sessions that reinforced it (the issue's own
+proposal text, wider than the acceptance criterion's floor). Only a
+`standing` row renders a **mute**
 control (`.pref-mute-btn`) — `candidate` rows are read-only (pre-flight
 never reads them) and `muted` rows already are. A successful
 `POST /preferences/mute` updates that one row's DOM node in place — status
@@ -485,8 +488,10 @@ badge (the existing anchor-jump control, extended) grows a second variant
 when the leading `[id]` token in its message (SKILL.md's own encoding
 convention) matches a fetched preference; clicking it opens the panel
 scrolled to and focused on that row (`.pref-row[tabindex="-1"]`, given a
-visible `:focus` ring since it's a programmatic jump target, never a mouse
-click). `PREFS_DATA`/`PREFS_BY_ID` are fetched once at boot, alongside
+visible `:focus` ring — not `:focus-visible`, since the jump lands via a
+programmatic `.focus()` call after a mouse click, a case `:focus-visible`
+generally suppresses — so the ring confirms where the jump landed
+regardless of input method). `PREFS_DATA`/`PREFS_BY_ID` are fetched once at boot, alongside
 `/input` (`Promise.all`, never sequential), and reused for every card build
 after — including the SSE `round` rebuild on round 2+ — never re-fetched
 mid-session, so a badge stays linked across rounds without a second
