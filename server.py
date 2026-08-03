@@ -539,6 +539,11 @@ body {
 /* Revision triangle — drafting's "this region changed at this rev" flag, keyed
    to the titleblock REV and the revision log. */
 .rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
+/* Cumulative revision count (issue #141) — a second run of text inside the
+   same .rev-tri element, not a separate badge. Label convention (DESIGN.md):
+   8-10px Fragment Mono (inherited from .rev-tri), var(--text3), not the
+   triangle's own orange. Decorative text, not interactive — no focus target. */
+.rev-tri .rev-mult { font-size: 9px; color: var(--text3); letter-spacing: 0.1em; }
 
 /* Flex column so the title + inline-note <span>s stack as they did when divs
    (the header is now a <button>, whose content must be phrasing-level spans). */
@@ -2196,7 +2201,7 @@ function buildReviewCard(section) {
         <span class="card-title">${esc(section.title)}</span>
         <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
       </span>
-      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}</span>` : ''}
+      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
       <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
     </button>
     <div class="card-body-wrap" id="rbody-${section.id}">
@@ -3541,6 +3546,9 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+# Set once at startup from --input; historical round files for the
+# revision-count derivation (issue #141) live here, never reassigned after.
+_viva_dir: Path = Path(".")
 _url: str = ""  # set once at startup; reused by the /next-round hand-off log line
 _sse_clients: list = []
 _clients_lock = threading.Lock()
@@ -3584,6 +3592,81 @@ def find_free_port() -> int:
 def load_input(path: str) -> dict:
     with open(path, encoding='utf-8') as f:
         return json.load(f)
+
+
+def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> dict[str, int]:
+    """Cumulative per-section revision count for the round being served.
+
+    Server-side, wire-only derivation (issue #141) — never written to any
+    round file, no `schema.py` field. Walks the *historical* rounds
+    `1..round_num-1` on disk (the same `review-input-r{k}.json` naming
+    `scripts/revision_history.py` already depends on to build the sign-off
+    ledger) plus the just-arrived round's own in-hand `sections`, and counts
+    one revision per round a section carried a `diff`. A missing or
+    unparseable historical round file silently contributes zero for that
+    round — the same tolerance `scripts/revision_history.py` already has for
+    a session with gaps in its round-file pairs.
+
+    Predicate is `s.get("diff") is not None` — presence with a non-null
+    value — not Python truthiness of the value itself:
+    `parse_sections.py`'s `_compute_diffs` can legitimately write an empty
+    `diff: []` when two rounds' content differs only in a way
+    `str.splitlines()` collapses (e.g. a trailing-newline-only edit), and the
+    card's own `.rev-tri` trigger (`section.diff ?` in JS) treats that
+    exactly like any other diff — JS arrays are truthy regardless of length.
+    `bool([])` is Python-falsy, so counting on truthiness would silently
+    undercount relative to what the triangle itself already shows.
+    """
+    counts: dict[str, int] = {}
+    for k in range(1, round_num):
+        try:
+            hist = json.loads((viva_dir / f"review-input-r{k}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(hist, dict):
+            continue
+        for s in hist.get("sections", []):
+            if isinstance(s, dict) and s.get("diff") is not None:
+                key = schema.section_key(s.get("title", ""))
+                counts[key] = counts.get(key, 0) + 1
+    for s in sections:
+        if isinstance(s, dict) and s.get("diff") is not None:
+            key = schema.section_key(s.get("title", ""))
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _with_revision_counts(data: dict, viva_dir: Path) -> dict:
+    """Return `data` with a `revision_count` attached to each section whose
+    cumulative count (`_revision_counts`) reaches 2+ — the threshold the
+    card's `△ NN`-suffix multiplier renders at (issue #141). A section below
+    that threshold, or a Q&A payload (`sections` absent/not a list), passes
+    through unchanged. Functional: never mutates `data` or any section dict
+    in place, and writes nothing to disk — the served JSON response is the
+    only place this key exists, mirroring `ledger`'s serve-time-only
+    precedent (`GET /input`, schema.py's docstring)."""
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        return data
+    try:
+        round_num = int(data.get("round", 0))
+    except (TypeError, ValueError):
+        round_num = 0
+    counts = _revision_counts(sections, round_num, viva_dir)
+
+    def _tag(s: dict) -> dict:
+        if not isinstance(s, dict):
+            return s
+        n = counts.get(schema.section_key(s.get("title", "")), 0)
+        # Server-owned wire field, not a pass-through: strip any
+        # `revision_count` a caller's payload happened to carry when this
+        # section doesn't clear the threshold, so the served value is always
+        # exactly what `_revision_counts` just computed — never stale data.
+        if n >= 2:
+            return {**s, "revision_count": n}
+        return {k: v for k, v in s.items() if k != "revision_count"}
+
+    return {**data, "sections": [_tag(s) for s in sections]}
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -3689,7 +3772,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
         elif path == "/input":
             with _data_lock:
-                body = json.dumps({**_input_data, "ledger": _ledger}).encode()
+                body = json.dumps({**_with_revision_counts(_input_data, _viva_dir),
+                                   "ledger": _ledger}).encode()
             self._send(200, "application/json", body)
         elif path == "/events":
             self.send_response(200)
@@ -3832,7 +3916,8 @@ class Handler(BaseHTTPRequestHandler):
                 # not just infer it from the browser reflowing.
                 print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("round", {**new_data, "ledger": ledger_snapshot})
+            _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
+                                "ledger": ledger_snapshot})
         elif path == "/complete":
             length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
             if length is None:
@@ -3866,6 +3951,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
+    _viva_dir = Path(args.input).resolve().parent
     _input_data = load_input(args.input)
     # Validate review-input on read at the boundary. Q&A input has `questions`,
     # not `sections`, so it is gated out (shape, not mode); a malformed
