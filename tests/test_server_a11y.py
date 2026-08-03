@@ -140,6 +140,105 @@ def test_grid_and_sheet_frame_gone():
     print("  ok  test_grid_and_sheet_frame_gone")
 
 
+def test_prefs_toggle_is_native_button_static_label():
+    # #142's bottom-bar control: a native button inside the aria-live
+    # #stats-area, with a static label — no interpolated count baked into
+    # its own text (pre-mortem lane 4: that would double-announce on every
+    # counter update).
+    assert '<button type="button" class="prefs-toggle" id="prefs-toggle">preferences</button>' in HTML
+    stats_open = HTML.index('id="stats-area"')
+    stats_close = HTML.index('</div>', stats_open)
+    assert 'id="prefs-toggle"' in HTML[stats_open:stats_close], \
+        "prefs-toggle must live inside #stats-area (decision prefs-inspector-2)"
+    print("  ok  test_prefs_toggle_is_native_button_static_label")
+
+
+def test_prefs_overlay_is_dialog_mirrors_recap():
+    # role=dialog/aria-modal, ships hidden, same close affordances as the
+    # recap overlay (Escape/backdrop/close button all wired through
+    # setBackgroundInert — checked structurally below).
+    assert ('<div class="prefs-overlay" id="prefs-overlay" role="dialog" '
+            'aria-modal="true" aria-labelledby="prefs-title" style="display:none">') in HTML
+    assert '<button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">' in HTML
+    assert "function openPrefsPanel(triggerEl, focusPrefId)" in HTML
+    assert "function closePrefsPanel()" in HTML
+    assert "setBackgroundInert(true)" in HTML and "setBackgroundInert(false)" in HTML
+    print("  ok  test_prefs_overlay_is_dialog_mirrors_recap")
+
+
+def test_prefs_and_recap_are_mutually_exclusive():
+    # Opening either overlay closes the other first — at most one modal.
+    assert "if (prefsIsOpen()) closePrefsPanel();" in HTML
+    assert "if (recapIsOpen()) closeRecap();" in HTML
+    print("  ok  test_prefs_and_recap_are_mutually_exclusive")
+
+
+def test_prefs_status_is_the_only_live_region_in_the_panel():
+    # Pre-mortem lane 3: the whole list must never be the live region — a
+    # freshly opened panel with several rows would announce every row's text
+    # on open, not just the one status change after a mute. Only the
+    # dedicated one-line #prefs-status may carry aria-live; #prefs-list must
+    # not.
+    assert 'id="prefs-status" aria-live="polite"' in HTML
+    assert 'id="prefs-list" aria-live' not in HTML, \
+        "#prefs-list must not itself be an aria-live region"
+    print("  ok  test_prefs_status_is_the_only_live_region_in_the_panel")
+
+
+def test_muted_row_names_the_unmute_recovery_and_next_session_effect():
+    # Pre-mortem lanes 5 and 6: mute is one-way from the UI (decision
+    # prefs-inspector-1) with no confirmation step, so a muted row must
+    # carry static copy naming both the recovery command and that the
+    # effect is next-session, not retroactive to the card already on screen.
+    assert "takes effect next session" in HTML
+    assert "preferences.py set --store" in HTML and "--status standing</code>" in HTML
+    assert "function prefMutedNoteHTML(id)" in HTML
+    print("  ok  test_muted_row_names_the_unmute_recovery_and_next_session_effect")
+
+
+def test_mute_button_only_on_standing_rows():
+    # candidate/muted rows render read-only; only a standing row grows the
+    # mute control (design: pre-flight never reads candidates, and a
+    # criterion can't verify an invisible effect there). Anchored to the
+    # actual gating expression, not just any "=== 'standing'" occurrence in
+    # the file (prefStatusLabel's own ternary would also match a weaker check).
+    assert "const muteBtn = status === 'standing'" in HTML
+    assert 'class="pref-mute-btn" data-id="' in HTML
+    print("  ok  test_mute_button_only_on_standing_rows")
+
+
+def test_prefs_data_fetched_once_and_cached_for_round_rebuilds():
+    # Pre-mortem lane 1: badges must survive a round-2+ SSE rebuild, which
+    # never re-fetches /input's own data. The fix is caching, not a
+    # per-render fetch — PREFS_DATA/PREFS_BY_ID are populated once in the
+    # boot Promise.all and read (never reassigned) by annotStripHTML/
+    # initReview afterward.
+    assert "Promise.all([" in HTML
+    assert "fetch('/preferences')" in HTML
+    assert HTML.count("fetch('/preferences')") == 1, \
+        "preferences must be fetched exactly once, at boot — never per-render"
+    assert "PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));" in HTML
+    # Negative check that actually guards the pre-mortem's named failure: the
+    # SSE 'round' handler (the round-2+ rebuild path) must never reassign
+    # PREFS_DATA/PREFS_BY_ID — if it did, a stale/failed refetch there would
+    # silently blank every badge on the very rebuild this lane is about.
+    round_start = HTML.index("es.addEventListener('round'")
+    round_end = HTML.index("es.addEventListener('complete'")
+    assert round_start < round_end, "could not locate the SSE round handler body"
+    assert "PREFS_" not in HTML[round_start:round_end], \
+        "the SSE round handler must not touch PREFS_DATA/PREFS_BY_ID — cached at boot, reused as-is"
+    print("  ok  test_prefs_data_fetched_once_and_cached_for_round_rebuilds")
+
+
+def test_preference_badge_reuses_annot_jump_never_the_raw_id():
+    # The badge-to-entry link renders label/id straight from the matched
+    # preference object, never the raw regex-captured substring from the
+    # annotation message.
+    assert "const pref = m ? PREFS_BY_ID.get(m[1]) : null;" in HTML
+    assert "esc(pref.id)" in HTML and "esc(pref.label || pref.id)" in HTML
+    print("  ok  test_preference_badge_reuses_annot_jump_never_the_raw_id")
+
+
 def main():
     test_card_head_is_button_with_aria()
     test_aria_expanded_sync_helper_exists()
@@ -152,7 +251,15 @@ def main():
     test_keyboard_legend_present_and_real()
     test_sheet_ground_ships()
     test_grid_and_sheet_frame_gone()
-    print("OK (11 tests)")
+    test_prefs_toggle_is_native_button_static_label()
+    test_prefs_overlay_is_dialog_mirrors_recap()
+    test_prefs_and_recap_are_mutually_exclusive()
+    test_prefs_status_is_the_only_live_region_in_the_panel()
+    test_muted_row_names_the_unmute_recovery_and_next_session_effect()
+    test_mute_button_only_on_standing_rows()
+    test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
+    test_preference_badge_reuses_annot_jump_never_the_raw_id()
+    print("OK (19 tests)")
 
 
 if __name__ == "__main__":
