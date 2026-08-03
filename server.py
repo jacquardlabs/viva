@@ -3616,6 +3616,13 @@ def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> dict[str
     exactly like any other diff — JS arrays are truthy regardless of length.
     `bool([])` is Python-falsy, so counting on truthiness would silently
     undercount relative to what the triangle itself already shows.
+
+    Counted per round via a `set` of `section_key`s, not a per-occurrence
+    increment: `parse_sections.py` assigns `id` positionally with no title
+    uniquification, so two same-level headings that normalize alike (two
+    `## Notes`) both carry their own `diff` after one rewrite. Incrementing
+    once per matching section, instead of once per distinct key, would double
+    (or N-tuple) count a round that only happened once.
     """
     counts: dict[str, int] = {}
     for k in range(1, round_num):
@@ -3625,14 +3632,14 @@ def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> dict[str
             continue
         if not isinstance(hist, dict):
             continue
-        for s in hist.get("sections", []):
-            if isinstance(s, dict) and s.get("diff") is not None:
-                key = schema.section_key(s.get("title", ""))
-                counts[key] = counts.get(key, 0) + 1
-    for s in sections:
-        if isinstance(s, dict) and s.get("diff") is not None:
-            key = schema.section_key(s.get("title", ""))
+        for key in {schema.section_key(s.get("title", ""))
+                    for s in hist.get("sections", [])
+                    if isinstance(s, dict) and s.get("diff") is not None}:
             counts[key] = counts.get(key, 0) + 1
+    for key in {schema.section_key(s.get("title", ""))
+                for s in sections
+                if isinstance(s, dict) and s.get("diff") is not None}:
+        counts[key] = counts.get(key, 0) + 1
     return counts
 
 
@@ -3771,9 +3778,20 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", ""):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
         elif path == "/input":
+            # Snapshot both under the lock, then do `_revision_counts`' N-1
+            # historical-round disk reads outside it — mirrors /next-round's
+            # `ledger_snapshot` pattern (below). `_input_data` is rebound, never
+            # mutated in place (see /next-round), so a bare reference is a valid
+            # snapshot; `_ledger` is appended to in place (/submit), so it needs
+            # an actual copy or a concurrent append would race the `json.dumps`
+            # below. The round files `_revision_counts` reads are written by the
+            # pipeline process, not this server, so `_data_lock` never protected
+            # them — safe to read after releasing it.
             with _data_lock:
-                body = json.dumps({**_with_revision_counts(_input_data, _viva_dir),
-                                   "ledger": _ledger}).encode()
+                data_snapshot = _input_data
+                ledger_snapshot = list(_ledger)
+            body = json.dumps({**_with_revision_counts(data_snapshot, _viva_dir),
+                               "ledger": ledger_snapshot}).encode()
             self._send(200, "application/json", body)
         elif path == "/events":
             self.send_response(200)

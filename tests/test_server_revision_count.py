@@ -43,7 +43,7 @@ def by_id(data: dict, sid: str) -> dict:
     return next(s for s in data["sections"] if s["id"] == sid)
 
 
-def main() -> None:
+def _test_cumulative_and_sse() -> None:
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -166,7 +166,70 @@ def main() -> None:
         assert 'content revisions this session' in page, \
             "rev-tri title must name the cumulative count, distinct from rounds_total's wording"
 
-        print("OK")
+
+def _test_duplicate_titles_dedupe_per_round() -> None:
+    """duplicate-title-inflates-revision-count: two sections whose titles
+    normalize to the same `schema.section_key` (two `## Notes`) both carrying
+    a `diff` in the same round must count as ONE revision that round, not
+    two. `parse_sections.py` assigns `id` positionally with no title
+    uniquification, so this is a real, reachable shape — not a synthetic
+    edge case. Fresh server/tempdir, independent of `main()`'s history so
+    the expected counts don't depend on that suite's round sequence."""
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+
+    r1_sections = [
+        {"id": "s1", "title": "Notes", "content": "notes v1 a"},
+        {"id": "s2", "title": "Notes", "content": "notes v1 b"},
+    ]
+    write_round(viva, 1, r1_sections)
+
+    with launch_server(viva / "review-input-r1.json", viva / "review-r1.json",
+                       cwd=tmp) as base:
+
+        # Round 2: both same-keyed sections get a diff in the same round.
+        # A per-occurrence counter would double this to 2 (multiplier
+        # threshold); the correct per-round count is 1 (no multiplier yet).
+        r2_sections = [
+            {"id": "s1", "title": "Notes", "content": "notes v2 a",
+             "diff": [{"op": "+", "text": "notes v2 a"}]},
+            {"id": "s2", "title": "Notes", "content": "notes v2 b",
+             "diff": [{"op": "+", "text": "notes v2 b"}]},
+        ]
+        write_round(viva, 2, r2_sections)
+        next_round(base, viva, 2, r2_sections)
+        data = get(base, "/input")
+        s1 = by_id(data, "s1")
+        s2 = by_id(data, "s2")
+        assert "revision_count" not in s1, \
+            f"one round's duplicate-titled diffs must count as 1, not 2: {s1}"
+        assert "revision_count" not in s2, \
+            f"one round's duplicate-titled diffs must count as 1, not 2: {s2}"
+
+        # Round 3: same pair revised again in a second round. Cumulative
+        # must be 2 (one per round), not 4 (one per occurrence per round).
+        r3_sections = [
+            {"id": "s1", "title": "Notes", "content": "notes v3 a",
+             "diff": [{"op": "+", "text": "notes v3 a"}]},
+            {"id": "s2", "title": "Notes", "content": "notes v3 b",
+             "diff": [{"op": "+", "text": "notes v3 b"}]},
+        ]
+        write_round(viva, 3, r3_sections)
+        next_round(base, viva, 3, r3_sections)
+        data = get(base, "/input")
+        s1 = by_id(data, "s1")
+        s2 = by_id(data, "s2")
+        assert s1["revision_count"] == 2, \
+            f"two rounds of duplicate-titled diffs must cumulate to 2, not 4: {s1}"
+        assert s2["revision_count"] == 2, \
+            f"two rounds of duplicate-titled diffs must cumulate to 2, not 4: {s2}"
+
+
+def main() -> None:
+    _test_cumulative_and_sse()
+    _test_duplicate_titles_dedupe_per_round()
+    print("OK")
 
 
 if __name__ == "__main__":
