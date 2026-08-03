@@ -339,6 +339,14 @@ is the ground these gestures sit on; see Layout.)
 - **Revision triangle** (`.rev-tri`) — drafting's "this region changed at this rev"
   flag. Rendered as `△ NN` in Fragment Mono, `11px`, `color: var(--orange)`, keyed to
   the titleblock REV. Shown on a section head only when the section carries a diff.
+  When the section's *cumulative* revision count this session reaches 2+, a
+  `.rev-mult` child span appends a multiplier inside the same element — e.g.
+  `△ 03 2×` — styled per the label convention (`9px` Fragment Mono, inherited;
+  `color: var(--text3)`, not the triangle's own orange). One visual element, two
+  pieces of information (issue #141): a section revised exactly once still shows
+  the plain `△ NN`, no multiplier. Decorative text, not interactive. The count is
+  computed server-side from `.viva/review-input-r{N}.json` round files — never
+  persisted as a schema field (see JSON protocol conventions below).
 - **Approval stamp** (`.approve-stamp` → `.stamp-rule`) — the "signed off" gesture on
   the complete screen. Double-ruled teal ink (`2px solid var(--teal)` plus a `::before`
   inner rule at `inset: 3px`), slammed on at a `-5deg` tilt via the `stamp-down`
@@ -468,4 +476,5 @@ submitting (see Recap overlay); Q&A's done → click submits directly.
   - *Annotation, navigation* (input) — when the string matches another section's `id` (the cross-section contradiction producer), it renders as a `.annot-jump` deep-link to that section instead of a hover title.
   - *Comment, selection* (output) — a `comment.anchor` object `{text, offset}`: the exact text the reviewer selected in the section, which the agent uses to scope its rewrite (`offset` disambiguates a repeated phrase). This is a structured object, not a string, and lives on comments in `review-r{N}.json` — a different shape from the annotation `anchor` above.
 - `GET /input` returns the current review-input merged with `ledger: [...]` — the live running ledger. The `ledger` field is injected by the server at serve time and is **not** part of the `review-input-r{N}.json` file schema that `parse_sections.py` writes.
+- Both `GET /input` and the `round` SSE event similarly attach `revision_count` to a section object — but only when that section's cumulative revision count this session reaches 2+ (issue #141). Injected by the server at serve time, derived by re-reading `.viva/review-input-r{N}.json` round files already on disk; never written to any round file and not part of `ReviewSection`.
 - The round shapes are the system's load-bearing contract, defined in one place: `scripts/schema.py` holds the TypedDicts, `section_key()` (the single section-identity normalization), `verdict_to_ledger_entry()` (the single ledger-row rule), and the boundary validators. Adding a field means updating that module and validating at the boundary (on parse write, on server read) — never at the point of use.

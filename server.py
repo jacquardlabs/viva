@@ -539,6 +539,11 @@ body {
 /* Revision triangle — drafting's "this region changed at this rev" flag, keyed
    to the titleblock REV and the revision log. */
 .rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
+/* Cumulative revision count (issue #141) — a second run of text inside the
+   same .rev-tri element, not a separate badge. Label convention (DESIGN.md):
+   8-10px Fragment Mono (inherited from .rev-tri), var(--text3), not the
+   triangle's own orange. Decorative text, not interactive — no focus target. */
+.rev-tri .rev-mult { font-size: 9px; color: var(--text3); letter-spacing: 0.1em; }
 
 /* Flex column so the title + inline-note <span>s stack as they did when divs
    (the header is now a <button>, whose content must be phrasing-level spans). */
@@ -1746,6 +1751,28 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// `.rev-tri`'s title (tooltip) text. `revision_count_partial` (server.py's
+// `_with_revision_counts`) means a historical round file this session
+// couldn't be read, so any count is a lower bound, not exact — say "≥N",
+// never assert N as fact. It rides on every section with a `diff` this
+// round (the same predicate that gates the triangle itself just below),
+// not only ones that clear the 2+ threshold: the unreadable round might be
+// exactly the one that would have pushed a below-threshold section over
+// 2, so a bare `△ NN` with no count and no caveat would silently vanish
+// the multiplier instead of merely under-reporting it
+// (corrupt-round-file-silent-undercount).
+function revTriTooltip(round, section) {
+  const base = `revised at REV ${String(round).padStart(2,'0')}`;
+  if (section.revision_count >= 2) {
+    return section.revision_count_partial
+      ? `${base} · ≥${section.revision_count} revisions, partial history`
+      : `${base} · ${section.revision_count} content revisions this session`;
+  }
+  return section.revision_count_partial
+    ? `${base} · partial history, revision count unavailable`
+    : base;
+}
+
 function tabDocName(path) {
   return (path || '').split('/').pop();
 }
@@ -2196,7 +2223,7 @@ function buildReviewCard(section) {
         <span class="card-title">${esc(section.title)}</span>
         <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
       </span>
-      ${section.diff ? `<span class="rev-tri" title="revised at REV ${String(REVIEW_DATA.round).padStart(2,'0')}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}</span>` : ''}
+      ${section.diff ? `<span class="rev-tri" title="${revTriTooltip(REVIEW_DATA.round, section)}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
       <span class="vbadge" id="rbadge-${section.id}" style="display:none"></span>
     </button>
     <div class="card-body-wrap" id="rbody-${section.id}">
@@ -3541,6 +3568,9 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+# Set once at startup from --input; historical round files for the
+# revision-count derivation (issue #141) live here, never reassigned after.
+_viva_dir: Path = Path(".")
 _url: str = ""  # set once at startup; reused by the /next-round hand-off log line
 _sse_clients: list = []
 _clients_lock = threading.Lock()
@@ -3584,6 +3614,127 @@ def find_free_port() -> int:
 def load_input(path: str) -> dict:
     with open(path, encoding='utf-8') as f:
         return json.load(f)
+
+
+def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> tuple[dict[str, int], bool]:
+    """Cumulative per-section revision count for the round being served.
+
+    Server-side, wire-only derivation (issue #141) — never written to any
+    round file, no `schema.py` field. Walks the *historical* rounds
+    `1..round_num-1` on disk (the same `review-input-r{k}.json` naming
+    `scripts/revision_history.py` already depends on to build the sign-off
+    ledger) plus the just-arrived round's own in-hand `sections`, and counts
+    one revision per round a section carried a `diff`.
+
+    Returns `(counts, partial)`. A missing round file, one whose JSON fails
+    to parse, one that doesn't decode to a dict, or one whose `sections` key
+    isn't a list, contributes zero revisions for that round *and* sets
+    `partial = True` — every round 1..round_num-1 has to actually be read to
+    trust the cumulative total as exact, so any round this loop couldn't
+    make sense of turns every count this call returns into a lower bound,
+    not the same tolerant "just skip it" `scripts/revision_history.py` has
+    for a session with gaps in its round-file pairs. Callers must surface
+    that, not print the lower bound as if it were exact
+    (corrupt-round-file-silent-undercount).
+
+    Predicate is `s.get("diff") is not None` — presence with a non-null
+    value — not Python truthiness of the value itself:
+    `parse_sections.py`'s `_compute_diffs` can legitimately write an empty
+    `diff: []` when two rounds' content differs only in a way
+    `str.splitlines()` collapses (e.g. a trailing-newline-only edit), and the
+    card's own `.rev-tri` trigger (`section.diff ?` in JS) treats that
+    exactly like any other diff — JS arrays are truthy regardless of length.
+    `bool([])` is Python-falsy, so counting on truthiness would silently
+    undercount relative to what the triangle itself already shows.
+
+    Counted per round via a `set` of `section_key`s, not a per-occurrence
+    increment: `parse_sections.py` assigns `id` positionally with no title
+    uniquification, so two same-level headings that normalize alike (two
+    `## Notes`) both carry their own `diff` after one rewrite. Incrementing
+    once per matching section, instead of once per distinct key, would double
+    (or N-tuple) count a round that only happened once.
+    """
+    counts: dict[str, int] = {}
+    partial = False
+    for k in range(1, round_num):
+        try:
+            hist = json.loads((viva_dir / f"review-input-r{k}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            partial = True
+            continue
+        if not isinstance(hist, dict):
+            partial = True
+            continue
+        hist_sections = hist.get("sections")
+        # A round file that parses as valid JSON but carries "sections":
+        # null (or any non-list) is exactly as unusable as a missing file —
+        # guard it the same way the in-hand round-N path below already does,
+        # so it degrades into the `partial` signal instead of raising
+        # (`for s in None` -> TypeError, uncaught by the `except` above and
+        # fatal to both GET /input and the /next-round SSE push).
+        if not isinstance(hist_sections, list):
+            partial = True
+            continue
+        for key in {schema.section_key(s.get("title", ""))
+                    for s in hist_sections
+                    if isinstance(s, dict) and s.get("diff") is not None}:
+            counts[key] = counts.get(key, 0) + 1
+    for key in {schema.section_key(s.get("title", ""))
+                for s in sections
+                if isinstance(s, dict) and s.get("diff") is not None}:
+        counts[key] = counts.get(key, 0) + 1
+    return counts, partial
+
+
+def _with_revision_counts(data: dict, viva_dir: Path) -> dict:
+    """Return `data` with a `revision_count` attached to each section whose
+    cumulative count (`_revision_counts`) reaches 2+ — the threshold the
+    card's `△ NN`-suffix multiplier renders at (issue #141). A section below
+    that threshold, or a Q&A payload (`sections` absent/not a list), passes
+    through unchanged. Functional: never mutates `data` or any section dict
+    in place, and writes nothing to disk — the served JSON response is the
+    only place this key exists, mirroring `ledger`'s serve-time-only
+    precedent (`GET /input`, schema.py's docstring).
+
+    When `_revision_counts` couldn't read every historical round file, the
+    counts it returned are a lower bound, not an exact figure. Every section
+    with a `diff` this round — the same predicate `.rev-tri` itself renders
+    on (`section.diff ?` in JS) — gets `revision_count_partial: True`, not
+    only the ones that clear the 2+ threshold: a round this call couldn't
+    fully read might be exactly the round that would have tipped a
+    below-threshold section's count over 2, and silently showing that
+    section's plain triangle with no signal at all would be the worse half
+    of corrupt-round-file-silent-undercount — the multiplier vanishing
+    entirely instead of merely under-reporting. The client renders the
+    `>= 2` case as "≥N revisions, partial history" and the `< 2` case as a
+    number-free "partial history" caveat (`revTriTooltip`, `server.py`'s
+    HTML) — never a bare, possibly-wrong number either way."""
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        return data
+    try:
+        round_num = int(data.get("round", 0))
+    except (TypeError, ValueError):
+        round_num = 0
+    counts, partial = _revision_counts(sections, round_num, viva_dir)
+
+    def _tag(s: dict) -> dict:
+        if not isinstance(s, dict):
+            return s
+        n = counts.get(schema.section_key(s.get("title", "")), 0)
+        # Server-owned wire fields, not a pass-through: strip any
+        # `revision_count`/`revision_count_partial` a caller's payload
+        # happened to carry so the served value is always exactly what
+        # `_revision_counts` just computed — never stale data.
+        base = {k: v for k, v in s.items()
+                if k not in ("revision_count", "revision_count_partial")}
+        if n >= 2:
+            base["revision_count"] = n
+        if partial and s.get("diff") is not None:
+            base["revision_count_partial"] = True
+        return base
+
+    return {**data, "sections": [_tag(s) for s in sections]}
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -3688,8 +3839,20 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", ""):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
         elif path == "/input":
+            # Snapshot both under the lock, then do `_revision_counts`' N-1
+            # historical-round disk reads outside it — mirrors /next-round's
+            # `ledger_snapshot` pattern (below). `_input_data` is rebound, never
+            # mutated in place (see /next-round), so a bare reference is a valid
+            # snapshot; `_ledger` is appended to in place (/submit), so it needs
+            # an actual copy or a concurrent append would race the `json.dumps`
+            # below. The round files `_revision_counts` reads are written by the
+            # pipeline process, not this server, so `_data_lock` never protected
+            # them — safe to read after releasing it.
             with _data_lock:
-                body = json.dumps({**_input_data, "ledger": _ledger}).encode()
+                data_snapshot = _input_data
+                ledger_snapshot = list(_ledger)
+            body = json.dumps({**_with_revision_counts(data_snapshot, _viva_dir),
+                               "ledger": ledger_snapshot}).encode()
             self._send(200, "application/json", body)
         elif path == "/events":
             self.send_response(200)
@@ -3832,7 +3995,8 @@ class Handler(BaseHTTPRequestHandler):
                 # not just infer it from the browser reflowing.
                 print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("round", {**new_data, "ledger": ledger_snapshot})
+            _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
+                                "ledger": ledger_snapshot})
         elif path == "/complete":
             length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
             if length is None:
@@ -3866,6 +4030,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
+    _viva_dir = Path(args.input).resolve().parent
     _input_data = load_input(args.input)
     # Validate review-input on read at the boundary. Q&A input has `questions`,
     # not `sections`, so it is gated out (shape, not mode); a malformed
