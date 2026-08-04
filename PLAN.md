@@ -2,7 +2,7 @@
 
 Spine: Task 1 only — a single task. The behavior change and its regression test land together, matching `task-execution-discipline`'s TDD-per-capability pillar: neither of this story's specific claims (which function the `a` key calls, what the new legend text reads) is checkable by the *existing* test suite, only by the test this task adds — so splitting implementation from its own proof across two tasks left the first task's `Done means` unable to check anything the second task hadn't already landed.
 
-### Task 1 — Route the `a` key to `approveSection`, correct its legend copy, and add the regression test proving it
+### Task 1 — Route the `a` key to `approveSection`, correct its legend copy, and add the regression test proving it [PASS]
 Why now:    This is the design's whole behavior change (`docs/design/approve-shortcut.md`, Proposed design) — closes the latent auto-accept path named in Problem & persona. The legend copy correction is one paired edit with it, not a separate change: they land together or the UI's own documentation of itself goes stale. The regression test is what makes either claim mechanically checkable at all.
 Read first: `server.py:3419-3436`, `server.py:2491-2498`, `server.py:1683-1692`, `tests/test_server_a11y.py`, `docs/design/approve-shortcut.md`
 Rests on:   nothing — first task.
