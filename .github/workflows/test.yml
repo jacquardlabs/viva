@@ -31,3 +31,15 @@ jobs:
             echo "=== $f ==="
             python "$f"
           done
+
+  # Single aggregate context for the `test` required status check in the
+  # main-branch-protection ruleset. Keeps the ruleset off the matrix list —
+  # adding or dropping a Python version needs no settings change.
+  gate:
+    name: test
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every matrix leg to pass
+        run: '[ "${{ needs.test.result }}" = "success" ]'
