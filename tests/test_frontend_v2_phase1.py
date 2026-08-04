@@ -642,11 +642,19 @@ def test_design_md_matches_shipped_surface() -> None:
 
 
 def test_draft_plan_superseded() -> None:
-    """Cap: the pre-jig draft plan is deleted — PLAN.md is the branch's only
-    live plan artifact."""
+    """Cap: the pre-jig draft plan for this story is deleted.
+
+    This no longer asserts PLAN.md's own presence — that was a point-in-time
+    fact true only while this story's own branch was still in flight.
+    PLAN.md is disposable, branch-local scaffolding under studious's own
+    convention (`skills/finish/SKILL.md` Step 6): every story's own PLAN.md
+    is removed at /finish, once its Done-means table and evidence are
+    captured in that story's dated build report. A future story's own
+    /finish correctly deletes its own PLAN.md, and this repo-wide test file
+    must not fail because of it.
+    """
     draft = ROOT / "docs" / "superpowers" / "plans" / "2026-07-16-frontend-v2-phase1.md"
     assert not draft.exists(), f"superseded draft plan still on the branch: {draft}"
-    assert (ROOT / "PLAN.md").is_file(), "PLAN.md (the live plan artifact) is missing"
     print("test_draft_plan_superseded: OK")
 
 
