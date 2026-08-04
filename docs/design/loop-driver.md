@@ -48,20 +48,42 @@ Consumer: product-reviewer Q2/Q6; `/build`'s spine-building step.
 One new script, `scripts/loop.py`, takes the bookkeeping. The agent keeps the
 judgment.
 
-**Four subcommands, argparse per DESIGN.md's CLI conventions:**
+**Six subcommands, argparse per DESIGN.md's CLI conventions:**
 
-- `start --doc <path>` — resolves state, clears it, parses round 1, launches the
-  server, prints `$BASE`. Owns the three round-1 branches SKILL.md currently
-  spells out as prose (default, standing-preferences, resume-a-signed-off-doc):
-  it detects which applies from disk and does the right thing.
+- `start --doc <path>` — resolves state, clears it, parses round 1. Owns the
+  three round-1 branches SKILL.md currently spells out as prose (default,
+  standing-preferences, resume-a-signed-off-doc): it detects which applies from
+  disk. With no standing preference it goes on to arm the round itself and
+  prints `$BASE`. With one, it **stops after parsing** and says so — the
+  producer that must run next is an LLM pass, and that is the agent's judgment
+  work, not the driver's.
+- `annotate --sidecar <path>` — merges a producer's sidecar into the current
+  round's `review-input` through `annotate.py`. The agent writes the sidecar;
+  the driver supplies the round number, so no producer call re-templates `{N}`.
+- `arm` — makes the current round file live: launches the server on round 1,
+  POSTs `/next-round` on round 2+, and prints `$BASE`. Deriving which from the
+  round number is exactly the bookkeeping this story moves into code.
 - `wait` — blocks until the current round's verdicts land, then prints them, the
-  id→title map, and the standing preferences. **Exits non-zero when
+  id→title map, the standing preferences, and a **classification line**:
+  `all-approved`, `has-work`, or `submitted-early`. **Exits non-zero when
   `.viva/server.url` disappears**, so a dead server ends the wait instead of
   outliving it.
-- `rearm --response <cid>=<text>` — updates the open-note store, re-parses, and
-  POSTs `/next-round`. Repeatable per comment.
+- `rearm --response <cid>=<text> [--no-arm]` — updates the open-note store and
+  re-parses, then arms unless `--no-arm`. Repeatable per comment. `--no-arm` is
+  how the agent opens the round 2+ producer seam; it then calls `annotate` and
+  `arm`.
 - `finish` — settles threads, POSTs `/complete`, appends the revision history.
   **Refuses when the latest verdicts are not all-approved.**
+
+**The producer seam survives, because the driver owns the branch and the agent
+owns the pass.** `SKILL.md:74–90` splits round 1 into parse → producer → launch,
+and `:271–276` pins round 2+ producers between the re-parse and the POST. An
+atomic `start`/`rearm` would close both, silently dropping the learned-preference
+producer — which **auto-engages** whenever the store holds a standing preference
+(`:301`, `:370`) — and disabling CLAUDE.md's documented preferred extension
+point. The split above keeps the seam open without handing the round number back:
+`start` decides *whether* the seam is needed by reading the store, `annotate` and
+`arm` operate on a round they derive from disk, and the agent never types `{N}`.
 
 **The round number is derived, never held.** `loop.py` reads the highest
 `review-input-r{N}.json` in `.viva/` and uses it. No counter is passed, stored,
@@ -75,11 +97,32 @@ the relaunch. Nothing new is persisted.
 
 **The finish guard is enforced twice, in code both times.** `loop.py finish`
 checks before it POSTs, and `server.py`'s `/complete` handler checks before it
-accepts — because a guard only in the caller is still a norm. The server-side
-check keys on **payload shape, not mode**, reusing the discrimination
-`server.py` already applies at `:4386` and `:4544`: a session whose
-`_input_data` carries `sections` must be all-approved; a Q&A session carries
-`questions` and is unaffected.
+accepts — because a guard only in the caller is still a norm.
+
+**Two sessions are exempt, and shape alone does not identify them.** The
+discrimination `server.py` already applies at `:4386` and `:4544` is
+shape-based, and it correctly excepts Q&A, which carries `questions` rather than
+`sections`. It does **not** except diff mode: `parse_diff.py` emits `sections`,
+so a diff session is review-shaped. `viva-diff/SKILL.md:88–97` POSTs `/complete`
+when a re-diff comes back empty, and `:110–113` states that path is reached
+*because at least one hunk was reverted or dropped at the reviewer's request,
+not because every hunk was approved* — the latest verdicts hold `changes` by
+design. A shape-only guard would 4xx that legitimate finish, leak the server,
+and strand the tab on the processing card. The guard therefore fires only when
+`_input_data` carries `sections` **and** its `mode` is not `"diff"`.
+
+Diff mode is left ungated deliberately, not overlooked: closing it needs
+`viva-diff/SKILL.md` to send an explicit resolved-empty signal, and that file
+belongs to another story. The carve-out is recorded as a follow-up below.
+
+**The guard reads the verdicts the server itself received.** `/complete` checks
+a `_last_verdicts` snapshot taken under `_data_lock` at `/submit` time, not a
+re-read of `_output_path` — the file on disk can be replaced by a caller between
+the two calls, and the guard must judge what the human actually submitted. The
+snapshot's absence is its own case: `/complete` before any submit means no round
+was ever reviewed, and returns a distinct 4xx ("no verdicts submitted") from the
+not-all-approved one ("N sections not approved"), because those are two different
+agent recoveries.
 
 **`SIGTERM` joins `SIGINT`** on the existing one-line handler, so the `finally`
 that already deletes `server.url` runs on the default subprocess-teardown path.
@@ -100,21 +143,36 @@ The agent's whole loop, after:
 
 1. `python3 "$VIVA_DIR/scripts/loop.py" start --doc plan.md` — one call. The
    round-1 branch selection, state clear, parse, launch, and browser open all
-   happen inside it; `$BASE` and the round number are printed, not tracked.
+   happen inside it; `$BASE` and the round number are printed, not tracked. If
+   it stops after parsing (a standing preference exists), the agent runs the
+   preference producer, then `loop.py annotate --sidecar …` and `loop.py arm`.
 2. `loop.py wait` — blocks on human review time. Returns verdicts, the id→title
-   map, and standing preferences on stdout. If the reviewer Ctrl-Cs the server,
-   this exits non-zero and says so instead of hanging.
-3. The agent reads the verdicts and **does the judgment work**: applies each
-   `changes` comment as a targeted edit, answers each `info` comment in its
-   thread, applies standing preferences to the sections it touches.
-4. `loop.py rearm --response s2-c1="Shortened the intro"` — bookkeeping only.
-   Loop to 2.
-5. All approved → `loop.py finish`. Not all approved → `finish` refuses, exits
-   non-zero, and prints the pending count. The agent reports that to the user
-   and asks whether to re-present, wait, or abandon — the third branch that
-   doesn't exist today.
+   map, standing preferences, and the round's classification. If the reviewer
+   Ctrl-Cs the server, this exits non-zero and says so instead of hanging.
+3. **The classification line routes the agent, and there are three destinations,
+   not two:**
+   - `all-approved` → step 6.
+   - `has-work` → step 4.
+   - `submitted-early` → step 5.
+4. The agent **does the judgment work**: applies each `changes` comment as a
+   targeted edit, answers each `info` comment in its thread, applies standing
+   preferences to the sections it touches. Then `loop.py rearm --response
+   s2-c1="Shortened the intro"` — bookkeeping only. Loop to 2.
+5. **The reviewer paused** (they hit *skip rest & submit*). The agent first
+   `rearm`s the round unchanged, which returns the tab from the processing card
+   to its cards, and *then* reports the pending count and asks whether to
+   re-present, keep waiting, or abandon. Re-arming first is the load-bearing
+   order: `DESIGN.md:267–288` makes *skip rest & submit* a first-class control
+   that bypasses the recap, and without the re-arm the reviewer sits on a
+   pulsing "the agent is revising" card while the agent asks a question in a
+   terminal they are not watching.
+6. All approved → `loop.py finish`. Called on any other state it refuses, exits
+   non-zero, and prints the pending count — a backstop, not the routing
+   mechanism, which is step 3.
 
-The reviewer's experience is unchanged. This story moves no pixels.
+The reviewer's experience is unchanged in review mode. The one path this story
+touches is the pause above, and it touches it to remove a stranded tab that
+exists today.
 
 ## Out of scope
 
@@ -135,6 +193,11 @@ Consumer: product-reviewer Q4.
   browser-visible change of any kind.
 - **`viva-qa`'s and `viva-diff`'s own loops.** They keep their prose for now;
   extending the driver to them is a later story, not a hidden half of this one.
+- **Gating diff mode's finish.** The `/complete` guard exempts `mode: "diff"`
+  (see Proposed design). Closing that carve-out requires `viva-diff/SKILL.md` to
+  send an explicit resolved-empty signal on its empty-re-diff path, and that file
+  belongs to `skill-prose-fixes`. Filed as a follow-up rather than absorbed here;
+  diff mode is no less gated than it is today.
 
 ## Alternatives considered
 
@@ -180,14 +243,21 @@ new state at all.
 Consumer: product-reviewer Q7; the post-ship outcome read.
 
 - `.claude/skills/viva/SKILL.md` templates `{N}` into **zero** bash blocks
-  (today: every block from step 2 on). Grep-checkable.
-- SKILL.md's line count falls from 382 toward ~80 of judgment work, with the
-  opt-in feature docs relocated rather than deleted — measured as bytes loaded
-  on a plain review, which PRODUCT.md principle 5 makes a product metric.
+  (today: every block from step 2 on) — including the producer calls, which
+  route through `loop.py annotate`. Grep-checkable.
+- **Structural, not a line count:** SKILL.md contains zero bash blocks that
+  launch a server, POST an endpoint, or name a round file; the loop reads as a
+  sequence of `loop.py` calls. A line count alone is gameable by relocation —
+  moving `:246–383` to `references/` takes 382 → ~242 with every line of
+  bookkeeping prose still in place — so the count is a secondary read, not the
+  metric.
 - A review session whose server is killed mid-wait terminates with a non-zero
   exit and a message, rather than polling until the tool's timeout.
-- `POST /complete` against a session with any non-approved section returns 4xx.
-  Directly testable, and the invariant PRODUCT.md sells.
+- `POST /complete` against a review session with any non-approved section
+  returns 4xx, while a Q&A session and a diff session's empty-re-diff finish
+  both still succeed. Directly testable, and the invariant PRODUCT.md sells.
+- A `submitted-early` round routes to the paused-reviewer branch without the
+  agent having to trip over `finish`'s refusal to discover it.
 - Zero `.viva/server.url` files left behind after `SIGTERM`.
 
 ## Operational readiness
@@ -208,10 +278,15 @@ Consumer: `/review`'s operability lane; `/build`'s rollout-tier verification.
   and every server endpoint's request shape are unchanged. A caller still
   driving the loop by hand with the old bash blocks keeps working; only
   `/complete` becomes stricter, and only for review-shaped sessions.
-- **Tests.** Unit coverage for round derivation, liveness exit, and the finish
-  refusal; a server integration test for `/complete`'s guard following
-  `tests/test_server_ledger.py`'s subprocess + `urllib` pattern, including the
-  **Q&A-still-completes** case that epic pre-mortem item 2 predicts breaking.
+- **Tests.** Unit coverage for round derivation, liveness exit, the finish
+  refusal, and `wait`'s three-way classification; a server integration test for
+  `/complete`'s guard following `tests/test_server_ledger.py`'s subprocess +
+  `urllib` pattern, covering all four cases — review-not-all-approved refused,
+  review-all-approved accepted, **Q&A accepted** (epic pre-mortem item 2), and
+  **diff-mode accepted with `changes` verdicts on record** (the empty-re-diff
+  finish `viva-diff/SKILL.md:110–113` documents). A producer round-trip test
+  proves the seam: seed a standing preference, confirm `start` stops after
+  parsing and that `annotate` + `arm` land the flag in `review-input-r1.json`.
 
 ## Open questions
 
