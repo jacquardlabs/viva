@@ -48,7 +48,7 @@ Consumer: product-reviewer Q2/Q6; `/build`'s spine-building step.
 One new script, `scripts/loop.py`, takes the bookkeeping. The agent keeps the
 judgment.
 
-**Six subcommands, argparse per DESIGN.md's CLI conventions:**
+**Seven subcommands, argparse per DESIGN.md's CLI conventions:**
 
 - `start --doc <path>` — resolves state, clears it, parses round 1. Owns the
   three round-1 branches SKILL.md currently spells out as prose (default,
@@ -68,12 +68,16 @@ judgment.
   `all-approved`, `has-work`, or `submitted-early`. **Exits non-zero when
   `.viva/server.url` disappears**, so a dead server ends the wait instead of
   outliving it.
-- `rearm --response <cid>=<text> [--no-arm]` — updates the open-note store and
-  re-parses, then arms unless `--no-arm`. Repeatable per comment. `--no-arm` is
-  how the agent opens the round 2+ producer seam; it then calls `annotate` and
-  `arm`.
+- `rearm --response <cid>=<text> [--parse-only]` — updates the open-note store
+  and re-parses, then arms unless `--parse-only`. Repeatable per comment.
+  `--parse-only` is how the agent opens the round 2+ producer seam, naming the
+  same stop-after-parse behavior `start` takes on its own; the sequence is then
+  `rearm --parse-only` → `annotate` → `arm`, and that order is load-bearing.
 - `finish` — settles threads, POSTs `/complete`, appends the revision history.
-  **Refuses when the latest verdicts are not all-approved.**
+  **Refuses when the round is not complete.**
+- `abandon` — ends an unfinished session: `SIGTERM` to the running server, which
+  this story's own handler routes through the ordinary shutdown, and a report
+  that the doc was not signed off. The one exit that is not a sign-off.
 
 **The producer seam survives, because the driver owns the branch and the agent
 owns the pass.** `SKILL.md:74–90` splits round 1 into parse → producer → launch,
@@ -84,6 +88,25 @@ producer — which **auto-engages** whenever the store holds a standing preferen
 point. The split above keeps the seam open without handing the round number back:
 `start` decides *whether* the seam is needed by reading the store, `annotate` and
 `arm` operate on a round they derive from disk, and the agent never types `{N}`.
+
+**The relocation moves reference material, never a default-on directive.**
+Fork 2 is settled, so `:246–383` moves — but one paragraph inside that range is
+not reference material: `SKILL.md:364` is marked "**Consult — step 4,
+default-on**", the rule that applies standing preferences during every rewrite.
+Relocating it would leave `wait` printing the preference data with nothing
+loaded to say what to do with it, silently dropping the feature PRODUCT.md's
+persona section calls out by name ("learn what this reviewer always wants").
+That directive stays inline in the slim SKILL.md; what moves to `references/` is
+the *explanatory* material behind it — the lifecycle table, the status semantics,
+the producer contract, the annotation schema.
+
+**`references/` resolves relative to `loop.py`, so no other story owns it.**
+`Path(__file__).resolve().parent` gives the driver its own install location, and
+the reference files sit beside the scripts that read them. This needs nothing
+from `viva-dir-resolve`'s glob hardening — that story fixes how *SKILL.md's bash*
+finds the plugin, a mechanism the slim skill still uses exactly once to locate
+`loop.py` itself and which already works today. Dissolving the coupling beats
+recording a dependency edge on it.
 
 **The round number is derived, never held.** `loop.py` reads the highest
 `review-input-r{N}.json` in `.viva/` and uses it. No counter is passed, stored,
@@ -99,9 +122,14 @@ the relaunch. Nothing new is persisted.
 checks before it POSTs, and `server.py`'s `/complete` handler checks before it
 accepts — because a guard only in the caller is still a norm.
 
-**The predicate is one named function, not an inlined condition.** Both call
-sites ask `round_is_complete(input_data, verdicts)`, which today returns true
-only when every section's verdict is `approved`. Naming it is the whole point:
+**The predicate is one named function in `schema.py`, not an inlined condition.**
+Both call sites ask `schema.round_is_complete(input_data, verdicts)`, which today
+returns true only when every section's verdict is `approved`. `schema.py` is the
+home because `loop.py` and `server.py` are separate processes and it is the only
+module CLAUDE.md lets either cross-import — it already holds `section_key()` and
+`verdict_to_ledger_entry()`, the same category of single-rule contract. Anywhere
+else and the predicate lands twice, which is the thing naming it prevents.
+Naming it is the whole point:
 milestone 10's pass types (#168) make review depth a parameter of a round, and a
 *checks only* pass completes on a condition a *final* pass would reject. When
 that lands, the completion rule becomes a function of the pass and changes in
@@ -175,6 +203,16 @@ The agent's whole loop, after:
    that bypasses the recap, and without the re-arm the reviewer sits on a
    pulsing "the agent is revising" card while the agent asks a question in a
    terminal they are not watching.
+
+   **All three answers have a mechanism; none is left to improvisation.**
+   *Re-present* and *keep waiting* are both already satisfied by the re-arm — the
+   agent loops back to `wait`. *Abandon* is `loop.py abandon`, and it needs no
+   new teardown machinery: it sends the running server a `SIGTERM`, which this
+   story's own handler turns into the ordinary shutdown path, so the `finally`
+   runs and `server.url` is deleted. Abandoning therefore leaves no stale file to
+   trip the next launch's guard — the exact leak the Problem section names.
+   Leaving `abandon` as a word with no subcommand would reintroduce the
+   improvisation gap this story exists to close, one branch further down.
 6. All approved → `loop.py finish`. Called on any other state it refuses, exits
    non-zero, and prints the pending count — a backstop, not the routing
    mechanism, which is step 3.
@@ -222,6 +260,10 @@ Consumer: product-reviewer Q5; future readers reconsidering a rejected path.
 and lists "not autonomous review" under what we are NOT building. An override
 flag is the seam a future session talks itself through — and a flag that exists
 to be used in the awkward case is a flag that gets used in the awkward case.
+PRODUCT.md:61–62's adjacent "never block sign-off" bullet does not pull the
+other way: it scopes *producers*, which flag advisorily, while this guard
+enforces the human's own recorded verdicts rather than substituting a machine
+judgment for one.
 *Settled by the human at the epic interview, 2026-08-04.*
 
 **Fork 2 — where SKILL.md's opt-in feature documentation lives.**
@@ -280,7 +322,15 @@ Consumer: `/review`'s operability lane; `/build`'s rollout-tier verification.
 - **No new runtime dependency.** stdlib only, per PRODUCT.md's "local and
   keyless" and "not a heavyweight dependency". `loop.py` shells out to its
   siblings rather than importing them, preserving CLAUDE.md's one-cross-import
-  rule.
+  rule — `schema.py` stays the single exception, and now also houses
+  `round_is_complete()`.
+- **`start` returns; the server outlives it.** The server is launched detached
+  and `start` returns as soon as `.viva/server.url` appears, exactly as today's
+  `SKILL.md:60` backgrounds it with `&`. Holding the child's stdout would block
+  the agent's tool call for the whole review — the round-trip PRODUCT.md's
+  persona section says the skill is tuned to avoid. Teardown is `/complete`,
+  `loop.py abandon`, or a signal; an abandoned loop leaks a server exactly as it
+  does today, and no worse.
 - **Python floor.** 3.8, matching CI's matrix — no walrus-in-comprehension, no
   `match`, no `|` union syntax at runtime.
 - **Backward compatibility.** The `.viva/` file layout, the round-file schema,
