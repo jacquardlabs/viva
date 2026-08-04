@@ -75,9 +75,9 @@ judgment.
   `rearm --parse-only` → `annotate` → `arm`, and that order is load-bearing.
 - `finish` — settles threads, POSTs `/complete`, appends the revision history.
   **Refuses when the round is not complete.**
-- `abandon` — ends an unfinished session: `SIGTERM` to the running server, which
-  this story's own handler routes through the ordinary shutdown, and a report
-  that the doc was not signed off. The one exit that is not a sign-off.
+- `abandon` — ends an unfinished session: `POST /abandon` to the running server,
+  and a report that the doc was not signed off. The one exit that is not a
+  sign-off.
 
 **The producer seam survives, because the driver owns the branch and the agent
 owns the pass.** `SKILL.md:74–90` splits round 1 into parse → producer → launch,
@@ -89,24 +89,32 @@ point. The split above keeps the seam open without handing the round number back
 `start` decides *whether* the seam is needed by reading the store, `annotate` and
 `arm` operate on a round they derive from disk, and the agent never types `{N}`.
 
-**The relocation moves reference material, never a default-on directive.**
-Fork 2 is settled, so `:246–383` moves — but one paragraph inside that range is
-not reference material: `SKILL.md:364` is marked "**Consult — step 4,
-default-on**", the rule that applies standing preferences during every rewrite.
-Relocating it would leave `wait` printing the preference data with nothing
-loaded to say what to do with it, silently dropping the feature PRODUCT.md's
-persona section calls out by name ("learn what this reviewer always wants").
-That directive stays inline in the slim SKILL.md; what moves to `references/` is
-the *explanatory* material behind it — the lifecycle table, the status semantics,
-the producer contract, the annotation schema.
+**The relocation moves reference material; the rewrite must not drop the
+directive that uses it.** Fork 2 is settled, so `:246–383` moves — and the
+exposure is not inside that range. `SKILL.md:167` is the operative instruction
+("**Apply learned preferences while you rewrite**"), it lives in step 4, and it
+is what this story *rewrites wholesale*. Losing it there silently drops the
+feature PRODUCT.md's persona section names ("learn what this reviewer always
+wants"), because `wait` would print the standing set with nothing telling the
+agent to apply it. The paragraph at `:364` inside the move range is a different
+thing — a lifecycle-table entry whose `preferences.py list` bash block `wait`
+now subsumes, so it moves with the rest and its command goes away. The criterion
+is therefore written against behavior, not a line number: the slim SKILL.md's
+rewrite step instructs applying standing preferences, sourced from `wait`'s
+output.
 
-**`references/` resolves relative to `loop.py`, so no other story owns it.**
-`Path(__file__).resolve().parent` gives the driver its own install location, and
-the reference files sit beside the scripts that read them. This needs nothing
-from `viva-dir-resolve`'s glob hardening — that story fixes how *SKILL.md's bash*
-finds the plugin, a mechanism the slim skill still uses exactly once to locate
-`loop.py` itself and which already works today. Dissolving the coupling beats
-recording a dependency edge on it.
+**`references/` lives beside SKILL.md, and `loop.py` prints the path.**
+The files sit at `.claude/skills/viva/references/`, the skill-relative
+convention, not beside `scripts/`. Resolution needs an emitter because
+`loop.py` never reads them — the *agent* does, and it has no `$VIVA_DIR` for a
+`references/` path (register item 5 forbids that route). So `loop.py` derives
+the plugin root from its own location and **prints the absolute path in the
+output line that needs it**: `start`'s stop-after-parse line points at the
+producer contract, and any subcommand whose next step is documented in a
+reference names that file's full path. The agent is told where to read, never
+asked to compute it. This needs nothing from `viva-dir-resolve`'s glob
+hardening, which fixes how SKILL.md's bash finds the plugin — a mechanism the
+slim skill still uses exactly once, to locate `loop.py` itself.
 
 **The round number is derived, never held.** `loop.py` reads the highest
 `review-input-r{N}.json` in `.viva/` and uses it. No counter is passed, stored,
@@ -206,13 +214,23 @@ The agent's whole loop, after:
 
    **All three answers have a mechanism; none is left to improvisation.**
    *Re-present* and *keep waiting* are both already satisfied by the re-arm — the
-   agent loops back to `wait`. *Abandon* is `loop.py abandon`, and it needs no
-   new teardown machinery: it sends the running server a `SIGTERM`, which this
-   story's own handler turns into the ordinary shutdown path, so the `finally`
-   runs and `server.url` is deleted. Abandoning therefore leaves no stale file to
-   trip the next launch's guard — the exact leak the Problem section names.
-   Leaving `abandon` as a word with no subcommand would reintroduce the
-   improvisation gap this story exists to close, one branch further down.
+   agent loops back to `wait`. *Abandon* is `loop.py abandon`, and it reaches the
+   server **over HTTP, not by signal**: `start` launches the server detached, so
+   `abandon` is a different process holding no child handle, and `server.url`
+   carries the URL and nothing else — there is no pid file, no `os.getpid`, and
+   no shutdown route in the repo today. What `abandon` does have is `$BASE`,
+   the same handle `wait` and `rearm` already use. So the server grows one
+   endpoint, `POST /abandon`, which sets `_shutdown` exactly as `/complete`'s
+   timer does but carries none of its sign-off meaning; the `finally` then runs
+   and deletes `server.url`.
+
+   The `SIGTERM` handler is not what makes this work and is not redundant
+   either: it covers the *other* teardown, a headless parent calling
+   `proc.terminate()` on a server it owns (#125). Two exits, two mechanisms,
+   one shutdown path. Leaving `abandon` as a word with no mechanism would
+   reintroduce the improvisation gap this story exists to close, one branch
+   further down — and naming a signal no process can send is the same gap
+   wearing a verb.
 6. All approved → `loop.py finish`. Called on any other state it refuses, exits
    non-zero, and prints the pending count — a backstop, not the routing
    mechanism, which is step 3.
@@ -236,8 +254,10 @@ Consumer: product-reviewer Q4.
 - **The three sibling `server.py` stories** — `qa-free-text`,
   `origin-and-output-guard`, `handoff-mode` — and `anchor-occurrence`,
   `viva-dir-resolve`.
-- **Any change to the reviewer-facing UI.** No CSS, no card behavior, no
-  browser-visible change of any kind.
+- **Any change to the reviewer-facing UI.** No CSS and no card behavior — no UI
+  code at all. The one thing the reviewer sees differently is the paused path's
+  tab returning to its cards, and that is existing `/next-round` behavior being
+  invoked at a moment it currently isn't, not new interface work.
 - **`viva-qa`'s and `viva-diff`'s own loops.** They keep their prose for now;
   extending the driver to them is a later story, not a hidden half of this one.
 - **Gating diff mode's finish.** The `/complete` guard exempts `mode: "diff"`
@@ -357,14 +377,16 @@ Consumer: the human sponsor; the next `/shape` revision round.
   This story should use the canonical body form and keep `output` inside
   `.viva/`, but whether those guards land compatibly is verified at the epic
   finale, not here.
-- **Where do `references/` files live so both the plugin cache and the repo
-  resolve them?** SKILL.md's relocated sections need a path that works from the
-  installed plugin. `viva-dir-resolve` is hardening exactly that mechanism, and
-  the two stories should agree before either lands.
-- **Should `start` absorb the `.viva/server.url` pre-flight guard** currently in
-  SKILL.md's Invocation section, or does that stay the agent's check? Absorbing
-  it is tidier; leaving it out keeps `start` from deciding whether someone
-  else's session may be killed.
+- **Where does the `.viva/server.url` pre-flight guard live after the rewrite?**
+  `SKILL.md:26` refuses to launch when the file exists, and `:47–48` states the
+  dependency outright — the clear-state block's deletion "is safe *because* the
+  Invocation guard has already confirmed no prior server is running." `start`
+  clears state unconditionally, so the guard has to survive somewhere or `start`
+  deletes a live session's `server.url` and orphans a running server with the
+  reviewer's tab still open. Absorbing it into `start` is tidier; leaving it
+  with the agent keeps `start` from deciding whether someone else's session may
+  be killed. Either resolution is fine — losing it is not, which is why a
+  criterion asserts the guard exists rather than where.
 - **How much of this loop does milestone 10 re-parameterize?** The Editorial
   Workspace direction keeps the keyless constitution (Claude Code stays the
   agent runtime), so the driver's job is unchanged — but #168 turns review depth
