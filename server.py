@@ -1683,7 +1683,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   <details class="kbd-legend">
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
-      <dt><kbd>a</kbd></dt><dd>approve section</dd>
+      <dt><kbd>a</kbd></dt><dd>approve section — refused while it has comments</dd>
       <dt><kbd>c</kbd></dt><dd>request changes</dd>
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
@@ -3430,7 +3430,7 @@ document.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); el('recap-confirm').click(); }
       return;
     }
-    if (e.key === 'a' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'approved'); return; }
+    if (e.key === 'a' && rState.active) { e.preventDefault(); approveSection(rState.active); return; }
     if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
     if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
     if (e.key === 'Tab') {
