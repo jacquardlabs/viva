@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v1.20.1 (2026-08-04)
+
+### Bug Fixes
+
+- Ledger/comment row squeeze and round-diff readability
+  ([#163](https://github.com/jacquardlabs/viva/pull/163),
+  [`4616eab`](https://github.com/jacquardlabs/viva/commit/4616eabc158e2b1f2d34b82c561b9cf5cee7aa27))
+
+### Continuous Integration
+
+- Report a `test` aggregate context for the required status check
+  ([#164](https://github.com/jacquardlabs/viva/pull/164),
+  [`0b28eda`](https://github.com/jacquardlabs/viva/commit/0b28edab825b835ddc78c6f5e13fca3b419eebf8))
+
+### Documentation
+
+- Journal should-we-build decisions for #105 and #107
+  ([#162](https://github.com/jacquardlabs/viva/pull/162),
+  [`0956520`](https://github.com/jacquardlabs/viva/commit/0956520b8be449a5fea4144de4645ecbea7c8143))
+
+
 ## v1.20.0 (2026-08-04)
 
 ### Bug Fixes
