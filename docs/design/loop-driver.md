@@ -99,6 +99,15 @@ the relaunch. Nothing new is persisted.
 checks before it POSTs, and `server.py`'s `/complete` handler checks before it
 accepts — because a guard only in the caller is still a norm.
 
+**The predicate is one named function, not an inlined condition.** Both call
+sites ask `round_is_complete(input_data, verdicts)`, which today returns true
+only when every section's verdict is `approved`. Naming it is the whole point:
+milestone 10's pass types (#168) make review depth a parameter of a round, and a
+*checks only* pass completes on a condition a *final* pass would reject. When
+that lands, the completion rule becomes a function of the pass and changes in
+one place — not a condition re-derived at two call sites and a test suite
+written against a constant. Today's behavior is unchanged; only its seam is.
+
 **Two sessions are exempt, and shape alone does not identify them.** The
 discrimination `server.py` already applies at `:4386` and `:4544` is
 shape-based, and it correctly excepts Q&A, which carries `questions` rather than
@@ -306,6 +315,15 @@ Consumer: the human sponsor; the next `/shape` revision round.
   SKILL.md's Invocation section, or does that stay the agent's check? Absorbing
   it is tidier; leaving it out keeps `start` from deciding whether someone
   else's session may be killed.
+- **How much of this loop does milestone 10 re-parameterize?** The Editorial
+  Workspace direction keeps the keyless constitution (Claude Code stays the
+  agent runtime), so the driver's job is unchanged — but #168 turns review depth
+  into a round parameter, #167 adds a comment disposition the verdict derivation
+  must route, and #170 adds a fourth round-1 branch. This design anticipates the
+  first with `round_is_complete()`; the other two land as arguments `loop.py`
+  passes through, which is the reason to have a driver before they arrive rather
+  than after. `wait`'s classification line is the likely extension point for
+  both — worth confirming when #168 is designed, not now.
 
 ---
 
