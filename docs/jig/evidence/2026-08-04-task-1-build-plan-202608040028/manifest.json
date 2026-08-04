@@ -17,6 +17,13 @@
       "label": "replay-bundle",
       "source": "/private/tmp/claude-501/-Users-bryan-Projects-viva/b25e3b3a-266e-4c8e-ba8e-30180f1898b9/scratchpad/build-plan-202608040028/replay-bundle.json",
       "path": "replay-bundle.json"
+    },
+    {
+      "producer": "gate-audit",
+      "label": "report",
+      "source": "/private/tmp/claude-501/-Users-bryan-Projects-viva/b25e3b3a-266e-4c8e-ba8e-30180f1898b9/scratchpad/build-plan-202608040028/report.md",
+      "path": "report.md"
     }
-  ]
+  ],
+  "note": "report.md artifact added retroactively during /gate-audit round 1 (2026-08-04), not by evidence-capture --artifact — the worktree this ran in carries an untracked, intentionally-uncommitted docs/design/approve-shortcut.md (branch-local scaffolding per /gate-design-review's own convention) that trips evidence-capture's clean-tree check, so this entry and the manifest's own 'note' field (not part of evidence-capture's schema) were added by hand to close the gate-audit Critical finding that this evidence existed only in executor return messages. Other fields unchanged from evidence-capture's original capture."
 }
