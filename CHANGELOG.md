@@ -2,6 +2,146 @@
 
 <!-- version list -->
 
+## v1.20.0 (2026-08-04)
+
+### Bug Fixes
+
+- Correct task-1 evidence manifest's stale branch field
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Dedupe revision count per round; read /input off the data lock
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Guard the a-key shortcut against modifier combos, sharpen legend copy
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Keep card verdict shortcuts inert behind the preferences panel
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Make the mute-recovery command runnable and correct its effect copy
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Match the a-key legend row to its sibling conditional-copy pattern
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Name the cumulative count in the rev-tri tooltip; document retitle reset
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Quote the mute-recovery store path; drop auto-accept-reading legend copy
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Resolve mute-recovery store-path and add status decoder to preferences panel
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Route the `a` shortcut through approveSection to close the auto-accept path
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Stop asserting PLAN.md's presence in test_draft_plan_superseded
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Surface partial revision history instead of a deflated count
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Use "open comments" in the a-key legend, matching round-1 reality
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+### Chores
+
+- Remove branch-local scaffolding (PLAN.md) ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Remove branch-local scaffolding (PLAN.md, design doc)
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+### Documentation
+
+- Correct PLAN.md to a single verifiable task
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Correct the preferences-panel focus-ring and row-contents claims
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Dated build report for approve-shortcut ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Dated build report for prefs-inspector ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Design doc for per-section revision depth badge
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Design the preferences inspector ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Flag card-head layout risk in revision-depth design doc
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- PLAN.md for approve-shortcut (viva-signed, plan-lint clean)
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Pre-mortem register for approve-shortcut design review
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Pre-mortem register for revision-depth design review
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Pre-mortem register for the preferences inspector
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Record task 1's manual browser-check evidence
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Resolve the card-title truncation open question in revision-depth
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Task 1 verification evidence ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+### Features
+
+- Preferences inspector — view and mute learned preferences from the UI
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Reviewer experience — approve shortcut, revision depth, preferences inspector
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+- Show cumulative revision depth on the card's revision triangle
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+### Testing
+
+- Add regression test proving the 'a' key routes through approveSection
+  ([#161](https://github.com/jacquardlabs/viva/pull/161),
+  [`e89222f`](https://github.com/jacquardlabs/viva/commit/e89222ff607ca2b9d6f9f2bcc594fbb54284f9d8))
+
+
 ## v1.19.0 (2026-07-18)
 
 ### Bug Fixes
