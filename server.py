@@ -265,7 +265,8 @@ body {
 .ledger-rows { padding: 0 14px 10px; }
 .ledger-row {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 2px 10px;
   align-items: baseline;
   padding: 5px 0;
   border-top: 1px solid var(--border);
@@ -277,7 +278,14 @@ body {
   color: var(--text3);
   flex-shrink: 0;
 }
-.ledger-section { color: var(--text); font-weight: 500; flex-shrink: 0; }
+.ledger-section {
+  color: var(--text);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .ledger-verdict {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -287,7 +295,10 @@ body {
 }
 .ledger-verdict.v-changes { color: var(--orange); }
 .ledger-verdict.v-info    { color: var(--violet); }
-.ledger-note { color: var(--text2); font-style: italic; min-width: 0; }
+/* The note is verbatim reviewer prose of arbitrary length — it takes its own
+   full-width line under the round/section/verdict head instead of competing
+   with the title for leftover row space (the one-word-per-line squeeze). */
+.ledger-note { color: var(--text2); font-style: italic; flex: 1 1 100%; min-width: 0; overflow-wrap: break-word; }
 .ledger.ledger-static .ledger-head { cursor: default; }
 .ledger.ledger-static .ledger-head:hover { background: none; }
 .complete-inner .ledger { width: 100%; max-width: 560px; text-align: left; margin-top: 1.5rem; }
@@ -694,10 +705,17 @@ body {
   line-height: 1.55;
   overflow-x: auto;
 }
-.diff-line { display: flex; white-space: pre; padding: 0 9px; }
+/* Prose sections diff as whole paragraphs — one line per paragraph — so lines
+   wrap instead of forcing a horizontal scroll that hides the change. Word-level
+   marks (.dw, computed in markWordDiff) show what moved inside a paired
+   rewrite; the mark tint is a stronger mix of the same verdict slot. */
+.diff-line { display: flex; padding: 0 9px; }
 .diff-gutter { flex-shrink: 0; width: 1.1em; opacity: 0.6; user-select: none; }
+.diff-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; }
 .diff-add { background: var(--teal-bg);   color: var(--teal);   }
 .diff-del { background: var(--orange-bg); color: var(--orange); }
+.diff-add .dw { background: color-mix(in srgb, var(--teal) 30%, transparent);   border-radius: 2px; }
+.diff-del .dw { background: color-mix(in srgb, var(--orange) 30%, transparent); border-radius: 2px; }
 .diff-ctx { color: var(--text2); }
 .diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
 
@@ -1207,11 +1225,18 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .v-changes .cmt-type { color: var(--orange); }
 .v-info    .cmt-type { color: var(--violet); }
+/* Anchor quotes can be a whole selected paragraph — ellipsize instead of
+   squeezing the note beside them; the full text stays on the card itself
+   and in the title tooltip. */
 .cmt-quote {
   font-style: italic;
   color: var(--text3);
   font-size: 10.5px;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 38%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .cmt-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; flex: 1; }
 .cmt-del {
@@ -2272,16 +2297,63 @@ function annotStripHTML(annotations) {
 // Returns '' when there is no diff, so unchanged/new cards render as before.
 // Presentational only — it never touches a verdict. Shown by default; the
 // header toggles it collapsed.
+// Word-level diff of a paired removed/added line. Returns [delHTML, addHTML]
+// with changed tokens wrapped in <span class="dw">, both sides fully escaped.
+// Falls back to plain escaped text when the pair shares too little (marking a
+// full rewrite is noise, not signal) or the token product is too large.
+function markWordDiff(a, b) {
+  // Tokens are word+trailing-whitespace chunks, so bare spaces never count as
+  // shared content when judging whether the pair is similar enough to mark.
+  const ta = a.split(/(?<=\s)(?=\S)/);
+  const tb = b.split(/(?<=\s)(?=\S)/);
+  const n = ta.length, m = tb.length;
+  if (!n || !m || n * m > 250000) return [esc(a), esc(b)];
+  const L = [];
+  for (let i = n; i >= 0; i--) L[i] = new Uint16Array(m + 1);
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      L[i][j] = ta[i] === tb[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  if (L[0][0] / Math.max(n, m) < 0.3) return [esc(a), esc(b)];
+  const mark = t => '<span class="dw">' + esc(t) + '</span>';
+  const oa = [], ob = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (ta[i] === tb[j]) { oa.push(esc(ta[i])); ob.push(esc(tb[j])); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) oa.push(mark(ta[i++]));
+    else ob.push(mark(tb[j++]));
+  }
+  while (i < n) oa.push(mark(ta[i++]));
+  while (j < m) ob.push(mark(tb[j++]));
+  return [oa.join(''), ob.join('')];
+}
+
 function diffStripHTML(id, diff) {
   if (!Array.isArray(diff) || diff.length === 0) return '';
-  const rows = diff.map(d => {
-    d = d || {};
-    const text = esc(d.text || '');
-    if (d.op === '+') return '<div class="diff-line diff-add"><span class="diff-gutter">+</span>' + text + '</div>';
-    if (d.op === '-') return '<div class="diff-line diff-del"><span class="diff-gutter">-</span>' + text + '</div>';
-    if (d.op === '@') return '<div class="diff-hunk">' + text + '</div>';
-    return '<div class="diff-line diff-ctx"><span class="diff-gutter"> </span>' + text + '</div>';
-  }).join('');
+  const line = (cls, g, html) => '<div class="diff-line ' + cls + '">'
+    + '<span class="diff-gutter">' + g + '</span>'
+    + '<span class="diff-text">' + html + '</span></div>';
+  const out = [];
+  let k = 0;
+  while (k < diff.length) {
+    const d = diff[k] || {};
+    if (d.op === '@') { out.push('<div class="diff-hunk">' + esc(d.text || '') + '</div>'); k++; continue; }
+    if (d.op === '+') { out.push(line('diff-add', '+', esc(d.text || ''))); k++; continue; }
+    if (d.op !== '-') { out.push(line('diff-ctx', ' ', esc(d.text || ''))); k++; continue; }
+    // A '-' run followed by a '+' run is a rewrite: word-diff the pairs.
+    const dels = []; while (k < diff.length && (diff[k] || {}).op === '-') dels.push(String((diff[k++] || {}).text || ''));
+    const adds = []; while (k < diff.length && (diff[k] || {}).op === '+') adds.push(String((diff[k++] || {}).text || ''));
+    const paired = Math.min(dels.length, adds.length);
+    const addHTML = adds.map(esc);
+    for (let p = 0; p < dels.length; p++) {
+      if (p < paired) {
+        const [dh, ah] = markWordDiff(dels[p], adds[p]);
+        out.push(line('diff-del', '-', dh));
+        addHTML[p] = ah;
+      } else out.push(line('diff-del', '-', esc(dels[p])));
+    }
+    addHTML.forEach(h => out.push(line('diff-add', '+', h)));
+  }
+  const rows = out.join('');
   return '<div class="diff-block" id="rdiff-' + id + '">'
        + '<button type="button" class="diff-toggle" id="rdiff-toggle-' + id + '">'
        + '<span aria-hidden="true">&#9662;</span> changes since last round</button>'
@@ -2948,7 +3020,7 @@ function renderCommentList(id) {
   host.innerHTML = cs.map(c =>
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
-    +   (c.anchor?.text ? '<span class="cmt-quote">' + esc(c.anchor.text) + '</span>' : '')
+    +   (c.anchor?.text ? '<span class="cmt-quote" title="' + esc(c.anchor.text) + '">' + esc(c.anchor.text) + '</span>' : '')
     +   '<span class="cmt-note">' + esc(c.note) + '</span>'
     +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
     + '</div>').join('');
