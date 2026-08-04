@@ -124,6 +124,19 @@ def test_keyboard_legend_present_and_real():
     print("  ok  test_keyboard_legend_present_and_real")
 
 
+def test_a_key_calls_approve_section():
+    # The 'a' shortcut must route through approveSection — which refuses to
+    # approve while the section has open comments — not the old direct
+    # setReviewVerdict(..., 'approved') call that auto-accepted regardless.
+    idx = HTML.index("e.key === 'a'")
+    branch = HTML[idx:idx + 100]  # ends before the 'c' branch begins
+    assert "approveSection(rState.active)" in branch, \
+        "the 'a'-key branch must call approveSection(rState.active)"
+    assert "setReviewVerdict(rState.active, 'approved')" not in HTML, \
+        "the auto-accept path via setReviewVerdict(..., 'approved') must not remain"
+    print("  ok  test_a_key_calls_approve_section")
+
+
 def test_sheet_ground_ships():
     # The review sits on a bounded drawing sheet (#paper) over a flat table.
     # The needle set is shared with test_frontend_v2_phase1 via
@@ -150,9 +163,10 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
+    test_a_key_calls_approve_section()
     test_sheet_ground_ships()
     test_grid_and_sheet_frame_gone()
-    print("OK (11 tests)")
+    print("OK (12 tests)")
 
 
 if __name__ == "__main__":
