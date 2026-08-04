@@ -27,6 +27,21 @@ from urllib.parse import parse_qs, urlparse
 # and the installed plugin cache (`~/.claude/plugins/cache/**/viva/{server.py,scripts/}`).
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 import schema  # noqa: E402
+import preferences  # noqa: E402
+
+# Absolute path to preferences.py, resolved from this file's own on-disk
+# location — never the shell variable $VIVA_DIR: SKILL.md computes that with
+# a local `find` inside its own bash block (.claude/skills/viva/SKILL.md:41-43)
+# and never exports it, so a copy-pasted "$VIVA_DIR/..." command fails with
+# "No such file" in a fresh terminal. Same resolution style as the sys.path
+# insert above. Escaped for embedding inside the JS single-quoted string
+# literal it's substituted into below — a path containing `'` or `\` would
+# otherwise terminate that string early and blank the whole panel.
+_PREFS_SCRIPT_PATH = str(Path(__file__).resolve().parent / "scripts" / "preferences.py")
+_PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\\'")
+# Store path is set once at startup from _viva_dir; a placeholder is replaced
+# after _viva_dir lands, mirroring the pattern for _PREFS_SCRIPT_PATH above.
+_PREFS_STORE_PATH: str = ""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -390,6 +405,24 @@ body {
 }
 .sort-toggle:hover { color: var(--text); border-color: var(--text3); }
 .sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
+
+/* ─── Preferences panel toggle (issue #142) ──────────────────
+   Lives inside #stats-area beside the (aria-live) verdict counters — a
+   static label, never an interpolated count, so it never competes with the
+   counters for that region's announcement. */
+.prefs-toggle {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 4px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: none;
+}
+.prefs-toggle:hover { color: var(--text); border-color: var(--text3); }
 
 .card {
   position: relative;
@@ -1282,6 +1315,8 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
 .transmittal-row:focus-visible,
 .recap-row:focus-visible, .recap-close:focus-visible,
+.annot-jump:focus-visible,
+.prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1480,6 +1515,107 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   padding: 12px 14px;
   border-top: 1px solid var(--border);
 }
+
+/* ─── Preferences panel — view/mute learned preferences (#142) ────
+   A second modal, independent of the recap overlay but built on the exact
+   same shape (role="dialog", inert background, focus trap): at most one of
+   the two is ever open at a time. Row typography borrows the recap row's
+   mono-label pairing; the mute control and muted-row note are new. */
+.prefs-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+.prefs-panel {
+  width: min(640px, 92vw); max-height: 82vh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+}
+.prefs-head {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.prefs-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.prefs-help {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text3);
+}
+.prefs-help strong { color: var(--text2); font-weight: 600; }
+.prefs-close {
+  border: none; background: none; cursor: pointer;
+  color: var(--text3);
+  font-size: 16px; line-height: 1;
+  padding: 2px 6px;
+}
+.prefs-close:hover { color: var(--text); }
+/* The panel's *only* aria-live region — one line, updated on mute.
+   #prefs-list deliberately carries none: a live-labeled list would announce
+   every row's text on open, not just the one status change after a mute. */
+.prefs-status {
+  min-height: 1em;
+  padding: 6px 14px 0;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+}
+.prefs-list { overflow-y: auto; overscroll-behavior: contain; padding: 8px 14px 14px; }
+.prefs-empty { color: var(--text3); font-size: 12px; padding: 8px 0; margin: 0; }
+.pref-row { padding: 10px 0; border-top: 1px solid var(--border); }
+.pref-row:first-child { border-top: none; }
+/* Programmatic badge-jump target (tabindex="-1", never a mouse focus) — a
+   visible ring confirms which row the jump landed on, same accent outline
+   every other focus target in the page uses. */
+.pref-row:focus { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+.pref-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pref-status {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.pref-status-standing  { color: var(--teal);  background: var(--teal-bg); }
+.pref-status-candidate { color: var(--text2); background: var(--bg3); }
+.pref-status-muted     { color: var(--text3); background: var(--bg3); }
+.pref-label { color: var(--text); font-weight: 500; }
+.pref-guidance { color: var(--text2); font-size: 12px; margin-top: 4px; }
+.pref-meta {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: 4px;
+  overflow-wrap: break-word;
+}
+.pref-mute-btn {
+  margin-left: auto;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text3);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.pref-mute-btn:hover { color: var(--orange); }
+.pref-mute-btn:disabled { opacity: 0.5; cursor: default; }
+.pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
+.pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
 
 /* ─── Processing / Complete states ──────────────────────── */
 /* Between-rounds card — the round is in the agent's hands. A pulsing dot
@@ -1704,6 +1840,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
+      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -1728,12 +1865,35 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   </div>
 </div>
 
+<!-- Preferences panel (#142) — view/mute learned preferences without leaving
+     the tab. Ships hidden, empty; renderPrefsList() fills it from the
+     preferences fetched once at boot. Reachable in every mode (review, diff,
+     qa) since it lives in the one shared bottom bar. At most one of this and
+     the recap overlay is ever open at a time. -->
+<div class="prefs-overlay" id="prefs-overlay" role="dialog" aria-modal="true" aria-labelledby="prefs-title" style="display:none">
+  <div class="prefs-panel">
+    <div class="prefs-head">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span class="prefs-title" id="prefs-title">Learned Preferences</span>
+        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
+      </div>
+      <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, applied at rewrite &mdash; still yours to approve &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
+    </div>
+    <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
+    <div class="prefs-list" id="prefs-list"></div>
+  </div>
+</div>
+
 <script>
 /* ─────────────────────────────────────────────────────────
    DATA
 ───────────────────────────────────────────────────────── */
 let REVIEW_DATA = null;
 let QA_DATA = null;
+// Fetched once at boot alongside /input, reused for every card build after
+// (including a round 2+ SSE rebuild) — never re-fetched mid-session (#142).
+let PREFS_DATA = [];
+let PREFS_BY_ID = new Map();
 
 /* ─────────────────────────────────────────────────────────
    STATE
@@ -2064,6 +2224,13 @@ function reviewSectionTitles() {
   return m;
 }
 
+// A kind:"preference" annotation encodes its preference id as a leading
+// "[id]" token in the message (SKILL.md's own convention — annotate.py's
+// merge whitelist has no generic passthrough for a structured field, so the
+// id has to ride in the text). Matched only against PREFS_BY_ID; a stale or
+// malformed token falls back to plain text, same as an unmatched anchor.
+const PREF_ID_RE = /^\[([^\]]+)\]/;
+
 function annotStripHTML(annotations) {
   if (!Array.isArray(annotations) || annotations.length === 0) return '';
   const titles = reviewSectionTitles();
@@ -2080,9 +2247,23 @@ function annotStripHTML(annotations) {
       ? '<button type="button" class="annot-jump" data-target="' + esc(anchorId)
         + '">' + esc(titles.get(anchorId) || anchorId) + ' ↗</button>'
       : '';
+    // Badge-to-entry link (#142): a preference annotation whose leading [id]
+    // token matches a fetched preference grows a second jump control,
+    // labeled with *that preference's own* label/id — never the raw
+    // substring — and opens the preferences panel to that row instead of
+    // jumping to a section.
+    let prefJump = '';
+    if (a.kind === 'preference') {
+      const m = PREF_ID_RE.exec(a.message || '');
+      const pref = m ? PREFS_BY_ID.get(m[1]) : null;
+      if (pref) {
+        prefJump = '<button type="button" class="annot-jump" data-pref-id="' + esc(pref.id)
+          + '">' + esc(pref.label || pref.id) + ' ↗</button>';
+      }
+    }
     return '<div class="annot annot-' + sev + '"' + titleAttr + '>'
          + '<span class="annot-kind">' + kind + '</span>'
-         + '<span class="annot-msg">' + msg + jump + '</span></div>';
+         + '<span class="annot-msg">' + msg + jump + prefJump + '</span></div>';
   }).join('');
   return '<div class="annot-strip" aria-label="pre-review annotations">' + rows + '</div>';
 }
@@ -2283,7 +2464,9 @@ function buildReviewCard(section) {
   card.querySelectorAll('.annot-jump').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      activateReviewCard(btn.getAttribute('data-target'));
+      const prefId = btn.getAttribute('data-pref-id');
+      if (prefId) openPrefsPanel(btn, prefId);
+      else activateReviewCard(btn.getAttribute('data-target'));
     });
   });
 
@@ -3195,6 +3378,7 @@ function openRecap() {
   // nothing to recap — the `o` shortcut lands here too, not just the
   // class-gated btn-submit click.
   if (!REVIEW_DATA || el('review-view').style.display === 'none') return;
+  if (prefsIsOpen()) closePrefsPanel();   // only one modal open at a time
   el('recap-round').textContent = String(REVIEW_DATA.round).padStart(2, '0');
   const grid = el('recap-grid');
   grid.innerHTML = recapRowsHTML();
@@ -3250,6 +3434,142 @@ el('recap-confirm').addEventListener('click', () => {
 el('recap-close').addEventListener('click', closeRecap);
 el('recap-overlay').addEventListener('click', e => {
   if (e.target === el('recap-overlay')) closeRecap();   /* backdrop click */
+});
+
+/* ─── Preferences panel — view/mute learned preferences (#142) ───
+   #prefs-overlay mirrors the recap overlay's modal shape exactly
+   (role="dialog" aria-modal, Escape/backdrop/close-button dismiss,
+   setBackgroundInert while open) but is a second, independent surface: at
+   most one of the two is ever open — openRecap() closes this one first,
+   and vice versa here. Reachable in every mode (review, diff, qa), unlike
+   the recap overlay, since preferences aren't review-specific. */
+let _prefsTriggerEl = null;
+
+function prefsIsOpen() { return el('prefs-overlay').style.display !== 'none'; }
+
+function prefStatusLabel(status) {
+  return status === 'standing' ? 'standing' : status === 'muted' ? 'muted' : 'candidate';
+}
+
+// Static recovery copy for a muted row — mute is one-way from this panel
+// (decision prefs-inspector-1), so the CLI command that reverses it has to
+// be visible on the row itself, not just known to exist. A still-visible
+// badge on this round's card is not a sign the mute silently failed, but the
+// copy makes no next-session claim either: `--status standing` has three
+// SKILL.md readers, not one — round-1 pre-flight (:71), step 2's wait block
+// (:146), and step 4's rewrite consult (:366) — so a mute during this round
+// can still reach this same round's rewrite. The copy only says that
+// badges already shown this round are a historical record.
+function prefMutedNoteHTML(id) {
+  return '<div class="pref-muted-note">muted &mdash; badges already shown this round '
+    + 'stay as a record; nothing further is flagged or applied for this preference. '
+    + 'restore from a terminal: <code>python3 "__PREFS_SCRIPT_PATH__" set '
+    + '--store "__PREFS_STORE_PATH__" --id ' + esc(id) + ' --status standing</code></div>';
+}
+
+function prefRowHTML(p) {
+  const status   = prefStatusLabel(p.status);
+  const sessions = p.sessions || [];
+  const obs      = p.observations || 0;
+  const meta = sessions.length
+    ? obs + ' observation' + (obs === 1 ? '' : 's') + ' &middot; seen in ' + sessions.length
+      + ' session' + (sessions.length === 1 ? '' : 's') + ': ' + esc(sessions.join(', '))
+    : 'no sessions recorded yet';
+  const muteBtn = status === 'standing'
+    ? '<button type="button" class="pref-mute-btn" data-id="' + esc(p.id) + '">mute</button>'
+    : '';
+  const mutedNote = status === 'muted' ? prefMutedNoteHTML(p.id) : '';
+  return '<div class="pref-row" id="pref-row-' + esc(p.id) + '" data-id="' + esc(p.id)
+    + '" data-status="' + esc(status) + '" tabindex="-1">'
+    + '<div class="pref-row-head">'
+    +   '<span class="pref-status pref-status-' + esc(status) + '">' + esc(status) + '</span>'
+    +   '<span class="pref-label">' + esc(p.label || p.id) + '</span>'
+    +   muteBtn
+    + '</div>'
+    + (p.guidance ? '<div class="pref-guidance">' + esc(p.guidance) + '</div>' : '')
+    + '<div class="pref-meta">' + meta + '</div>'
+    + mutedNote
+    + '</div>';
+}
+
+function renderPrefsList() {
+  el('prefs-list').innerHTML = PREFS_DATA.length
+    ? PREFS_DATA.map(prefRowHTML).join('')
+    : '<p class="prefs-empty">No preferences learned yet.</p>';
+  el('prefs-list').querySelectorAll('.pref-mute-btn').forEach(btn => {
+    btn.addEventListener('click', () => mutePreference(btn.dataset.id));
+  });
+}
+
+// Mutates the one row's DOM in place — status text, mute button removed,
+// muted note appended — never a list rebuild, so a mute never disturbs
+// scroll position or any other row (journey step 4: "the same row, updated,
+// not replaced or removed").
+function markPrefRowMuted(id) {
+  const row = document.getElementById('pref-row-' + id);
+  if (!row) return;
+  const statusEl = row.querySelector('.pref-status');
+  if (statusEl) { statusEl.textContent = 'muted'; statusEl.className = 'pref-status pref-status-muted'; }
+  const btn = row.querySelector('.pref-mute-btn');
+  if (btn) btn.remove();
+  if (!row.querySelector('.pref-muted-note')) row.insertAdjacentHTML('beforeend', prefMutedNoteHTML(id));
+  row.dataset.status = 'muted';
+}
+
+function mutePreference(id) {
+  const row = document.getElementById('pref-row-' + id);
+  const btn = row && row.querySelector('.pref-mute-btn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = 'muting…';
+  fetch('/preferences/mute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id }),
+  })
+    .then(r => r.json().then(respBody => {
+      if (!r.ok || !respBody.ok) throw new Error((respBody && respBody.error) || 'mute failed');
+    }))
+    .then(() => {
+      const pref = PREFS_BY_ID.get(id);
+      if (pref) pref.status = 'muted';
+      markPrefRowMuted(id);
+      el('prefs-status').textContent = ((pref && pref.label) || id)
+        + ' muted — badges already shown this round stay as a record; nothing further is flagged or applied for it.';
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.textContent = prevLabel;
+      el('prefs-status').textContent = 'Could not mute — ' + (err.message || 'request failed') + '.';
+    });
+}
+
+function openPrefsPanel(triggerEl, focusPrefId) {
+  if (recapIsOpen()) closeRecap();   // only one modal open at a time
+  el('prefs-status').textContent = '';   // clear a stale mute announcement from a prior open
+  renderPrefsList();
+  _prefsTriggerEl = triggerEl || el('prefs-toggle');
+  el('prefs-overlay').style.display = '';
+  setBackgroundInert(true);
+  const row = focusPrefId && document.getElementById('pref-row-' + focusPrefId);
+  if (row) { row.scrollIntoView({ block: 'center' }); row.focus(); }
+  else      { el('prefs-close').focus(); }
+}
+
+function closePrefsPanel() {
+  const overlay = el('prefs-overlay');
+  if (overlay.style.display === 'none') return;
+  const hadFocus = overlay.contains(document.activeElement);
+  overlay.style.display = 'none';
+  setBackgroundInert(false);   // clear inert BEFORE restoring focus, same order as closeRecap
+  if (hadFocus) (_prefsTriggerEl || el('prefs-toggle')).focus();
+}
+
+el('prefs-toggle').addEventListener('click', () => openPrefsPanel(el('prefs-toggle')));
+el('prefs-close').addEventListener('click', closePrefsPanel);
+el('prefs-overlay').addEventListener('click', e => {
+  if (e.target === el('prefs-overlay')) closePrefsPanel();   /* backdrop click */
 });
 
 el('sort-toggle').addEventListener('click', () => {
@@ -3325,7 +3645,8 @@ function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
-    closeRecap();  // the review it recapped is gone from under it
+    closeRecap();       // the review it recapped is gone from under it
+    closePrefsPanel();  // ditto — no full-screen backdrop survives a view swap
     renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
@@ -3337,7 +3658,8 @@ function connectSSE() {
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
-    closeRecap();  // a stale grid must never sit over a fresh round's cards
+    closeRecap();        // a stale grid must never sit over a fresh round's cards
+    closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
     REVIEW_DATA       = data;
     // A qa → review hand-off (#109) lands here too — the qa session this tab
     // may have been showing is done; drop its state so leftover QA_DATA/
@@ -3374,6 +3696,7 @@ function connectSSE() {
   es.addEventListener('complete', e => {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
+    closePrefsPanel();  // no full-screen backdrop survives into complete-view
     el('processing-view').style.display = 'none';
     clearProcessingTimer();
     el('review-view').style.display     = 'none';
@@ -3420,6 +3743,18 @@ function connectSSE() {
 document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName;
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+
+  // The preferences panel is reachable in every mode, so its Escape check
+  // sits ahead of the REVIEW_DATA-gated block below (the recap overlay's
+  // equivalent check lives inside it, since recap is review/diff-only).
+  if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }
+  // Modal, like the recap overlay: every other key is swallowed here so it
+  // can never reach the card/QA shortcuts behind the backdrop. inert (on
+  // #paper) blocks pointer/Tab into the background but not this document
+  // keydown listener, and focus inside the panel sits on #prefs-close or a
+  // .pref-row — neither TEXTAREA nor INPUT — so the guard above this block
+  // doesn't catch it either; this is the only thing that does.
+  if (prefsIsOpen()) return;
 
   if (REVIEW_DATA) {
     if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
@@ -3517,9 +3852,25 @@ function bootReviewMode(data, modeWord, docFallback) {
   connectSSE();
 }
 
-fetch('/input')
-  .then(r => r.json())
-  .then(data => {
+// The preferences fetch is awaited alongside /input, before cards are ever
+// built — the badge-to-entry link (annotStripHTML's PREFS_BY_ID lookup)
+// resolves on first paint rather than upgrading a beat later. A failed or
+// malformed preferences fetch degrades to an empty list rather than
+// blocking or erroring the round-data boot: every preference badge then
+// falls back to its plain, non-interactive rendering — the same degrade an
+// unmatched [id] token already gets.
+Promise.all([
+  fetch('/input').then(r => r.json()),
+  fetch('/preferences').then(r => r.json()).catch(() => []),
+])
+  .then(([data, prefs]) => {
+    PREFS_DATA  = Array.isArray(prefs) ? prefs : [];
+    PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));
+    // Ships hidden (same treatment as the confidence sort toggle,
+    // SKILL.md:322 "a doc with none hides the toggle entirely"): a clone
+    // with an empty/absent store has nothing to inspect or mute, so the
+    // control stays off rather than opening onto an empty panel.
+    el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
 
@@ -3561,7 +3912,7 @@ fetch('/input')
   });
 </script>
 </body>
-</html>"""
+</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS)
 
 _HTML_BYTES = HTML.encode()
 
@@ -3576,6 +3927,10 @@ _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
 _ledger: list = []
+# Serializes the /preferences/mute read-modify-write against a concurrent
+# mute (single-reviewer, single-tab in practice, but cheap insurance against
+# two fast double-clicks or two tabs open on the same session — #142).
+_prefs_lock = threading.Lock()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -3751,6 +4106,35 @@ def write_output(path: str, data: dict) -> None:
     _atomic_write(Path(path), json.dumps(data, indent=2))
 
 
+def _load_preferences_store(viva_dir: Path) -> dict:
+    """Tolerant read of `.viva/preferences.json` for the two preferences
+    routes below. Deliberately NOT `preferences._load` — that helper calls
+    `sys.exit()` on a parse failure, correct for a one-shot CLI invocation
+    but fatal here: a single corrupt store would take the whole review
+    server down mid-session. Missing, unparseable, AND parseable-but-wrong-
+    shape (a hand-edited `[]`, `null`, or `{"preferences": []}`) all degrade
+    to an empty store (PRODUCT.md principle 4, "No-op when absent") — a
+    shape check matters here because `preferences.select()`'s own
+    `_normalize` only guards `set_status`'s write path, not this read path,
+    and `store.get("preferences", {}).values()` on a non-dict raises."""
+    path = viva_dir / "preferences.json"
+    if not path.exists():
+        return preferences.empty_store()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return preferences.empty_store()
+    if not isinstance(data, dict) or not isinstance(data.get("preferences"), dict):
+        return preferences.empty_store()
+    # A per-entry non-dict value (as opposed to the container shape above)
+    # would still crash `select()`'s `p.get("status")` — drop those entries
+    # rather than the whole store, so one hand-edited bad row doesn't hide
+    # every other valid preference.
+    data["preferences"] = {k: v for k, v in data["preferences"].items()
+                            if isinstance(v, dict)}
+    return data
+
+
 # Raster formats only — SVG is excluded deliberately because it can carry
 # embedded JavaScript. The MIME is also the sole source of the on-disk
 # extension, so this allowlist doubles as the extension allowlist.
@@ -3853,6 +4237,13 @@ class Handler(BaseHTTPRequestHandler):
                 ledger_snapshot = list(_ledger)
             body = json.dumps({**_with_revision_counts(data_snapshot, _viva_dir),
                                "ledger": ledger_snapshot}).encode()
+            self._send(200, "application/json", body)
+        elif path == "/preferences":
+            # Every preference, every status, label-sorted — the in-page
+            # panel's read (#142). A missing/corrupt store degrades to an
+            # empty list rather than an error (see _load_preferences_store).
+            store = _load_preferences_store(_viva_dir)
+            body = json.dumps(preferences.select(store, "all")).encode()
             self._send(200, "application/json", body)
         elif path == "/events":
             self.send_response(200)
@@ -4009,6 +4400,44 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)
             threading.Timer(2.0, _shutdown.set).start()
+        elif path == "/preferences/mute":
+            # Second, narrow writer of `.viva/preferences.json` (#142) —
+            # flips one existing preference to `muted` via the same
+            # `preferences.set_status()` the CLI's `set --status muted`
+            # already calls. Doesn't restrict by current status (neither
+            # does `set_status` itself); the client only ever renders the
+            # mute control on a `standing` row. Un-muting stays CLI-only —
+            # scripts/preferences.py's own docstring documents the split.
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
+                return
+            body = self.rfile.read(length)
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                self._error(400, "invalid json")
+                return
+            if not isinstance(payload, dict):
+                self._error(400, "body must be a JSON object")
+                return
+            pref_id = payload.get("id")
+            if not isinstance(pref_id, str) or not pref_id:
+                self._error(400, "missing 'id'")
+                return
+            with _prefs_lock:
+                store = _load_preferences_store(_viva_dir)
+                try:
+                    store = preferences.set_status(store, pref_id, "muted")
+                except KeyError:
+                    self._error(404, f"no preference {pref_id!r}")
+                    return
+                try:
+                    _atomic_write(_viva_dir / "preferences.json",
+                                 json.dumps(store, indent=2, ensure_ascii=False))
+                except (IOError, OSError) as e:
+                    self._error(500, f"write failed: {e}")
+                    return
+            self._send(200, "application/json", b'{"ok":true}')
         else:
             self._error(404, "not found")
 
@@ -4031,6 +4460,11 @@ if __name__ == "__main__":
     args = parse_args()
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
     _viva_dir = Path(args.input).resolve().parent
+    # Resolve the preferences store path and update _HTML_BYTES with the
+    # absolute path, mirroring the pattern for _PREFS_SCRIPT_PATH above.
+    _PREFS_STORE_PATH = str(_viva_dir / "preferences.json")
+    _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
+    _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
     _input_data = load_input(args.input)
     # Validate review-input on read at the boundary. Q&A input has `questions`,
     # not `sections`, so it is gated out (shape, not mode); a malformed

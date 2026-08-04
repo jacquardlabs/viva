@@ -2,9 +2,17 @@
 """Maintain viva's learned-preference store — recurring critiques (issue #17).
 
 Reviewers repeat the same critiques across docs and sessions — "unsourced
-numbers", "passive voice", "no rollback step". This script is the SINGLE writer
-of `.viva/preferences.json`, the store that lets viva *learn* those patterns and
-pre-apply (or pre-flag) them before the human re-types the note.
+numbers", "passive voice", "no rollback step". This script is the primary
+writer of `.viva/preferences.json`, the store that lets viva *learn* those
+patterns and pre-apply (or pre-flag) them before the human re-types the note.
+
+`server.py`'s `POST /preferences/mute` route (issue #142) is the one other
+writer, and only for one narrow thing: flipping an existing preference to
+`muted` from the running review UI, via this module's own `set_status()` —
+the same function `set --status muted` below calls. It never creates a
+preference or moves one to `standing`/`candidate`; recording and promotion
+stay exclusively this script's job, and un-muting stays CLI-only (`set
+--status standing`).
 
 Division of labor matches the rest of viva: the semantic work — clustering free
 -text notes into one critique, matching a new cluster to an existing preference
