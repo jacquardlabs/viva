@@ -121,7 +121,30 @@ def test_keyboard_legend_present_and_real():
     for needle in ("<kbd>a</kbd>", "<kbd>c</kbd>", "<kbd>i</kbd>",
                    "<kbd>Tab</kbd>", "<kbd>Enter</kbd>"):
         assert needle in HTML, f"legend missing real shortcut: {needle}"
+    # Pin the 'a' row's exact copy — nothing else asserts this string, and it
+    # has drifted twice already (round-1 reviewers never see a settle
+    # control, so "unsettled" was wrong; "open comments" matches PRODUCT.md's
+    # own "Open notes" term and the primary button's "done · N comments").
+    assert "<dd>approve section (refused while it has open comments)</dd>" in HTML, \
+        "the 'a' row's legend copy must read 'refused while it has open comments'"
     print("  ok  test_keyboard_legend_present_and_real")
+
+
+def test_a_key_calls_approve_section():
+    # The 'a' shortcut must route through approveSection — which refuses to
+    # approve while the section has open comments — not the old direct
+    # setReviewVerdict(..., 'approved') call that auto-accepted regardless.
+    # Also guarded against Cmd/Ctrl/Alt modifier combos, matching the 'o'
+    # shortcut's own precedent, so Cmd+A (select-all) isn't hijacked.
+    idx = HTML.index("e.key === 'a'")
+    branch = HTML[idx:idx + 140]  # ends before the 'c' branch begins
+    assert "approveSection(rState.active)" in branch, \
+        "the 'a'-key branch must call approveSection(rState.active)"
+    assert "!e.metaKey && !e.ctrlKey && !e.altKey" in branch, \
+        "the 'a'-key branch must be guarded against Cmd/Ctrl/Alt modifiers"
+    assert "setReviewVerdict(rState.active, 'approved')" not in HTML, \
+        "the auto-accept path via setReviewVerdict(..., 'approved') must not remain"
+    print("  ok  test_a_key_calls_approve_section")
 
 
 def test_sheet_ground_ships():
@@ -140,6 +163,191 @@ def test_grid_and_sheet_frame_gone():
     print("  ok  test_grid_and_sheet_frame_gone")
 
 
+def test_prefs_toggle_is_native_button_static_label():
+    # #142's bottom-bar control: a native button inside the aria-live
+    # #stats-area, with a static label — no interpolated count baked into
+    # its own text (pre-mortem lane 4: that would double-announce on every
+    # counter update). Ships display:none — see
+    # test_prefs_toggle_gated_on_empty_store for why and where it's shown.
+    assert ('<button type="button" class="prefs-toggle" id="prefs-toggle" '
+            'style="display:none">learned prefs</button>') in HTML
+    stats_open = HTML.index('id="stats-area"')
+    stats_close = HTML.index('</div>', stats_open)
+    assert 'id="prefs-toggle"' in HTML[stats_open:stats_close], \
+        "prefs-toggle must live inside #stats-area (decision prefs-inspector-2)"
+    print("  ok  test_prefs_toggle_is_native_button_static_label")
+
+
+def test_prefs_toggle_gated_on_empty_store():
+    # Acceptance-gate fix (Important, prefs-toggle-shown-with-empty-store): a
+    # clone with no store — every clone, until a session records a
+    # preference — has nothing to inspect or mute, so the control must not
+    # ship live (PRODUCT.md principle 4; the sibling confidence-sort toggle
+    # gets the identical treatment, SKILL.md:322 "a doc with none hides the
+    # toggle entirely"). The toggle ships hidden (checked above); the boot
+    # handler is the only thing that ever reveals it, and only once
+    # PREFS_DATA has actually been assigned from the fetched response.
+    assert "el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';" in HTML
+    boot_start = HTML.index("Promise.all([")
+    assign_at = HTML.index("PREFS_DATA  = Array.isArray(prefs)", boot_start)
+    gate_at = HTML.index("el('prefs-toggle').style.display", boot_start)
+    assert boot_start < assign_at < gate_at, \
+        "prefs-toggle visibility must be gated after PREFS_DATA is assigned in the boot handler"
+    print("  ok  test_prefs_toggle_gated_on_empty_store")
+
+
+def test_prefs_overlay_is_dialog_mirrors_recap():
+    # role=dialog/aria-modal, ships hidden, same close affordances as the
+    # recap overlay (Escape/backdrop/close button all wired through
+    # setBackgroundInert — checked structurally below).
+    assert ('<div class="prefs-overlay" id="prefs-overlay" role="dialog" '
+            'aria-modal="true" aria-labelledby="prefs-title" style="display:none">') in HTML
+    assert '<button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">' in HTML
+    assert "function openPrefsPanel(triggerEl, focusPrefId)" in HTML
+    assert "function closePrefsPanel()" in HTML
+    assert "setBackgroundInert(true)" in HTML and "setBackgroundInert(false)" in HTML
+    print("  ok  test_prefs_overlay_is_dialog_mirrors_recap")
+
+
+def test_prefs_and_recap_are_mutually_exclusive():
+    # Opening either overlay closes the other first — at most one modal.
+    assert "if (prefsIsOpen()) closePrefsPanel();" in HTML
+    assert "if (recapIsOpen()) closeRecap();" in HTML
+    print("  ok  test_prefs_and_recap_are_mutually_exclusive")
+
+
+def test_prefs_panel_swallows_card_shortcuts_while_open():
+    # Acceptance-gate fix (BLOCKER, prefs-panel-open-verdict-shortcuts-live):
+    # the panel is a full-screen modal — inert on #paper blocks pointer/Tab
+    # into the background but not this document keydown listener, and focus
+    # inside the panel lands on #prefs-close or a .pref-row, neither TEXTAREA
+    # nor INPUT, so the tag-based guard at the top of the handler never
+    # catches it. Without a blanket swallow, a/c/i, Tab, digits, and
+    # Cmd/Ctrl+Enter all fall through to whatever section card sits behind
+    # the backdrop. The fix is a single unconditional `return` gated on
+    # prefsIsOpen(), sitting ahead of both the review and QA branches (the
+    # Escape case is handled just above it, so it isn't swallowed too).
+    kd = HTML.index("document.addEventListener('keydown'")
+    esc_idx = HTML.index(
+        "if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }", kd)
+    guard_idx = HTML.index("if (prefsIsOpen()) return;", kd)
+    review_branch = HTML.index("if (REVIEW_DATA) {", kd)
+    qa_branch = HTML.index("if (!REVIEW_DATA && QA_DATA && qState.active)", kd)
+    assert kd < esc_idx < guard_idx < review_branch < qa_branch, \
+        ("prefsIsOpen()'s Escape-close and blanket return must both sit ahead "
+         "of the review and QA keydown branches")
+    print("  ok  test_prefs_panel_swallows_card_shortcuts_while_open")
+
+
+def test_prefs_panel_closes_on_sse_view_swaps():
+    # Acceptance-gate fix (Important, prefs-panel-survives-round-swap): the
+    # panel is a full-screen backdrop, so a 'processing'/'round'/'complete'
+    # SSE event that swaps in a new view while it's still open would render
+    # that view entirely behind an open modal. Mirrors closeRecap()'s
+    # existing per-handler treatment in each of the three handlers.
+    proc_start = HTML.index("es.addEventListener('processing'")
+    round_start = HTML.index("es.addEventListener('round'", proc_start)
+    complete_start = HTML.index("es.addEventListener('complete'", round_start)
+    onerror_start = HTML.index("es.onerror = ", complete_start)
+    assert proc_start < round_start < complete_start < onerror_start
+    assert "closePrefsPanel();" in HTML[proc_start:round_start], \
+        "'processing' handler must close the prefs panel"
+    assert "closePrefsPanel();" in HTML[round_start:complete_start], \
+        "'round' handler must close the prefs panel"
+    assert "closePrefsPanel();" in HTML[complete_start:onerror_start], \
+        "'complete' handler must close the prefs panel"
+    print("  ok  test_prefs_panel_closes_on_sse_view_swaps")
+
+
+def test_prefs_status_is_the_only_live_region_in_the_panel():
+    # Pre-mortem lane 3: the whole list must never be the live region — a
+    # freshly opened panel with several rows would announce every row's text
+    # on open, not just the one status change after a mute. Only the
+    # dedicated one-line #prefs-status may carry aria-live; #prefs-list must
+    # not.
+    assert 'id="prefs-status" aria-live="polite"' in HTML
+    assert 'id="prefs-list" aria-live' not in HTML, \
+        "#prefs-list must not itself be an aria-live region"
+    print("  ok  test_prefs_status_is_the_only_live_region_in_the_panel")
+
+
+def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
+    # Pre-mortem lanes 5 and 6: mute is one-way from the UI (decision
+    # prefs-inspector-1) with no confirmation step, so a muted row must
+    # carry static copy naming both the recovery command and that badges
+    # already shown this round are a record, not retroactively cleared.
+    # No "next session" claim: --status standing has three SKILL.md readers
+    # (round-1 pre-flight :71, step 2's wait block :146, step 4's rewrite
+    # consult :366), so a mute during round N can still reach round N's own
+    # rewrite — "next session" was simply wrong, not just an early claim.
+    assert "takes effect next session" not in HTML
+    assert "stay as a record" in HTML
+    # The command must actually run from a terminal: preferences.py is not on
+    # PATH, and "$VIVA_DIR" is a local bash variable SKILL.md computes with
+    # its own `find` and never exports (.claude/skills/viva/SKILL.md:41-43) —
+    # a copy-pasted "$VIVA_DIR/..." command 404s in a fresh terminal. The
+    # server substitutes its own resolved absolute path at import time
+    # (server.py's _PREFS_SCRIPT_PATH), so assert against that same
+    # resolution rather than any hardcoded literal — a test that computed its
+    # own separate "the right answer" and compared strings is exactly how the
+    # broken $VIVA_DIR command shipped green last round.
+    assert "$VIVA_DIR" not in HTML, "no shell-variable path may appear in the shipped recovery command"
+    expected_script_path = str(ROOT / "scripts" / "preferences.py")
+    assert f'python3 "{expected_script_path}" set' in HTML
+    assert Path(expected_script_path).is_file(), \
+        "the path embedded in the recovery command must name a real file, not just match a string"
+    # Store path quoted the same way the script path is (server.py:3466-3467)
+    # — acceptance-gate fix (SHOULD FIX, prefs-recovery-store-path-unquoted):
+    # an unquoted path breaks the copy-pasted command by word-splitting on
+    # any project path containing a space.
+    assert '--store "__PREFS_STORE_PATH__"' in HTML and "--status standing</code>" in HTML
+    assert "function prefMutedNoteHTML(id)" in HTML
+    print("  ok  test_muted_row_names_the_unmute_recovery_and_this_round_effect")
+
+
+def test_mute_button_only_on_standing_rows():
+    # candidate/muted rows render read-only; only a standing row grows the
+    # mute control (design: pre-flight never reads candidates, and a
+    # criterion can't verify an invisible effect there). Anchored to the
+    # actual gating expression, not just any "=== 'standing'" occurrence in
+    # the file (prefStatusLabel's own ternary would also match a weaker check).
+    assert "const muteBtn = status === 'standing'" in HTML
+    assert 'class="pref-mute-btn" data-id="' in HTML
+    print("  ok  test_mute_button_only_on_standing_rows")
+
+
+def test_prefs_data_fetched_once_and_cached_for_round_rebuilds():
+    # Pre-mortem lane 1: badges must survive a round-2+ SSE rebuild, which
+    # never re-fetches /input's own data. The fix is caching, not a
+    # per-render fetch — PREFS_DATA/PREFS_BY_ID are populated once in the
+    # boot Promise.all and read (never reassigned) by annotStripHTML/
+    # initReview afterward.
+    assert "Promise.all([" in HTML
+    assert "fetch('/preferences')" in HTML
+    assert HTML.count("fetch('/preferences')") == 1, \
+        "preferences must be fetched exactly once, at boot — never per-render"
+    assert "PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));" in HTML
+    # Negative check that actually guards the pre-mortem's named failure: the
+    # SSE 'round' handler (the round-2+ rebuild path) must never reassign
+    # PREFS_DATA/PREFS_BY_ID — if it did, a stale/failed refetch there would
+    # silently blank every badge on the very rebuild this lane is about.
+    round_start = HTML.index("es.addEventListener('round'")
+    round_end = HTML.index("es.addEventListener('complete'")
+    assert round_start < round_end, "could not locate the SSE round handler body"
+    assert "PREFS_" not in HTML[round_start:round_end], \
+        "the SSE round handler must not touch PREFS_DATA/PREFS_BY_ID — cached at boot, reused as-is"
+    print("  ok  test_prefs_data_fetched_once_and_cached_for_round_rebuilds")
+
+
+def test_preference_badge_reuses_annot_jump_never_the_raw_id():
+    # The badge-to-entry link renders label/id straight from the matched
+    # preference object, never the raw regex-captured substring from the
+    # annotation message.
+    assert "const pref = m ? PREFS_BY_ID.get(m[1]) : null;" in HTML
+    assert "esc(pref.id)" in HTML and "esc(pref.label || pref.id)" in HTML
+    print("  ok  test_preference_badge_reuses_annot_jump_never_the_raw_id")
+
+
 def main():
     test_card_head_is_button_with_aria()
     test_aria_expanded_sync_helper_exists()
@@ -150,9 +358,21 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
+    test_a_key_calls_approve_section()
     test_sheet_ground_ships()
     test_grid_and_sheet_frame_gone()
-    print("OK (11 tests)")
+    test_prefs_toggle_is_native_button_static_label()
+    test_prefs_toggle_gated_on_empty_store()
+    test_prefs_overlay_is_dialog_mirrors_recap()
+    test_prefs_and_recap_are_mutually_exclusive()
+    test_prefs_panel_swallows_card_shortcuts_while_open()
+    test_prefs_panel_closes_on_sse_view_swaps()
+    test_prefs_status_is_the_only_live_region_in_the_panel()
+    test_muted_row_names_the_unmute_recovery_and_this_round_effect()
+    test_mute_button_only_on_standing_rows()
+    test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
+    test_preference_badge_reuses_annot_jump_never_the_raw_id()
+    print("OK (22 tests)")
 
 
 if __name__ == "__main__":

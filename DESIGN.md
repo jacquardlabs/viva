@@ -167,8 +167,14 @@ membership is the reticle group plus every other focusable control:
 .settle-btn, .diff-toggle,
 .carried-show, .carried-withdraw, .transmittal-row,
 .recap-row, .recap-close,
+.annot-jump,
+.prefs-toggle, .prefs-close, .pref-mute-btn,
 .btn-skip, .btn-submit
 ```
+
+(`.annot-jump` and the three `.prefs-*`/`.pref-mute-btn` controls were added
+by #142's preferences panel — `.annot-jump` predates it but had never been
+added to this group; the panel's new instances of it made the gap visible.)
 
 ## Animation
 
@@ -339,6 +345,14 @@ is the ground these gestures sit on; see Layout.)
 - **Revision triangle** (`.rev-tri`) — drafting's "this region changed at this rev"
   flag. Rendered as `△ NN` in Fragment Mono, `11px`, `color: var(--orange)`, keyed to
   the titleblock REV. Shown on a section head only when the section carries a diff.
+  When the section's *cumulative* revision count this session reaches 2+, a
+  `.rev-mult` child span appends a multiplier inside the same element — e.g.
+  `△ 03 2×` — styled per the label convention (`9px` Fragment Mono, inherited;
+  `color: var(--text3)`, not the triangle's own orange). One visual element, two
+  pieces of information (issue #141): a section revised exactly once still shows
+  the plain `△ NN`, no multiplier. Decorative text, not interactive. The count is
+  computed server-side from `.viva/review-input-r{N}.json` round files — never
+  persisted as a schema field (see JSON protocol conventions below).
 - **Approval stamp** (`.approve-stamp` → `.stamp-rule`) — the "signed off" gesture on
   the complete screen. Double-ruled teal ink (`2px solid var(--teal)` plus a `::before`
   inner rule at `inset: 3px`), slammed on at a `-5deg` tilt via the `stamp-down`
@@ -418,11 +432,85 @@ confidence-sort toggle off via `REVIEW_DATA.mode !== 'diff'` — so its CSS
 
 Fixed to viewport bottom. Glass-morphism: `backdrop-filter: blur(16px) saturate(180%)`.
 Always visible. Hidden only on complete state (JS sets `display:none`). Two children:
-stats area (left) and btn-group (right).
+stats area (left) and btn-group (right). The stats area also holds the
+`.prefs-toggle` button (#142) — see Preferences panel below.
 
 Submit button states:
 - `btn-submit disabled` — visually grayed, cursor not-allowed, click blocked in handler.
 - `btn-submit ready` — `var(--accent)` background, glow shadow, slightly raised on hover.
+
+## Preferences panel (issue #142, unreleased)
+
+A `.prefs-toggle` button sits in the bottom bar's `#stats-area`, alongside the
+approved/pending counters — a static label ("preferences"), never an
+interpolated count in its own text, so it never competes with the counters
+for that region's `aria-live="polite"` announcement. It ships `display:none`
+and is revealed only once the boot fetch confirms the store holds at least
+one preference — the same empty-store treatment the confidence-sort toggle
+already gets (a clone with nothing to inspect or mute gets no control that
+opens onto an empty panel). Clicking it opens
+`#prefs-overlay`, a second modal built on the exact `openRecap`/`closeRecap`/
+`setBackgroundInert` shape the Recap overlay established: `role="dialog"
+aria-modal="true"`, Escape/backdrop-click/`×` all dismiss it, the background
+(`#paper`, `#bottom-bar-el`, the skip link) goes `inert` while it's open, and
+focus lands inside on open and returns to whichever control opened it — the
+bottom-bar toggle, or an annotation badge that jumped to a specific entry —
+on close. Only one of the two overlays is ever open at a time: opening
+either closes the other first. Unlike the recap overlay, it's reachable in
+every mode (review, diff, qa), since it lives in the one shared bottom bar
+and preferences aren't review-specific.
+
+**Contents.** Every preference from `GET /preferences` (all statuses,
+label-sorted server-side via `preferences.select(store, "all")`), each row
+carrying its status (`.pref-status-standing|candidate|muted`), label,
+guidance, and observation/session detail — `.pref-meta` renders the
+observation count *and* the sessions that reinforced it (the issue's own
+proposal text, wider than the acceptance criterion's floor). Only a
+`standing` row renders a **mute**
+control (`.pref-mute-btn`) — `candidate` rows are read-only (pre-flight
+never reads them) and `muted` rows already are. A successful
+`POST /preferences/mute` updates that one row's DOM node in place — status
+text, mute button removed, a muted-row note appended — never a full-list
+rebuild, and announces the change through `#prefs-status`, a dedicated
+one-line `aria-live="polite"` element.
+
+**`#prefs-list` itself does not carry `aria-live`** — this is a deliberate
+departure from a naive "the list is the live region" reading: scoping the
+live announcement to the one-line status instead of the whole list avoids a
+screen reader reading out every row's text on open, not just the one status
+change after a mute.
+
+**Muted-row copy.** Every `muted` row carries two static lines: that badges
+already shown this round stay as a record and nothing further is flagged or
+applied for that preference (no "next session" claim — `--status standing`
+has three SKILL.md readers, not one, including step 4's post-submit rewrite
+consult, so a mute during round N can still reach round N's own rewrite; the
+only true claim is "not retroactive to a badge already on screen") and the
+terminal command that reverses it. That command interpolates the server's
+own resolved path (`Path(__file__).resolve().parent / "scripts" /
+"preferences.py"`, `server.py:28-41`) rather than the shell variable
+`$VIVA_DIR` — that name is local to the `find` SKILL.md's own bash block
+computes it with (`.claude/skills/viva/SKILL.md:41-43`) and is never
+exported, so a literal `"$VIVA_DIR/..."` pasted into a fresh terminal 404s —
+mute is one-way from this panel (decision prefs-inspector-1), so the
+recovery path has to be visible on the row, and runnable, not just known to
+exist.
+
+**Badge-to-entry link.** A `kind:"preference"` annotation's `.annot-jump`
+badge (the existing anchor-jump control, extended) grows a second variant
+when the leading `[id]` token in its message (SKILL.md's own encoding
+convention) matches a fetched preference; clicking it opens the panel
+scrolled to and focused on that row (`.pref-row[tabindex="-1"]`, given a
+visible `:focus` ring — not `:focus-visible`, since the jump lands via a
+programmatic `.focus()` call after a mouse click, a case `:focus-visible`
+generally suppresses — so the ring confirms where the jump landed
+regardless of input method). `PREFS_DATA`/`PREFS_BY_ID` are fetched once at boot, alongside
+`/input` (`Promise.all`, never sequential), and reused for every card build
+after — including the SSE `round` rebuild on round 2+ — never re-fetched
+mid-session, so a badge stays linked across rounds without a second
+round-trip per render. No match (a stale or malformed token) falls back to
+the annotation's plain, non-interactive rendering — the same degrade an
+unmatched anchor already gets.
 
 In review/diff mode a ready click opens the recap overlay rather than
 submitting (see Recap overlay); Q&A's done → click submits directly.
@@ -463,9 +551,12 @@ submitting (see Recap overlay); Q&A's done → click submits directly.
   shared "ended before reviewing everything" flag in every mode — never a mode-specific
   alias like `skipped`.
 - Annotation schema: `{kind, severity, message, anchor?}`. Structured extensions (`basis`, `level` for confidence) are preserved through the shared merge in `scripts/annotate.py`, so a confidence flag routes through the same write path as any other annotation rather than bypassing it.
+- A `kind:"preference"` annotation encodes its preference id as a leading `[id]` token in `message` (e.g. `[cite-sources] "80% faster" has no source`) rather than a structured field — `annotate.py`'s merge whitelist has no generic passthrough, so widening it for one more field is scope a message-embedded convention doesn't need. The browser resolves the token client-side against `GET /preferences` to render the badge-to-entry link (see Preferences panel).
+- `GET /preferences` returns every preference — all statuses, `preferences.select(store, "all")` — as a bare JSON array, matching `preferences.py list --format json`'s own output shape (no wrapping object). `POST /preferences/mute` takes `{"id": "<pref-id>"}` and flips that preference's status to `muted` via `preferences.set_status()` (404 if the id isn't in the store). Neither route is part of the round-file (`review-input-r{N}.json`/`review-r{N}.json`) schema — both read and write `.viva/preferences.json` directly, independent of the round in progress.
 - **`anchor` is overloaded — three semantics by context.** The name is reused across the input and output schemas with different meanings and consumers; keep them straight when adding an annotation kind or a consumer:
   - *Annotation, display* (input) — a string rendered as the badge's hover `title` attribute.
   - *Annotation, navigation* (input) — when the string matches another section's `id` (the cross-section contradiction producer), it renders as a `.annot-jump` deep-link to that section instead of a hover title.
   - *Comment, selection* (output) — a `comment.anchor` object `{text, offset}`: the exact text the reviewer selected in the section, which the agent uses to scope its rewrite (`offset` disambiguates a repeated phrase). This is a structured object, not a string, and lives on comments in `review-r{N}.json` — a different shape from the annotation `anchor` above.
 - `GET /input` returns the current review-input merged with `ledger: [...]` — the live running ledger. The `ledger` field is injected by the server at serve time and is **not** part of the `review-input-r{N}.json` file schema that `parse_sections.py` writes.
+- Both `GET /input` and the `round` SSE event similarly attach `revision_count` to a section object — but only when that section's cumulative revision count this session reaches 2+ (issue #141). Injected by the server at serve time, derived by re-reading `.viva/review-input-r{N}.json` round files already on disk; never written to any round file and not part of `ReviewSection`.
 - The round shapes are the system's load-bearing contract, defined in one place: `scripts/schema.py` holds the TypedDicts, `section_key()` (the single section-identity normalization), `verdict_to_ledger_entry()` (the single ledger-row rule), and the boundary validators. Adding a field means updating that module and validating at the boundary (on parse write, on server read) — never at the point of use.
