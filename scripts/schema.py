@@ -184,6 +184,30 @@ def validate_verdicts(data: dict) -> None:
             )
 
 
+def round_is_complete(input_data: dict, verdicts: dict) -> bool:
+    """Is this round finished — i.e. may the session sign off?
+
+    The single rule both `loop.py finish` and the server's `/complete` handler
+    ask, so the invariant lives in one place rather than being re-derived at two
+    call sites in two processes. Pure: dicts in, bool out, no disk.
+
+    Today: every section in the round's input carries an `approved` verdict. The
+    input side matters — a section present in the input with no verdict row at
+    all is incomplete, which a scan of `verdicts` alone cannot see.
+
+    Callers gate on shape and mode: Q&A rounds carry `questions` rather than
+    `sections`, and diff rounds legitimately sign off with `changes` verdicts on
+    record (viva-diff's empty-re-diff finish), so neither reaches this function.
+    """
+    section_ids = [s.get("id") for s in input_data.get("sections", [])]
+    if not section_ids:
+        return False
+    by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
+    return all(
+        (by_id.get(sid) or {}).get("verdict") == "approved" for sid in section_ids
+    )
+
+
 # ── Q&A round shapes ──────────────────────────────────────────────────────────
 class QAQuestion(TypedDict, total=False):
     id: str           # required
