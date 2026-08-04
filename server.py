@@ -1840,7 +1840,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
-      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">preferences</button>
+      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -1877,7 +1877,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
         <span class="prefs-title" id="prefs-title">Learned Preferences</span>
         <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
       </div>
-      <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, will be applied &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
+      <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, applied at rewrite &mdash; still yours to approve &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
     </div>
     <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
     <div class="prefs-list" id="prefs-list"></div>
@@ -3464,7 +3464,7 @@ function prefMutedNoteHTML(id) {
   return '<div class="pref-muted-note">muted &mdash; badges already shown this round '
     + 'stay as a record; nothing further is flagged or applied for this preference. '
     + 'restore from a terminal: <code>python3 "__PREFS_SCRIPT_PATH__" set '
-    + '--store __PREFS_STORE_PATH__ --id ' + esc(id) + ' --status standing</code></div>';
+    + '--store "__PREFS_STORE_PATH__" --id ' + esc(id) + ' --status standing</code></div>';
 }
 
 function prefRowHTML(p) {

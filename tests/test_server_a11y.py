@@ -147,7 +147,7 @@ def test_prefs_toggle_is_native_button_static_label():
     # counter update). Ships display:none — see
     # test_prefs_toggle_gated_on_empty_store for why and where it's shown.
     assert ('<button type="button" class="prefs-toggle" id="prefs-toggle" '
-            'style="display:none">preferences</button>') in HTML
+            'style="display:none">learned prefs</button>') in HTML
     stats_open = HTML.index('id="stats-area"')
     stats_close = HTML.index('</div>', stats_open)
     assert 'id="prefs-toggle"' in HTML[stats_open:stats_close], \
@@ -273,7 +273,11 @@ def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
     assert f'python3 "{expected_script_path}" set' in HTML
     assert Path(expected_script_path).is_file(), \
         "the path embedded in the recovery command must name a real file, not just match a string"
-    assert "--store __PREFS_STORE_PATH__" in HTML and "--status standing</code>" in HTML
+    # Store path quoted the same way the script path is (server.py:3466-3467)
+    # — acceptance-gate fix (SHOULD FIX, prefs-recovery-store-path-unquoted):
+    # an unquoted path breaks the copy-pasted command by word-splitting on
+    # any project path containing a space.
+    assert '--store "__PREFS_STORE_PATH__"' in HTML and "--status standing</code>" in HTML
     assert "function prefMutedNoteHTML(id)" in HTML
     print("  ok  test_muted_row_names_the_unmute_recovery_and_this_round_effect")
 
