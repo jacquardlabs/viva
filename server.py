@@ -1683,7 +1683,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   <details class="kbd-legend">
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
-      <dt><kbd>a</kbd></dt><dd>approve section (refused while it has unsettled feedback)</dd>
+      <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
       <dt><kbd>c</kbd></dt><dd>request changes</dd>
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>

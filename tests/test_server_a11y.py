@@ -121,6 +121,12 @@ def test_keyboard_legend_present_and_real():
     for needle in ("<kbd>a</kbd>", "<kbd>c</kbd>", "<kbd>i</kbd>",
                    "<kbd>Tab</kbd>", "<kbd>Enter</kbd>"):
         assert needle in HTML, f"legend missing real shortcut: {needle}"
+    # Pin the 'a' row's exact copy — nothing else asserts this string, and it
+    # has drifted twice already (round-1 reviewers never see a settle
+    # control, so "unsettled" was wrong; "open comments" matches PRODUCT.md's
+    # own "Open notes" term and the primary button's "done · N comments").
+    assert "<dd>approve section (refused while it has open comments)</dd>" in HTML, \
+        "the 'a' row's legend copy must read 'refused while it has open comments'"
     print("  ok  test_keyboard_legend_present_and_real")
 
 
