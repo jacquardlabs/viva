@@ -121,7 +121,30 @@ def test_keyboard_legend_present_and_real():
     for needle in ("<kbd>a</kbd>", "<kbd>c</kbd>", "<kbd>i</kbd>",
                    "<kbd>Tab</kbd>", "<kbd>Enter</kbd>"):
         assert needle in HTML, f"legend missing real shortcut: {needle}"
+    # Pin the 'a' row's exact copy — nothing else asserts this string, and it
+    # has drifted twice already (round-1 reviewers never see a settle
+    # control, so "unsettled" was wrong; "open comments" matches PRODUCT.md's
+    # own "Open notes" term and the primary button's "done · N comments").
+    assert "<dd>approve section (refused while it has open comments)</dd>" in HTML, \
+        "the 'a' row's legend copy must read 'refused while it has open comments'"
     print("  ok  test_keyboard_legend_present_and_real")
+
+
+def test_a_key_calls_approve_section():
+    # The 'a' shortcut must route through approveSection — which refuses to
+    # approve while the section has open comments — not the old direct
+    # setReviewVerdict(..., 'approved') call that auto-accepted regardless.
+    # Also guarded against Cmd/Ctrl/Alt modifier combos, matching the 'o'
+    # shortcut's own precedent, so Cmd+A (select-all) isn't hijacked.
+    idx = HTML.index("e.key === 'a'")
+    branch = HTML[idx:idx + 140]  # ends before the 'c' branch begins
+    assert "approveSection(rState.active)" in branch, \
+        "the 'a'-key branch must call approveSection(rState.active)"
+    assert "!e.metaKey && !e.ctrlKey && !e.altKey" in branch, \
+        "the 'a'-key branch must be guarded against Cmd/Ctrl/Alt modifiers"
+    assert "setReviewVerdict(rState.active, 'approved')" not in HTML, \
+        "the auto-accept path via setReviewVerdict(..., 'approved') must not remain"
+    print("  ok  test_a_key_calls_approve_section")
 
 
 def test_sheet_ground_ships():
@@ -150,9 +173,10 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
+    test_a_key_calls_approve_section()
     test_sheet_ground_ships()
     test_grid_and_sheet_frame_gone()
-    print("OK (11 tests)")
+    print("OK (12 tests)")
 
 
 if __name__ == "__main__":
