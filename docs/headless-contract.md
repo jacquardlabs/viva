@@ -1,6 +1,6 @@
 # viva headless invocation contract
 
-**Contract version: 2**
+**Contract version: 3**
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller like jig — not for the human
@@ -36,6 +36,7 @@ Changelog:
 
 | version | date | change |
 |---|---|---|
+| 3 | 2026-08-05 | `POST /complete` now refuses an incomplete review round — `409` when any section's verdict is not `approved`, `400` when no verdicts were submitted for the currently loaded round. A caller that finishes a round the human left partly unapproved gets a status it previously never could. Two exemptions: a Q&A session (its round carries `questions`, never `sections`) and a server launched `--mode diff`. `POST /abandon` is the documented recovery from a refusal — it ends a session that cannot be signed off. The new endpoint alone would not warrant a bump (§1); the guard does. Also: the `Origin` check is now an exact host match rather than a prefix, and a request body whose `Content-Type` is not `application/json` is refused with `415`. `ReviewInput` gains an optional `split_on` (§3). |
 | 2 | 2026-07-11 | `POST /next-round` and `POST /complete` now run the same loopback-`Origin` check and `MAX_SUBMIT_BYTES` body cap `POST /submit` already had — a caller sending a non-loopback `Origin` or a body over 256 MiB now gets a `403`/`413` it previously never could (see §5's endpoint table and error-response paragraph). Fixes #117. |
 | 1 | 2026-07-11 | Initial contract, transcribing the surface shipped as of the `unified-session` (#109) and `task-card-split` (#110) stories. |
 
@@ -99,10 +100,11 @@ review or diff round):
 
 | Field | Required | Notes |
 |---|---|---|
-| `mode` | conventionally set | `"review"` or `"diff"` — this is the JSON `mode` field from §2, not the CLI flag. |
+| `mode` | conventionally set | `"review"` or `"diff"` — this is the JSON `mode` field from §2, not the CLI flag. Nothing validates it, so **nothing load-bearing keys on it**: `/complete`'s diff exemption reads the server's launch `--mode`, not this field. |
 | `doc_file` | no | Relative path shown in the UI. |
 | `round` | no | Round number. |
 | `approved_ids` | no | Section ids approved in prior rounds. |
+| `split_on` | no | The `--split-on` regex this round was parsed with, recorded by `parse_sections.py`. **Absent** — not `null` — when the round used the auto-detected split level; a present non-string is a hard `validate_review_input` failure, because `loop.py rearm` hands this value straight back to `--split-on` and a `null` would silently re-split the next round by auto-detection. |
 | `sections` | **yes** | List of `ReviewSection`. |
 
 **`ReviewSection`** (one entry per `sections[]`):
@@ -198,15 +200,20 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
 | `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `/viva-qa`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-diff`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
-| `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections` and the server was **not** launched `--mode diff`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. Two exemptions, both by launch shape rather than by payload: a Q&A round carries `questions` and never `sections`, and a `--mode diff` server signs off with `changes` verdicts on record by design (`/viva-diff`'s empty-re-diff finish). The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 | `POST /abandon` | yes | Ends the session **without** finishing it — the route for a caller that decides to drop an unfinished round. Body is ignored. Sets the shutdown event immediately: no 2-second grace, and no SSE `"complete"` event, so the browser tab sees its `/events` stream drop and reports a lost connection rather than a completed review. Carries none of `/complete`'s sign-off meaning and writes no output file. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. |
 
 Every error response, on any endpoint, is `application/json` with body
 `{"error": "<message>"}` and a matching non-2xx status — `400` (invalid
 JSON, wrong body shape, failed `validate_review_input`/`validate_verdicts`),
 `403` (forbidden cross-origin `Origin` — `/submit`, `/next-round`,
-`/complete`, and `/abandon` all run this check), `413` (body over 256 MiB —
-same four endpoints), `404` (unmatched path), `500` (`/submit` — `IOError`/`OSError`
+`/complete`, and `/abandon` all run this check; the host must be exactly
+`127.0.0.1` or `localhost` over `http`, not merely a prefix of the Origin),
+`409` (`/complete` — the round is not all-approved; see its endpoint row),
+`413` (body over 256 MiB — same four endpoints), `415` (a request body whose
+`Content-Type` is not `application/json` — same four endpoints; this is what
+forces a cross-origin caller into a preflight rather than a simple POST),
+`404` (unmatched path), `500` (`/submit` — `IOError`/`OSError`
 writing the output file). A caller can distinguish any failure from a
 success by content type alone, since successes are already uniformly
 `{"ok": true}` JSON.
@@ -301,8 +308,10 @@ qa-then-review session rather than to the qa phase alone.
 
 ### `--split-on` task-card splitting (`task-card-split`, #110)
 
-This is a `scripts/parse_sections.py` CLI flag, not a `server.py` flag or a
-new round-file field — it changes how a round's `sections` list gets
+This is a `scripts/parse_sections.py` CLI flag and not a `server.py` flag. It
+**is** recorded as a round-file field (`split_on`, §3) so a later round and a
+later resume re-split identically — but the server neither reads nor writes it,
+and it changes how a round's `sections` list gets
 produced from the source document, before that JSON ever reaches
 `server.py`.
 

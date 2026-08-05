@@ -72,7 +72,8 @@ Pass `--split-on '<REGEX>'` for a task-card plan document: a heading is a split
 point iff its title matches (`re.search`, at any depth), replacing the
 split-level heuristic entirely. Zero matches is a hard error, not a fallback.
 The pattern is recorded in the round file, so every later round re-splits the
-same way.
+same way — and `start` reads it back off the prior round when resuming a
+signed-off doc, so a resume does not need it retyped.
 
 Without it the parser splits on the highest heading level occurring more than
 once (usually `##`, one level coarser past 20 sections), verbatim; content
@@ -207,7 +208,9 @@ never loads them:
 - `preferences.md` — recurring critiques learned across sessions
 
 `loop.py` prints the absolute path of whichever one documents the step you have
-reached. Read the path it printed; never compute one.
+reached — read the path it printed rather than deriving it. To engage an opt-in
+producer the driver has not named, pass `--parse-only` to `start` or `rearm`:
+that stops at the seam and prints both the round file and `producers.md`.
 
 ---
 

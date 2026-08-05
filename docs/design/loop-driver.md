@@ -353,8 +353,10 @@ Consumer: `/review`'s operability lane; `/build`'s rollout-tier verification.
   does today, and no worse.
 - **Python floor.** 3.8, matching CI's matrix — no walrus-in-comprehension, no
   `match`, no `|` union syntax at runtime.
-- **Backward compatibility.** The `.viva/` file layout, the round-file schema,
-  and every server endpoint's request shape are unchanged. A caller still
+- **Backward compatibility.** The `.viva/` file layout and every server
+  endpoint's *request* shape are unchanged. Two additions: the round file gains
+  an optional `split_on` (absent on every round that does not use it), and
+  `POST /complete` gains a refusal — see `docs/headless-contract.md` v3. A caller still
   driving the loop by hand with the old bash blocks keeps working; only
   `/complete` becomes stricter, and only for review-shaped sessions.
 - **Tests.** Unit coverage for round derivation, liveness exit, the finish

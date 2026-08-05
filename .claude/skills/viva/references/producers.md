@@ -46,7 +46,10 @@ review-input after the parse and before the arm. Producers are **opt-in**: the
 default loop runs none of them, so an unflagged review behaves as today. Run one
 when the user asks for that check ("ground the claims", "check for
 contradictions"), when the doc type warrants it, or when `loop.py` names the
-learned-preference producer. The LLM passes below read the whole doc; that is
+learned-preference producer. To run one at **round 1**, start the session with
+`loop.py start --doc <path> --parse-only` — it stops at the seam the same way a
+standing preference does, so the flags are merged before the reviewer ever sees
+the round. Round 2+ is `loop.py rearm --parse-only`. The LLM passes below read the whole doc; that is
 the one time the no-read fast path is traded away.
 
 Every producer emits a sidecar list of `{id, kind, severity, message, anchor?}`
@@ -124,9 +127,11 @@ weakest:
   high/sourced) so the badge color tracks it; keep `message` a short label.
 
 Unlike the producers above, confidence is the generating agent's own
-self-annotation, emitted at write time. Append it **directly** to the section's
-`annotations` array — do *not* route it through `loop.py annotate`, whose merge
-would drop the `basis`/`level` fields the sort depends on. The server reads
+self-annotation, emitted at write time. Route it through `loop.py annotate` like
+any other sidecar: `annotate.py`'s merge preserves `basis`/`level` (issue #40),
+so the sort's fields survive it. Under the driver this is the only route — the
+alternative, editing the round file's `annotations` array in place, needs a path
+you are not meant to compute. The server reads
 `basis`/`level` directly — never the message — to offer a **weakest-first** sort
 toggle; document order stays the default. A section with no confidence
 annotation keeps document order, and a doc with none hides the toggle entirely.

@@ -31,7 +31,7 @@ import preferences  # noqa: E402
 
 # Absolute path to preferences.py, resolved from this file's own on-disk
 # location — never the shell variable $VIVA_DIR: SKILL.md computes that with
-# a local `find` inside its own bash block (.claude/skills/viva/SKILL.md:41-43)
+# a local `find` inside its own bash block (viva SKILL.md, Invocation)
 # and never exports it, so a copy-pasted "$VIVA_DIR/..." command fails with
 # "No such file" in a fresh terminal. Same resolution style as the sys.path
 # insert above. Escaped for embedding inside the JS single-quoted string
@@ -3528,7 +3528,7 @@ function prefStatusLabel(status) {
 // be visible on the row itself, not just known to exist. A still-visible
 // badge on this round's card is not a sign the mute silently failed, but the
 // copy makes no next-session claim either: `--status standing` has three
-// SKILL.md readers, not one — round-1 pre-flight (:71), step 2's wait block
+// readers, not one — `loop.py`'s standing_preferences(), `wait`'s printed set,
 // (:146), and step 4's rewrite consult (:366) — so a mute during this round
 // can still reach this same round's rewrite. The copy only says that
 // badges already shown this round are a historical record.
@@ -3939,7 +3939,8 @@ Promise.all([
     PREFS_DATA  = Array.isArray(prefs) ? prefs : [];
     PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));
     // Ships hidden (same treatment as the confidence sort toggle,
-    // SKILL.md:322 "a doc with none hides the toggle entirely"): a clone
+    // references/producers.md, Confidence triage — "a doc with none hides
+    // the toggle entirely"): a clone
     // with an empty/absent store has nothing to inspect or mute, so the
     // control stays off rather than opening onto an empty panel.
     el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';

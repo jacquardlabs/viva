@@ -211,6 +211,11 @@ def has_revision_history(doc_text: str) -> bool:
     `loop.py`'s resume detection and `revision_history.py`'s append-vs-create
     branch ask the same question, so they ask it here — the same rule
     `section_key()` follows.
+
+    Known residue: a fenced code block whose content begins the line still
+    matches. Every mention in this repo is inline-backticked mid-line, which the
+    anchor rejects; fence-awareness would need a block parser and would change
+    `revision_history.py`'s append branch too.
     """
     return REVISION_HISTORY_RE.search(doc_text) is not None
 

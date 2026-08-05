@@ -93,11 +93,11 @@ opt-in layers that all funnel through the section card:
 
 ## Known problems
 
-- **README lags the product.** User-facing README documents only the core loop; several shipped feature clusters (annotations, producers, confidence triage, open notes, learned preferences, diff review) are undocumented there.
-- **Agent-side complexity.** SKILL.md carries the whole launch→wait→act→rewrite
-  loop as prose with conditional round-1 branches (e.g. the standing-preference
-  path splits the launch block), so the agent shoulders the orchestration the
-  code does not.
+- **README lags the product.** User-facing README documents only the core loop; several shipped feature clusters (annotations, producers, confidence triage, open notes, learned preferences, diff review) are undocumented there — as is `scripts/loop.py`, now the entry point the skill actually calls.
+- **The loop's prose half.** `scripts/loop.py` now owns the bookkeeping — round
+  numbers, the state clear, liveness, and the finish guard — so SKILL.md carries
+  judgment work only. `viva-qa` and `viva-diff` still drive their own loops as
+  prose; extending the driver to them is unshipped.
 
 ## Feature tracker
 

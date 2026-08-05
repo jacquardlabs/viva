@@ -490,7 +490,7 @@ terminal command that reverses it. That command interpolates the server's
 own resolved path (`Path(__file__).resolve().parent / "scripts" /
 "preferences.py"`, `server.py:28-41`) rather than the shell variable
 `$VIVA_DIR` — that name is local to the `find` SKILL.md's own bash block
-computes it with (`.claude/skills/viva/SKILL.md:41-43`) and is never
+computes it with (viva `SKILL.md`, Invocation) and is never
 exported, so a literal `"$VIVA_DIR/..."` pasted into a fresh terminal 404s —
 mute is one-way from this panel (decision prefs-inspector-1), so the
 recovery path has to be visible on the row, and runnable, not just known to
