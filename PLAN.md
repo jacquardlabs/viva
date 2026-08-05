@@ -58,7 +58,7 @@ Done means:
 5. [hold] `scripts/loop.py` imports no sibling but `schema`, per CLAUDE.md's one-cross-import rule          (tier: test-backed `tests/test_server_orchestration.py`)
 Evidence: the round-2+ sequence driven end to end through `loop.py` rather than hand-written curl, replacing the bash sequence the file currently guards.
 
-### Task 4 — Carry --split-on through the driver
+### Task 4 — Carry --split-on through the driver [PASS]
 Why now:    `loop.py` has no route to `--split-on`, so a task-card plan review cannot run through the driver at all — and studious's planning contract makes that flag mandatory for every `PLAN.md` round.
 Read first: `scripts/loop.py`, `scripts/parse_sections.py`, `scripts/schema.py`, `.claude/skills/viva/SKILL.md`
 Rests on:   Task 3
