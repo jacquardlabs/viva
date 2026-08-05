@@ -3999,6 +3999,13 @@ _sse_clients: list = []
 _clients_lock = threading.Lock()
 _data_lock = threading.Lock()
 _ledger: list = []
+# The verdicts this server actually received, snapshotted at /submit and read by
+# /complete's finish guard. Deliberately not a re-read of `_output_path`: the
+# file on disk can be replaced by a caller between the two calls, and the guard
+# must judge what the human submitted. `None` (not `{}`) means no round has been
+# submitted for the round currently loaded — its own refusal, distinct from a
+# round that was reviewed and came back with work outstanding.
+_last_verdicts = None
 # Serializes the /preferences/mute read-modify-write against a concurrent
 # mute (single-reviewer, single-tab in practice, but cheap insurance against
 # two fast double-clicks or two tabs open on the same session — #142).
@@ -4361,7 +4368,7 @@ class Handler(BaseHTTPRequestHandler):
         return length
 
     def do_POST(self) -> None:
-        global _input_data, _output_path
+        global _input_data, _output_path, _last_verdicts
         parsed = urlparse(self.path)
         path   = parsed.path
         params = parse_qs(parsed.query)
@@ -4392,6 +4399,12 @@ class Handler(BaseHTTPRequestHandler):
 
             with _data_lock:
                 out = _output_path
+                # Snapshot for /complete's finish guard, taken here under the
+                # same lock that guards `_input_data` so the two always describe
+                # the same round. Same shape gate as the validation above: a Q&A
+                # `answers` payload is not a verdict set.
+                if "sections" in data:
+                    _last_verdicts = data
                 titles = {s.get("id"): s.get("title", "")
                           for s in _input_data.get("sections", [])}
                 try:
@@ -4451,6 +4464,10 @@ class Handler(BaseHTTPRequestHandler):
                 handoff = "questions" in _input_data and "sections" in new_data
                 _input_data = new_data
                 _output_path = output
+                # The verdict snapshot belongs to the round that produced it.
+                # Section ids are stable across rounds (s1…sN), so a carried
+                # all-approved snapshot would sign off a round nobody has seen.
+                _last_verdicts = None
                 ledger_snapshot = list(_ledger)
             if handoff:
                 # Distinct from the per-mode startup line so a terminal-watching
@@ -4469,6 +4486,47 @@ class Handler(BaseHTTPRequestHandler):
                 summary = json.loads(body) if body.strip() else {}
             except json.JSONDecodeError:
                 summary = {}
+            # The finish guard. "Nothing is auto-accepted" is a hard product
+            # line, and a check that lives only in `loop.py finish` is a norm the
+            # next caller walks around — so the server refuses on its own too,
+            # asking `schema.round_is_complete`, the one predicate both processes
+            # share (docs/design/loop-driver.md).
+            with _data_lock:
+                round_input = _input_data
+                submitted   = _last_verdicts
+            # Two sessions are exempt, and shape alone does not identify them.
+            # Q&A carries `questions`, never `sections`, so the shape test
+            # excepts it. Diff mode does not: `parse_diff.py` emits `sections`,
+            # and `viva-diff/SKILL.md:109-113`'s empty-re-diff finish signs off
+            # with `changes` verdicts on record by design — the diff reached zero
+            # because a hunk was reverted at the reviewer's request, not because
+            # every hunk was approved. Gating it would 4xx a legitimate finish,
+            # leak the server, and strand the tab on the processing card.
+            # Closing that carve-out needs an explicit resolved-empty signal
+            # from viva-diff, which belongs to another story.
+            if "sections" in round_input and round_input.get("mode") != "diff":
+                if submitted is None:
+                    self._error(400, "no verdicts submitted for this round — "
+                                     "nothing to complete")
+                    return
+                if not schema.round_is_complete(round_input, submitted):
+                    # `round_is_complete` above is the gate; the count below is
+                    # only the message's detail, derived from today's rule for
+                    # the agent's recovery. When milestone 10's pass types make
+                    # completion a function of the pass, this text follows the
+                    # predicate — it never decides anything on its own.
+                    by_id = {s.get("id"): s
+                             for s in submitted.get("sections", [])}
+                    sections = round_input.get("sections", [])
+                    pending = sum(
+                        1 for s in sections
+                        if (by_id.get(s.get("id")) or {}).get("verdict")
+                        != "approved")
+                    self._error(409, "refusing to complete: %d of %d section(s) "
+                                     "not approved. Nothing is auto-accepted; "
+                                     "re-present the round or abandon it."
+                                     % (pending, len(sections)))
+                    return
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)
             threading.Timer(2.0, _shutdown.set).start()

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for scripts/schema.py — the shared protocol contract."""
+import ast
 import sys
 from pathlib import Path
 
@@ -126,6 +127,38 @@ def test_validate_verdicts_rejects_bad():
     print("  ok  test_validate_verdicts_rejects_bad")
 
 
+def test_schema_reaches_no_io():
+    """`round_is_complete()` is the finish guard `loop.py finish` and the
+    server's `/complete` handler both ask, from two processes. It must judge the
+    dicts handed to it and nothing else — a disk read would let the two call
+    sites answer differently for the same round, and would make the server's
+    guard readable by whoever last wrote the file rather than by what the human
+    submitted.
+
+    Checked as a module property, not a call trace: `schema.py` imports no
+    filesystem or serialization module at all, so nothing in it can reach disk.
+    AST-walked rather than grepped — the module docstring names `json.dumps` and
+    `_input_data` while describing the server's `/input` merge, and a substring
+    scan would fire on prose.
+    """
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "schema.py")
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    banned = {"os", "pathlib", "json", "io", "shutil", "tempfile", "subprocess"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                assert root not in banned, \
+                    "schema.py must stay pure — imports %s" % alias.name
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            assert root not in banned, \
+                "schema.py must stay pure — imports from %s" % node.module
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            assert node.func.id != "open", "schema.py must stay pure — calls open()"
+    print("  ok  test_schema_reaches_no_io")
+
+
 def main():
     test_section_key_normalizes()
     test_section_key_handles_none_and_empty()
@@ -137,7 +170,8 @@ def main():
     test_validate_review_input_rejects_bad()
     test_validate_verdicts_accepts_valid()
     test_validate_verdicts_rejects_bad()
-    print("OK (10 tests)")
+    test_schema_reaches_no_io()
+    print("OK (11 tests)")
 
 
 if __name__ == "__main__":

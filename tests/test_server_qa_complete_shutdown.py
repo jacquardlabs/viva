@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
-"""Integration test: every route out of a live server actually ends the process
-and removes `.viva/server.url`. Three routes, three scenarios:
+"""Integration test: how a live server session ends — the finish guard that
+decides whether it *may* end, and the three routes that actually end it.
+
+`POST /complete`'s guard runs first, because a refused finish never reaches a
+shutdown. "Nothing is auto-accepted" is a hard product line, and a guard that
+lives only in `loop.py finish` is a norm the next caller can walk around; this
+is the check the server performs on its own. Three sessions, two answers:
+
+- **review** — gated. No verdicts submitted yet and not-all-approved are two
+  different agent recoveries, so they get two distinct 4xx.
+- **Q&A** — exempt by shape (`questions`, no `sections`).
+- **diff** — exempt by mode. `parse_diff.py` emits `sections`, so a diff
+  session is review-shaped; `viva-diff/SKILL.md:109-113`'s empty-re-diff finish
+  signs off with `changes` verdicts on record by design.
+
+Then the shutdown routes — three routes, three scenarios:
 
 - `POST /complete` — the standalone qa-mode finish sequence (#112). Before that
   fix, `/viva-qa`'s documented finish steps read `.viva/answers.json` and
@@ -28,19 +42,29 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import ROOT, get, poll_for, post, wait_for_url  # noqa: E402
+from _server_harness import (  # noqa: E402
+    ROOT, get, poll_for, post, post_result, wait_for_url,
+)
 
 QA_INPUT = {
     "mode": "qa",
     "context": "smoke test",
     "questions": [{"id": "q1", "text": "Pick one", "choices": ["a", "b"]}],
 }
+# Two sections, so the guard's refusal has a count to name ("1 of 2").
 REVIEW_INPUT = {
     "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
-    "sections": [{"id": "s1", "title": "Goals", "content": "body"}],
+    "sections": [{"id": "s1", "title": "Goals", "content": "body"},
+                 {"id": "s2", "title": "Non-goals", "content": "body"}],
+}
+# What `parse_diff.py` emits: review-shaped `sections`, `mode: "diff"`.
+DIFF_INPUT = {
+    "mode": "diff", "doc_file": "HEAD", "round": 1, "approved_ids": [],
+    "sections": [{"id": "s1", "title": "a.py", "content": "@@ -1 +1 @@\n-x\n+y"}],
 }
 _NAMES = {"qa": ("qa-input.json", "answers.json"),
-          "review": ("review-input-r1.json", "review-r1.json")}
+          "review": ("review-input-r1.json", "review-r1.json"),
+          "diff": ("review-input-r1.json", "review-r1.json")}
 
 
 def _launch(mode: str, payload: dict):
@@ -76,6 +100,96 @@ def _cleanup(proc) -> None:
         proc.wait(timeout=5)
 
 
+def check_review_complete_gate() -> None:
+    """A review session may not sign off on sections the human never approved.
+
+    Four calls against one server, in the order a real session hits them, so the
+    snapshot the guard reads is proved to track the live round rather than being
+    written once at the first submit.
+    """
+    proc, viva, out = _launch("review", REVIEW_INPUT)
+    try:
+        base = wait_for_url(out)
+
+        # (a) No round has been submitted at all. Its own 4xx, distinct from
+        # (b): the recovery is "present the round", not "re-present it".
+        status, body = post_result(base, "/complete", {})
+        assert status == 400, \
+            "/complete before any /submit must be refused — got %d" % status
+        assert "no verdicts" in body.get("error", ""), body
+
+        # (b) Submitted, but one section carries `changes`.
+        post(base, "/submit", {"round": 1, "sections": [
+            {"id": "s1", "verdict": "approved"},
+            {"id": "s2", "verdict": "changes", "comments": [{"note": "fix"}]},
+        ]})
+        assert poll_for(out), "review-r1.json never written"
+        status, body = post_result(base, "/complete", {
+            "rounds_total": 1, "sections_total": 2, "sections_revised": 1})
+        assert status == 409, \
+            "a round with a non-approved section must be refused — got %d" % status
+        assert "1 of 2" in body.get("error", ""), \
+            "the refusal must name how many sections are not approved: %r" % (body,)
+
+        # (c) Round 2 opens with no verdicts of its own. The snapshot belongs to
+        # the round that produced it — carrying round 1's forward would let an
+        # all-approved earlier round sign off a later one nobody has seen.
+        out2 = viva / "review-r2.json"
+        post(base, "/next-round",
+             dict(REVIEW_INPUT, round=2, output=str(out2)))
+        status, body = post_result(base, "/complete", {})
+        assert status == 400, \
+            "a fresh round with no verdicts must be refused — got %d" % status
+        assert "no verdicts" in body.get("error", ""), body
+
+        # (d) Every section approved — the one state that signs off.
+        post(base, "/submit", {"round": 2, "sections": [
+            {"id": "s1", "verdict": "approved"},
+            {"id": "s2", "verdict": "approved"},
+        ]})
+        status, body = post_result(base, "/complete", {
+            "rounds_total": 2, "sections_total": 2, "sections_revised": 1})
+        assert (status, body) == (200, {"ok": True}), \
+            "an all-approved round must still complete — got %d %r" % (status, body)
+        assert _await_exit(proc), "an accepted /complete still shuts the server down"
+        assert not (viva / "server.url").exists()
+    finally:
+        _cleanup(proc)
+
+
+def check_diff_complete_ungated() -> None:
+    """A diff session finishes with `changes` verdicts on record.
+
+    `viva-diff/SKILL.md:109-113`: the re-diff reaches zero because a hunk was
+    reverted or dropped at the reviewer's request, *not* because every hunk was
+    approved — so the latest verdicts hold `changes` by design. `parse_diff.py`
+    emits `sections`, so a shape-only guard would 4xx that legitimate finish,
+    leak the server, and strand the tab on the processing card. The exemption is
+    `mode`, which is why this asserts a 200 with the non-approved verdicts
+    actually on record rather than an empty submit.
+    """
+    proc, viva, out = _launch("diff", DIFF_INPUT)
+    try:
+        base = wait_for_url(out)
+        post(base, "/submit", {"round": 1, "sections": [
+            {"id": "s1", "verdict": "changes",
+             "comments": [{"note": "revert this hunk"}]},
+        ]})
+        assert poll_for(out), "review-r1.json never written"
+        recorded = json.loads(out.read_text())
+        assert [s["verdict"] for s in recorded["sections"]] == ["changes"], \
+            "precondition: the server must hold a non-approved verdict %r" % (recorded,)
+
+        status, body = post_result(base, "/complete", {
+            "rounds_total": 1, "sections_total": 1, "sections_revised": 1})
+        assert (status, body) == (200, {"ok": True}), \
+            "diff mode is exempt from the finish guard — got %d %r" % (status, body)
+        assert _await_exit(proc), "diff server should exit after /complete"
+        assert not (viva / "server.url").exists()
+    finally:
+        _cleanup(proc)
+
+
 def check_complete_shutdown() -> None:
     """A standalone qa session's finish sequence exits the process (#112)."""
     proc, viva, out = _launch("qa", QA_INPUT)
@@ -92,7 +206,15 @@ def check_complete_shutdown() -> None:
 
         # Mirrors /viva-qa's fixed step 4: /complete once
         # answers.json exists (standalone finish, no hand-off).
-        post(base, "/complete", {"questions_total": 1, "questions_answered": 1})
+        # Also the finish guard's shape exemption: this input carries
+        # `questions` and no `sections`, and `round_is_complete` returns False
+        # for an empty section list — so a 200 here is proof it was never
+        # consulted, not proof it was satisfied.
+        status, body = post_result(
+            base, "/complete", {"questions_total": 1, "questions_answered": 1})
+        assert (status, body) == (200, {"ok": True}), \
+            "a Q&A session must never meet the review finish guard — got %d %r" \
+            % (status, body)
 
         # Server shuts down ~2 seconds after /complete (same timer review-
         # and diff-mode already rely on).
@@ -147,6 +269,8 @@ def check_sigterm_shutdown() -> None:
 
 
 def main() -> None:
+    check_review_complete_gate()
+    check_diff_complete_ungated()
     check_complete_shutdown()
     check_abandon_shutdown()
     check_sigterm_shutdown()
