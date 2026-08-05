@@ -74,6 +74,30 @@ def main() -> None:
         assert post_oversized(base, "/abandon", over) == 413, \
             "/abandon must reject an oversized body"
 
+        # ── the case a prefix match cannot catch ───────────────────────────
+        # `http://127.0.0.1.evil.example` is an ordinary A record an attacker
+        # controls, and its Origin literally starts with `http://127.0.0.1`.
+        # The old `startswith` guard admitted it to every write sink here;
+        # `http://evil.example` above never could, so it proved nothing about
+        # this hole. /submit is the sink that matters: a forged all-approved
+        # payload there is honoured by the finish guard, because the verdicts
+        # on record genuinely say approved.
+        for sneaky in ("http://127.0.0.1.evil.example",
+                       "http://localhost.evil.example",
+                       "https://127.0.0.1"):
+            for route in ("/submit", "/next-round", "/complete", "/abandon"):
+                assert post_headers(base, route, {},
+                                    {"Origin": sneaky}) == 403, \
+                    "%s must reject Origin %s — exact host, not a prefix" \
+                    % (route, sneaky)
+
+        # A cross-origin *simple* POST (text/plain) needs no preflight, so a
+        # page that never sees a 403 could still deliver its body. Requiring
+        # JSON is what forces a preflight this server does not answer.
+        assert post_headers(base, "/submit", {},
+                            {"Content-Type": "text/plain;charset=UTF-8"}) == 415, \
+            "a text/plain body must be refused before it can be read"
+
         print("OK")
 
 

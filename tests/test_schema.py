@@ -170,6 +170,57 @@ def test_schema_reaches_no_io():
     print("  ok  test_schema_reaches_no_io")
 
 
+def test_round_is_complete_needs_a_row_per_input_section():
+    """The (input, verdicts) signature is what makes a *missing* row visible.
+
+    Scanning verdicts alone cannot see a section that was never submitted, and
+    no end-to-end test reaches this: every submit path sends one row per input
+    section.
+    """
+    inp = {"sections": [{"id": "s1"}, {"id": "s2"}]}
+    both = {"sections": [{"id": "s1", "verdict": "approved"},
+                         {"id": "s2", "verdict": "approved"}]}
+    assert schema.round_is_complete(inp, both)
+
+    missing = {"sections": [{"id": "s1", "verdict": "approved"}]}
+    assert not schema.round_is_complete(inp, missing), \
+        "a section with no verdict row at all is not approved"
+
+    one_open = {"sections": [{"id": "s1", "verdict": "approved"},
+                             {"id": "s2", "verdict": "changes"}]}
+    assert not schema.round_is_complete(inp, one_open)
+    assert not schema.round_is_complete(inp, {}), \
+        "no verdicts at all is not a complete round"
+    print("  ok  test_round_is_complete_needs_a_row_per_input_section")
+
+
+def test_round_is_complete_rejects_an_empty_round():
+    """`all([])` is True, so the empty-sections guard deliberately inverts
+    Python's default. Nothing else pins it: a server-side test asserting a 200
+    would still pass if the guard were dropped, because the guard's own shape
+    check exempts a sections-less payload first."""
+    assert not schema.round_is_complete({"sections": []}, {"sections": []})
+    assert not schema.round_is_complete({}, {})
+    print("  ok  test_round_is_complete_rejects_an_empty_round")
+
+
+def test_has_revision_history_is_anchored():
+    """Substring matching is the defect this replaces: viva's own SKILL.md and
+    DESIGN.md discuss the ledger by name, and a false positive takes `start`'s
+    resume branch — which can pre-approve a section the human never saw."""
+    assert schema.has_revision_history("# D\n\n## Revision History\n\nrow")
+    assert schema.has_revision_history("## Revision History   \n")
+    assert not schema.has_revision_history(
+        "the parser appends `## Revision History` at sign-off"), \
+        "a mention inside backticks is not a signed-off doc"
+    # Residue, documented rather than asserted away: a fenced block whose
+    # content starts the line still matches. Every real mention in this repo is
+    # inline-backticked mid-line, which is the reported defect and is fixed.
+    assert not schema.has_revision_history("### Revision History\n"), \
+        "a different heading level is a different heading"
+    print("  ok  test_has_revision_history_is_anchored")
+
+
 def main():
     test_section_key_normalizes()
     test_section_key_handles_none_and_empty()
@@ -182,7 +233,10 @@ def main():
     test_validate_verdicts_accepts_valid()
     test_validate_verdicts_rejects_bad()
     test_schema_reaches_no_io()
-    print("OK (11 tests)")
+    test_round_is_complete_needs_a_row_per_input_section()
+    test_round_is_complete_rejects_an_empty_round()
+    test_has_revision_history_is_anchored()
+    print("OK (14 tests)")
 
 
 if __name__ == "__main__":

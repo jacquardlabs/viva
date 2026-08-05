@@ -443,6 +443,146 @@ def check_references_are_reachable() -> None:
     print("  ok  check_references_are_reachable")
 
 
+def check_start_refuses_over_a_live_session() -> None:
+    """`start` clears the round files and `server.url`. Without the pre-flight
+    guard it does that to a *live* session, orphaning a running server with the
+    reviewer's tab still attached — unrecoverable, and invisible until someone
+    notices the orphan."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+        (viva / "server.url").write_text("http://127.0.0.1:1\n")
+
+        r = loop(viva, td, "start", "--doc", str(doc))
+        assert r.returncode != 0, "start must refuse over a live session's server.url"
+        assert "may still be running" in r.stderr, r.stderr
+        assert not (viva / "review-input-r1.json").exists(), \
+            "start must not parse a round when it refuses — the refusal is the point"
+        assert (viva / "server.url").exists(), \
+            "start must not delete the live session's server.url"
+    print("  ok  check_start_refuses_over_a_live_session")
+
+
+def check_start_resume_carries_prior_approvals() -> None:
+    """`start`'s resume branch: a doc already carrying a sign-off ledger, with
+    the prior round still on disk. The copy-out must happen before the clear
+    glob or carry-forward dies with it, and the scratch pair must not survive.
+    Also pins that a recorded `split_on` is handed back — re-deciding it by
+    auto-detection changes every section's identity and carries nothing."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "plan.md"
+        body = ("# P\n\n## Notes\n\nn\n\n### Task 1 — one\n\nx\n\n"
+                "### Task 2 — two\n\ny\n")
+        doc.write_text(body)
+        pattern = r"(?i)^Task \d+"
+
+        # Session one, signed off: parse with the pattern, approve everything,
+        # append a ledger the way revision_history.py would.
+        subprocess.run(
+            [sys.executable, str(PARSE), str(doc), "--output",
+             str(viva / "review-input-r1.json"), "--round", "1",
+             "--doc-file", str(doc), "--split-on", pattern],
+            check=True, capture_output=True)
+        first = json.loads((viva / "review-input-r1.json").read_text())
+        ids = [s["id"] for s in first["sections"]]
+        (viva / "review-r1.json").write_text(json.dumps(
+            {"round": 1, "submitted_early": False,
+             "sections": [{"id": i, "verdict": "approved"} for i in ids]}))
+        doc.write_text(body + "\n---\n\n## Revision History\n\nsigned off\n")
+
+        r = loop(viva, td, "start", "--doc", str(doc), "--parse-only")
+        assert r.returncode == 0, r.stderr
+
+        second = json.loads((viva / "review-input-r1.json").read_text())
+        assert second.get("split_on") == pattern, \
+            "the resume must re-split with the pattern the prior round recorded"
+        assert [s["title"] for s in second["sections"]] == \
+               [s["title"] for s in first["sections"]], \
+            "same pattern, same sections — otherwise identity moved"
+        assert second.get("approved_ids"), \
+            "the resume carried no approvals — the copy ran after the clear"
+        assert not (viva / "prior-review-input.json").exists(), \
+            "the scratch pair must not survive the resume"
+        assert not (viva / "prior-review-verdicts.json").exists()
+    print("  ok  check_start_resume_carries_prior_approvals")
+
+
+def check_start_opens_the_producer_seam() -> None:
+    """A standing preference auto-engages the preference producer, which is an
+    LLM pass — so `start` must stop after parsing rather than arm. The round
+    file's absolute path has to be printed, or the agent is back to computing
+    `review-input-r{N}.json`, the counter this driver exists to remove."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "preferences.py"), "record",
+             "--store", str(viva / "preferences.json"), "--session", "s1",
+             "--id", "cite-sources", "--label", "Cite a source",
+             "--guidance", "Attach a citation.", "--count", "2"],
+            check=True, capture_output=True)
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "preferences.py"), "record",
+             "--store", str(viva / "preferences.json"), "--session", "s2",
+             "--id", "cite-sources", "--label", "Cite a source",
+             "--guidance", "Attach a citation.", "--count", "2"],
+            check=True, capture_output=True)
+
+        r = loop(viva, td, "start", "--doc", str(doc))
+        assert r.returncode == 0, r.stderr
+        assert "NOT armed" in r.stdout, r.stdout
+        assert not (viva / "server.url").exists(), \
+            "the seam must stop before a server is launched"
+        assert str(viva / "review-input-r1.json") in r.stdout, \
+            "the seam must name the round file's absolute path"
+
+        # Close the seam the way the agent does: annotate, then arm.
+        sidecar = td / "flags.json"
+        sidecar.write_text(json.dumps(
+            [{"id": "s1", "kind": "preference", "severity": "warn",
+              "message": "[cite-sources] no source"}]))
+        r = loop(viva, td, "annotate", "--sidecar", str(sidecar))
+        assert r.returncode == 0, r.stderr
+        merged = json.loads((viva / "review-input-r1.json").read_text())
+        flagged = [s for s in merged["sections"] if s.get("annotations")]
+        assert flagged, "annotate did not land the producer's flag in the round"
+    print("  ok  check_start_opens_the_producer_seam")
+
+
+def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
+    """`rearm --parse-only` writes round N+1 while the server still serves N.
+    If the producer step then fails and the agent falls back to `wait`, the
+    round on disk is one nothing will ever write verdicts for — file existence
+    proves neither liveness nor armed-ness."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        # Round 1 armed and answered; round 2 parsed but never shipped.
+        (viva / "review-input-r1.json").write_text(json.dumps(
+            {"mode": "review", "round": 1, "doc_file": "d.md",
+             "sections": [{"id": "s1", "title": "A", "content": "## A\n"}]}))
+        (viva / "review-input-r2.json").write_text(json.dumps(
+            {"mode": "review", "round": 2, "doc_file": "d.md",
+             "sections": [{"id": "s1", "title": "A", "content": "## A\n"}]}))
+        with launch_server(viva / "review-input-r1.json",
+                           viva / "review-r1.json", cwd=td) as base:
+            r = loop(viva, td, "wait")
+            assert r.returncode == 2, \
+                "a parsed-but-unarmed round must exit 2, not hang: %r" % r
+            assert "not armed" in r.stderr and "loop.py arm" in r.stderr, r.stderr
+    print("  ok  check_wait_refuses_a_parsed_but_unarmed_round")
+
+
 def main() -> None:
     check_round_trip()
     check_split_on_session()
@@ -452,6 +592,10 @@ def main() -> None:
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
     check_references_are_reachable()
+    check_start_refuses_over_a_live_session()
+    check_start_resume_carries_prior_approvals()
+    check_start_opens_the_producer_seam()
+    check_wait_refuses_a_parsed_but_unarmed_round()
     print("OK")
 
 

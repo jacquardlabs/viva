@@ -38,6 +38,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import urllib.request
 import time
 from pathlib import Path
 
@@ -190,6 +192,30 @@ def check_diff_complete_ungated() -> None:
         _cleanup(proc)
 
 
+def _sse_events(base: str, seen: list) -> threading.Thread:
+    """Subscribe to /events and record every event name that arrives.
+
+    This is what makes "abandon carries no sign-off meaning" checkable. The
+    assertion it replaces — `not out.exists()` — could not fail under any
+    implementation, because `/complete` never writes that file either (`/submit`
+    does, and neither abandon scenario posts one). Adding `_push_sse("complete")`
+    to the /abandon branch left both tests green; it does not now.
+    """
+    def run():
+        try:
+            with urllib.request.urlopen(base + "/events", timeout=10) as r:
+                for raw in r:
+                    line = raw.decode(errors="replace").strip()
+                    if line.startswith("event:"):
+                        seen.append(line.split(":", 1)[1].strip())
+        except Exception:
+            pass  # the stream ends when the server shuts down; that is the point
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    time.sleep(0.4)  # let the subscription land before the route under test
+    return th
+
+
 def check_complete_shutdown() -> None:
     """A standalone qa session's finish sequence exits the process (#112)."""
     proc, viva, out = _launch("qa", QA_INPUT)
@@ -231,6 +257,8 @@ def check_abandon_shutdown() -> None:
     proc, viva, out = _launch("review", REVIEW_INPUT)
     try:
         base = wait_for_url(out)
+        events = []
+        _sse_events(base, events)
         t0 = time.monotonic()
         assert post(base, "/abandon", {}) == {"ok": True}, \
             "/abandon must ack before it shuts the server down"
@@ -243,8 +271,9 @@ def check_abandon_shutdown() -> None:
             "/abandon must set _shutdown directly — no /complete-style 2s timer"
         assert not (viva / "server.url").exists(), \
             "server.url must be removed once the abandoned process shuts down"
-        assert not out.exists(), \
-            "/abandon carries none of /complete's sign-off meaning — no verdicts"
+        assert "complete" not in events, \
+            "/abandon must carry none of /complete's sign-off meaning — the SSE "\
+            "stream saw a `complete` event: %r" % (events,)
     finally:
         _cleanup(proc)
 
@@ -259,7 +288,9 @@ def check_loop_abandon_shutdown() -> None:
     """
     proc, viva, out = _launch("review", REVIEW_INPUT)
     try:
-        wait_for_url(out)
+        base = wait_for_url(out)
+        events = []
+        _sse_events(base, events)
         r = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "loop.py"),
              "--viva-dir", str(viva), "abandon"],
@@ -273,8 +304,9 @@ def check_loop_abandon_shutdown() -> None:
             % (proc.returncode,)
         assert not (viva / "server.url").exists(), \
             "`loop.py abandon` must leave no server.url for the next start's guard"
-        assert not out.exists(), \
-            "abandon carries none of /complete's sign-off meaning — no verdicts"
+        assert "complete" not in events, \
+            "`loop.py abandon` is not a sign-off — the SSE stream saw a "\
+            "`complete` event: %r" % (events,)
     finally:
         _cleanup(proc)
 
