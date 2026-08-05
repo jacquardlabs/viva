@@ -424,7 +424,9 @@ def check_references_are_reachable() -> None:
     assert REFERENCES.is_dir(), "%s does not exist" % REFERENCES
     on_disk = {p.name for p in REFERENCES.iterdir() if p.is_file()}
     assert on_disk, "references/ is empty — 'every file is reachable' is vacuous"
-    named = set(re.findall(r'REFERENCES / "([^"]+)"', LOOP.read_text()))
+    # Either quote style: an f-string delimited by `"` cannot nest `"` before
+    # Python 3.12, so the driver's own print sites use single quotes inside.
+    named = set(re.findall(r"""REFERENCES / ["']([^"']+)["']""", LOOP.read_text()))
     assert on_disk == named, (
         "references/ and the paths loop.py prints disagree — unreachable: %s; "
         "dangling: %s" % (sorted(on_disk - named), sorted(named - on_disk)))

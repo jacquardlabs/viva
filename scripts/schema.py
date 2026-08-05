@@ -24,6 +24,7 @@ the `review-input-r{N}.json` file schema the `ReviewInput` TypedDict describes.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional, TypedDict
 
 # Verdicts that earn a Revision-History ledger row. `approved`/`pending` do not.
@@ -193,6 +194,25 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
             )
+
+
+REVISION_HISTORY_RE = re.compile(r"(?m)^## Revision History\s*$")
+
+
+def has_revision_history(doc_text: str) -> bool:
+    """Has this doc already been signed off — i.e. is a `start` a resume?
+
+    Anchored, never a substring test: `"## Revision History" in text` also
+    matches the phrase inside backticks, a fenced block, or ordinary prose, and
+    viva's own SKILL.md and DESIGN.md both discuss the ledger by name. A false
+    positive there takes the resume branch and can pre-approve a section the
+    human never saw, against PRODUCT.md's "nothing is auto-accepted".
+
+    `loop.py`'s resume detection and `revision_history.py`'s append-vs-create
+    branch ask the same question, so they ask it here — the same rule
+    `section_key()` follows.
+    """
+    return REVISION_HISTORY_RE.search(doc_text) is not None
 
 
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:

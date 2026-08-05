@@ -4006,6 +4006,9 @@ _ledger: list = []
 # submitted for the round currently loaded — its own refusal, distinct from a
 # round that was reviewed and came back with work outstanding.
 _last_verdicts = None
+# The launch `--mode`, fixed at startup. The finish guard keys on this
+# rather than on the round payload's `mode`, which any caller can set.
+_launch_mode: str = "review"
 # Serializes the /preferences/mute read-modify-write against a concurrent
 # mute (single-reviewer, single-tab in practice, but cheap insurance against
 # two fast double-clicks or two tabs open on the same session — #142).
@@ -4353,9 +4356,24 @@ class Handler(BaseHTTPRequestHandler):
         the error response itself and returns None on rejection; otherwise
         returns the validated length for the caller to `self.rfile.read()`."""
         origin = self.headers.get("Origin", "")
-        if origin and not (origin.startswith("http://127.0.0.1")
-                           or origin.startswith("http://localhost")):
-            self._error(403, "forbidden origin")
+        if origin:
+            # Exact host, never a prefix: `http://127.0.0.1.attacker.tld` is an
+            # ordinary A record whose Origin literally starts with
+            # `http://127.0.0.1`, so a prefix test admits an attacker-controlled
+            # page to every write sink here — including a forged all-approved
+            # `/submit` that the finish guard would then honour, since the
+            # verdicts on record genuinely say approved.
+            o = urlparse(origin)
+            if o.scheme != "http" or o.hostname not in ("127.0.0.1", "localhost"):
+                self._error(403, "forbidden origin")
+                return None
+        # A cross-origin `fetch` with `Content-Type: text/plain` is a *simple*
+        # request: no preflight, so a page that never sees our 403 can still
+        # deliver the body. Requiring JSON forces a preflight this server does
+        # not answer, which is what actually stops the send.
+        ctype = self.headers.get("Content-Type", "")
+        if ctype and not ctype.split(";")[0].strip().lower() == "application/json":
+            self._error(415, "expected Content-Type: application/json")
             return None
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -4504,7 +4522,14 @@ class Handler(BaseHTTPRequestHandler):
             # leak the server, and strand the tab on the processing card.
             # Closing that carve-out needs an explicit resolved-empty signal
             # from viva-diff, which belongs to another story.
-            if "sections" in round_input and round_input.get("mode") != "diff":
+            # The exemption keys on the *launch* mode, not the round payload's
+            # `mode`. `_input_data` is replaced wholesale from `/next-round`'s
+            # body, and no validator inspects `mode` — so gating on it let any
+            # caller send `{"sections": [...], "mode": "diff"}` and then sign off
+            # with zero verdicts, defeating the invariant this guard exists to
+            # enforce. `--mode` is an argparse choice fixed at startup and
+            # unreachable from any request.
+            if "sections" in round_input and _launch_mode != "diff":
                 if submitted is None:
                     self._error(400, "no verdicts submitted for this round — "
                                      "nothing to complete")
@@ -4631,6 +4656,7 @@ if __name__ == "__main__":
         except ValueError as e:
             sys.exit(f"viva: invalid qa-input {args.input}: {e}")
     _output_path = args.output
+    _launch_mode = args.mode
 
     port = find_free_port()
     server = ThreadedHTTPServer(("127.0.0.1", port), Handler)
