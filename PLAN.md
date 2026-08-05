@@ -41,7 +41,7 @@ Done means:
 5. [hold] `schema.round_is_complete` stays pure — no disk reads, no `Path`/`os`/`json.load` usage in `scripts/schema.py`          (tier: test-backed `tests/test_schema.py`)
 Evidence: each case driven against a real server subprocess; the diff case asserts a 200 with `changes` verdicts on record, which a shape-only guard would refuse.
 
-### Task 3 — loop.py completes its surface: annotate, rearm, abandon
+### Task 3 — loop.py completes its surface: annotate, rearm, abandon [PASS]
 Why now:    The producer seam and the round-2+ path are the half of the loop the skeleton left out; without them SKILL.md still needs bash blocks that name round files.
 Read first: `scripts/loop.py`, `scripts/annotate.py`, `.claude/skills/viva/SKILL.md`, `docs/design/loop-driver.md`
 Rests on:   Task 1
