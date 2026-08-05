@@ -16,6 +16,7 @@ cross-imports no sibling but `schema.py` (CLAUDE.md).
 """
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -30,6 +31,24 @@ PARSE = ROOT / "scripts" / "parse_sections.py"
 LOOP = ROOT / "scripts" / "loop.py"
 
 DOC = "## Goals\n\nShip the core.\n\n## Scope\n\nJust the core, nothing more.\n"
+
+# A task-card plan: `### Task N` cards with a `## Notes` block recurring inside
+# each one. Auto-detection picks the coarser repeater (`## Notes`) and swallows
+# both tasks, so the two splits are visibly different — which is what makes
+# "round 2 re-split the same way" a real assertion rather than a coincidence.
+PLAN = (
+    "# Sprint plan\n\nIntro paragraph.\n\n"
+    "### Task 1: ship the flag\n\nbody one\n\n"
+    "## Notes\n\nnote one\n\n"
+    "### Task 2: write the test\n\nbody two\n\n"
+    "## Notes\n\nnote two\n"
+)
+SPLIT = r"^Task \d+"
+
+# `loop.py start` arms round 1 by launching the server the way the agent does —
+# and for a human that means opening a browser tab. `$BROWSER` is registered
+# preferred by `webbrowser`, so pointing it at a no-op keeps the test headless.
+os.environ["BROWSER"] = "true"
 
 
 def parse(doc, output, round_num, viva, prior=None):
@@ -130,6 +149,74 @@ def check_round_trip() -> None:
         assert get(base, "/input")["round"] == 3, "arm must ship the parsed round"
 
 
+def check_split_on_session() -> None:
+    """A task-card plan review, driven start → submit → rearm by the driver.
+
+    `--split-on` is the flag studious's planning contract makes mandatory for a
+    `PLAN.md` round, so the driver has to carry it — and carry it *forward*: the
+    pattern is recorded in the round file, and `rearm` reads it back rather than
+    asking the agent to re-type it. Round 2 asserting the same split, the same
+    ids, and the carried approvals is what proves the round-trip.
+    """
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    doc = tmp / "PLAN.md"
+    doc.write_text(PLAN)
+
+    # The discriminator, established first: without the pattern this doc splits
+    # on `## Notes`, not on tasks.
+    auto = parse(doc, tmp / "auto.json", 1, viva)
+    assert [s["title"] for s in auto["sections"]] == \
+        ["Sprint plan", "Notes", "Notes"], auto["sections"]
+
+    r = loop(viva, tmp, "start", "--doc", "PLAN.md", "--split-on", SPLIT)
+    assert r.returncode == 0, "loop start --split-on failed:\n%s" % r.stderr
+    try:
+        data = json.loads((viva / "review-input-r1.json").read_text())
+        assert data["split_on"] == SPLIT, data.get("split_on")
+        titles = [s["title"] for s in data["sections"]]
+        assert titles == ["Sprint plan", "Task 1: ship the flag",
+                          "Task 2: write the test"], titles
+        ids = {s["title"]: s["id"] for s in data["sections"]}
+
+        base = (viva / "server.url").read_text().strip()
+        assert get(base, "/input")["round"] == 1
+
+        task2_cid = ids["Task 2: write the test"] + "-c1"
+        post(base, "/submit", {"round": 1, "submitted_early": False, "sections": [
+            {"id": ids["Sprint plan"], "verdict": "approved"},
+            {"id": ids["Task 1: ship the flag"], "verdict": "approved"},
+            {"id": ids["Task 2: write the test"], "verdict": "changes",
+             "comments": [{"cid": task2_cid, "type": "changes",
+                           "note": "name the fixture",
+                           "open": True, "settled": False}]},
+        ]})
+        assert poll_for(viva / "review-r1.json"), "review-r1.json never written"
+
+        # The agent's rewrite between rounds — only Task 2's body moves.
+        doc.write_text(PLAN.replace("body two", "body two, naming the fixture"))
+
+        r = loop(viva, tmp, "rearm", "--response", task2_cid + "=named the fixture")
+        assert r.returncode == 0, "loop rearm failed:\n%s" % r.stderr
+
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        # Carried, not consumed: round 2 records it too, so round 3's rearm
+        # re-splits the same way rather than silently falling back.
+        assert r2["split_on"] == SPLIT, r2.get("split_on")
+        assert [s["title"] for s in r2["sections"]] == titles, r2["sections"]
+        assert {s["title"]: s["id"] for s in r2["sections"]} == ids, \
+            "section ids must be stable across a --split-on re-parse"
+        assert ids["Sprint plan"] in r2["approved_ids"], r2["approved_ids"]
+        assert ids["Task 1: ship the flag"] in r2["approved_ids"], r2["approved_ids"]
+        assert ids["Task 2: write the test"] not in r2["approved_ids"], \
+            "the rewritten task must come back for re-review"
+        assert get(base, "/input")["round"] == 2, "rearm must ship round 2"
+    finally:
+        # `start` detaches the server, so nothing in this process holds a
+        # handle on it — the driver's own exit is the teardown.
+        loop(viva, tmp, "abandon")
+
+
 def check_no_subcommand_takes_a_round() -> None:
     """The counter nobody holds: no subcommand accepts a round argument.
 
@@ -186,6 +273,7 @@ def check_loop_cross_imports_only_schema() -> None:
 
 def main() -> None:
     check_round_trip()
+    check_split_on_session()
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     print("OK")

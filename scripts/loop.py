@@ -140,6 +140,8 @@ def cmd_start(args) -> int:
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
            "--output", viva / "review-input-r1.json", "--round", "1",
            "--doc-file", args.doc]
+    if args.split_on is not None:
+        cmd += ["--split-on", args.split_on]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
     if run(cmd).returncode != 0:
@@ -261,8 +263,13 @@ def cmd_rearm(args) -> int:
         die("round %d has no verdicts yet — run `loop.py wait` first" % n)
 
     # The doc travels in the round file the parser wrote, so the agent names
-    # neither the round nor the path it already handed `start`.
-    doc = load_json(inp).get("doc_file")
+    # neither the round nor the path it already handed `start`. The split
+    # pattern travels the same way: `parse_sections.py` records it on every
+    # round it parses, so re-reading it here is what keeps round N+1 splitting
+    # the way round 1 did. Absent key → auto-detection, unchanged.
+    round_data = load_json(inp)
+    doc = round_data.get("doc_file")
+    split_on = round_data.get("split_on")
     if not doc:
         die("round %d's input names no doc_file — cannot re-parse" % n)
     if not Path(doc).exists():
@@ -278,10 +285,16 @@ def cmd_rearm(args) -> int:
         die("open-note update failed")
 
     nxt_in, _ = round_files(viva, n + 1)
-    if run([sys.executable, SCRIPTS / "parse_sections.py", doc,
-            "--output", nxt_in, "--round", str(n + 1), "--doc-file", doc,
-            "--prior-input", inp, "--prior-verdicts", out,
-            "--open-notes", store]).returncode != 0:
+    cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
+           "--output", nxt_in, "--round", str(n + 1), "--doc-file", doc,
+           "--prior-input", inp, "--prior-verdicts", out,
+           "--open-notes", store]
+    # `is not None`, not truthiness, at both ends: the driver hands the pattern
+    # back exactly as recorded and lets `parse_sections.py` own what it means,
+    # so no round can be split by a rule a later round quietly re-decides.
+    if split_on is not None:
+        cmd += ["--split-on", split_on]
+    if run(cmd).returncode != 0:
         die("re-parse failed")
 
     # The round 2+ producer seam — the same stop-after-parse `start` takes on
@@ -371,6 +384,11 @@ def main() -> int:
 
     p = sub.add_parser("start", help="clear state, parse round 1, arm it")
     p.add_argument("--doc", required=True)
+    p.add_argument("--split-on", metavar="REGEX",
+                   help="split the doc on every heading whose title matches "
+                        "this regex (re.search, any depth) instead of an "
+                        "auto-detected level — a task-card plan. Recorded in "
+                        "the round file, so later rounds re-split with it.")
     p.add_argument("--arm-anyway", action="store_true",
                    help="arm even when standing preferences would open the "
                         "producer seam")

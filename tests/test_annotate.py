@@ -129,6 +129,21 @@ def test_confidence_basis_level_preserved() -> None:
     assert "basis" not in annot2 and "level" not in annot2, annot2
 
 
+def test_split_on_survives_the_merge() -> None:
+    # The producer seam is the path a task-card PLAN.md review takes whenever a
+    # standing preference is in play: `start --split-on` stops after parsing,
+    # `annotate` rewrites the round file in place, then `arm`. `rearm` later
+    # reads `split_on` back off that same file, so a merge that rebuilt the
+    # top-level dict instead of mutating it would drop the pattern and re-split
+    # the next round by auto-detection — silently, with every carried approval
+    # dying as the section boundaries moved.
+    data = base_input([{"id": "s1", "title": "Task 1", "content": "body"}])
+    data["split_on"] = r"^Task \d+"
+    out = run(data, [{"id": "s1", "kind": "preference", "severity": "warn",
+                      "message": "cite the source"}])
+    assert out["split_on"] == r"^Task \d+", out
+
+
 def test_loop_annotate_merges_into_the_derived_round() -> None:
     """`loop.py annotate --sidecar` names a sidecar and nothing else.
 
@@ -183,6 +198,7 @@ def main() -> None:
         test_empty_sidecar_is_byte_identical,
         test_missing_message_skipped,
         test_confidence_basis_level_preserved,
+        test_split_on_survives_the_merge,
         test_loop_annotate_merges_into_the_derived_round,
     ]
     failed = 0

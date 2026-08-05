@@ -390,6 +390,14 @@ def main() -> None:
         "approved_ids": approved_ids,
         "sections": sections,
     }
+    # Recorded outside the literal, only when the flag was given: a session
+    # parsed by auto-detection writes no `split_on` key at all, so its round
+    # file stays byte-identical to what it was before this field existed. The
+    # pattern is round state — `loop.py rearm` reads it back to re-split round
+    # N+1 the same way, which is also why every round it parses carries it
+    # forward rather than only round 1.
+    if args.split_on is not None:
+        data["split_on"] = args.split_on
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)

@@ -81,6 +81,12 @@ def test_validate_review_input_accepts_valid():
     })
     # Empty section list is structurally valid
     schema.validate_review_input({"mode": "review", "sections": []})
+    # `split_on` — the pattern a round was parsed with, carried so the next
+    # round re-splits the same way. Optional; a string when present.
+    schema.validate_review_input({
+        "mode": "review", "split_on": r"^Task \d+",
+        "sections": [{"id": "s1", "title": "Task 1", "content": "body"}],
+    })
     print("  ok  test_validate_review_input_accepts_valid")
 
 
@@ -92,6 +98,11 @@ def test_validate_review_input_rejects_bad():
         {"sections": [{"id": "s1", "content": "c"}]},         # missing title
         {"sections": [{"title": "T", "content": "c"}]},       # missing id
         {"sections": ["not an object"]},
+        # `split_on` is the regex the next round re-parses with — a non-string
+        # would reach `parse_sections.py --split-on` as a bad argument, or (for
+        # None) silently drop back to auto-detection mid-session.
+        {"sections": [], "split_on": 123},
+        {"sections": [], "split_on": None},
     ):
         try:
             schema.validate_review_input(bad)

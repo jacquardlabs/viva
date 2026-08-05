@@ -118,6 +118,10 @@ class ReviewInput(TypedDict, total=False):
     doc_file: str                   # relative path for the UI
     round: int                      # round number
     approved_ids: List[str]         # ids approved in prior rounds
+    # optional — the `--split-on` regex this round was parsed with, recorded by
+    # `parse_sections.py` so `loop.py rearm` re-splits round N+1 identically.
+    # Absent when the round used the auto-detected split level.
+    split_on: str
     sections: List[ReviewSection]
 
 
@@ -150,6 +154,13 @@ def validate_review_input(data: dict) -> None:
     sections = data.get("sections")
     if not isinstance(sections, list):
         raise ValueError("review-input.sections must be a list")
+    # Presence-gated: the key is optional, but a present non-string is a hard
+    # failure — `loop.py rearm` hands this value straight back to
+    # `parse_sections.py --split-on`, and a `null` would silently re-split the
+    # next round by auto-detection instead of the pattern the session started
+    # with. Loud here beats a mid-session split change nobody asked for.
+    if "split_on" in data and not isinstance(data["split_on"], str):
+        raise ValueError("review-input.split_on must be a string")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")

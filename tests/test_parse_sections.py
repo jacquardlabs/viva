@@ -602,6 +602,25 @@ def test_split_on_default_path_byte_identical_without_flag() -> None:
     assert with_flag_absent == again
 
 
+def test_split_on_recorded_in_round_file() -> None:
+    # The pattern is round state, not a one-shot argument: the round file
+    # records what it was parsed with so `loop.py rearm` can re-split round
+    # N+1 the same way without the agent re-typing it.
+    doc = "# Doc\n\n### Task 1\n\nbody 1\n\n### Task 2\n\nbody 2\n"
+    data = run(doc, extra_args=["--split-on", r"^Task \d+"])
+    assert data["split_on"] == r"^Task \d+", data.get("split_on")
+
+
+def test_no_split_on_key_when_flag_absent() -> None:
+    # A session started without the flag records no key at all — an absent
+    # `split_on` is what tells `rearm` to keep auto-detecting, and the round
+    # file stays byte-identical to what it was before the field existed.
+    doc = "# Doc\n\n### Task 1\n\nbody 1\n\n### Task 2\n\nbody 2\n"
+    data = run(doc)
+    assert "split_on" not in data, data
+    assert [s["title"] for s in data["sections"]] == ["Doc", "Task 1", "Task 2"]
+
+
 def test_split_on_fixture_one_section_per_task() -> None:
     # Acceptance criterion: a fixture PLAN.md with ### Task N blocks parses
     # to one section per task with no custom parsing needed downstream.
@@ -863,6 +882,8 @@ def main() -> None:
         test_split_on_invalid_regex_errors,
         test_split_on_20_section_fallback_not_applied,
         test_split_on_default_path_byte_identical_without_flag,
+        test_split_on_recorded_in_round_file,
+        test_no_split_on_key_when_flag_absent,
         test_split_on_fixture_one_section_per_task,
         test_split_on_fixture_round2_carries_forward_through_section_key,
         test_split_on_identity_reuses_section_key_no_new_rule,
