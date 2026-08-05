@@ -73,7 +73,7 @@ Done means:
 5. [hold] Carried approvals survive a `--split-on` round 2 — every section id is stable across the re-parse          (tier: test-backed `tests/test_server_orchestration.py`)
 Evidence: a two-round session driven through `loop.py` with a task-card split pattern, asserting round 2 re-splits the same way and carries its approvals.
 
-### Task 5 — Slim SKILL.md to judgment work, extract references/
+### Task 5 — Slim SKILL.md to judgment work, extract references/ [PASS]
 Why now:    The 382-line skill is the defect's home; every earlier task exists so this rewrite has code to call instead of prose to execute.
 Read first: `.claude/skills/viva/SKILL.md`, `scripts/loop.py`, `docs/design/loop-driver.md`, `PRODUCT.md`
 Rests on:   Task 4
