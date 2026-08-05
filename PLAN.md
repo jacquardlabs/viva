@@ -12,7 +12,7 @@ Spine: Task 1 → Task 3 → Task 4 (Task 2 is independent, runs any time). Task
 `/abandon` endpoint that Task 3's own `abandon` subcommand calls; Task 4 documents the sequence
 Task 3 finishes. Task 2 is the round gate — highest-risk logic, no other task builds on it.
 
-### Task 1 — Server teardown: POST /abandon and the SIGTERM handler
+### Task 1 — Server teardown: POST /abandon and the SIGTERM handler [REPLAN]
 Why now:    Task 3's `abandon` subcommand has no way to reach the server until this endpoint exists — the design's own round-3 blocker.
 Read first: `server.py`, `docs/design/loop-driver.md`, `tests/test_server_qa_complete_shutdown.py`
 Rests on:   nothing — first task in the spine.
