@@ -58,10 +58,11 @@ python3 "$VIVA_DIR/scripts/loop.py" annotate --sidecar .viva/producer.json
 ```
 
 A mechanical producer can pipe straight through, since `--sidecar -` reads
-stdin:
+stdin. Its `--input` is the round file whose path `loop.py` printed when it
+stopped — never a path you compute:
 
 ```bash
-python3 "$VIVA_DIR/scripts/drift.py" --input <the round file loop.py just parsed> \
+python3 "$VIVA_DIR/scripts/drift.py" --input <the round file loop.py printed> \
   | python3 "$VIVA_DIR/scripts/loop.py" annotate --sidecar -
 ```
 

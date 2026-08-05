@@ -185,6 +185,9 @@ def check_round_trip() -> None:
         assert r.returncode == 0, f"loop rearm --parse-only failed:\n{r.stderr}"
         assert (viva / "review-input-r3.json").exists(), \
             "--parse-only must still re-parse the next round"
+        assert str(viva / "review-input-r3.json") in r.stdout, \
+            "the seam must name the round file a producer's --input needs — " \
+            "otherwise the agent is back to computing review-input-r{N}.json"
         assert_printed_references_exist(r.stdout)
         assert get(base, "/input")["round"] == 2, \
             "--parse-only must stop before arming — the server still holds round 2"
@@ -193,6 +196,24 @@ def check_round_trip() -> None:
         r = loop(viva, tmp, "arm")
         assert r.returncode == 0, f"loop arm failed:\n{r.stderr}"
         assert get(base, "/input")["round"] == 3, "arm must ship the parsed round"
+
+        # ── Sign-off: an all-approved round routes to `finish` ───────────────
+        r3_out = viva / "review-r3.json"
+        post(base, "/submit", {"round": 3, "submitted_early": False, "sections": [
+            {"id": ids["Goals"], "verdict": "approved"},
+            {"id": ids["Scope"], "verdict": "approved"},
+        ]})
+        assert poll_for(r3_out), "review-r3.json never written"
+
+        r = loop(viva, tmp, "wait")
+        assert r.returncode == 0, f"loop wait failed:\n{r.stderr}"
+        assert "=== round 3: all-approved ===" in r.stdout, r.stdout
+
+        r = loop(viva, tmp, "finish", "--doc", "doc.md")
+        assert r.returncode == 0, f"loop finish failed:\n{r.stderr}"
+        assert "## Revision History" in doc.read_text(), \
+            "finish must append the ledger to the doc"
+        assert_printed_references_exist(r.stdout)
 
 
 def check_split_on_session() -> None:

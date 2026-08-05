@@ -159,6 +159,10 @@ def cmd_start(args) -> int:
               "in play." % len(prefs))
         print("viva-loop: run the preference producer, then `loop.py annotate "
               "--sidecar <path>` and `loop.py arm`.")
+        # Named, not templated: a producer reading `--input` needs this path,
+        # and computing `review-input-r{N}.json` is the counter this file exists
+        # to stop the agent holding.
+        print("viva-loop: round file → %s" % (viva / "review-input-r1.json"))
         print("viva-loop: producer contract → %s" % (REFERENCES / "producers.md"))
         return 0
     return cmd_arm(args)
@@ -309,6 +313,7 @@ def cmd_rearm(args) -> int:
         print("viva-loop: round %d parsed, NOT armed (--parse-only)." % (n + 1))
         print("viva-loop: run the producer, then `loop.py annotate --sidecar "
               "<path>` and `loop.py arm`.")
+        print("viva-loop: round file → %s" % nxt_in)
         print("viva-loop: producer contract → %s" % (REFERENCES / "producers.md"))
         return 0
     return cmd_arm(args)
