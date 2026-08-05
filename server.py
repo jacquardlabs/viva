@@ -4472,6 +4472,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)
             threading.Timer(2.0, _shutdown.set).start()
+        elif path == "/abandon":
+            # The shutdown route with no sign-off meaning: `loop.py abandon` is
+            # a different process from the one that launched the server (start
+            # detaches it), holds no child handle, and `server.url` carries a
+            # URL and nothing else — so abandon reaches the server over HTTP,
+            # not by signal. Deliberately *not* /complete: no `complete` SSE
+            # event (the browser's `es.onerror` fires when `_shutdown` releases
+            # the /events wait, which is the honest "connection lost" signal for
+            # a session that was dropped, not finished) and no 2-second grace.
+            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+            if length is None:
+                return
+            if length:
+                self.rfile.read(length)  # drain: unread body turns close() into RST
+            self._send(200, "application/json", b'{"ok":true}')
+            _shutdown.set()
         elif path == "/preferences/mute":
             # Second, narrow writer of `.viva/preferences.json` (#142) —
             # flips one existing preference to `muted` via the same
@@ -4530,7 +4546,12 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     args = parse_args()
-    signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
+    # SIGTERM joins SIGINT on one handler: Ctrl-C is the human's exit, and
+    # `proc.terminate()` is the headless parent's (#125). Unhandled, SIGTERM is
+    # fatal — the process dies at -15 and the `finally` below never unlinks
+    # `server.url`, leaking it into the next launch's liveness guard.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: _shutdown.set())
     _viva_dir = Path(args.input).resolve().parent
     # Resolve the preferences store path and update _HTML_BYTES with the
     # absolute path, mirroring the pattern for _PREFS_SCRIPT_PATH above.

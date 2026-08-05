@@ -183,8 +183,8 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
   no error) and "directory unwritable" (a genuine permission failure still
   surfaces as an uncaught exception — see §6).
 - Deleted in the shutdown path's `finally` block on every exit route
-  (SIGINT, or the 2-second timer `POST /complete` starts) — never left
-  behind on a clean exit.
+  (SIGINT, SIGTERM, `POST /abandon`, or the 2-second timer `POST /complete`
+  starts) — never left behind on a clean exit.
 - A caller that wants to detect "is a session already running" polls for
   this file's existence exactly as `SKILL.md`'s own launch guard does
   (`[ -f .viva/server.url ]`, adjusted for wherever this caller's `--output`
@@ -199,13 +199,14 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
 | `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `/viva-qa`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-diff`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
 | `POST /complete` | yes | Ends the session. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /abandon` | yes | Ends the session **without** finishing it — the route for a caller that decides to drop an unfinished round. Body is ignored. Sets the shutdown event immediately: no 2-second grace, and no SSE `"complete"` event, so the browser tab sees its `/events` stream drop and reports a lost connection rather than a completed review. Carries none of `/complete`'s sign-off meaning and writes no output file. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. |
 
 Every error response, on any endpoint, is `application/json` with body
 `{"error": "<message>"}` and a matching non-2xx status — `400` (invalid
 JSON, wrong body shape, failed `validate_review_input`/`validate_verdicts`),
-`403` (forbidden cross-origin `Origin` — `/submit`, `/next-round`, and
-`/complete` all run this check), `413` (body over 256 MiB — same three
-endpoints), `404` (unmatched path), `500` (`/submit` — `IOError`/`OSError`
+`403` (forbidden cross-origin `Origin` — `/submit`, `/next-round`,
+`/complete`, and `/abandon` all run this check), `413` (body over 256 MiB —
+same four endpoints), `404` (unmatched path), `500` (`/submit` — `IOError`/`OSError`
 writing the output file). A caller can distinguish any failure from a
 success by content type alone, since successes are already uniformly
 `{"ok": true}` JSON.
@@ -216,7 +217,7 @@ Process exit codes:
 
 | Exit code | stderr shape | When |
 |---|---|---|
-| `0` | `viva · done` on stdout, nothing distinctive on stderr | Graceful shutdown — `SIGINT`, or the 2-second timer after `POST /complete` fires. |
+| `0` | `viva · done` on stdout, nothing distinctive on stderr | Graceful shutdown — `SIGINT`, `SIGTERM` (both handled, so a parent's `proc.terminate()` exits `0` here rather than dying at `-15`), `POST /abandon`, or the 2-second timer after `POST /complete` fires. |
 | `2` | argparse's own usage block | A CLI usage error — a missing required flag, or `--mode` given a value outside `{review,qa,diff}`. |
 | `1` | **one line**, `viva: invalid {review-input,qa-input} {path}: {message}` | One of the two deliberate `sys.exit(...)` calls: `validate_review_input`/`validate_qa_input` rejected `--input`'s contents at startup. A caller can pattern-match on the `viva: ` prefix to distinguish this from the next row. |
 | `1` | **multi-line Python traceback**, no `viva: ` prefix | Every other startup failure: `--input` path doesn't exist or isn't readable, `--input`'s contents aren't valid JSON, or `--output`'s directory can't be created/written to because of a permission failure (its *absence* alone is not a failure — see §4). Nothing in `server.py` catches these; they are uncaught Python exceptions. |
