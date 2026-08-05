@@ -8,9 +8,11 @@ A walking-skeleton `scripts/loop.py` already exists on this branch (commit `57cc
 evidence and its guards are verified; these tasks complete the surface around it rather than
 starting from zero.
 
-Spine: Task 1 → Task 3 → Task 4 (Task 2 is independent, runs any time). Task 1 freezes the
-`/abandon` endpoint that Task 3's own `abandon` subcommand calls; Task 4 documents the sequence
-Task 3 finishes. Task 2 is the round gate — highest-risk logic, no other task builds on it.
+Spine: Task 1 → Task 3 → Task 4 → Task 5 (Task 2 is independent, runs any time). Task 1 freezes
+the `/abandon` endpoint that Task 3's own `abandon` subcommand calls; Task 4 gives the driver a
+route to `--split-on`, without which Task 5's rewrite would strand a shipped flag; Task 5
+documents the finished sequence. Task 2 is the round gate — highest-risk logic, no other task
+builds on it.
 
 ### Task 1 — Server teardown: POST /abandon and the SIGTERM handler [PASS]
 Why now:    Task 3's `abandon` subcommand has no way to reach the server until this endpoint exists — the design's own round-3 blocker.
@@ -56,10 +58,25 @@ Done means:
 5. [hold] `scripts/loop.py` imports no sibling but `schema`, per CLAUDE.md's one-cross-import rule          (tier: test-backed `tests/test_server_orchestration.py`)
 Evidence: the round-2+ sequence driven end to end through `loop.py` rather than hand-written curl, replacing the bash sequence the file currently guards.
 
-### Task 4 — Slim SKILL.md to judgment work, extract references/
+### Task 4 — Carry --split-on through the driver
+Why now:    `loop.py` has no route to `--split-on`, so a task-card plan review cannot run through the driver at all — and studious's planning contract makes that flag mandatory for every `PLAN.md` round.
+Read first: `scripts/loop.py`, `scripts/parse_sections.py`, `scripts/schema.py`, `.claude/skills/viva/SKILL.md`
+Rests on:   Task 3
+Do:         Add `--split-on REGEX` to `loop.py start`, passed through to `parse_sections.py`. Record the pattern in the round file as a `split_on` field so `loop.py rearm` reads it back and re-parses round N+1 with the same split, and add that field to `ReviewInput` and `validate_review_input` in `scripts/schema.py`.
+Not here:   The SKILL.md rewrite (Task 5); any new split heuristic — this carries the existing flag, it does not change what it does.
+
+Done means:
+1. [cap]  `loop.py start --split-on <regex>` records the pattern as `split_on` in `.viva/review-input-r1.json`          (tier: test-backed `tests/test_server_orchestration.py`)
+2. [cap]  `loop.py rearm` reads `split_on` back from the current round file and re-parses round N+1 with it          (tier: test-backed `tests/test_server_orchestration.py`)
+3. [cap]  `scripts/schema.py` carries `split_on` on `ReviewInput`, and `validate_review_input` rejects a non-string value          (tier: test-backed `tests/test_schema.py`)
+4. [hold] A session started without the flag records no `split_on` key and parses exactly as before          (tier: test-backed `tests/test_parse_sections.py`)
+5. [hold] Carried approvals survive a `--split-on` round 2 — every section id is stable across the re-parse          (tier: test-backed `tests/test_server_orchestration.py`)
+Evidence: a two-round session driven through `loop.py` with a task-card split pattern, asserting round 2 re-splits the same way and carries its approvals.
+
+### Task 5 — Slim SKILL.md to judgment work, extract references/
 Why now:    The 382-line skill is the defect's home; every earlier task exists so this rewrite has code to call instead of prose to execute.
 Read first: `.claude/skills/viva/SKILL.md`, `scripts/loop.py`, `docs/design/loop-driver.md`, `PRODUCT.md`
-Rests on:   Task 3
+Rests on:   Task 4
 Do:         Rewrite `.claude/skills/viva/SKILL.md`'s Steps section as a sequence of `loop.py` calls, and move the opt-in feature documentation (annotations, producers, confidence, open notes, preferences) to `.claude/skills/viva/references/`. Keep the step-4 apply-standing-preferences directive inline, and drop the auto-approve edge case.
 Not here:   `viva-qa`'s and `viva-diff`'s own SKILL.md files; `viva-diff`'s documented drift, which belongs to the `skill-prose-fixes` story.
 
@@ -82,3 +99,5 @@ Evidence: grep-shaped assertions over the rewritten skill plus the reachability 
 ## Revision History
 
 Signed off via viva review — 1 round, 6 sections, 0 revised. 2026-08-04
+
+Signed off via viva review — 1 round, 7 sections, 0 revised. 2026-08-04
