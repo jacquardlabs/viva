@@ -26,7 +26,7 @@ Done means:
 4. [hold] `/abandon` goes through `_check_origin_and_length` like every sibling POST, so a non-loopback `Origin` is rejected          (tier: test-backed `tests/test_server_origin_guard.py`)
 Evidence: the four assertions above, run against a real subprocess-launched server per the file's existing harness pattern.
 
-### Task 2 — The round gate on POST /complete
+### Task 2 — The round gate on POST /complete [PASS]
 Why now:    "Nothing is auto-accepted" is enforced by the agent's restraint today; this is the check the code performs. Highest-risk logic in the plan — two exemptions, both load-bearing.
 Read first: `server.py`, `scripts/schema.py`, `.claude/skills/viva-diff/SKILL.md`, `docs/design/loop-driver.md`
 Rests on:   nothing — independent of the rest of the spine.
