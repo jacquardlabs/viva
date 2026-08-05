@@ -183,7 +183,8 @@ def test_prefs_toggle_gated_on_empty_store():
     # clone with no store — every clone, until a session records a
     # preference — has nothing to inspect or mute, so the control must not
     # ship live (PRODUCT.md principle 4; the sibling confidence-sort toggle
-    # gets the identical treatment, SKILL.md:322 "a doc with none hides the
+    # gets the identical treatment, references/producers.md Confidence triage:
+    # "a doc with none hides the
     # toggle entirely"). The toggle ships hidden (checked above); the boot
     # handler is the only thing that ever reveals it, and only once
     # PREFS_DATA has actually been assigned from the fetched response.
@@ -284,7 +285,7 @@ def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
     assert "stay as a record" in HTML
     # The command must actually run from a terminal: preferences.py is not on
     # PATH, and "$VIVA_DIR" is a local bash variable SKILL.md computes with
-    # its own `find` and never exports (.claude/skills/viva/SKILL.md:41-43) —
+    # its own `find` and never exports (viva SKILL.md, Invocation) —
     # a copy-pasted "$VIVA_DIR/..." command 404s in a fresh terminal. The
     # server substitutes its own resolved absolute path at import time
     # (server.py's _PREFS_SCRIPT_PATH), so assert against that same

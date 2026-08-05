@@ -6,6 +6,10 @@ flags through this one path: a sidecar list of {id, kind, severity, message,
 anchor?} merged into the round's review-input. The merge is additive
 (preserves carried-forward annotations), idempotent (no duplicate on re-run),
 and a no-op sidecar leaves the input byte-identical.
+
+The last test covers the producer seam's *driver* end: `loop.py annotate`
+supplies the round number so a producer call never re-templates `{N}`
+(docs/design/loop-driver.md).
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "annotate.py"
+LOOP = ROOT / "scripts" / "loop.py"
 
 
 def run(review_input: dict, sidecar: list) -> dict:
@@ -124,6 +129,65 @@ def test_confidence_basis_level_preserved() -> None:
     assert "basis" not in annot2 and "level" not in annot2, annot2
 
 
+def test_split_on_survives_the_merge() -> None:
+    # The producer seam is the path a task-card PLAN.md review takes whenever a
+    # standing preference is in play: `start --split-on` stops after parsing,
+    # `annotate` rewrites the round file in place, then `arm`. `rearm` later
+    # reads `split_on` back off that same file, so a merge that rebuilt the
+    # top-level dict instead of mutating it would drop the pattern and re-split
+    # the next round by auto-detection — silently, with every carried approval
+    # dying as the section boundaries moved.
+    data = base_input([{"id": "s1", "title": "Task 1", "content": "body"}])
+    data["split_on"] = r"^Task \d+"
+    out = run(data, [{"id": "s1", "kind": "preference", "severity": "warn",
+                      "message": "cite the source"}])
+    assert out["split_on"] == r"^Task \d+", out
+
+
+def test_loop_annotate_merges_into_the_derived_round() -> None:
+    """`loop.py annotate --sidecar` names a sidecar and nothing else.
+
+    The driver reads the highest `review-input-r{N}.json` on disk and merges
+    there, so the producer seam never hands the round number back to the agent.
+    Two rounds are on disk and only the later one may be touched; a `.viva/`
+    with no round at all is a loud refusal, not a silent no-op.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        viva = Path(tmp) / ".viva"
+        viva.mkdir()
+        side = Path(tmp) / "sidecar.json"
+        side.write_text(json.dumps([
+            {"id": "s1", "kind": "preference", "severity": "warn",
+             "message": "[cite-sources] '80% faster' has no source"}]),
+            encoding="utf-8")
+
+        empty = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva),
+             "annotate", "--sidecar", str(side)],
+            capture_output=True, text=True)
+        assert empty.returncode != 0, "no round on disk must refuse, not no-op"
+
+        r1 = viva / "review-input-r1.json"
+        r2 = viva / "review-input-r2.json"
+        for path, rnd in ((r1, 1), (r2, 2)):
+            data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
+            data["round"] = rnd
+            path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva),
+             "annotate", "--sidecar", str(side)],
+            capture_output=True, text=True)
+        assert result.returncode == 0, f"loop annotate failed:\n{result.stderr}"
+        merged = json.loads(r2.read_text(encoding="utf-8"))
+        assert merged["sections"][0]["annotations"] == [
+            {"kind": "preference", "severity": "warn",
+             "message": "[cite-sources] '80% faster' has no source"}
+        ], merged
+        assert "annotations" not in json.loads(r1.read_text(encoding="utf-8"))["sections"][0], \
+            "only the current round may be annotated"
+
+
 def main() -> None:
     tests = [
         test_merge_adds_annotation_to_section,
@@ -134,6 +198,8 @@ def main() -> None:
         test_empty_sidecar_is_byte_identical,
         test_missing_message_skipped,
         test_confidence_basis_level_preserved,
+        test_split_on_survives_the_merge,
+        test_loop_annotate_merges_into_the_derived_round,
     ]
     failed = 0
     for t in tests:

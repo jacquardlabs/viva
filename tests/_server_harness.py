@@ -110,6 +110,25 @@ def post_status(base: str, path: str, payload: dict) -> int:
         return e.code
 
 
+def post_result(base: str, path: str, payload: dict) -> tuple:
+    """POST a JSON payload and return `(status, decoded_body)`.
+
+    For boundary tests that must tell two refusals apart by their error text and
+    not only by their status code — `HTTPError` carries the server's body on
+    `.read()`, so a 4xx yields its `{"error": ...}` exactly as a 200 yields its
+    `{"ok": true}`."""
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=5)
+        return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
 def post_headers(base: str, path: str, payload: dict, headers: dict) -> int:
     """POST a JSON payload with extra request headers (e.g. `Origin`) merged
     in atop `Content-Type`; return the HTTP status code. For boundary tests

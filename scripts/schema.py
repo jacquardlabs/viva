@@ -24,6 +24,7 @@ the `review-input-r{N}.json` file schema the `ReviewInput` TypedDict describes.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional, TypedDict
 
 # Verdicts that earn a Revision-History ledger row. `approved`/`pending` do not.
@@ -118,6 +119,10 @@ class ReviewInput(TypedDict, total=False):
     doc_file: str                   # relative path for the UI
     round: int                      # round number
     approved_ids: List[str]         # ids approved in prior rounds
+    # optional — the `--split-on` regex this round was parsed with, recorded by
+    # `parse_sections.py` so `loop.py rearm` re-splits round N+1 identically.
+    # Absent when the round used the auto-detected split level.
+    split_on: str
     sections: List[ReviewSection]
 
 
@@ -150,6 +155,13 @@ def validate_review_input(data: dict) -> None:
     sections = data.get("sections")
     if not isinstance(sections, list):
         raise ValueError("review-input.sections must be a list")
+    # Presence-gated: the key is optional, but a present non-string is a hard
+    # failure — `loop.py rearm` hands this value straight back to
+    # `parse_sections.py --split-on`, and a `null` would silently re-split the
+    # next round by auto-detection instead of the pattern the session started
+    # with. Loud here beats a mid-session split change nobody asked for.
+    if "split_on" in data and not isinstance(data["split_on"], str):
+        raise ValueError("review-input.split_on must be a string")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")
@@ -182,6 +194,54 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
             )
+
+
+REVISION_HISTORY_RE = re.compile(r"(?m)^## Revision History\s*$")
+
+
+def has_revision_history(doc_text: str) -> bool:
+    """Has this doc already been signed off — i.e. is a `start` a resume?
+
+    Anchored, never a substring test: `"## Revision History" in text` also
+    matches the phrase inside backticks, a fenced block, or ordinary prose, and
+    viva's own SKILL.md and DESIGN.md both discuss the ledger by name. A false
+    positive there takes the resume branch and can pre-approve a section the
+    human never saw, against PRODUCT.md's "nothing is auto-accepted".
+
+    `loop.py`'s resume detection and `revision_history.py`'s append-vs-create
+    branch ask the same question, so they ask it here — the same rule
+    `section_key()` follows.
+
+    Known residue: a fenced code block whose content begins the line still
+    matches. Every mention in this repo is inline-backticked mid-line, which the
+    anchor rejects; fence-awareness would need a block parser and would change
+    `revision_history.py`'s append branch too.
+    """
+    return REVISION_HISTORY_RE.search(doc_text) is not None
+
+
+def round_is_complete(input_data: dict, verdicts: dict) -> bool:
+    """Is this round finished — i.e. may the session sign off?
+
+    The single rule both `loop.py finish` and the server's `/complete` handler
+    ask, so the invariant lives in one place rather than being re-derived at two
+    call sites in two processes. Pure: dicts in, bool out, no disk.
+
+    Today: every section in the round's input carries an `approved` verdict. The
+    input side matters — a section present in the input with no verdict row at
+    all is incomplete, which a scan of `verdicts` alone cannot see.
+
+    Callers gate on shape and mode: Q&A rounds carry `questions` rather than
+    `sections`, and diff rounds legitimately sign off with `changes` verdicts on
+    record (viva-diff's empty-re-diff finish), so neither reaches this function.
+    """
+    section_ids = [s.get("id") for s in input_data.get("sections", [])]
+    if not section_ids:
+        return False
+    by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
+    return all(
+        (by_id.get(sid) or {}).get("verdict") == "approved" for sid in section_ids
+    )
 
 
 # ── Q&A round shapes ──────────────────────────────────────────────────────────

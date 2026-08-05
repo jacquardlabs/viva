@@ -126,7 +126,7 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     if threads:
         block = block + "\n\n" + build_threads_block(threads)
     doc = doc_path.read_text()
-    if re.search(r"(?m)^## Revision History\s*$", doc):
+    if schema.has_revision_history(doc):
         new_doc = doc.rstrip("\n") + "\n\n" + block + "\n"
     else:
         new_doc = doc.rstrip("\n") + f"\n\n---\n\n{HEADING}\n\n" + block + "\n"
