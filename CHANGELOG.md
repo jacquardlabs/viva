@@ -2,6 +2,106 @@
 
 <!-- version list -->
 
+## v1.21.0 (2026-08-05)
+
+### Bug Fixes
+
+- Close the review findings in loop.py, schema.py, and server.py
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- **loop**: Name the parsed round file at the producer seam
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+### Chores
+
+- Untrack committed bytecode, gitignore __pycache__
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- **tests**: Make test_parse_sections self-running
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- **tests**: Make the plan-referenced test files self-running
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+### Documentation
+
+- Amend loop-driver pre-mortem register after design round 2
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Close the contract, architecture, and agent-prose findings
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Close the two round-2 design blockers ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Close the two round-3 design blockers ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Correct register item 5's disposition after round 3
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Design and pre-mortem registers for the loop-driver story
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Name the round-completion predicate for milestone 10 pass depth
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Re-sign-off loop-driver design after blocker fixes
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Revise loop-driver design for the three design-episode blockers
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Round-4 sign-off ledger line, appended by loop.py finish
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+### Features
+
+- Carry --split-on through the loop driver ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Gate POST /complete on an all-approved round
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Loop.py annotate, rearm, and abandon complete the driver surface
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- Loop.py driver owns round numbering, liveness, and the round gate
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+- POST /abandon and a SIGTERM handler for server teardown
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+### Refactoring
+
+- **skill**: Slim SKILL.md to judgment work, extract references/
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+### Testing
+
+- Close the coverage gaps both reviewers named
+  ([#176](https://github.com/jacquardlabs/viva/pull/176),
+  [`32a6e5d`](https://github.com/jacquardlabs/viva/commit/32a6e5dfc4681812406da95513d2770ec85e1e77))
+
+
 ## v1.20.1 (2026-08-04)
 
 ### Bug Fixes
