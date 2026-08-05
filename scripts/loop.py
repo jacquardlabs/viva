@@ -250,6 +250,11 @@ def cmd_wait(args) -> int:
     else:
         klass = "has-work"
     print("=== round %d: %s ===" % (n, klass))
+    if klass == "has-work":
+        # The next step is the rewrite, and the rule it turns on — act on each
+        # thread's *latest* reviewer turn — is documented, not obvious.
+        print("viva-loop: thread rules for the rewrite → %s"
+              % (REFERENCES / "open-notes.md"))
     return 0
 
 
@@ -344,6 +349,10 @@ def cmd_finish(args) -> int:
          "--viva-dir", viva, "--doc", args.doc])
     print("viva-loop: signed off — %d round(s), %d section(s)"
           % (n, len(input_data.get("sections", []))))
+    # Only a signed-off session learns, so this is the one place the record
+    # step can be named — and the clustering it asks for is judgment work.
+    print("viva-loop: record this session's recurring critiques → %s"
+          % (REFERENCES / "preferences.md"))
     return 0
 
 
