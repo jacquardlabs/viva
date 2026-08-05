@@ -2,17 +2,16 @@
 """viva's review-loop driver — the bookkeeping half of the launch → wait → act
 → rewrite loop, so SKILL.md can carry judgment work only.
 
-SPIKE (design-episode evidence, not the finished story). Implements the walking
-skeleton — `start`, `arm`, `wait`, `finish` — enough to run one real review
-session end to end and falsify the design's mechanism claims. `annotate`,
-`rearm`, and `abandon` are specified in docs/design/loop-driver.md and not built
-here.
+Seven subcommands: `start`, `annotate`, `arm`, `wait`, `rearm`, `finish`,
+`abandon`. Design: docs/design/loop-driver.md. Issues: #104, #102, #103, #125.
 
-Design: docs/design/loop-driver.md. Issues: #104, #102, #103, #125.
-
-Two rules this file exists to keep:
+Three rules this file exists to keep:
   * The agent never types a round number. Every subcommand derives it from disk.
   * The agent never waits on a server that is already gone.
+  * The producer seam stays open. `start` (with a standing preference) and
+    `rearm --parse-only` stop after parsing so the agent can run its LLM pass;
+    `annotate` then merges the flags and `arm` ships the round. That order is
+    load-bearing — the server reads the round file once, when it is armed.
 """
 import argparse
 import json
@@ -163,6 +162,22 @@ def cmd_start(args) -> int:
     return cmd_arm(args)
 
 
+def cmd_annotate(args) -> int:
+    viva = Path(args.viva_dir)
+    n = current_round(viva)
+    if not n:
+        die("no round to annotate — run `loop.py start --doc <path>` first")
+    inp, _ = round_files(viva, n)
+    # The producer seam's driver end: the agent names its sidecar, the driver
+    # names the file. `annotate.py` reads '-' from stdin, and stdin is inherited
+    # here, so a piped producer works unchanged.
+    if run([sys.executable, SCRIPTS / "annotate.py",
+            "--input", inp, "--annotations", args.sidecar]).returncode != 0:
+        die("annotate failed")
+    print("viva-loop: round %d annotated · %s" % (n, inp))
+    return 0
+
+
 def cmd_arm(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
@@ -236,6 +251,51 @@ def cmd_wait(args) -> int:
     return 0
 
 
+def cmd_rearm(args) -> int:
+    viva = Path(args.viva_dir)
+    n = current_round(viva)
+    if not n:
+        die("no round to re-arm — run `loop.py start --doc <path>` first")
+    inp, out = round_files(viva, n)
+    if not out.exists():
+        die("round %d has no verdicts yet — run `loop.py wait` first" % n)
+
+    # The doc travels in the round file the parser wrote, so the agent names
+    # neither the round nor the path it already handed `start`.
+    doc = load_json(inp).get("doc_file")
+    if not doc:
+        die("round %d's input names no doc_file — cannot re-parse" % n)
+    if not Path(doc).exists():
+        die("doc not found: %s (recorded as doc_file in %s). Re-run from the "
+            "directory the review was started in." % (doc, inp))
+
+    store = viva / "open-notes.json"
+    cmd = [sys.executable, SCRIPTS / "open_notes.py", "update",
+           "--store", store, "--round", str(n), "--verdicts", out, "--input", inp]
+    for response in args.response:
+        cmd += ["--response", response]
+    if run(cmd).returncode != 0:
+        die("open-note update failed")
+
+    nxt_in, _ = round_files(viva, n + 1)
+    if run([sys.executable, SCRIPTS / "parse_sections.py", doc,
+            "--output", nxt_in, "--round", str(n + 1), "--doc-file", doc,
+            "--prior-input", inp, "--prior-verdicts", out,
+            "--open-notes", store]).returncode != 0:
+        die("re-parse failed")
+
+    # The round 2+ producer seam — the same stop-after-parse `start` takes on
+    # its own when a standing preference is in play. Order is load-bearing: the
+    # flags must be merged before the round is shipped to the running server.
+    if args.parse_only:
+        print("viva-loop: round %d parsed, NOT armed (--parse-only)." % (n + 1))
+        print("viva-loop: run the producer, then `loop.py annotate --sidecar "
+              "<path>` and `loop.py arm`.")
+        print("viva-loop: producer contract → %s" % (REFERENCES / "producers.md"))
+        return 0
+    return cmd_arm(args)
+
+
 def cmd_finish(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
@@ -274,6 +334,35 @@ def cmd_finish(args) -> int:
     return 0
 
 
+def cmd_abandon(args) -> int:
+    viva = Path(args.viva_dir)
+    base = server_url(viva)
+    if not base:
+        die("no live session to abandon (no %s/server.url)" % viva)
+
+    # Over HTTP, not by signal: `start` detaches the server, so this process
+    # holds no child handle, and `server.url` carries a URL and nothing else.
+    try:
+        post(base, "/abandon", {})
+    except (urllib.error.URLError, OSError) as e:
+        die("could not reach the server at %s (%s). If it is already stopped, "
+            "delete %s/server.url to unblock the next `loop.py start`."
+            % (base, e, viva))
+
+    for _ in range(100):
+        if not (viva / "server.url").exists():
+            break
+        time.sleep(0.1)
+    if (viva / "server.url").exists():
+        die("server acknowledged /abandon but %s/server.url is still there — "
+            "the process may be wedged; stop it before the next start." % viva)
+
+    n = current_round(viva)
+    where = " at round %d" % n if n else ""
+    print("viva-loop: session abandoned%s — the doc was NOT signed off." % where)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--viva-dir", default=".viva",
@@ -287,15 +376,34 @@ def main() -> int:
                         "producer seam")
     p.set_defaults(func=cmd_start)
 
+    p = sub.add_parser("annotate", help="merge a producer sidecar into the "
+                                        "current round's review-input")
+    p.add_argument("--sidecar", required=True,
+                   help="producer sidecar JSON list, or '-' for stdin")
+    p.set_defaults(func=cmd_annotate)
+
     p = sub.add_parser("arm", help="make the current round file live")
     p.set_defaults(func=cmd_arm)
 
     p = sub.add_parser("wait", help="block for verdicts; classify the round")
     p.set_defaults(func=cmd_wait)
 
+    p = sub.add_parser("rearm", help="settle threads, re-parse, arm the next "
+                                     "round (unless --parse-only)")
+    p.add_argument("--response", action="append", default=[], metavar="CID=TEXT",
+                   help='what you changed for one comment, as "<cid>=text" '
+                        '(repeatable)')
+    p.add_argument("--parse-only", action="store_true",
+                   help="stop after the re-parse so a producer can annotate it")
+    p.set_defaults(func=cmd_rearm)
+
     p = sub.add_parser("finish", help="sign off — refuses an incomplete round")
     p.add_argument("--doc", required=True)
     p.set_defaults(func=cmd_finish)
+
+    p = sub.add_parser("abandon", help="end an unfinished session — the one "
+                                       "exit that is not a sign-off")
+    p.set_defaults(func=cmd_abandon)
 
     args = ap.parse_args()
     return args.func(args)

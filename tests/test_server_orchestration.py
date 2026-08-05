@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Orchestration smoke test: the round-1 and round-2 CLI sequences from SKILL.md.
+"""Orchestration smoke test: one real session driven the way the agent drives it.
 
 Every other server test hand-writes a `review-input` JSON and feeds it in. This
 one drives the real agent-side pipeline instead — `parse_sections.py` produces
-the round file, `server.py` serves it, a verdict comes back, and round 2 is
-re-parsed with the prior round's files and pushed via `/next-round`. It's the
-guard against SKILL.md's documented flag sequences drifting from what the scripts
-actually accept, and against the approved-carry-forward contract breaking.
+round 1, `server.py` serves it, a verdict comes back, and every round after that
+goes through `scripts/loop.py`: `rearm` re-parses and POSTs `/next-round`,
+`rearm --parse-only` stops at the producer seam, and `arm` closes it. It is the
+guard against the driver's round-2+ sequence drifting from what the scripts and
+the server actually accept, and against the approved-carry-forward contract
+breaking underneath it.
+
+The two rules `loop.py` exists to keep are asserted here as well: the round
+number is derived from disk (no subcommand accepts one), and the driver
+cross-imports no sibling but `schema.py` (CLAUDE.md).
 """
+import ast
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,12 +27,13 @@ from _server_harness import get, launch_server, poll_for, post  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 PARSE = ROOT / "scripts" / "parse_sections.py"
+LOOP = ROOT / "scripts" / "loop.py"
 
 DOC = "## Goals\n\nShip the core.\n\n## Scope\n\nJust the core, nothing more.\n"
 
 
 def parse(doc, output, round_num, viva, prior=None):
-    """Run parse_sections.py exactly as SKILL.md does; return the written JSON."""
+    """Run parse_sections.py exactly as `loop.py start` does; return the JSON."""
     cmd = [sys.executable, str(PARSE), str(doc),
            "--output", str(output), "--round", str(round_num), "--doc-file", "doc.md"]
     if prior:
@@ -34,7 +43,16 @@ def parse(doc, output, round_num, viva, prior=None):
     return json.loads(Path(output).read_text())
 
 
-def main() -> None:
+def loop(viva, cwd, *argv):
+    """Run a `loop.py` subcommand against `viva`, from `cwd` (the doc's dir —
+    `doc_file` is recorded relative, as the agent passes it)."""
+    return subprocess.run(
+        [sys.executable, str(LOOP), "--viva-dir", str(viva)] + list(argv),
+        capture_output=True, text=True, cwd=str(cwd))
+
+
+def check_round_trip() -> None:
+    """Round 1 by hand, every round after it through the driver."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -59,26 +77,117 @@ def main() -> None:
             {"id": ids["Goals"], "verdict": "approved"},
             {"id": ids["Scope"], "verdict": "changes",
              "comments": [{"cid": ids["Scope"] + "-c1", "type": "changes",
-                           "note": "name the non-goals too"}]},
+                           "note": "name the non-goals too",
+                           "open": True, "settled": False}]},
         ]})
         assert poll_for(r1_out), "review-r1.json never written"
 
-        # ── Round 2: re-parse with the prior round's files ───────────────────
+        # ── Round 2: `rearm` settles the thread, re-parses, and POSTs ────────
+        # No round number, no doc path, no curl — the driver derives all three.
+        r = loop(viva, tmp, "rearm",
+                 "--response", ids["Scope"] + "-c1=named the non-goals")
+        assert r.returncode == 0, f"loop rearm failed:\n{r.stderr}"
+
         r2_in = viva / "review-input-r2.json"
-        r2_out = viva / "review-r2.json"
-        data2 = parse(doc, r2_in, 2, viva, prior=(r1_in, r1_out))
+        assert r2_in.exists(), "rearm must re-parse the next round"
+        data2 = json.loads(r2_in.read_text())
         assert data2["round"] == 2, data2
         # Goals was approved in round 1 and its content is unchanged → carried.
         assert ids["Goals"] in data2["approved_ids"], \
             f"approved section not carried forward: {data2['approved_ids']}"
         assert ids["Scope"] not in data2["approved_ids"], "changed section must not carry"
 
-        # ── Push round 2 to the running server ───────────────────────────────
-        post(base, "/next-round?output=" + str(r2_out), data2)
+        # The agent's response landed in the open-note thread, keyed by cid.
+        store = json.loads((viva / "open-notes.json").read_text())
+        thread = store[ids["Scope"] + "-c1"]
+        assert thread["exchanges"][-1]["response"] == "named the non-goals", thread
+
+        # …and the running server is now serving it.
         served2 = get(base, "/input")
         assert served2["round"] == 2, served2
         assert ids["Goals"] in served2["approved_ids"], served2
 
+        # ── Round 3: `--parse-only` stops at the producer seam ───────────────
+        r2_out = viva / "review-r2.json"
+        post(base, "/submit", {"round": 2, "submitted_early": False, "sections": [
+            {"id": ids["Goals"], "verdict": "approved"},
+            {"id": ids["Scope"], "verdict": "changes",
+             "comments": [{"cid": ids["Scope"] + "-c2", "type": "changes",
+                           "note": "shorter", "open": True, "settled": False}]},
+        ]})
+        assert poll_for(r2_out), "review-r2.json never written — rearm's `output` missed"
+
+        r = loop(viva, tmp, "rearm", "--parse-only")
+        assert r.returncode == 0, f"loop rearm --parse-only failed:\n{r.stderr}"
+        assert (viva / "review-input-r3.json").exists(), \
+            "--parse-only must still re-parse the next round"
+        assert get(base, "/input")["round"] == 2, \
+            "--parse-only must stop before arming — the server still holds round 2"
+
+        # The seam closes with `arm`, on the round it reads off disk.
+        r = loop(viva, tmp, "arm")
+        assert r.returncode == 0, f"loop arm failed:\n{r.stderr}"
+        assert get(base, "/input")["round"] == 3, "arm must ship the parsed round"
+
+
+def check_no_subcommand_takes_a_round() -> None:
+    """The counter nobody holds: no subcommand accepts a round argument.
+
+    Enumerated from `--help` rather than hardcoded, so a later eighth
+    subcommand is not silently exempt. Each is run with its own required flags
+    satisfied (pointed at a nonexistent path — the parse is what's under test,
+    never the handler) so argparse gets far enough to reject `--round` itself
+    instead of stopping at a missing required argument. Every run is aimed at a
+    throwaway `--viva-dir`, so the day this assertion regresses it fails without
+    a handler having reached anyone's real `.viva/`.
+    """
+    sandbox = Path(tempfile.mkdtemp()) / ".viva"
+    top = subprocess.run([sys.executable, str(LOOP), "--help"],
+                         capture_output=True, text=True)
+    assert top.returncode == 0, top.stderr
+    listed = re.search(r"\{([a-z,]+)\}", top.stdout)
+    assert listed, "could not read the subcommand list from --help:\n" + top.stdout
+    names = listed.group(1).split(",")
+    assert set(names) >= {"start", "annotate", "arm", "wait", "rearm",
+                          "finish", "abandon"}, names
+
+    for name in names:
+        h = subprocess.run([sys.executable, str(LOOP), name, "--help"],
+                           capture_output=True, text=True)
+        assert h.returncode == 0, h.stderr
+        assert "--round" not in h.stdout, \
+            "`%s` exposes a round argument — the round is derived, never passed" % name
+        required = [flag for flag in ("--doc", "--sidecar") if flag in h.stdout]
+        argv = [sys.executable, str(LOOP), "--viva-dir", str(sandbox), name]
+        for flag in required:
+            argv += [flag, "/nonexistent/for-parse-only"]
+        r = subprocess.run(argv + ["--round", "2"], capture_output=True, text=True)
+        assert r.returncode != 0 and "unrecognized arguments" in r.stderr, \
+            "`%s --round 2` must be rejected — got %d %r" % (name, r.returncode, r.stderr)
+
+
+def check_loop_cross_imports_only_schema() -> None:
+    """CLAUDE.md's one-cross-import rule, asserted on the driver.
+
+    `loop.py` orchestrates its siblings, so it invokes them as subprocesses;
+    `schema.py` stays the single module it may import.
+    """
+    siblings = {p.stem for p in (ROOT / "scripts").glob("*.py")} - {"loop"}
+    imported = set()
+    for node in ast.walk(ast.parse(LOOP.read_text())):
+        if isinstance(node, ast.Import):
+            imported |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    assert imported & siblings == {"schema"}, \
+        "loop.py may cross-import schema and nothing else — found %r" \
+        % sorted(imported & siblings)
+
+
+def main() -> None:
+    check_round_trip()
+    check_no_subcommand_takes_a_round()
+    check_loop_cross_imports_only_schema()
     print("OK")
 
 

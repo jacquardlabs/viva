@@ -249,6 +249,36 @@ def check_abandon_shutdown() -> None:
         _cleanup(proc)
 
 
+def check_loop_abandon_shutdown() -> None:
+    """`loop.py abandon` ends a live session and reports it unfinished.
+
+    The driver's own route to `/abandon`, asserted independently of the two
+    signal paths: nothing here sends a signal, and `returncode == 0` proves the
+    shutdown `finally` ran normally rather than a `-15`/`-2` killing the
+    process out from under it.
+    """
+    proc, viva, out = _launch("review", REVIEW_INPUT)
+    try:
+        wait_for_url(out)
+        r = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "loop.py"),
+             "--viva-dir", str(viva), "abandon"],
+            capture_output=True, text=True, cwd=str(viva.parent))
+        assert r.returncode == 0, "loop abandon failed:\n%s" % r.stderr
+        assert "not signed off" in r.stdout.lower(), \
+            "abandon must report the session unfinished — got %r" % (r.stdout,)
+        assert _await_exit(proc), "the server must exit on `loop.py abandon`"
+        assert proc.returncode == 0, \
+            "abandon ends the server over HTTP, not by signal — got returncode %r" \
+            % (proc.returncode,)
+        assert not (viva / "server.url").exists(), \
+            "`loop.py abandon` must leave no server.url for the next start's guard"
+        assert not out.exists(), \
+            "abandon carries none of /complete's sign-off meaning — no verdicts"
+    finally:
+        _cleanup(proc)
+
+
 def check_sigterm_shutdown() -> None:
     """SIGTERM runs the same shutdown `finally` SIGINT does (#125)."""
     proc, viva, out = _launch("review", REVIEW_INPUT)
@@ -273,6 +303,7 @@ def main() -> None:
     check_diff_complete_ungated()
     check_complete_shutdown()
     check_abandon_shutdown()
+    check_loop_abandon_shutdown()
     check_sigterm_shutdown()
     print("OK")
 
