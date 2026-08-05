@@ -1,3 +1,7 @@
 .superpowers/
 .viva/
 .gg/
+
+# Python bytecode — never tracked; a test run would otherwise dirty the tree
+__pycache__/
+*.pyc
