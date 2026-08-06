@@ -59,7 +59,7 @@ Done means:
 Evidence: the round-2+ sequence driven end to end through `loop.py` rather than hand-written curl, replacing the bash sequence the file currently guards.
 
 ### Task 4 — Carry --split-on through the driver [PASS]
-Why now:    `loop.py` has no route to `--split-on`, so a task-card plan review cannot run through the driver at all — and studious's planning contract makes that flag mandatory for every `PLAN.md` round.
+Why now:    `loop.py` has no route to `--split-on`, so a task-card plan review cannot run through the driver at all — and every `PLAN.md` round needs that flag to split on task cards.
 Read first: `scripts/loop.py`, `scripts/parse_sections.py`, `scripts/schema.py`, `.claude/skills/viva/SKILL.md`
 Rests on:   Task 3
 Do:         Add `--split-on REGEX` to `loop.py start`, passed through to `parse_sections.py`. Record the pattern in the round file as a `split_on` field so `loop.py rearm` reads it back and re-parses round N+1 with the same split, and add that field to `ReviewInput` and `validate_review_input` in `scripts/schema.py`.

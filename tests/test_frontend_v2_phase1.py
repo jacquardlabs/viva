@@ -34,7 +34,7 @@ reload during revision re-boots into the prior round exactly as before.
 Task 6 closes the phase with docs alignment: DESIGN.md documents the shipped
 surface (sheet ground values, transmittal row grammar + attribution rule,
 recap gate, between-rounds state, carried approvals) with zero grid-paper/
-sheet-frame/spinner residue, and the pre-jig draft plan is deleted so
+sheet-frame/spinner residue, and the superseded draft plan is deleted so
 PLAN.md is the branch's only live plan artifact.
 
 These are wiring checks against the served page (the HTML constant is static,
@@ -642,16 +642,13 @@ def test_design_md_matches_shipped_surface() -> None:
 
 
 def test_draft_plan_superseded() -> None:
-    """Cap: the pre-jig draft plan for this story is deleted.
+    """Cap: the superseded draft plan for this story is deleted.
 
     This no longer asserts PLAN.md's own presence — that was a point-in-time
     fact true only while this story's own branch was still in flight.
-    PLAN.md is disposable, branch-local scaffolding under studious's own
-    convention (`skills/finish/SKILL.md` Step 6): every story's own PLAN.md
-    is removed at /finish, once its Done-means table and evidence are
-    captured in that story's dated build report. A future story's own
-    /finish correctly deletes its own PLAN.md, and this repo-wide test file
-    must not fail because of it.
+    PLAN.md is disposable, branch-local scaffolding: a story replaces or
+    removes it once the work ships, so this repo-wide test file must not fail
+    because a later story deleted the file this one left behind.
     """
     draft = ROOT / "docs" / "superpowers" / "plans" / "2026-07-16-frontend-v2-phase1.md"
     assert not draft.exists(), f"superseded draft plan still on the branch: {draft}"

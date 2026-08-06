@@ -734,7 +734,7 @@ def test_coarser_trailing_heading_gets_own_card() -> None:
     # #115: a coarser heading after the last split-level heading must not be
     # silently absorbed into the preceding card.
     doc = (
-        "# jig PLAN.md\n\n"
+        "# Build plan\n\n"
         "### Task 1: First\n\nBody text for task 1.\n\n"
         "### Task 2: Second\n\nBody text for task 2.\n\n"
         "## Not-here follow-ups\n\n"
@@ -744,7 +744,7 @@ def test_coarser_trailing_heading_gets_own_card() -> None:
     )
     data = run(doc)
     titles = [s["title"] for s in data["sections"]]
-    assert titles == ["jig PLAN.md", "Task 1: First", "Task 2: Second", "Not-here follow-ups"], titles
+    assert titles == ["Build plan", "Task 1: First", "Task 2: Second", "Not-here follow-ups"], titles
     task2 = next(s for s in data["sections"] if s["title"] == "Task 2: Second")
     assert "Not-here follow-ups" not in task2["content"], task2["content"]
     followups = next(s for s in data["sections"] if s["title"] == "Not-here follow-ups")

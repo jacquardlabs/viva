@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unified Q&A → review session hand-off (#109).
 
-jig's `/design` skill interviews the human via `qa` mode, then — instead of
+A planning caller interviews the human via `qa` mode, then — instead of
 tearing the server down and launching a second `server.py --mode review` —
 hands the round-1 review payload to the SAME running server via `/next-round`.
 That mechanism (`/next-round` + the `round` SSE broadcast) already exists for
@@ -170,7 +170,7 @@ def test_handoff_same_server_no_second_launch():
         assert poll_for(qa_out), "answers.json never written"
         qa_answers_snapshot = qa_out.read_text()
 
-        # ── jig's synthesis (outside viva) hands round-1 review sections to
+        # ── the caller's synthesis (outside viva) hands round-1 review sections to
         #    the SAME running server. No second server.py process, same base URL.
         review_out = viva / "review-r1.json"
         review_round1 = {

@@ -3,7 +3,7 @@
 **Contract version: 3**
 
 This document is for a program that launches `server.py` as a subprocess and
-reads/writes its JSON files — a headless caller like jig — not for the human
+reads/writes its JSON files — a headless caller — not for the human
 running `/viva` inside Claude Code (see `README.md`) and not for Claude Code
 orchestrating the review loop itself (see `SKILL.md`). It transcribes what
 `server.py` and `scripts/schema.py` actually do; it does not restate either
