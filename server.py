@@ -4472,9 +4472,8 @@ class Handler(BaseHTTPRequestHandler):
             with _data_lock:
                 # Unified Q&A → review session (#109): a qa-originated review
                 # round carries no distinguishing field in the wire payload —
-                # ReviewInput's shape is deliberately unchanged by that story
-                # (see docs/superpowers/specs/2026-07-11-unified-session-design.md,
-                # "Out of scope: Schema changes"). The signal instead is
+                # ReviewInput's shape is deliberately unchanged by that story:
+                # schema changes were out of scope. The signal instead is
                 # operational and inferred here, never persisted: the prior
                 # round on this server was Q&A-shaped (`questions`) and this
                 # one is review-shaped (`sections`). #111's headless-contract

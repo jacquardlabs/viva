@@ -9,9 +9,8 @@ That mechanism (`/next-round` + the `round` SSE broadcast) already exists for
 qa-launched server across the mode boundary: same process, same `server.url`,
 no second launch, and the qa-originated round is distinguishable server-side
 by its own stdout line — not by any new field on the wire payload, since
-`schema.py`'s `ReviewInput`/`QAInput`/`QAOutput` are unchanged by this story
-(see docs/superpowers/specs/2026-07-11-unified-session-design.md, "Out of
-scope: Schema changes").
+`schema.py`'s `ReviewInput`/`QAInput`/`QAOutput` are unchanged by this story —
+schema changes were out of scope for it.
 
 Checked here (this repo has no JS/browser test harness — stdlib Python only,
 no npm/node — so the browser-side fixes are pinned as string-needle
