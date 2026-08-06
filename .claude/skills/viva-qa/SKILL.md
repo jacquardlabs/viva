@@ -108,8 +108,8 @@ never torn down — it leaks indefinitely until something kills it by hand.
 
 ## Hand off to a review session in the same tab (#109)
 
-A caller that turns the answers into review sections (e.g. jig's `/design`
-skill drafting sections from the interview before handing them to a human for
+A caller that turns the answers into review sections (e.g. a planning skill
+drafting sections from the interview before handing them to a human for
 sign-off) does not need to tear this server down and launch a second one. The
 `.viva/server.url` this skill wrote is still live — POST a round-1 review
 payload to it and the same browser tab reflows in place from Q&A cards to

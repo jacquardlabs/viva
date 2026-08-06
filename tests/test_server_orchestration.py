@@ -219,11 +219,12 @@ def check_round_trip() -> None:
 def check_split_on_session() -> None:
     """A task-card plan review, driven start → submit → rearm by the driver.
 
-    `--split-on` is the flag studious's planning contract makes mandatory for a
-    `PLAN.md` round, so the driver has to carry it — and carry it *forward*: the
-    pattern is recorded in the round file, and `rearm` reads it back rather than
-    asking the agent to re-type it. Round 2 asserting the same split, the same
-    ids, and the carried approvals is what proves the round-trip.
+    `--split-on` is what makes a `PLAN.md` round split on its task cards rather
+    than on its own top-level headings, so the driver has to carry it — and
+    carry it *forward*: the pattern is recorded in the round file, and `rearm`
+    reads it back rather than asking the agent to re-type it. Round 2 asserting
+    the same split, the same ids, and the carried approvals is what proves the
+    round-trip.
     """
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
