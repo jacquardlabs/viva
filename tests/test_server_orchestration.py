@@ -14,12 +14,12 @@ The two rules `loop.py` exists to keep are asserted here as well: the round
 number is derived from disk (no subcommand accepts one), and the driver
 cross-imports no sibling but `schema.py` (CLAUDE.md).
 
-The last four checks guard the other half of the same contract — `SKILL.md`
+The last five checks guard the other half of the same contract — `SKILL.md`
 itself. The driver only removes bookkeeping from the agent if the prose stops
 carrying it, so the documented sequence is asserted here beside the executed
 one: no bash block does the driver's job, the rewrite step still applies
-standing preferences, nothing is auto-approved, and every `references/` file is
-one `loop.py` prints the path to.
+standing preferences, nothing is auto-approved, a suggested edit is applied
+verbatim, and every `references/` file is one `loop.py` prints the path to.
 """
 import ast
 import json
@@ -579,6 +579,55 @@ def check_no_auto_approve_and_paused_branch_routed() -> None:
     print("  ok  check_no_auto_approve_and_paused_branch_routed")
 
 
+def check_skill_applies_suggestions_verbatim() -> None:
+    """A suggestion is wording, not a brief (#166).
+
+    The reviewer typed the replacement instead of describing it, so the one
+    thing the agent must not do is rewrite it — an author that "improves" the
+    phrasing hands back a diff the reviewer never asked for and cannot trust.
+    The instruction lives in the verdict table, where the agent routes by
+    comment type, and the derivation paragraph beside it has to agree that such
+    a section is not approved.
+    """
+    text = SKILL.read_text()
+    rows = [ln for ln in text.splitlines() if ln.startswith("|")]
+    typed = [ln for ln in rows if "`suggestion`" in ln]
+    assert typed, "SKILL.md's verdict table has no row naming the `suggestion` type"
+    row = typed[0].lower()
+    assert "verbatim" in row, (
+        "the suggestion row does not say the wording is applied VERBATIM — "
+        "without it the author rewrites what the reviewer already wrote: %s" % row)
+    for banned_absence in ("no rewrite pass", "no interpretation"):
+        assert banned_absence in row, (
+            "the suggestion row must rule out %r explicitly: %s"
+            % (banned_absence, row))
+    assert "anchor" in row, "the suggestion row must scope the edit to the anchor"
+
+    # Whitespace-flattened: the prose wraps, and where a line breaks is not the
+    # contract — the sentence is.
+    low = " ".join(text.lower().split())
+    assert '`type: "suggestion"` → section `changes`' in low, \
+        "the derivation paragraph must land a suggestion on the `changes` verdict"
+    assert "carrying a live suggestion is never approved" in low, (
+        "SKILL.md must state that a section holding a suggestion is not "
+        "approved — the derivation is what makes it binding")
+
+    # A carried suggestion is the same instruction one round later, but by then
+    # the wording lives on the THREAD's exchange rather than on a `comments[]`
+    # entry. Prose that names the type without naming the field leaves round 2
+    # knowing to paste and not knowing what.
+    assert "carried suggestion turn keeps its `replacement` on the exchange" in low, \
+        "step 4 routes a carried suggestion turn to no field"
+    threads = " ".join((REFERENCES / "open-notes.md").read_text().lower().split())
+    assert "latest turn `suggestion`" in threads, \
+        "open-notes.md's latest-turn rules do not route a `suggestion` turn"
+    assert "apply its `replacement` verbatim" in threads, \
+        "the carried-suggestion rule must say the wording is applied verbatim"
+    assert "rides on the exchange" in threads, \
+        "the carried-suggestion rule must name where the wording lives"
+    print("  ok  check_skill_applies_suggestions_verbatim")
+
+
 def check_references_are_reachable() -> None:
     """Every reference file is one the agent is *told* the path to.
 
@@ -771,6 +820,7 @@ def main() -> None:
     check_skill_carries_no_bookkeeping_bash()
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
+    check_skill_applies_suggestions_verbatim()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
     check_start_resume_carries_prior_approvals()

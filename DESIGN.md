@@ -44,6 +44,10 @@ All colors are CSS custom properties defined in `:root` with a full `@media
 | `changes` | `--orange` | `.vbadge-changes` |
 | `info` | `--violet` | `.vbadge-info` |
 
+Three verdicts, three inks — a comment *type* is a different axis and takes no
+verdict ink: a `suggestion` derives to the `changes` verdict but marks its span
+in `--accent` (see Multiple inline comments).
+
 ### Annotation severity mapping
 
 | Severity | Token | Strip class |
@@ -312,7 +316,9 @@ terminal.`) overlay this card exactly as they overlaid the old view.
 
 A section card hosts a list of typed comments rather than a single verdict pick. The
 section verdict is **derived** from its comments, never chosen directly: no active
-comments → approved/pending; any `changes` comment → changes; otherwise info.
+comments → approved/pending; any `changes` or `suggestion` comment → changes;
+otherwise info. A comment is active when it is unsettled and carries a note — or,
+for a suggestion, replacement wording, which is the comment's whole payload.
 
 Design elements:
 - **Add row** (`.comment-add-row`) — a `.cmt-add-hint` ("select text above to comment")
@@ -324,17 +330,25 @@ Design elements:
   `.thumb-strip`, per-comment attachments, #66), and save/cancel.
 - **Quoted span** (`.cmt-pop-quote`) — the text being commented on, rendered as a
   focal accent callout: `background: var(--accent-dim)`, `border-left: 2px solid var(--accent)`.
-- **Type chips** (`.cmt-chip`, with `.cmt-chip-changes` / `.cmt-chip-info`) — reticle
-  controls; the selected chip carries `.is-on` and recolors `--c` to `--orange` (changes)
-  or `--violet` (info).
+- **Type chips** (`.cmt-chip`, with `.cmt-chip-changes` / `.cmt-chip-info` /
+  `.cmt-chip-suggestion`) — reticle controls; the selected chip carries `.is-on` and
+  recolors `--c` to `--orange` (changes), `--violet` (info), or `--accent`
+  (suggestion). The suggestion chip is review-mode only.
+- **Replacement field** (`.cmt-pop-repl`, on `.note-field`) — the reviewer's exact
+  wording, revealed only while the suggestion chip is on (#166).
 - **Save / cancel** (`.cmt-save`, `.cmt-cancel`) — reticle controls; save reads
   affirmative (`--c: var(--teal)`), cancel stays muted.
-- **Inline highlight** (`mark.cmt-hl-changes`, `mark.cmt-hl-info`) — the anchored span
-  in the section body gets a `2px` colored bottom border and the matching `*-bg` wash.
+- **Inline highlight** (`mark.cmt-hl-changes`, `mark.cmt-hl-info`,
+  `mark.cmt-hl-suggestion`) — the anchored span in the section body gets a `2px`
+  colored bottom border and the matching `*-bg` wash (`--accent-dim` for a
+  suggestion: the reviewer's own ink over the author's).
 - **Comment list** (`.comment-list` → `.cmt` rows) — this round's freshly added
   comments. Each row: `.cmt-type` (mono, uppercase, colored by verdict), `.cmt-quote`
   (italic muted excerpt), `.cmt-note` (the note text), and a `.cmt-del` remove button.
   Rows divide with `1px solid var(--border)`.
+- **Suggested wording** (`.cmt-repl`) — the replacement, arrow-led on its own line
+  under the note it belongs to, in `--accent`. Used in both surfaces that show a
+  comment: the comment list and a carried thread's exchange.
 
 ## Blueprint elements (#69, v1.11.0)
 

@@ -66,8 +66,12 @@ def build_threads_block(threads: list[dict]) -> str:
         lines.append(head)
         for x in t.get("exchanges", []):
             note = flat(x.get("note", ""))
+            # Same `suggested:` tag `schema._comment_fragment` puts on a ledger
+            # row, so the two surfaces name the reviewer's wording identically.
+            repl = flat(x.get("replacement", ""))
             resp = flat(x.get("response", ""))
             lines.append(f"  - R{x.get('round', '?')} {x.get('verdict', '?')}: {note}"
+                         + (f" — suggested: {repl}" if repl else "")
                          + (f" → {resp}" if resp else ""))
         lines.append("")
     return "\n".join(lines).rstrip()

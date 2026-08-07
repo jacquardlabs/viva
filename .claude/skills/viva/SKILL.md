@@ -116,13 +116,15 @@ Within a `has-work` round, act on each section by its verdict:
 | Verdict | Action |
 |---------|--------|
 | `approved` | Carried forward; collapsed next round, reopenable |
-| `changes`/`info` | The section carries a `comments` array. Act on each comment **by its `type`** (the hybrid rule): a **`changes`** comment is a *directive* — apply its `note` as a targeted edit **now** so the reviewer reviews the diff. An **`info`** comment is a *question* — answer it in the thread and **do not edit the section**. A section is edited for an `info` thread only once the discussion escalates to a `changes` turn. |
+| `changes`/`info` | The section carries a `comments` array. Act on each comment **by its `type`** (the hybrid rule): a **`changes`** comment is a *directive* — apply its `note` as a targeted edit **now** so the reviewer reviews the diff. A **`suggestion`** comment is a directive with the wording attached — replace the anchored span with its `replacement` **verbatim**: character for character, no rewrite pass, no interpretation, no improving on the reviewer's phrasing, and nothing outside the anchor. An **`info`** comment is a *question* — answer it in the thread and **do not edit the section**. A section is edited for an `info` thread only once the discussion escalates to a `changes` turn. |
 | `pending` | Carry forward unchanged; re-present next round |
 
-The verdict is **derived** from the section's active comments (unsettled,
-non-empty): no active comments → `approved` if the reviewer approved, otherwise
-`pending`; any active comment with `type: "changes"` → section `changes`;
-otherwise (only active `info` comments) → section `info`.
+The verdict is **derived** from the section's active comments (unsettled, and
+carrying a note — or, for a suggestion, replacement wording): no active comments
+→ `approved` if the reviewer approved, otherwise `pending`; any active comment
+with `type: "changes"` or `type: "suggestion"` → section `changes`; otherwise
+(only active `info` comments) → section `info`. A section carrying a live
+suggestion is never approved.
 
 **4. Rewrite and re-arm** (only when the round has work)
 
@@ -140,10 +142,17 @@ confirms it. The offset already names the occurrence the reviewer picked, so a
 repeated phrase needs no guessing. `offset: -1` means that ordinal did not
 resolve — `anchor.text` may still appear in the source, just not there — so
 scope the edit by the section and the note, never by the first match of a
-phrase that repeats. An un-anchored comment scopes to the whole section. For an
-**`info`** comment, do not edit the source — answer in the thread response only. For a carried-forward thread, act
-on its **latest** reviewer turn's type the same way; `wait` prints the path to
-the thread rules when the round has work. Preserve each heading's text exactly —
+phrase that repeats. An un-anchored comment scopes to the whole section. For a
+**`suggestion`** the same anchor rules place the edit and `replacement` is what
+goes there — paste it, do not compose it. Its `note` is the reviewer's reason,
+never a second instruction, and no standing preference overrides supplied
+wording. An un-anchored suggestion names no span: treat it as a `changes`
+directive scoped to the section rather than guessing where the wording lands.
+For an **`info`** comment, do not edit the source — answer in the thread
+response only. For a carried-forward thread, act on its **latest** reviewer
+turn's type the same way — a carried suggestion turn keeps its `replacement` on
+the exchange, beside `note`; `wait` prints the path to the thread rules when the
+round has work. Preserve each heading's text exactly —
 next-round title matching depends on it.
 
 **Apply standing preferences while you rewrite.** The doc is already open, so
@@ -179,10 +188,11 @@ python3 "$VIVA_DIR/scripts/loop.py" finish --doc <doc_file>
 
 `finish` settles the round's remaining threads, ends the session, and appends
 `## Revision History` to the doc — a summary line, a verbatim table of every
-`changes`/`info` note, and an **Open notes** subsection carrying each thread's
-full exchange when any were tracked. On a re-reviewed doc the new block is
-appended under the existing heading. It **refuses** on any non-approved section
-and prints the pending count: nothing is auto-accepted.
+`changes`/`info` note and every suggestion's wording, and an **Open notes**
+subsection carrying each thread's full exchange when any were tracked. On a
+re-reviewed doc the new block is appended under the existing heading. It
+**refuses** on any non-approved section and prints the pending count: nothing
+is auto-accepted.
 
 It then names the preferences reference — cluster this session's `changes`/`info`
 notes into distinct critiques and record each, so a recurring one is learned. A

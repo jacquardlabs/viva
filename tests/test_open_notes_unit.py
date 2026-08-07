@@ -82,8 +82,38 @@ def test_escalated_reply_appends_changes_exchange():
     assert out["s1-c1"]["status"] == "open"  # still open until settled
 
 
+def test_suggestion_thread_carries_its_replacement():
+    """A suggestion threads like any other comment, and the WORDING rides along.
+
+    Without `replacement` on the exchange, round N+1 re-presents the thread with
+    the rationale and the wording stripped — and "apply verbatim" has nothing
+    left to apply. `schema.round_is_complete`'s `proof` conjunct also reads the
+    latest exchange's `verdict`, so an unthreaded suggestion would silently stop
+    holding the round (#166).
+    """
+    wording = "Ship the core in one round."
+    verdicts = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "suggestion", "note": "too vague",
+         "replacement": wording, "anchor": {"text": "ship it", "offset": 3},
+         "open": True, "settled": False},
+    ]}]}
+    out = open_notes.update({}, 1, verdicts, _input(), {})
+    assert set(out) == {"s1-c1"}, out
+    assert out["s1-c1"]["exchanges"][0] == {
+        "round": 1, "verdict": "suggestion", "note": "too vague",
+        "response": "", "replacement": wording}, out["s1-c1"]
+
+    # Presence-gated: a changes/info exchange is byte-identical to before.
+    plain = {"sections": [{"id": "s2", "verdict": "info", "comments": [
+        {"cid": "s2-c1", "type": "info", "note": "how long?",
+         "open": True, "settled": False}]}]}
+    assert open_notes.update({}, 1, plain, _input(), {})["s2-c1"]["exchanges"][0] == {
+        "round": 1, "verdict": "info", "note": "how long?", "response": ""}
+
+
 def main():
     test_two_open_comments_become_two_threads()
+    test_suggestion_thread_carries_its_replacement()
     test_settle_one_thread_by_cid()
     test_approving_section_settles_all_its_threads()
     test_no_comments_is_noop()

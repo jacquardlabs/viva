@@ -21,6 +21,7 @@ anchored quote (if any).
       "status": "open",            # open | settled
       "exchanges": [
         {"round": 1, "verdict": "changes", "note": "5x not 3x", "response": "Done."}
+        # a `suggestion` turn also carries "replacement": the exact wording
       ]
     }
   }
@@ -54,8 +55,9 @@ def update(
 
     Each section carries a `comments` list; each comment is its own thread keyed
     by `cid`. For every comment:
-      - open & changes/info → append an exchange (create the thread if new),
-        carrying the agent's `responses[cid]`.
+      - open & a known type (`schema.COMMENT_TYPES`) → append an exchange
+        (create the thread if new), carrying the agent's `responses[cid]` and,
+        for a suggestion, the replacement wording.
       - settled truthy      → mark that thread settled.
     Approving a section settles every still-open thread whose `cid` belongs to it
     (matched by the section's stable title), so approval clears the section's
@@ -93,7 +95,7 @@ def update(
                 if thread:
                     thread["status"] = "settled"
                 continue
-            if c.get("type") in ("changes", "info") and c.get("open"):
+            if c.get("type") in schema.COMMENT_TYPES and c.get("open"):
                 anchor = c.get("anchor") or {}
                 if thread is None:
                     thread = {"cid": cid, "title": title, "quote": anchor.get("text", ""),
@@ -103,12 +105,20 @@ def update(
                 thread["title"] = title          # keep display title fresh
                 if anchor.get("text"):
                     thread["quote"] = anchor["text"]
-                thread["exchanges"].append({
+                exchange = {
                     "round": round_num,
                     "verdict": c.get("type"),
                     "note": c.get("note", ""),
                     "response": responses.get(cid, ""),
-                })
+                }
+                # A suggestion's payload is the wording, so it rides on the
+                # exchange too: without it, round N+1 re-presents the thread
+                # with the rationale and the replacement stripped, and "apply
+                # verbatim" has nothing left to apply. Presence-gated — a
+                # changes/info exchange stays byte-identical to today's.
+                if c.get("replacement"):
+                    exchange["replacement"] = c["replacement"]
+                thread["exchanges"].append(exchange)
     return out
 
 

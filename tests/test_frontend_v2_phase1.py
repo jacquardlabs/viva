@@ -572,9 +572,12 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
     assert fn < snap < post_idx, \
         "submitReview must snapshot rState before the POST"
     # …and maps activeComments to verbatim {sectionTitle, type, note} rows —
-    # settled/empty comments (and approved sections) contribute nothing.
-    assert ('activeComments(s.id).map(c => '
-            '({ sectionTitle: s.title, type: c.type, note: c.note }))') in page, \
+    # settled/empty comments (and approved sections) contribute nothing. A
+    # suggestion's note is optional, so its row falls back to the wording
+    # rather than rendering a bare section title (#166).
+    assert ("activeComments(s.id).map(c => ({ sectionTitle: s.title, "
+            "type: c.type, note: c.note || c.replacement || '' }))") \
+        in " ".join(page.split()), \
         "snapshot rows must map active comments to {sectionTitle, type, note}"
     # The 'processing' handler renders the view from the snapshot…
     proc = page.index("es.addEventListener('processing'")

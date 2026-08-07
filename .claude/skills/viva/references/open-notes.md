@@ -35,6 +35,10 @@ Each reviewer turn (the original comment, then each reply) carries its own
   The discussion is still open.
 - latest turn `changes` → **apply the edit now** (and say what you changed in
   the thread response), so the reviewer reviews the diff.
+- latest turn `suggestion` → **apply its `replacement` verbatim** to the
+  thread's quoted span, then say so in the response. The wording rides on the
+  exchange itself, beside `note` — the note is the reviewer's reason, never a
+  second instruction, and nothing gets rewritten on the way in.
 
 This is how an `info` discussion becomes a change: the reviewer **escalates** by
 switching their reply to *request changes*. That turn arrives as a comment on

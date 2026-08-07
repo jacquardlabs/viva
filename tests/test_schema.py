@@ -71,6 +71,80 @@ def test_verdict_to_ledger_entry():
     print("  ok  test_verdict_to_ledger_entry")
 
 
+def test_ledger_note_records_suggested_wording_verbatim():
+    """A suggestion is a ledger event, and the wording is the event (#166).
+
+    Verbatim means byte-for-byte inside the fragment — asserted here, on
+    `ledger_note`'s own output, not on a rendered markdown row (`esc_cell`
+    escapes pipes and flattens newlines on the way into the table).
+    """
+    wording = "Ship the core in one round | no exceptions"
+    # Note + wording: the note is rationale, the wording is the payload.
+    assert schema.ledger_note({"comments": [
+        {"type": "suggestion", "note": "too vague", "replacement": wording},
+    ]}) == "too vague — suggested: " + wording
+    # A suggestion needs no note — the wording alone is a full row, and the
+    # blank-note filter must not drop it.
+    assert schema.ledger_note({"comments": [
+        {"type": "suggestion", "note": "", "replacement": wording},
+    ]}) == "suggested: " + wording
+    # Mixed section: fragments join with the same ` · ` as before.
+    assert schema.ledger_note({"comments": [
+        {"type": "changes", "note": "5x not 3x"},
+        {"type": "suggestion", "replacement": "retries 5x"},
+        {"type": "info", "note": "how long?"},
+    ]}) == "5x not 3x · suggested: retries 5x · how long?"
+    # Tagged, not bare: the ledger row's own `verdict` column carries the
+    # SECTION verdict, so the fragment is the only place the type shows.
+    row = schema.verdict_to_ledger_entry(
+        3, "Goals",
+        {"id": "s1", "verdict": "changes",
+         "comments": [{"type": "suggestion", "replacement": wording}]})
+    assert row == {"round": 3, "section_title": "Goals", "verdict": "changes",
+                   "note": "suggested: " + wording}, row
+    assert wording in row["note"]
+    print("  ok  test_ledger_note_records_suggested_wording_verbatim")
+
+
+def test_comment_types_carry_the_third_type():
+    # One tuple names the comment axis; open_notes.py threads on it, so a type
+    # missing here never carries across a round.
+    assert schema.SUGGESTION == "suggestion"
+    assert schema.COMMENT_TYPES == ("changes", "info", schema.SUGGESTION)
+    # A different axis from the section verdicts — a suggestion derives to
+    # `changes` and is never a verdict or a ledger verdict of its own.
+    assert schema.SUGGESTION not in schema.VERDICTS
+    assert schema.SUGGESTION not in schema.LEDGER_VERDICTS
+    print("  ok  test_comment_types_carry_the_third_type")
+
+
+def test_validate_verdicts_requires_replacement_on_a_suggestion():
+    """The wording IS the comment; an empty one is unappliable (#166)."""
+    ok = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "suggestion", "replacement": "Ship it."}]}]}
+    schema.validate_verdicts(ok)  # must not raise
+    for bad in ({"cid": "s1-c1", "type": "suggestion"},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": ""},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": "   "},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": 7}):
+        try:
+            schema.validate_verdicts(
+                {"sections": [{"id": "s1", "verdict": "changes", "comments": [bad]}]})
+        except ValueError as e:
+            assert "replacement" in str(e), e
+        else:
+            raise AssertionError("accepted a suggestion with no wording: %r" % bad)
+    # Gated on the TYPE, so nothing written before this type existed can trip
+    # it: a changes/info comment needs no replacement, and a non-dict entry in
+    # comments stays as permissive as it was.
+    schema.validate_verdicts({"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "changes", "note": "5x not 3x"},
+        {"cid": "s1-c2", "type": "info", "note": "how long?"},
+        "not a dict",
+    ]}]})
+    print("  ok  test_validate_verdicts_requires_replacement_on_a_suggestion")
+
+
 def test_validate_review_input_accepts_valid():
     schema.validate_review_input({
         "mode": "review", "round": 1, "approved_ids": [],
@@ -312,9 +386,9 @@ def test_fact_check_holds_until_every_check_flag_is_answered():
 
 
 def test_proof_holds_on_an_unresolved_suggested_edit():
-    """`proof` reduces to the base today — nothing writes a `suggestion` comment
-    yet — so the conjunct is exercised against the shapes the later story will
-    write, proving it is wired rather than merely declared."""
+    """`proof` adds a conjunct on the comment type the popover now writes (#166):
+    an unresolved suggestion holds the round even when every section is
+    approved."""
     proof = {"kind": "proof"}
     assert schema.round_is_complete(_round(proof), APPROVED)
 
@@ -322,7 +396,8 @@ def test_proof_holds_on_an_unresolved_suggested_edit():
     with_suggestion = {"sections": [
         {"id": "s1", "verdict": "approved",
          "comments": [{"cid": "s1-c1", "type": "suggestion",
-                       "note": "use this wording"}]}]}
+                       "note": "use this wording",
+                       "replacement": "Ship the core in one round."}]}]}
     assert not schema.round_is_complete(_round(proof), with_suggestion)
     assert schema.round_is_complete(_round(), with_suggestion), \
         "no pass, no conjunct — the same round closes without one"
@@ -428,6 +503,9 @@ def main():
     test_ledger_note_joins_comments()
     test_ledger_note_falls_back_to_note()
     test_verdict_to_ledger_entry()
+    test_ledger_note_records_suggested_wording_verbatim()
+    test_comment_types_carry_the_third_type()
+    test_validate_verdicts_requires_replacement_on_a_suggestion()
     test_validate_review_input_accepts_valid()
     test_validate_review_input_rejects_bad()
     test_validate_verdicts_accepts_valid()
@@ -442,7 +520,7 @@ def main():
     test_no_pass_relaxes_the_all_approved_base()
     test_check_kinds_covers_every_shipped_bundle_check()
     test_has_revision_history_is_anchored()
-    print("OK (20 tests)")
+    print("OK (23 tests)")
 
 
 if __name__ == "__main__":

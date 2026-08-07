@@ -37,9 +37,29 @@ def test_whole_section_and_missing_field_fallbacks():
     assert "None" not in block, block
 
 
+def test_suggestion_exchange_renders_its_wording():
+    """The Open-notes block records suggested wording verbatim, with the same
+    `suggested:` tag `schema._comment_fragment` puts on a ledger row (#166)."""
+    wording = "Ship the core in one round."
+    threads = [{"title": "Goals", "quote": "ship it", "status": "open",
+                "exchanges": [{"round": 2, "verdict": "suggestion",
+                               "note": "too vague", "replacement": wording,
+                               "response": "applied verbatim"}]}]
+    block = rh.build_threads_block(threads)
+    assert ("  - R2 suggestion: too vague — suggested: " + wording
+            + " → applied verbatim") in block, block
+    # An exchange with no `replacement` renders exactly as it did before.
+    plain = [{"title": "Goals", "quote": "", "status": "open",
+              "exchanges": [{"round": 1, "verdict": "changes", "note": "5x",
+                             "response": "done"}]}]
+    assert "  - R1 changes: 5x → done" in rh.build_threads_block(plain)
+    assert "suggested:" not in rh.build_threads_block(plain)
+
+
 def main():
     test_threads_grouped_by_section_with_quote()
     test_whole_section_and_missing_field_fallbacks()
+    test_suggestion_exchange_renders_its_wording()
     print("OK")
 
 

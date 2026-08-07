@@ -56,9 +56,17 @@ PASS_POSTURES = ("normal", "hard")
 CHECK_KINDS = ("headings-present",)
 
 # The comment type a reviewer's suggested edit carries, beside today's `changes`
-# and `info`. Nothing writes it yet — the mechanism is a later story — so the
-# `proof` conjunct that reads it reduces to the all-approved base today.
+# and `info`: a directive with the wording attached. The reviewer supplies the
+# exact `replacement` for the span their `anchor` names instead of describing
+# the change, and the author applies it VERBATIM — no rewrite pass.
 SUGGESTION = "suggestion"
+# Every type a reviewer's comment may carry. A DIFFERENT AXIS from `VERDICTS`:
+# a type is per-comment and reviewer-chosen, a verdict is the section's derived
+# state. `suggestion` derives to the section verdict `changes` (it is a
+# directive) and never becomes a verdict of its own — see `round_is_complete`'s
+# callers and DESIGN.md's derivation rule. `open_notes.py` threads on this
+# tuple, so a fourth type carries across rounds the day it is added here.
+COMMENT_TYPES = ("changes", "info", SUGGESTION)
 
 
 # ── Section identity ──────────────────────────────────────────────────────────
@@ -83,16 +91,37 @@ def is_ledger_verdict(verdict: object) -> bool:
     return verdict in LEDGER_VERDICTS
 
 
+def _comment_fragment(comment: dict) -> str:
+    """One comment's contribution to a ledger note.
+
+    A `changes`/`info` comment contributes its note. A `suggestion` also
+    contributes the reviewer's replacement wording VERBATIM, tagged
+    `suggested:` — the row's `verdict` column carries the *section* verdict
+    (`changes`, since a suggestion is a directive), so the fragment is the only
+    place a ledger reader learns wording was supplied rather than described. A
+    suggestion's note is optional rationale; the wording alone is a full row.
+    """
+    note = comment.get("note", "") or ""
+    if comment.get("type") != SUGGESTION:
+        return note
+    replacement = comment.get("replacement", "") or ""
+    if not replacement:
+        return note
+    return (note + " — suggested: " + replacement) if note else ("suggested: " + replacement)
+
+
 def ledger_note(section: dict) -> str:
     """The verbatim note for a ledger row.
 
     Multi-comment sections (issue #68) carry their notes in `comments[]`; their
-    notes are joined with ` · `. Older single-note sections fall back to the
-    section's own `note`. An empty result is normal (a `changes` with no text).
+    fragments (`_comment_fragment`) are joined with ` · `. Older single-note
+    sections fall back to the section's own `note`. An empty result is normal
+    (a `changes` with no text).
     """
     comments = section.get("comments") or []
     if comments:
-        return " · ".join(c.get("note", "") for c in comments if c.get("note"))
+        frags = [_comment_fragment(c) for c in comments if isinstance(c, dict)]
+        return " · ".join(f for f in frags if f)
     return section.get("note", "")
 
 
@@ -189,13 +218,20 @@ class ReviewInput(_ReviewInputPass, total=False):
 class SectionVerdict(TypedDict, total=False):
     id: str        # required — section id
     verdict: str   # required — one of VERDICTS
-    # optional — typed comment threads (issue #68). Each comment may carry an
+    # optional — typed comment threads (issue #68). Each comment carries a
+    # `type` (one of COMMENT_TYPES), an optional `note`, and may carry an
     # `anchor` object {text, offset, occurrence?}: the reviewer's exact
     # selection, used to scope the rewrite. `occurrence` is the 0-based index of
     # that selection among the identical matches in the RENDERED section
     # content, where the selection was made; `offset` is that same ordinal
     # resolved against the markdown source, or -1 when it does not resolve there
     # (#95). Distinct from Annotation.anchor (a string) above.
+    #
+    # A `suggestion` comment also carries `replacement`: the reviewer's exact
+    # wording for the anchored span, applied verbatim. It is the payload that
+    # makes the comment appliable, so `validate_verdicts` requires a non-empty
+    # one — reviewer-authored and BINDING, unlike an `Annotation`, which is
+    # producer-authored and advisory (design: editorial-frame.md).
     comments: list
 
 
@@ -265,9 +301,11 @@ def validate_verdicts(data: dict) -> None:
     """Raise `ValueError` if `data` is not a structurally valid review output
     (`review-r{N}.json`).
 
-    Enforces that every section carries an `id` and a known `verdict`. Permissive
-    about comments/attachments. Only meaningful for review-mode output (sections);
-    callers gate on `"sections" in data` so Q&A `answers` payloads are skipped.
+    Enforces that every section carries an `id` and a known `verdict`, plus one
+    presence-gated comment rule: a `suggestion` must carry replacement wording.
+    Permissive about everything else on a comment, and about attachments. Only
+    meaningful for review-mode output (sections); callers gate on
+    `"sections" in data` so Q&A `answers` payloads are skipped.
     """
     if not isinstance(data, dict):
         raise ValueError("review output must be a JSON object")
@@ -283,6 +321,21 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
             )
+        # Gated on the comment TYPE, not on presence of a field: only a
+        # `suggestion` is checked, so no payload written before this type
+        # existed can trip it. The wording IS the comment — an empty one is
+        # unappliable, and the author would be left inventing the edit the
+        # reviewer meant to hand over. Loud here, at the server's read of the
+        # submit, rather than silently at apply time.
+        for j, c in enumerate(s.get("comments") or []):
+            if not isinstance(c, dict) or c.get("type") != SUGGESTION:
+                continue
+            replacement = c.get("replacement")
+            if not isinstance(replacement, str) or not replacement.strip():
+                raise ValueError(
+                    f"review output.sections[{i}].comments[{j}] is a "
+                    f"{SUGGESTION!r} with no replacement wording"
+                )
 
 
 REVISION_HISTORY_RE = re.compile(r"(?m)^## Revision History\s*$")
@@ -332,10 +385,8 @@ def _flag_is_answered(flag: dict) -> bool:
 def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     """Does this round carry a suggested edit nobody has settled?
 
-    A suggested edit is a reviewer comment typed `SUGGESTION`. Nothing writes
-    that type yet — the mechanism is a later story — so this returns False and
-    `proof`'s conjunct reduces to the all-approved base today. It ships now so
-    that story adds a producer, not a completion rule.
+    A suggested edit is a reviewer comment typed `SUGGESTION`, written by the
+    server's comment popover and carrying the wording in `replacement`.
 
     Two places one can be outstanding, both existing shapes:
       * the verdicts just submitted — a `suggestion` comment not marked

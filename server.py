@@ -1074,6 +1074,10 @@ body {
 .cmt-add-btn:hover { --c: var(--text3); color: var(--text); }
 mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var(--orange); color: inherit; }
 mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
+/* A suggested span is the reviewer's own ink over the author's — the accent
+   slot, the same one `.cmt-pop-quote` uses for the span being acted on. Not a
+   verdict color: the three verdict inks stay approved/changes/info. */
+mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid var(--accent); color: inherit; }
 .comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
 .cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 /* The span being commented on — a focal accent callout so it reads clearly as
@@ -1099,6 +1103,10 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .cmt-chip:hover { --c: var(--text3); color: var(--text); }
 .cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
 .cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
+.cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
+/* The replacement field only exists while the suggestion chip is on; it reuses
+   `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
+.cmt-pop-repl { margin-top: 6px; }
 /* Popover save / cancel — reticle buttons like the verdict row; save reads
    affirmative (teal), cancel stays muted. */
 .cmt-save, .cmt-cancel {
@@ -1189,6 +1197,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .exchange-verdict.v-changes { color: var(--orange); }
 .exchange-verdict.v-info    { color: var(--violet); }
+.exchange-verdict.v-suggestion { color: var(--accent); }
 .exchange-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 .exchange-a {
   margin-top: 3px; padding-left: 10px;
@@ -1225,6 +1234,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .v-changes .cmt-type { color: var(--orange); }
 .v-info    .cmt-type { color: var(--violet); }
+.v-suggestion .cmt-type { color: var(--accent); }
+/* The wording a suggestion carries, in both surfaces that show a comment: the
+   new-comment list and a carried thread's exchange. Its own line under the
+   note, accent-inked, arrow-led like `.exchange-a`'s reply. */
+.cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
+.cmt-repl::before { content: '→ '; }
 /* Anchor quotes can be a whole selected paragraph — ellipsize instead of
    squeezing the note beside them; the full text stays on the card itself
    and in the title tooltip. */
@@ -1700,6 +1715,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .pr-changes .pr-type { color: var(--orange); }
 .pr-info    .pr-type { color: var(--violet); }
+.pr-suggestion .pr-type { color: var(--accent); }
 .pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
 .pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 
@@ -2368,12 +2384,14 @@ function openNotesHTML(exchanges) {
   return (exchanges || []).map(x => {
     x = x || {};
     const v = String(x.verdict || '');
-    const vClass = (v === 'changes' || v === 'info') ? ' v-' + v : '';
+    const vClass = (v === 'changes' || v === 'info' || v === 'suggestion') ? ' v-' + v : '';
     return '<div class="exchange">'
       + '<div class="exchange-q">'
       +   '<span class="exchange-round">R' + esc(x.round) + '</span>'
       +   '<span class="exchange-verdict' + vClass + '">' + esc(v) + '</span>'
-      +   '<span class="exchange-note">' + esc(x.note || '') + '</span>'
+      +   '<span class="exchange-note">' + esc(x.note || '')
+      +     (x.replacement ? '<span class="cmt-repl">' + esc(x.replacement) + '</span>' : '')
+      +   '</span>'
       + '</div>'
       + (x.response ? '<div class="exchange-a">' + esc(x.response) + '</div>' : '')
       + '</div>';
@@ -2387,8 +2405,12 @@ function openThreadHTML(section) {
     const cid = esc(t.cid || '');
     const exs = t.exchanges || [];
     // The thread's current type carries to a reply (continuing an info thread
-    // stays info), defaulting to info.
-    const type = (exs.length && exs[exs.length - 1].verdict) || 'info';
+    // stays info), defaulting to info — but never as a suggestion: the reply
+    // box collects prose, not replacement wording, and a suggestion comment
+    // with no `replacement` is rejected at the server's boundary. Replying to a
+    // suggestion re-requests it, which is exactly `changes`.
+    const last = (exs.length && exs[exs.length - 1].verdict) || 'info';
+    const type = (last === 'changes' || last === 'suggestion') ? 'changes' : 'info';
     const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
     return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
@@ -2800,27 +2822,34 @@ function syncReviewCard(id) {
 /* ─── Comments (multi-comment review) ───────────────────────────
    A section owns a list of typed comments; the section verdict is DERIVED,
    never picked. No active comments → approved (if reviewer approved) or pending;
-   any `changes` comment → changes; otherwise info. Each comment is an open
-   thread by default (cid-keyed). */
+   any `changes` OR `suggestion` comment → changes; otherwise info. A suggestion
+   is a directive carrying the wording, so it lands with `changes`: a section
+   holding one is not approved. Each comment is an open thread by default
+   (cid-keyed). The same rule is stated in DESIGN.md ("Multiple inline
+   comments"), SKILL.md's verdict table, and `scripts/schema.py`'s
+   COMMENT_TYPES — all three move together. */
 function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
 // Comments that are real, unsettled feedback — the basis for the verdict, the
-// button count, the rendered list, and whether a section can be approved.
+// button count, the rendered list, and whether a section can be approved. A
+// suggestion qualifies on its `replacement` alone: the wording IS the comment,
+// and its note is optional rationale.
 function activeComments(id) {
-  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && (c.note || c.replacement));
 }
 
 function deriveVerdict(id) {
   const active = activeComments(id);
   if (active.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
-  return active.some(c => c.type === 'changes') ? 'changes' : 'info';
+  return active.some(c => c.type === 'changes' || c.type === 'suggestion') ? 'changes' : 'info';
 }
 
-function addComment(id, { type, note, anchor, images }) {
+function addComment(id, { type, note, anchor, images, replacement }) {
   const cs = commentsOf(id);
   const n = cs.reduce((m, c) => Math.max(m, +(String(c.cid).split('-c')[1] || 0)), 0);
   cs.push({ cid: id + '-c' + (n + 1), type, note: note || '',
             ...(anchor && { anchor }),
+            ...(replacement && { replacement }),
             ...(images?.length && { images }),
             open: true, settled: false });
   syncCard(id);
@@ -2965,19 +2994,28 @@ function offsetInSource(id, text, occurrence) {
   return at;
 }
 
-// A small popover with two type chips + a note field + save/cancel. `anchor`
+// A small popover with the type chips + a note field + save/cancel. `anchor`
 // is {text, offset} or null (whole-section note).
+//
+// The third chip, `suggest wording`, adds a replacement field: the reviewer
+// types the exact wording instead of describing the change, and the author
+// applies it verbatim to the anchored span. Review mode only — a diff hunk's
+// suggestion would be a verbatim code edit, and /viva-diff carries no
+// instruction to apply one (issue #166 scopes that out).
 function openCommentPopover(id, { anchor } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
+  const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';
   const captureState = {};
   pop.innerHTML =
       '<div class="cmt-pop-row">'
     +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
     +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
+    +   (canSuggest ? '<button type="button" class="cmt-chip cmt-chip-suggestion" data-type="suggestion">suggest wording</button>' : '')
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
+    + (canSuggest ? '<textarea class="note-field cmt-pop-repl" style="display:none" placeholder="Replacement wording — applied verbatim"></textarea>' : '')
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
     + '<input type="file" accept="image/*" multiple style="display:none">'
@@ -2986,6 +3024,7 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.style.display = '';
 
   const ta        = pop.querySelector('.cmt-pop-note');
+  const repl      = pop.querySelector('.cmt-pop-repl');
   const strip     = pop.querySelector('.thumb-strip');
   const attachBtn = pop.querySelector('.attach-btn');
   const fileInput = pop.querySelector('input[type="file"]');
@@ -2994,12 +3033,26 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+    if (repl) {
+      const on = pop.dataset.type === 'suggestion';
+      repl.style.display = on ? '' : 'none';
+      if (on) repl.focus();
+    }
   });
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
     const note = ta.value.trim();
-    if (!note) { ta.placeholder = 'a comment needs a note'; return; }
+    // A suggestion ships on its wording, not its note: the replacement is the
+    // payload the author applies, and the note is optional rationale. Every
+    // other type still needs a note — there is nothing else in it.
+    const isSuggestion = pop.dataset.type === 'suggestion';
+    const replacement = (isSuggestion && repl) ? repl.value.trim() : '';
+    if (isSuggestion && !replacement) {
+      repl.placeholder = 'a suggestion needs replacement wording'; repl.focus(); return;
+    }
+    if (!isSuggestion && !note) { ta.placeholder = 'a comment needs a note'; return; }
     addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined,
+                     replacement: replacement || undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
   };
@@ -3014,7 +3067,7 @@ function closeCommentPopover(id) {
 // Re-wrap each comment's anchored span in the rendered content with a typed mark.
 function renderHighlights(id) {
   const content = el('rcontent-' + id); if (!content) return;
-  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info').forEach(m => {
+  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info, mark.cmt-hl-suggestion').forEach(m => {
     m.replaceWith(document.createTextNode(m.textContent));
   });
   content.normalize();
@@ -3101,7 +3154,9 @@ function renderCommentList(id) {
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
     +   (c.anchor?.text ? '<span class="cmt-quote" title="' + esc(c.anchor.text) + '">' + esc(c.anchor.text) + '</span>' : '')
-    +   '<span class="cmt-note">' + esc(c.note) + '</span>'
+    +   '<span class="cmt-note">' + esc(c.note)
+    +     (c.replacement ? '<span class="cmt-repl">' + esc(c.replacement) + '</span>' : '')
+    +   '</span>'
     +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
     + '</div>').join('');
   host.querySelectorAll('.cmt-del').forEach(b =>
@@ -3409,8 +3464,11 @@ let betweenRounds = null;
 function snapshotBetweenRounds() {
   betweenRounds = {
     round: REVIEW_DATA.round,
+    // A suggestion's note is optional, so the processing card falls back to the
+    // wording — a row reading only its section title says nothing.
     rows: REVIEW_DATA.sections.flatMap(s =>
-      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type, note: c.note })))
+      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type,
+                                       note: c.note || c.replacement || '' })))
   };
 }
 
