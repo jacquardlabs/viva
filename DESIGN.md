@@ -44,6 +44,10 @@ All colors are CSS custom properties defined in `:root` with a full `@media
 | `changes` | `--orange` | `.vbadge-changes` |
 | `info` | `--violet` | `.vbadge-info` |
 
+Three verdicts, three inks — a comment *type* is a different axis and takes no
+verdict ink: a `suggestion` derives to the `changes` verdict but marks its span
+in `--accent` (see Multiple inline comments).
+
 ### Annotation severity mapping
 
 | Severity | Token | Strip class |
@@ -312,7 +316,9 @@ terminal.`) overlay this card exactly as they overlaid the old view.
 
 A section card hosts a list of typed comments rather than a single verdict pick. The
 section verdict is **derived** from its comments, never chosen directly: no active
-comments → approved/pending; any `changes` comment → changes; otherwise info.
+comments → approved/pending; any `changes` or `suggestion` comment → changes;
+otherwise info. A comment is active when it is unsettled and carries a note — or,
+for a suggestion, replacement wording, which is the comment's whole payload.
 
 Design elements:
 - **Add row** (`.comment-add-row`) — a `.cmt-add-hint` ("select text above to comment")
@@ -324,17 +330,31 @@ Design elements:
   `.thumb-strip`, per-comment attachments, #66), and save/cancel.
 - **Quoted span** (`.cmt-pop-quote`) — the text being commented on, rendered as a
   focal accent callout: `background: var(--accent-dim)`, `border-left: 2px solid var(--accent)`.
-- **Type chips** (`.cmt-chip`, with `.cmt-chip-changes` / `.cmt-chip-info`) — reticle
-  controls; the selected chip carries `.is-on` and recolors `--c` to `--orange` (changes)
-  or `--violet` (info).
+- **Type chips** (`.cmt-chip`, with `.cmt-chip-changes` / `.cmt-chip-info` /
+  `.cmt-chip-suggestion`) — reticle controls; the selected chip carries `.is-on` and
+  recolors `--c` to `--orange` (changes), `--violet` (info), or `--accent`
+  (suggestion). The suggestion chip is review-mode only.
+- **Replacement field** (`.cmt-pop-repl`, on `.note-field`) — the reviewer's exact
+  wording, revealed only while the suggestion chip is on (#166).
 - **Save / cancel** (`.cmt-save`, `.cmt-cancel`) — reticle controls; save reads
   affirmative (`--c: var(--teal)`), cancel stays muted.
-- **Inline highlight** (`mark.cmt-hl-changes`, `mark.cmt-hl-info`) — the anchored span
-  in the section body gets a `2px` colored bottom border and the matching `*-bg` wash.
+- **Inline highlight** (`mark.cmt-hl-changes`, `mark.cmt-hl-info`,
+  `mark.cmt-hl-suggestion`) — the anchored span in the section body gets a `2px`
+  colored bottom border and the matching `*-bg` wash (`--accent-dim` for a
+  suggestion: the reviewer's own ink over the author's).
 - **Comment list** (`.comment-list` → `.cmt` rows) — this round's freshly added
   comments. Each row: `.cmt-type` (mono, uppercase, colored by verdict), `.cmt-quote`
   (italic muted excerpt), `.cmt-note` (the note text), and a `.cmt-del` remove button.
   Rows divide with `1px solid var(--border)`.
+- **Suggested wording** (`.cmt-repl`) — the replacement, arrow-led on its own line
+  under the note it belongs to, in `--accent`. Used in both surfaces that show a
+  comment: the comment list and a carried thread's exchange.
+- **Decline** (`.exchange-d`) — the author's grounds for not complying with a
+  carried turn, `⊘`-led between the request (`.exchange-q`) and the response
+  (`.exchange-a`), `--text2` text on a `--orange` rule. Its thread head reads
+  `declined` and takes the same ink (`.open-thread.is-declined`) — unresolved,
+  so it keeps the settle button and the reply box: the reviewer accepts or
+  insists. Not a verdict ink change; the three verdict colors are untouched.
 
 ## Blueprint elements (#69, v1.11.0)
 
@@ -556,7 +576,7 @@ submitting (see Recap overlay); Q&A's done → click submits directly.
 - **`anchor` is overloaded — three semantics by context.** The name is reused across the input and output schemas with different meanings and consumers; keep them straight when adding an annotation kind or a consumer:
   - *Annotation, display* (input) — a string rendered as the badge's hover `title` attribute.
   - *Annotation, navigation* (input) — when the string matches another section's `id` (the cross-section contradiction producer), it renders as a `.annot-jump` deep-link to that section instead of a hover title.
-  - *Comment, selection* (output) — a `comment.anchor` object `{text, offset}`: the exact text the reviewer selected in the section, which the agent uses to scope its rewrite (`offset` disambiguates a repeated phrase). This is a structured object, not a string, and lives on comments in `review-r{N}.json` — a different shape from the annotation `anchor` above.
+  - *Comment, selection* (output) — a `comment.anchor` object `{text, offset, occurrence?}`: the exact text the reviewer selected in the section, which the agent uses to scope its rewrite. The selection exists only in the rendered HTML, so `occurrence` is the 0-based index of that selection among the identical matches **there**, and `offset` is that same ordinal resolved against the markdown source (`-1` when it does not resolve — the two sequences can diverge over markdown syntax the renderer strips). The ordinal is what makes the on-screen highlight and the stored offset name one span, and the only thing that survives a re-render; a repeated phrase looked up by `anchor.text` alone lands on the first match, which is the bug #95 fixed. This is a structured object, not a string, and lives on comments in `review-r{N}.json` — a different shape from the annotation `anchor` above.
 - `GET /input` returns the current review-input merged with `ledger: [...]` — the live running ledger. The `ledger` field is injected by the server at serve time and is **not** part of the `review-input-r{N}.json` file schema that `parse_sections.py` writes.
 - Both `GET /input` and the `round` SSE event similarly attach `revision_count` to a section object — but only when that section's cumulative revision count this session reaches 2+ (issue #141). Injected by the server at serve time, derived by re-reading `.viva/review-input-r{N}.json` round files already on disk; never written to any round file and not part of `ReviewSection`.
 - The round shapes are the system's load-bearing contract, defined in one place: `scripts/schema.py` holds the TypedDicts, `section_key()` (the single section-identity normalization), `verdict_to_ledger_entry()` (the single ledger-row rule), and the boundary validators. Adding a field means updating that module and validating at the boundary (on parse write, on server read) — never at the point of use.

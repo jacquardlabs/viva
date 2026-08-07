@@ -10,6 +10,10 @@ load-bearing pieces of the protocol:
   for which verdicts become a Revision-History row and how the note is derived.
 - **The round shapes** — `TypedDict`s documenting `review-input-r{N}.json` and
   `review-r{N}.json` (documentation only; CI runs no type checker).
+- **The completion rule** — `round_is_complete()`, the one predicate
+  `loop.py finish` and the server's `/complete` both ask, plus the conjunct-only
+  invariant a round's optional `pass` obeys: a pass may only add a condition to
+  the all-approved base, never relax it.
 - **Boundary validation** — `validate_review_input()` / `validate_verdicts()`,
   called where data enters the system so a missed producer fails loudly instead
   of silently corrupting a downstream reader.
@@ -31,6 +35,66 @@ from typing import List, Optional, TypedDict
 LEDGER_VERDICTS = ("changes", "info")
 # Every verdict a review output section may carry.
 VERDICTS = ("approved", "changes", "info", "pending")
+
+# ── Passes — depth and posture as round parameters ────────────────────────────
+# The four depths a round can run at. A pass is OPTIONAL on `ReviewInput`, and
+# absent means today's behavior exactly — never defaulted, never written as
+# `null` (PRODUCT.md principle 4). `doc_types.py` reads these too: a bundle's
+# `default_pass` must name a kind a round can actually run.
+PASS_KINDS = ("architecture", "line", "checks", "final")
+# Posture is a setting ON the pass, not a second round field — `hard` licenses
+# the author to argue rather than concede. Absent reads as `normal`.
+PASS_POSTURES = ("normal", "hard")
+
+# The annotation `kind`s a check producer emits — the handle `round_is_complete`
+# reads to find a `checks` round's flags (`headings_present.py`'s `KIND` is
+# the first, and its docstring names this key as that handle). A new check
+# producer ADDS ITS KIND HERE, or a `checks` pass never sees its flags and
+# closes a round it should have held. Deliberately not "every warn/error
+# annotation": drift, checklist, contradiction, confidence, and preference flags
+# are advisory producers with nothing to do with checking claims.
+CHECK_KINDS = ("headings-present",)
+
+# The comment type a reviewer's suggested edit carries, beside today's `changes`
+# and `info`: a directive with the wording attached. The reviewer supplies the
+# exact `replacement` for the span their `anchor` names instead of describing
+# the change, and the author applies it VERBATIM — no rewrite pass.
+SUGGESTION = "suggestion"
+# Every type a reviewer's comment may carry. A DIFFERENT AXIS from `VERDICTS`:
+# a type is per-comment and reviewer-chosen, a verdict is the section's derived
+# state. `suggestion` derives to the section verdict `changes` (it is a
+# directive) and never becomes a verdict of its own — see `round_is_complete`'s
+# callers and DESIGN.md's derivation rule. `open_notes.py` threads on this
+# tuple, so a fourth type carries across rounds the day it is added here.
+COMMENT_TYPES = ("changes", "info", SUGGESTION)
+
+# ── Open-note thread statuses ─────────────────────────────────────────────────
+# One thread per comment `cid` in `.viva/open-notes.json`, whose single writer is
+# `open_notes.py`. `declined` is the AUTHOR's turn — they did not comply and
+# recorded `grounds` on that exchange. It is a THREAD status and NOT a verdict:
+# `VERDICTS` is the section's state, and a section with two comments, one applied
+# and one declined, has no coherent section-level verdict (#167). Only the
+# reviewer settles, so a decline never closes anything; it is an answer the
+# reviewer accepts (settle) or overrides (reply).
+THREAD_OPEN = "open"
+THREAD_SETTLED = "settled"
+THREAD_DECLINED = "declined"
+THREAD_STATUSES = (THREAD_OPEN, THREAD_SETTLED, THREAD_DECLINED)
+
+
+def thread_is_unresolved(status: object) -> bool:
+    """Is this thread still live — does it carry into the next round?
+
+    `open` and `declined` both are: an unresolved decline holds its section
+    exactly as an open thread does, because the reviewer has yet to accept it or
+    insist. `settled` is the one closed status.
+
+    Membership, not `!= settled`, so an unknown status is never silently treated
+    as live. The two readers ask the same question from opposite ends:
+    `parse_sections._attach_open_notes` re-presents what is unresolved, and
+    `open_notes.update` settles what is unresolved when its section is approved.
+    """
+    return status in (THREAD_OPEN, THREAD_DECLINED)
 
 
 # ── Section identity ──────────────────────────────────────────────────────────
@@ -55,16 +119,37 @@ def is_ledger_verdict(verdict: object) -> bool:
     return verdict in LEDGER_VERDICTS
 
 
+def _comment_fragment(comment: dict) -> str:
+    """One comment's contribution to a ledger note.
+
+    A `changes`/`info` comment contributes its note. A `suggestion` also
+    contributes the reviewer's replacement wording VERBATIM, tagged
+    `suggested:` — the row's `verdict` column carries the *section* verdict
+    (`changes`, since a suggestion is a directive), so the fragment is the only
+    place a ledger reader learns wording was supplied rather than described. A
+    suggestion's note is optional rationale; the wording alone is a full row.
+    """
+    note = comment.get("note", "") or ""
+    if comment.get("type") != SUGGESTION:
+        return note
+    replacement = comment.get("replacement", "") or ""
+    if not replacement:
+        return note
+    return (note + " — suggested: " + replacement) if note else ("suggested: " + replacement)
+
+
 def ledger_note(section: dict) -> str:
     """The verbatim note for a ledger row.
 
     Multi-comment sections (issue #68) carry their notes in `comments[]`; their
-    notes are joined with ` · `. Older single-note sections fall back to the
-    section's own `note`. An empty result is normal (a `changes` with no text).
+    fragments (`_comment_fragment`) are joined with ` · `. Older single-note
+    sections fall back to the section's own `note`. An empty result is normal
+    (a `changes` with no text).
     """
     comments = section.get("comments") or []
     if comments:
-        return " · ".join(c.get("note", "") for c in comments if c.get("note"))
+        frags = [_comment_fragment(c) for c in comments if isinstance(c, dict)]
+        return " · ".join(f for f in frags if f)
     return section.get("note", "")
 
 
@@ -103,6 +188,12 @@ class Annotation(TypedDict, total=False):
     anchor: str
     basis: str      # confidence only — sourced | inferred
     level: str      # confidence only — high | medium | low
+    # optional — the check's finding for this flag, written by the producer that
+    # raised it or merged onto it later (`annotate.py` answers a flag in place).
+    # Only load-bearing for a `checks` pass: `round_is_complete()` holds such
+    # a round until every `CHECK_KINDS` flag carries one. Advisory everywhere
+    # else, like the rest of this shape.
+    result: str
 
 
 class ReviewSection(TypedDict, total=False):
@@ -111,10 +202,37 @@ class ReviewSection(TypedDict, total=False):
     content: str                  # required — verbatim markdown
     annotations: List[Annotation]  # optional — advisory badges
     diff: dict                    # optional — round-to-round change
-    open_notes: list              # optional — carried-forward threads
+    # optional — carried-forward threads, `parse_sections._attach_open_notes`'s
+    # projection of the `.viva/open-notes.json` store: each is
+    # `{cid, quote, status, exchanges}`, `status` one of `THREAD_STATUSES` (only
+    # the unresolved ones attach — a settled thread drops), and each exchange is
+    # `{round, verdict, note, response}` plus, presence-gated, `replacement`
+    # (the reviewer's suggested wording) and `grounds` (the author's reason for
+    # declining that turn).
+    open_notes: list
 
 
-class ReviewInput(TypedDict, total=False):
+class ReviewPass(TypedDict, total=False):
+    kind: str      # required when a pass is present — one of PASS_KINDS
+    posture: str   # optional — one of PASS_POSTURES; absent reads as `normal`
+
+
+# `ReviewInput.pass` — optional; the depth and posture this round runs at.
+# ABSENT for a round that runs no pass, and absent is today's behavior exactly:
+# the round parses, arms, waits, and completes as it did before this field
+# existed (PRODUCT.md principle 4). Present, it can only make
+# `round_is_complete()` stricter — never looser. Recorded by
+# `parse_sections.py`; carried within a session by `loop.py rearm`, deliberately
+# NOT across a resume (depth is a per-round decision, unlike the session
+# identity `split_on`/`doc_type` carry). `server.py` renders nothing from it —
+# only `/complete`'s finish guard reads it, through `round_is_complete()`.
+#
+# Declared with the functional form because `pass` is a Python keyword and
+# cannot be a class-body annotation; mixed into `ReviewInput` below.
+_ReviewInputPass = TypedDict("_ReviewInputPass", {"pass": ReviewPass}, total=False)
+
+
+class ReviewInput(_ReviewInputPass, total=False):
     mode: str                       # "review"
     doc_file: str                   # relative path for the UI
     round: int                      # round number
@@ -123,15 +241,32 @@ class ReviewInput(TypedDict, total=False):
     # `parse_sections.py` so `loop.py rearm` re-splits round N+1 identically.
     # Absent when the round used the auto-detected split level.
     split_on: str
+    # optional — the resolved doc-type name (`scripts/doc_types.py`), recorded
+    # by `parse_sections.py` and carried round to round the way `split_on` is.
+    # Passthrough: nothing in `server.py` reads or renders it. Absent when the
+    # session was started without `--type`.
+    doc_type: str
+    # `pass` — see `_ReviewInputPass` above; the key cannot be spelled here.
     sections: List[ReviewSection]
 
 
 class SectionVerdict(TypedDict, total=False):
     id: str        # required — section id
     verdict: str   # required — one of VERDICTS
-    # optional — typed comment threads (issue #68). Each comment may carry an
-    # `anchor` object {text, offset}: the reviewer's exact selection, used to
-    # scope the rewrite. Distinct from Annotation.anchor (a string) above.
+    # optional — typed comment threads (issue #68). Each comment carries a
+    # `type` (one of COMMENT_TYPES), an optional `note`, and may carry an
+    # `anchor` object {text, offset, occurrence?}: the reviewer's exact
+    # selection, used to scope the rewrite. `occurrence` is the 0-based index of
+    # that selection among the identical matches in the RENDERED section
+    # content, where the selection was made; `offset` is that same ordinal
+    # resolved against the markdown source, or -1 when it does not resolve there
+    # (#95). Distinct from Annotation.anchor (a string) above.
+    #
+    # A `suggestion` comment also carries `replacement`: the reviewer's exact
+    # wording for the anchored span, applied verbatim. It is the payload that
+    # makes the comment appliable, so `validate_verdicts` requires a non-empty
+    # one — reviewer-authored and BINDING, unlike an `Annotation`, which is
+    # producer-authored and advisory (#166).
     comments: list
 
 
@@ -162,6 +297,31 @@ def validate_review_input(data: dict) -> None:
     # with. Loud here beats a mid-session split change nobody asked for.
     if "split_on" in data and not isinstance(data["split_on"], str):
         raise ValueError("review-input.split_on must be a string")
+    # Presence-gated for the same reason: `loop.py`'s resume and `rearm` hand
+    # this value straight back to `parse_sections.py --doc-type`, and a `null`
+    # would silently drop the type — and with it the round's check set — rather
+    # than failing where the bad value was written.
+    if "doc_type" in data and not isinstance(data["doc_type"], str):
+        raise ValueError("review-input.doc_type must be a string")
+    # Presence-gated like the two above, for a sharper reason: the pass is the
+    # only round field that changes when `POST /complete` may succeed. A
+    # malformed one must fail where it was written — a `null` or a typo'd kind
+    # would otherwise revert the round to the base rule silently, dropping a
+    # conjunct the reviewer asked for. Absent stays absent; nothing defaults it.
+    if "pass" in data:
+        spec = data["pass"]
+        if not isinstance(spec, dict):
+            raise ValueError(
+                "review-input.pass must be an object {kind, posture} — omit the "
+                "key entirely for a round that runs no pass, never null")
+        if spec.get("kind") not in PASS_KINDS:
+            raise ValueError(
+                "review-input.pass.kind %r is not one of %s"
+                % (spec.get("kind"), "|".join(PASS_KINDS)))
+        if "posture" in spec and spec["posture"] not in PASS_POSTURES:
+            raise ValueError(
+                "review-input.pass.posture %r is not one of %s"
+                % (spec.get("posture"), "|".join(PASS_POSTURES)))
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")
@@ -176,9 +336,11 @@ def validate_verdicts(data: dict) -> None:
     """Raise `ValueError` if `data` is not a structurally valid review output
     (`review-r{N}.json`).
 
-    Enforces that every section carries an `id` and a known `verdict`. Permissive
-    about comments/attachments. Only meaningful for review-mode output (sections);
-    callers gate on `"sections" in data` so Q&A `answers` payloads are skipped.
+    Enforces that every section carries an `id` and a known `verdict`, plus one
+    presence-gated comment rule: a `suggestion` must carry replacement wording.
+    Permissive about everything else on a comment, and about attachments. Only
+    meaningful for review-mode output (sections); callers gate on
+    `"sections" in data` so Q&A `answers` payloads are skipped.
     """
     if not isinstance(data, dict):
         raise ValueError("review output must be a JSON object")
@@ -194,6 +356,21 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
             )
+        # Gated on the comment TYPE, not on presence of a field: only a
+        # `suggestion` is checked, so no payload written before this type
+        # existed can trip it. The wording IS the comment — an empty one is
+        # unappliable, and the author would be left inventing the edit the
+        # reviewer meant to hand over. Loud here, at the server's read of the
+        # submit, rather than silently at apply time.
+        for j, c in enumerate(s.get("comments") or []):
+            if not isinstance(c, dict) or c.get("type") != SUGGESTION:
+                continue
+            replacement = c.get("replacement")
+            if not isinstance(replacement, str) or not replacement.strip():
+                raise ValueError(
+                    f"review output.sections[{i}].comments[{j}] is a "
+                    f"{SUGGESTION!r} with no replacement wording"
+                )
 
 
 REVISION_HISTORY_RE = re.compile(r"(?m)^## Revision History\s*$")
@@ -220,6 +397,60 @@ def has_revision_history(doc_text: str) -> bool:
     return REVISION_HISTORY_RE.search(doc_text) is not None
 
 
+def _check_flags(input_data: dict) -> list:
+    """Every check-producer flag on this round — the annotations whose `kind` is
+    in `CHECK_KINDS`. Advisory producers' flags are not check flags."""
+    return [a
+            for s in input_data.get("sections", []) or []
+            for a in (s.get("annotations") or [])
+            if isinstance(a, dict) and a.get("kind") in CHECK_KINDS]
+
+
+def _flag_is_answered(flag: dict) -> bool:
+    """Does this check flag carry a result — i.e. did the check come back?
+
+    A non-empty string `result`. Emptiness is the whole point: the producer
+    raises the flag, the result is what answers it, and a blank one answers
+    nothing.
+    """
+    result = flag.get("result")
+    return isinstance(result, str) and result.strip() != ""
+
+
+def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
+    """Does this round carry a suggested edit nobody has settled?
+
+    A suggested edit is a reviewer comment typed `SUGGESTION`, written by the
+    server's comment popover and carrying the wording in `replacement`.
+
+    Two places one can be outstanding, both existing shapes:
+      * the verdicts just submitted — a `suggestion` comment not marked
+        `settled`;
+      * the round's carried open threads — `parse_sections.py` attaches only
+        threads still `open`, and `open_notes.py` records each turn's comment
+        type as that exchange's `verdict`, so a thread whose LATEST exchange is
+        a suggestion is one the author has not answered yet.
+
+    An exchange's `verdict` is the REVIEWER's comment type, never the author's
+    answer — declining a suggestion adds `grounds` and moves the thread to
+    `THREAD_DECLINED`, leaving that exchange's verdict `suggestion`. That is
+    what keeps a declined suggestion holding a `final` round: the author's
+    refusal is not a resolution; only the reviewer's settle is.
+    """
+    for s in verdicts.get("sections", []) or []:
+        for c in s.get("comments") or []:
+            if (isinstance(c, dict) and c.get("type") == SUGGESTION
+                    and not c.get("settled")):
+                return True
+    for s in input_data.get("sections", []) or []:
+        for thread in s.get("open_notes") or []:
+            exchanges = (thread or {}).get("exchanges") or []
+            last = exchanges[-1] if exchanges else None
+            if isinstance(last, dict) and last.get("verdict") == SUGGESTION:
+                return True
+    return False
+
+
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     """Is this round finished — i.e. may the session sign off?
 
@@ -227,9 +458,32 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     ask, so the invariant lives in one place rather than being re-derived at two
     call sites in two processes. Pure: dicts in, bool out, no disk.
 
-    Today: every section in the round's input carries an `approved` verdict. The
-    input side matters — a section present in the input with no verdict row at
-    all is incomplete, which a scan of `verdicts` alone cannot see.
+    The base: every section in the round's input carries an `approved` verdict.
+    The input side matters — a section present in the input with no verdict row
+    at all is incomplete, which a scan of `verdicts` alone cannot see.
+
+    **The conjunct-only invariant.** A round's optional `pass` may only ADD a
+    condition to that base; it may never relax it. Every branch below runs the
+    base first and returns False the moment it fails, so no pass — now or later
+    — can return True where a passless round returns False. One that could would
+    reopen the hole #102 closed: `POST /complete` accepting a round the human
+    never approved.
+
+      | pass                       | complete when                              |
+      | absent, architecture, line | every section approved                     |
+      | checks                     | …and every check flag carries a result     |
+      | final                      | …and no suggested edit is unresolved       |
+
+    `tests/test_schema.py`'s `test_no_pass_relaxes_the_all_approved_base` walks
+    `PASS_KINDS` and enforces this, so a fifth kind is covered the day it lands.
+
+    The `checks` conjunct reads flags off the round input, where
+    `annotate.py` merged them, so a flag answered in round N rides into N+1 with
+    its answer (`parse_sections._carry_annotations` copies whole annotations onto
+    byte-identical sections). That carry is also how a stale flag survives its
+    own fix — a pre-existing limit `headings_present.py` documents, and the
+    reason answering a flag in place, rather than waiting for it to disappear,
+    is the satisfying move.
 
     Callers gate on shape and mode: Q&A rounds carry `questions` rather than
     `sections`, and diff rounds legitimately sign off with `changes` verdicts on
@@ -239,9 +493,18 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     if not section_ids:
         return False
     by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
-    return all(
+    if not all(
         (by_id.get(sid) or {}).get("verdict") == "approved" for sid in section_ids
-    )
+    ):
+        return False  # the base — no pass relaxes it
+
+    spec = input_data.get("pass")
+    kind = spec.get("kind") if isinstance(spec, dict) else None
+    if kind == "checks":
+        return all(_flag_is_answered(f) for f in _check_flags(input_data))
+    if kind == "final":
+        return not _has_unresolved_suggestion(input_data, verdicts)
+    return True
 
 
 # ── Q&A round shapes ──────────────────────────────────────────────────────────

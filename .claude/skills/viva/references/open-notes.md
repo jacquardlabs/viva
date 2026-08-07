@@ -26,6 +26,20 @@ rewritten away.
 4. The reviewer **settles** a thread when satisfied. A settled thread drops from
    later rounds.
 
+## Declining a turn
+
+A thread carries a status: `open`, `declined`, or `settled`. `declined` is
+**your** turn — pass `loop.py rearm --decline "<cid>=<grounds>"` instead of that
+comment's `--response` when the request is wrong on the record (it contradicts a
+decision made this session, a source, or a measurement). Taste is not grounds.
+
+A decline is not a verdict and resolves nothing. The thread stays unresolved, so
+it re-presents next round with your grounds and the section stays held. The
+reviewer then settles it — they accept — or replies, which returns it to `open`
+and means they insist. **Insisting wins**: apply the change, and record it with
+`--response`. There is no second decline on the same thread; `open_notes.py`
+refuses one and the round does not ship until you comply.
+
 ## A thread is a sequence of typed turns — act on the latest one
 
 Each reviewer turn (the original comment, then each reply) carries its own
@@ -35,6 +49,14 @@ Each reviewer turn (the original comment, then each reply) carries its own
   The discussion is still open.
 - latest turn `changes` → **apply the edit now** (and say what you changed in
   the thread response), so the reviewer reviews the diff.
+- latest turn `suggestion` → **apply its `replacement` verbatim** to the
+  thread's quoted span, then say so in the response. The wording rides on the
+  exchange itself, beside `note` — the note is the reviewer's reason, never a
+  second instruction, and nothing gets rewritten on the way in.
+
+A turn you already declined is answered: its thread reads `declined` and its
+exchange carries your grounds, so act on it again only when the reviewer's reply
+returns the thread to `open` — then you comply.
 
 This is how an `info` discussion becomes a change: the reviewer **escalates** by
 switching their reply to *request changes*. That turn arrives as a comment on

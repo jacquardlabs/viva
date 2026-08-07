@@ -12,3 +12,8 @@ __pycache__/
 # decision itself lives in the issue.
 docs/design/
 PLAN.md
+# …except the parse fixture of that name. A pathless `PLAN.md` matches at any
+# depth, so without this negation `tests/fixtures/PLAN.md` is ignored — it only
+# survives today because it is already tracked, and a delete-and-re-add would
+# silently drop it and break `test_parse_sections.py` on a fresh clone.
+!tests/fixtures/PLAN.md

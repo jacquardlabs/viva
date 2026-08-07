@@ -14,12 +14,12 @@ The two rules `loop.py` exists to keep are asserted here as well: the round
 number is derived from disk (no subcommand accepts one), and the driver
 cross-imports no sibling but `schema.py` (CLAUDE.md).
 
-The last four checks guard the other half of the same contract — `SKILL.md`
+The last five checks guard the other half of the same contract — `SKILL.md`
 itself. The driver only removes bookkeeping from the agent if the prose stops
 carrying it, so the documented sequence is asserted here beside the executed
 one: no bash block does the driver's job, the rewrite step still applies
-standing preferences, nothing is auto-approved, and every `references/` file is
-one `loop.py` prints the path to.
+standing preferences, nothing is auto-approved, a suggested edit is applied
+verbatim, and every `references/` file is one `loop.py` prints the path to.
 """
 import ast
 import json
@@ -285,6 +285,172 @@ def check_split_on_session() -> None:
         loop(viva, tmp, "abandon")
 
 
+def check_doc_type_session() -> None:
+    """`--type` resolves where the name enters the system, then carries.
+
+    The type names the round's check set, so a name that resolves to nothing has
+    to be refused before any state is cleared — and once recorded it must reach
+    round 2 the way `split_on` does, or a typed session silently becomes untyped
+    at the first re-parse. No server here: `--parse-only` at both ends keeps the
+    carry-forward the only thing under test.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "design.md"
+        doc.write_text("# Design: a thing\n\n## Problem & persona\n\nwho\n\n"
+                       "## Proposed design\n\nwhat\n")
+
+        r = loop(viva, td, "start", "--doc", "design.md", "--type", "no-such-type")
+        assert r.returncode != 0, "an unresolvable --type must not start a session"
+        assert "unknown doc type" in r.stderr, r.stderr
+        assert not (viva / "review-input-r1.json").exists(), \
+            "the refusal must land before round 1 is parsed"
+
+        r = loop(viva, td, "start", "--doc", "design.md",
+                 "--type", "design-doc", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        assert "checks: headings-present" in r.stdout, (
+            "the type's check set must be named where it resolves — a check "
+            "nobody is told about never runs:\n%s" % r.stdout)
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        assert r1["doc_type"] == "design-doc", r1.get("doc_type")
+
+        ids = [s["id"] for s in r1["sections"]]
+        (viva / "review-r1.json").write_text(json.dumps(
+            {"round": 1, "submitted_early": False,
+             "sections": [{"id": i, "verdict": "approved"} for i in ids]}))
+
+        r = loop(viva, td, "rearm", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        assert r2["doc_type"] == "design-doc", (
+            "rearm dropped the type — round 2 re-parsed as untyped: %s"
+            % r2.get("doc_type"))
+    print("  ok  check_doc_type_session")
+
+
+def check_untyped_session_records_no_doc_type() -> None:
+    """No `--type`, no key: an untyped round file stays byte-identical to what
+    it was before the field existed, which is what tells `rearm` there is
+    nothing to carry."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        data = json.loads((viva / "review-input-r1.json").read_text())
+        assert "doc_type" not in data, data
+        assert "pass" not in data, (
+            "and no pass either — absent is what keeps `round_is_complete` on "
+            "the base rule: %s" % data.get("pass"))
+    print("  ok  check_untyped_session_records_no_doc_type")
+
+
+def check_pass_carries_within_a_session_not_across_a_resume() -> None:
+    """The pass is round state `rearm` carries and a resume deliberately drops.
+
+    Depth is the one round parameter a caller changes mid-session (structural,
+    then line, then checks), so `rearm` takes an override the split pattern
+    and the type have no use for — but round N+1 runs round N's depth when it is
+    given none, or every later round silently falls back to the base rule. A
+    resume is the opposite case: it is a new review of a changed doc, and
+    inheriting the prior session's finishing pass would add a conjunct nobody
+    asked for.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        body = "# T\n\n## A\n\naaa\n\n## B\n\nbbb\n"
+        doc.write_text(body)
+
+        r = loop(viva, td, "start", "--doc", "d.md",
+                 "--pass", "architecture", "--posture", "hard", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        assert r1["pass"] == {"kind": "architecture", "posture": "hard"}, r1.get("pass")
+
+        ids = [s["id"] for s in r1["sections"]]
+        approved = json.dumps({"round": 1, "submitted_early": False,
+                               "sections": [{"id": i, "verdict": "approved"}
+                                            for i in ids]})
+        (viva / "review-r1.json").write_text(approved)
+
+        # No override: round 2 runs at round 1's depth and posture.
+        r = loop(viva, td, "rearm", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        assert r2["pass"] == {"kind": "architecture", "posture": "hard"}, (
+            "rearm dropped the pass — round 2 fell back to the base rule: %s"
+            % r2.get("pass"))
+
+        # Override: the named kind wins, and it does not inherit the carried
+        # posture — `--pass` names the whole pass.
+        (viva / "review-r2.json").write_text(approved)
+        r = loop(viva, td, "rearm", "--pass", "checks", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r3 = json.loads((viva / "review-input-r3.json").read_text())
+        assert r3["pass"] == {"kind": "checks"}, r3.get("pass")
+
+        # Resume: sign the doc off, start again, and the pass must be gone.
+        (viva / "review-r3.json").write_text(approved)
+        doc.write_text(body + "\n---\n\n## Revision History\n\nsigned off\n")
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        resumed = json.loads((viva / "review-input-r1.json").read_text())
+        assert "pass" not in resumed, (
+            "a resume must not inherit the prior session's depth — that adds a "
+            "conjunct nobody asked for: %s" % resumed.get("pass"))
+        assert resumed.get("approved_ids"), "the resume carried no approvals"
+    print("  ok  check_pass_carries_within_a_session_not_across_a_resume")
+
+
+def check_resume_warns_on_a_type_that_no_longer_resolves() -> None:
+    """A carried type is resolved like any other, but not fatally.
+
+    The name comes off the prior round file, by which point the scratch
+    carry-forward pair is already on disk — dying there would strand it and
+    make a repo that dropped a `.viva-types/` bundle unable to resume at all.
+    So: a warning, the type still recorded, and the resume proceeds."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        body = "# T\n\n## A\n\naaa\n\n## B\n\nbbb\n"
+        doc.write_text(body)
+        subprocess.run(
+            [sys.executable, str(PARSE), str(doc), "--output",
+             str(viva / "review-input-r1.json"), "--round", "1",
+             "--doc-file", str(doc), "--doc-type", "gone-type"],
+            check=True, capture_output=True)
+        first = json.loads((viva / "review-input-r1.json").read_text())
+        (viva / "review-r1.json").write_text(json.dumps(
+            {"round": 1, "submitted_early": False,
+             "sections": [{"id": s["id"], "verdict": "approved"}
+                          for s in first["sections"]]}))
+        doc.write_text(body + "\n---\n\n## Revision History\n\nsigned off\n")
+
+        r = loop(viva, td, "start", "--doc", str(doc), "--parse-only")
+        assert r.returncode == 0, (
+            "an unresolvable carried type must not block the resume:\n%s"
+            % r.stderr)
+        assert "unknown doc type" in r.stderr, r.stderr
+        second = json.loads((viva / "review-input-r1.json").read_text())
+        assert second.get("doc_type") == "gone-type", (
+            "the resume must keep the recorded type rather than silently "
+            "untyping the session: %s" % second.get("doc_type"))
+        assert not (viva / "prior-review-input.json").exists(), \
+            "the scratch pair must not survive the warning path either"
+    print("  ok  check_resume_warns_on_a_type_that_no_longer_resolves")
+
+
 def check_no_subcommand_takes_a_round() -> None:
     """The counter nobody holds: no subcommand accepts a round argument.
 
@@ -413,6 +579,55 @@ def check_no_auto_approve_and_paused_branch_routed() -> None:
     print("  ok  check_no_auto_approve_and_paused_branch_routed")
 
 
+def check_skill_applies_suggestions_verbatim() -> None:
+    """A suggestion is wording, not a brief (#166).
+
+    The reviewer typed the replacement instead of describing it, so the one
+    thing the agent must not do is rewrite it — an author that "improves" the
+    phrasing hands back a diff the reviewer never asked for and cannot trust.
+    The instruction lives in the verdict table, where the agent routes by
+    comment type, and the derivation paragraph beside it has to agree that such
+    a section is not approved.
+    """
+    text = SKILL.read_text()
+    rows = [ln for ln in text.splitlines() if ln.startswith("|")]
+    typed = [ln for ln in rows if "`suggestion`" in ln]
+    assert typed, "SKILL.md's verdict table has no row naming the `suggestion` type"
+    row = typed[0].lower()
+    assert "verbatim" in row, (
+        "the suggestion row does not say the wording is applied VERBATIM — "
+        "without it the author rewrites what the reviewer already wrote: %s" % row)
+    for banned_absence in ("no rewrite pass", "no interpretation"):
+        assert banned_absence in row, (
+            "the suggestion row must rule out %r explicitly: %s"
+            % (banned_absence, row))
+    assert "anchor" in row, "the suggestion row must scope the edit to the anchor"
+
+    # Whitespace-flattened: the prose wraps, and where a line breaks is not the
+    # contract — the sentence is.
+    low = " ".join(text.lower().split())
+    assert '`type: "suggestion"` → section `changes`' in low, \
+        "the derivation paragraph must land a suggestion on the `changes` verdict"
+    assert "carrying a live suggestion is never approved" in low, (
+        "SKILL.md must state that a section holding a suggestion is not "
+        "approved — the derivation is what makes it binding")
+
+    # A carried suggestion is the same instruction one round later, but by then
+    # the wording lives on the THREAD's exchange rather than on a `comments[]`
+    # entry. Prose that names the type without naming the field leaves round 2
+    # knowing to paste and not knowing what.
+    assert "carried suggestion turn keeps its `replacement` on the exchange" in low, \
+        "step 4 routes a carried suggestion turn to no field"
+    threads = " ".join((REFERENCES / "open-notes.md").read_text().lower().split())
+    assert "latest turn `suggestion`" in threads, \
+        "open-notes.md's latest-turn rules do not route a `suggestion` turn"
+    assert "apply its `replacement` verbatim" in threads, \
+        "the carried-suggestion rule must say the wording is applied verbatim"
+    assert "rides on the exchange" in threads, \
+        "the carried-suggestion rule must name where the wording lives"
+    print("  ok  check_skill_applies_suggestions_verbatim")
+
+
 def check_references_are_reachable() -> None:
     """Every reference file is one the agent is *told* the path to.
 
@@ -471,8 +686,9 @@ def check_start_resume_carries_prior_approvals() -> None:
     """`start`'s resume branch: a doc already carrying a sign-off ledger, with
     the prior round still on disk. The copy-out must happen before the clear
     glob or carry-forward dies with it, and the scratch pair must not survive.
-    Also pins that a recorded `split_on` is handed back — re-deciding it by
-    auto-detection changes every section's identity and carries nothing."""
+    Also pins that a recorded `split_on` and `doc_type` are handed back —
+    re-deciding the split by auto-detection changes every section's identity and
+    carries nothing, and a dropped type silently takes the check set with it."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -488,7 +704,8 @@ def check_start_resume_carries_prior_approvals() -> None:
         subprocess.run(
             [sys.executable, str(PARSE), str(doc), "--output",
              str(viva / "review-input-r1.json"), "--round", "1",
-             "--doc-file", str(doc), "--split-on", pattern],
+             "--doc-file", str(doc), "--split-on", pattern,
+             "--doc-type", "plan"],
             check=True, capture_output=True)
         first = json.loads((viva / "review-input-r1.json").read_text())
         ids = [s["id"] for s in first["sections"]]
@@ -503,6 +720,13 @@ def check_start_resume_carries_prior_approvals() -> None:
         second = json.loads((viva / "review-input-r1.json").read_text())
         assert second.get("split_on") == pattern, \
             "the resume must re-split with the pattern the prior round recorded"
+        assert second.get("doc_type") == "plan", \
+            "the resume must carry the prior round's doc type — dropping it " \
+            "drops the session's check set: %s" % second.get("doc_type")
+        assert "checks: headings-present" in r.stdout, (
+            "a resumed typed session must name its checks too — carrying the "
+            "type but telling nobody which producers to run is the same "
+            "silence:\n%s" % r.stdout)
         assert [s["title"] for s in second["sections"]] == \
                [s["title"] for s in first["sections"]], \
             "same pattern, same sections — otherwise identity moved"
@@ -584,14 +808,113 @@ def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
     print("  ok  check_wait_refuses_a_parsed_but_unarmed_round")
 
 
+def check_decline_carries_and_insisting_wins() -> None:
+    """`rearm --decline` is how the author records a refusal (#167).
+
+    Three things have to hold end to end, through the real driver: the grounds
+    reach the store as a `declined` thread; that thread carries into round N+1,
+    which is the whole holding mechanism (no new one was added); and a second
+    decline after the reviewer insists is refused before any round ships.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        ids = {s["title"]: s["id"] for s in r1["sections"]}
+        sid, other = ids["A"], ids["B"]
+        cid = sid + "-c1"
+        grounds = "round 1 ruled the caveat load-bearing"
+
+        request = {"round": 1, "submitted_early": False, "sections": [
+            {"id": sid, "verdict": "changes", "comments": [
+                {"cid": cid, "type": "changes", "note": "cut the caveat",
+                 "anchor": {"text": "aaa", "offset": 0},
+                 "open": True, "settled": False}]},
+            {"id": other, "verdict": "approved"}]}
+        (viva / "review-r1.json").write_text(json.dumps(request))
+
+        # The author declines instead of complying — the doc is NOT edited.
+        r = loop(viva, td, "rearm", "--decline", cid + "=" + grounds, "--parse-only")
+        assert r.returncode == 0, r.stderr
+        thread = json.loads((viva / "open-notes.json").read_text())[cid]
+        assert thread["status"] == "declined", thread
+        assert thread["exchanges"][0]["grounds"] == grounds, thread
+
+        # Held: the thread carries onto the next round's card with its grounds,
+        # and the section is not carried approved. Both fall out of what already
+        # existed — the unresolved filter and the approval carry-forward.
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        card = next(s for s in r2["sections"] if s["title"] == "A")
+        assert card["open_notes"][0]["status"] == "declined", card["open_notes"]
+        assert card["open_notes"][0]["exchanges"][0]["grounds"] == grounds
+        assert sid not in r2["approved_ids"], (
+            "a declined request must leave its section held: %s" % r2["approved_ids"])
+
+        # The reviewer insists — a reply on the same cid.
+        insist = {"round": 2, "submitted_early": False, "sections": [
+            {"id": sid, "verdict": "changes", "comments": [
+                {"cid": cid, "type": "changes", "note": "cut it anyway",
+                 "open": True, "settled": False, "reply": True}]},
+            {"id": other, "verdict": "approved"}]}
+        (viva / "review-r2.json").write_text(json.dumps(insist))
+
+        r = loop(viva, td, "rearm", "--decline", cid + "=still contradicts round 1",
+                 "--parse-only")
+        assert r.returncode != 0, "a second decline on the same thread must be refused"
+        assert cid in r.stderr and "insisting wins" in r.stderr, r.stderr
+        assert not (viva / "review-input-r3.json").exists(), \
+            "the refusal must land before the next round is parsed"
+        assert len(json.loads((viva / "open-notes.json").read_text())[cid]["exchanges"]) == 1, \
+            "a refused decline must not write a turn to the store"
+
+        # Complying ships it, and the thread is open again.
+        r = loop(viva, td, "rearm", "--response", cid + "=cut", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        thread = json.loads((viva / "open-notes.json").read_text())[cid]
+        assert thread["status"] == "open", thread
+        assert len(thread["exchanges"]) == 2, thread
+    print("  ok  check_decline_carries_and_insisting_wins")
+
+
+def check_skill_carries_the_decline_rule() -> None:
+    """The half of insisting-wins that only prose can carry (#167).
+
+    `open_notes.py` can refuse a second decline; it cannot make the author
+    decline for cause, or comply once the reviewer has insisted. SKILL.md is
+    where that rule lives, so it is asserted here beside the executed one.
+    """
+    low = " ".join(SKILL.read_text().lower().split())
+    assert "--decline" in low, "SKILL.md never names the flag that records a refusal"
+    assert "insisting wins" in low, (
+        "SKILL.md must state that the reviewer's insistence wins — an author "
+        "that can re-decline has an unbounded veto")
+    assert "no second decline" in low, \
+        "SKILL.md must rule out a second decline on the same thread"
+    assert "grounds" in low, "SKILL.md must require grounds for a decline"
+    print("  ok  check_skill_carries_the_decline_rule")
+
+
 def main() -> None:
     check_round_trip()
     check_split_on_session()
+    check_doc_type_session()
+    check_untyped_session_records_no_doc_type()
+    check_pass_carries_within_a_session_not_across_a_resume()
+    check_resume_warns_on_a_type_that_no_longer_resolves()
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     check_skill_carries_no_bookkeeping_bash()
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
+    check_skill_applies_suggestions_verbatim()
+    check_decline_carries_and_insisting_wins()
+    check_skill_carries_the_decline_rule()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
     check_start_resume_carries_prior_approvals()

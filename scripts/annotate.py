@@ -21,6 +21,8 @@ The merge is:
   - additive    — appends to any existing `annotations` (carried-forward flags survive);
   - validated   — severity normalized to info|warn|error, kind/message required;
   - idempotent  — an identical flag already present is not re-added;
+  - answering   — a flag that matches one already there except for its `result`
+                  writes that result onto it rather than appending a twin;
   - a no-op     — an empty sidecar leaves the input byte-identical.
 
 CONVENTION EXCEPTION: unlike every other script (which separates `--input` from
@@ -70,14 +72,34 @@ def _clean(item: dict) -> dict | None:
         annot["basis"] = item["basis"]
     if item.get("level") in ("high", "medium", "low"):
         annot["level"] = item["level"]
+    # A check's finding for this flag (schema.CHECK_KINDS / `Annotation.result`).
+    # Preserved through the merge like basis/level, and non-empty by
+    # construction: a blank result answers nothing, and a `checks` round
+    # stays held until every check flag carries one.
+    if isinstance(item.get("result"), str) and item["result"].strip():
+        annot["result"] = item["result"]
     return {"id": str(sid), "annotation": annot}
+
+
+def _same_flag(a: dict, b: dict) -> bool:
+    """Are these the same flag, ignoring its result?
+
+    The result is the ANSWER to a flag, not part of its identity — so a producer
+    re-emitting its flag with a result lands on the flag it answers instead of
+    appending a result-less twin beside it. Without this, an answered
+    `checks` round would still carry the unanswered original and could never
+    close.
+    """
+    return ({k: v for k, v in a.items() if k != "result"}
+            == {k: v for k, v in b.items() if k != "result"})
 
 
 def merge_annotations(data: dict, sidecar: list) -> dict:
     """Merge sidecar annotations into `data` sections in place; return `data`.
 
     Unknown ids are skipped. Duplicate flags (same kind/severity/message/anchor
-    already on the section) are skipped so a re-run can't double them.
+    already on the section) are skipped so a re-run can't double them; one that
+    differs only by carrying a `result` answers the flag already there.
     """
     by_id = {s["id"]: s for s in data.get("sections", []) if "id" in s}
     for item in sidecar or []:
@@ -90,8 +112,12 @@ def merge_annotations(data: dict, sidecar: list) -> dict:
                   file=sys.stderr)
             continue
         annots = section.setdefault("annotations", [])
-        if cleaned["annotation"] not in annots:
-            annots.append(cleaned["annotation"])
+        new = cleaned["annotation"]
+        existing = next((a for a in annots if _same_flag(a, new)), None)
+        if existing is None:
+            annots.append(new)
+        elif "result" in new:
+            existing["result"] = new["result"]
         # Drop an empty list we may have just created so a no-op stays clean.
         if not annots:
             del section["annotations"]

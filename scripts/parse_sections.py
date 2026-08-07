@@ -22,6 +22,15 @@ Optional:
                       coarsening fallback. Omit for today's unchanged
                       auto-detect behavior. Zero matches is a hard error, not
                       a silent fallback to auto-detection.
+  --doc-type NAME    Record the doc type this round was started with (a name
+                      `scripts/doc_types.py` resolves). Recorded only, never
+                      resolved here — the parser owns no type semantics.
+  --pass KIND        Record the depth this round runs at (architecture | line |
+                      checks | final). Omit for a round with no pass, which
+                      carries no `pass` key and completes exactly as it did
+                      before the field existed.
+  --posture P        normal | hard — a setting ON the pass, written inside the
+                      `pass` object, never as its own round field. Needs --pass.
 
 Exits non-zero if the doc can't be read, parsing fails the integrity check,
 --split-on matches no heading, or prior round files are specified but can't
@@ -52,6 +61,27 @@ def _parse_args() -> argparse.Namespace:
         help="Regex (re.search): a heading is a split point iff its title matches, "
              "regardless of depth. Overrides auto-detection. Omit for unchanged "
              "default behavior.",
+    )
+    p.add_argument(
+        "--doc-type",
+        dest="doc_type",
+        help="Doc-type name to record on the round (resolved by doc_types.py "
+             "before it gets here). Omit for an untyped round.",
+    )
+    p.add_argument(
+        "--pass",
+        dest="pass_kind",
+        choices=schema.PASS_KINDS,
+        help="Depth this round runs at. Recorded only — the parser owns no pass "
+             "semantics; `schema.round_is_complete` is what reads it. Omit for a "
+             "round with no pass (today's behavior, unchanged).",
+    )
+    p.add_argument(
+        "--posture",
+        dest="posture",
+        choices=schema.PASS_POSTURES,
+        help="Posture setting on the pass ('hard' licenses the author to argue "
+             "rather than concede). Requires --pass; absent reads as normal.",
     )
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
@@ -221,6 +251,14 @@ def _load_approved(
     A section is only kept approved if its title matches exactly (case-insensitive)
     AND its content is byte-for-byte identical to the prior approved version.
     Changed content requires re-review.
+
+    The prior round's verdict outranks the stamp it shipped with: an ID the
+    reviewer did not approve last round is dropped even when `approved_ids`
+    still lists it. Without that subtraction a withdrawn approval only sticks
+    while the section is also rewritten, so a section the reviewer reopened and
+    the author did not edit — a declined comment (#167), or a response with no
+    edit — comes back stamped APPROVED with its thread on a carried card that
+    renders none, and the round can be signed off over it.
     """
     if prior_in is None or prior_v is None:
         return []
@@ -233,7 +271,17 @@ def _load_approved(
     verdict_approved: set[str] = {
         s["id"] for s in prior_v.get("sections", []) if s.get("verdict") == "approved"
     }
-    all_approved = pre_approved | verdict_approved
+    # …and the ones it explicitly did NOT approve, which revoke a carried stamp.
+    # Truthy, not `is not None`: a row carrying no verdict at all decides
+    # nothing and leaves the stamp standing (a caller may write only the
+    # sections it acted on), while `pending` is a withdrawal the reviewer
+    # submitted without a note and drops it. Subtracting is monotone — this can
+    # only shrink `approved_ids`, never grow it, so completion never gets easier.
+    withdrawn: set[str] = {
+        s.get("id") for s in prior_v.get("sections", []) or []
+        if s.get("id") and s.get("verdict") and s.get("verdict") != "approved"
+    }
+    all_approved = (pre_approved | verdict_approved) - withdrawn
 
     # Map section identity → content for every approved section
     approved_content: dict[str, str] = {
@@ -328,10 +376,13 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
     """Attach each open thread's exchanges onto the matching section, in place.
 
     The open-note store (maintained by open_notes.py) is keyed by normalized
-    title. A thread still `open` re-presents on its section's card next round so
-    the reviewer sees the prior exchange; a settled thread is dropped. Sections
-    with no open thread gain no `open_notes` key — output stays byte-identical to
-    a run without the store.
+    title. A thread the reviewer has not settled — `open`, or `declined` by the
+    author — re-presents on its section's card next round so the reviewer sees
+    the prior exchange and either settles it or insists; only a settled thread is
+    dropped. That single filter is the whole holding mechanism for a decline: it
+    is unresolved, so it carries, and its section comes back live. Sections with
+    no unresolved thread gain no `open_notes` key — output stays byte-identical
+    to a run without the store.
     """
     if not open_notes_path:
         return
@@ -344,12 +395,12 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
         sys.exit(f"viva: could not read open-notes store {open_notes_path}: {e}")
     by_title: dict[str, list] = {}
     for t in store.values():
-        if t.get("status") != "open":
+        if not schema.thread_is_unresolved(t.get("status")):
             continue  # settled threads drop from later rounds
         by_title.setdefault(schema.section_key(t.get("title")), []).append({
             "cid": t.get("cid"),
             "quote": t.get("quote", ""),
-            "status": t.get("status", "open"),
+            "status": t.get("status", schema.THREAD_OPEN),
             "exchanges": t.get("exchanges", []),
         })
     for threads in by_title.values():
@@ -364,6 +415,13 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
 
 def main() -> None:
     args = _parse_args()
+
+    # A posture with no pass is a setting on nothing. Refused here, at the
+    # boundary, rather than dropped on write where the caller would never learn
+    # the round runs at a posture it asked for and did not get.
+    if args.posture is not None and args.pass_kind is None:
+        sys.exit("viva: --posture needs --pass — a posture is a setting on a "
+                 "pass, not a round field of its own")
 
     try:
         text = Path(args.doc).read_text(encoding="utf-8")
@@ -398,6 +456,24 @@ def main() -> None:
     # forward rather than only round 1.
     if args.split_on is not None:
         data["split_on"] = args.split_on
+    # Same rule for the type: recorded outside the literal and only when given,
+    # so an untyped session's round file stays byte-identical to what it was
+    # before this field existed. It is round state for the same reason the
+    # pattern is — `loop.py` reads it back to type round N+1 and a later resume
+    # identically, rather than asking the agent to re-name it.
+    if args.doc_type is not None:
+        data["doc_type"] = args.doc_type
+    # Same rule once more for the pass, and here it is load-bearing rather than
+    # tidy: a round that runs no pass must carry NO `pass` key, because absent
+    # is what makes `round_is_complete` fall through to the base rule. A written
+    # default would silently add a conjunct to every round in the repo.
+    # `posture` lives inside the object — a pass is one thing to carry and
+    # validate, not two fields that can disagree.
+    if args.pass_kind is not None:
+        pass_spec = {"kind": args.pass_kind}
+        if args.posture is not None:
+            pass_spec["posture"] = args.posture
+        data["pass"] = pass_spec
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)

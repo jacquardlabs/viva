@@ -128,6 +128,62 @@ def test_confidence_basis_level_preserved() -> None:
     assert "basis" not in annot2 and "level" not in annot2, annot2
 
 
+def test_check_result_answers_the_flag_in_place() -> None:
+    """A check's `result` is preserved, and re-emitting the flag WITH one lands
+    on the flag already there.
+
+    This is what makes a `checks` round closable: `schema.round_is_complete`
+    holds it until every check flag carries a result, and appending an answered
+    twin beside the unanswered original would leave the original blocking
+    forever — `parse_sections._carry_annotations` copies a flag onto a
+    byte-identical section, so it does not have to disappear on its own.
+    """
+    data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
+    flag = {"id": "s1", "kind": "headings-present", "severity": "warn",
+            "message": "missing expected design-doc section: 'Goals'"}
+
+    flagged = run(data, [flag])
+    assert "result" not in flagged["sections"][0]["annotations"][0], flagged
+
+    answered = run(flagged, [dict(flag, result="added in round 2")])
+    annots = answered["sections"][0]["annotations"]
+    assert len(annots) == 1, "answering a flag must not append a twin: %s" % annots
+    assert annots[0]["result"] == "added in round 2", annots
+
+    # Re-answering is idempotent, a later run updates the answer, and a
+    # result-less re-emission never erases one.
+    again = run(answered, [dict(flag, result="added in round 2")])
+    assert again["sections"][0]["annotations"] == annots, again
+    updated = run(answered, [dict(flag, result="sourced: RFC 9110")])
+    assert updated["sections"][0]["annotations"][0]["result"] == "sourced: RFC 9110"
+    kept = run(updated, [flag])
+    assert kept["sections"][0]["annotations"][0]["result"] == "sourced: RFC 9110", \
+        "a result-less re-run must not unanswer the flag"
+
+    # A blank or non-string result is dropped at the boundary — it answers
+    # nothing, and a `checks` round must stay held rather than read it as an
+    # answer.
+    for blank in ("", "   ", 7, None):
+        out = run(data, [dict(flag, result=blank)])
+        assert "result" not in out["sections"][0]["annotations"][0], blank
+
+    # The realistic shape: `headings_present` emits one flag per missing heading
+    # on the SAME card, same kind and anchor, differing only in `message`. They
+    # must stay distinct flags, and answering one must not answer the other —
+    # otherwise a single result would close a checks round with a finding
+    # still outstanding.
+    other = dict(flag, message="missing expected design-doc section: 'Out of scope'")
+    both = run(data, [flag, other])
+    assert len(both["sections"][0]["annotations"]) == 2, both
+    one_answered = run(both, [dict(flag, result="added in round 2")])
+    annots = one_answered["sections"][0]["annotations"]
+    assert len(annots) == 2, annots
+    answers = {a["message"]: a.get("result") for a in annots}
+    assert answers[flag["message"]] == "added in round 2", answers
+    assert answers[other["message"]] is None, \
+        "answering one flag must not answer its sibling: %s" % answers
+
+
 def test_split_on_survives_the_merge() -> None:
     # The producer seam is the path a task-card PLAN.md review takes whenever a
     # standing preference is in play: `start --split-on` stops after parsing,
@@ -197,6 +253,7 @@ def main() -> None:
         test_empty_sidecar_is_byte_identical,
         test_missing_message_skipped,
         test_confidence_basis_level_preserved,
+        test_check_result_answers_the_flag_in_place,
         test_split_on_survives_the_merge,
         test_loop_annotate_merges_into_the_derived_round,
     ]

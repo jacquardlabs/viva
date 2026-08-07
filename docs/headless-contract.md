@@ -1,6 +1,6 @@
 # viva headless invocation contract
 
-**Contract version: 3**
+**Contract version: 5**
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller — not for the human
@@ -19,11 +19,21 @@ that could break an existing caller:
 - removing or renaming a `--mode`/`--input`/`--output`/`--no-browser` flag
 - changing a round-file's required field (adding or removing one, or
   changing its type)
+- changing what an existing **value** of an existing field means, even when
+  the field's name and type are untouched — a caller that reads the old
+  meaning now reads it wrong (v5's `anchor.offset`, below)
 - changing what an existing exit code means
 - removing an HTTP endpoint, or changing its request/response shape
+- changing when an existing endpoint succeeds, even by a condition only a new
+  optional field can switch on (v3's `/complete` guard, v4's `pass`)
 
-**Not** a version bump: adding an optional field, adding a new endpoint,
-adding a new `--mode` value, wording/prose clarifications to this file.
+**Not** a version bump: adding an optional field **on its own**, adding a new
+endpoint, adding a new `--mode` value, wording/prose clarifications to this
+file. "On its own" is the whole distinction and it is what the last three rows
+turn on — an optional field a caller may ignore costs nothing, but the moment
+it can switch an endpoint's success condition (v4's `pass`) or ships alongside
+a change to an existing field's meaning (v5's `anchor.offset`), the bump is for
+that consequence, never for the field.
 
 This is independent of `plugin.json`'s semantic-release semver, which bumps
 on every merged feature or fix (including ones that never touch this
@@ -36,6 +46,8 @@ Changelog:
 
 | version | date | change |
 |---|---|---|
+| 5 | 2026-08-07 | Reviewer mechanisms: a `SectionVerdict.comments[]` entry may now be typed `suggestion` (§3) — a new wire value a caller must interpret to apply the round, carrying the reviewer's exact `replacement` for the span its `anchor` names. It is applied **verbatim**, never rewritten. A suggestion derives to the section verdict `changes` (the section is not approved while one is live) and folds into the ledger with its wording tagged `suggested:`; a carried open-note exchange records the same `replacement`. `POST /submit` now `400`s a `suggestion` comment with no non-empty `replacement` — reachable only by a caller sending the new type, so no existing payload changes status. This version is the mechanisms phase of the editorial frame, and it also carries the `declined` open-note thread status: a thread in `ReviewSection.open_notes` (§3) may now report `status: "declined"` — the author's answer, not a verdict, with `VERDICTS` unchanged — and the exchange it declined carries `grounds`. A caller reading threads must handle it exactly as it handles `open`: a declined thread is unresolved, so it attaches to the next round and holds its section until the reviewer settles it (accepting) or replies (insisting, which wins — there is no second decline on a thread). Folded in from the same branch (#95): `SectionVerdict.comments[].anchor` gains an optional `occurrence` (§3), and — the part that bumps, since the new optional field alone would not — **`anchor.offset`'s value semantics changed**. It was `src.indexOf(text)` and could be `-1` only when `anchor.text` was absent from the markdown source; it is now the reviewer's chosen ordinal resolved against the source, so it can be `-1` while the text *is* present, whenever the rendered ordinal overruns the source's matches. A caller reading `-1` as "the phrase is not in the source" now reads it wrong; the correct reading is "the ordinal did not land — scope by the section rather than taking the first match." |
+| 4 | 2026-08-07 | `ReviewInput` gains an optional `pass` — `{kind, posture}`, `kind` one of `architecture`/`line`/`checks`/`final` (§3). **Absent, a round completes exactly as it did at version 3**, so every existing caller is unaffected; the optional field alone would not bump (§1). What bumps is that when `pass` is present, `POST /complete`'s success condition changes — the same reasoning that bumped v3 for the round gate rather than for `/abandon`. A pass may only ADD a condition to the all-approved base and may never relax it: `checks` also requires every check flag on the round to carry a non-empty `result`, `final` also requires no unresolved suggested edit. So a caller sending a `pass` can now get a `409` on a round where every section *is* approved; its `error` text names the conjunct instead of a section count. Also: `ReviewSection.annotations[]` entries may carry an optional `result` (§3), the field those check flags are answered with. |
 | 3 | 2026-08-05 | `POST /complete` now refuses an incomplete review round — `409` when any section's verdict is not `approved`, `400` when no verdicts were submitted for the currently loaded round. A caller that finishes a round the human left partly unapproved gets a status it previously never could. Two exemptions: a Q&A session (its round carries `questions`, never `sections`) and a server launched `--mode diff`. `POST /abandon` is the documented recovery from a refusal — it ends a session that cannot be signed off. The new endpoint alone would not warrant a bump (§1); the guard does. Also: the `Origin` check is now an exact host match rather than a prefix, and a request body whose `Content-Type` is not `application/json` is refused with `415`. `ReviewInput` gains an optional `split_on` (§3). |
 | 2 | 2026-07-11 | `POST /next-round` and `POST /complete` now run the same loopback-`Origin` check and `MAX_SUBMIT_BYTES` body cap `POST /submit` already had — a caller sending a non-loopback `Origin` or a body over 256 MiB now gets a `403`/`413` it previously never could (see §5's endpoint table and error-response paragraph). Fixes #117. |
 | 1 | 2026-07-11 | Initial contract, transcribing the surface shipped as of the `unified-session` (#109) and `task-card-split` (#110) stories. |
@@ -81,7 +93,8 @@ the boundary (on write by the producer, on read by the server):
   `content`.
 - `validate_verdicts(data)` — called by `server.py` on `POST /submit` when
   `"sections" in data`. Requires every section to carry a string `id` and a
-  `verdict` in `{"approved", "changes", "info", "pending"}`.
+  `verdict` in `{"approved", "changes", "info", "pending"}`, and every
+  `suggestion` comment to carry non-empty string `replacement`.
 - `validate_qa_input(data)` — called by `server.py` at startup when
   `args.mode == "qa"` (and only reached if `"sections" not in data`).
   Requires `data.questions` to be a list; every entry must carry string
@@ -105,6 +118,8 @@ review or diff round):
 | `round` | no | Round number. |
 | `approved_ids` | no | Section ids approved in prior rounds. |
 | `split_on` | no | The `--split-on` regex this round was parsed with, recorded by `parse_sections.py`. **Absent** — not `null` — when the round used the auto-detected split level; a present non-string is a hard `validate_review_input` failure, because `loop.py rearm` hands this value straight back to `--split-on` and a `null` would silently re-split the next round by auto-detection. |
+| `doc_type` | no | The doc type this session was started with (`loop.py start --type`), recorded by `parse_sections.py` and carried into every later round and a resume. Names a bundle `scripts/doc_types.py` resolves — shipped defaults in the plugin's `types/`, repo overrides in `.viva-types/`, repo wins on a name collision. **Absent** — not `null` — for an untyped session; a present non-string is a hard `validate_review_input` failure, for the same reason `split_on`'s is. Passthrough: `server.py` neither reads nor renders it. |
+| `pass` | no | The depth and posture this round runs at: an object `{kind, posture}`. `kind` is required when the key is present and must be one of `architecture`, `line`, `checks`, `final`; `posture` is optional and must be `normal` or `hard` — a setting *on* the pass, never its own round field. **Absent** — not `null`, and never defaulted — for a round that runs no pass, which completes exactly as it did before this field existed. `validate_review_input` rejects a non-object `pass`, an unknown or missing `kind`, and an unknown `posture`. This is the one round field that changes when `POST /complete` succeeds (see its endpoint row in §5); `server.py` renders nothing from it. Recorded by `parse_sections.py --pass/--posture`, carried to the next round by `loop.py rearm`, deliberately **not** carried across a `loop.py start` resume the way `split_on`/`doc_type` are — depth is a per-round decision. |
 | `sections` | **yes** | List of `ReviewSection`. |
 
 **`ReviewSection`** (one entry per `sections[]`):
@@ -114,9 +129,9 @@ review or diff round):
 | `id` | **yes** | Stable id (`s1`, `s2`, …). |
 | `title` | **yes** | Heading text. |
 | `content` | **yes** | Verbatim markdown. |
-| `annotations` | no | Advisory badges — `{kind, severity, message, anchor?, basis?, level?}`. See DESIGN.md for the anchor overload. |
+| `annotations` | no | Advisory badges — `{kind, severity, message, anchor?, basis?, level?, result?}`. See DESIGN.md for the anchor overload. `result` is a check's finding for that flag; it is advisory like the rest, except on a `checks` round, where a flag whose `kind` names a check (`headings-present` today) holds `POST /complete` until it carries a non-empty one. |
 | `diff` | no | Round-to-round change, if any. |
-| `open_notes` | no | Carried-forward open-note threads. |
+| `open_notes` | no | Carried-forward open-note threads, one per comment `cid`: `{cid, quote, status, exchanges}`. `status` is `open` or `declined` — the two unresolved statuses; a `settled` thread is dropped from later rounds and never appears here. Each exchange is `{round, verdict, note, response}`, where `verdict` is the *reviewer's* comment type for that turn (`changes`, `info`, `suggestion`), plus two presence-gated fields: `replacement`, the suggested wording carried verbatim, and `grounds`, the author's reason for declining that turn. Declining resolves nothing — it records an answer and leaves the thread live, so the section comes back for review. |
 
 **`SectionVerdict`** (`review-r{N}.json`, what the server writes after a
 `POST /submit`):
@@ -125,7 +140,8 @@ review or diff round):
 |---|---|---|
 | `id` | **yes** | Section id. |
 | `verdict` | **yes** | One of `approved`, `changes`, `info`, `pending`. |
-| `comments` | no | Typed comment threads; each may carry `anchor: {text, offset}` (the reviewer's exact selection). |
+| `comments` | no | Typed comment threads. Each carries `cid`, a `type` — one of `changes` (a directive), `info` (a question), `suggestion` (a directive with the wording attached) — and an optional `note`, and may carry `anchor: {text, offset, occurrence?}` (the reviewer's exact selection). `occurrence` is the 0-based index of that selection among the identical matches in the **rendered** section content, where the selection was made; `offset` is that same ordinal resolved against the markdown source, or `-1` when it does not resolve there. `-1` does not mean `anchor.text` is absent from the source — it means the ordinal did not land, so a caller must scope by the section rather than take the first match of a phrase that repeats. |
+| `comments[].replacement` | with `type: "suggestion"` | The reviewer's exact wording for the anchored span, applied **verbatim** — no rewrite, no interpretation, nothing outside the anchor. It is the payload that makes the comment appliable, so `validate_verdicts` rejects a `suggestion` whose `replacement` is absent, non-string, or blank (`400` on `POST /submit`); the `note`, if any, is rationale rather than a second instruction. A section with a live suggestion derives to `changes`, so it cannot be approved, and the wording rides into the ledger and into a carried open-note exchange. Absent on every other type. |
 
 The full output file (`ReviewOutput`) also carries `round` and
 `submitted_early` at the top level, alongside `sections: [SectionVerdict]`.
@@ -168,7 +184,10 @@ time — it is **not** part of any on-disk file's schema, and is not present
 in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 `{round, section_title, verdict, note}`, produced by
 `schema.verdict_to_ledger_entry()` for every section whose verdict is
-`changes` or `info` (`approved`/`pending` earn no row).
+`changes` or `info` (`approved`/`pending` earn no row). `note` joins the
+section's comment fragments with ` · `; a `suggestion`'s fragment carries the
+reviewer's wording verbatim, tagged `suggested:` — the row's `verdict` is the
+*section's*, so the fragment is where a reader learns wording was supplied.
 
 ## 4. `server.url` lifecycle
 
@@ -200,7 +219,7 @@ in `review-input-r{N}.json` or `qa-input.json` on disk. Each ledger row is
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
 | `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `/viva-qa`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-diff`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
-| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections` and the server was **not** launched `--mode diff`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. Two exemptions, both by launch shape rather than by payload: a Q&A round carries `questions` and never `sections`, and a `--mode diff` server signs off with `changes` verdicts on record by design (`/viva-diff`'s empty-re-diff finish). The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections` and the server was **not** launched `--mode diff`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. A round carrying a `pass` (§3) must satisfy that base **and** the pass's own conjunct — `checks`: every check flag carries a `result`; `final`: no unresolved suggested edit — so a fully approved round can also be refused `409`, with an `error` naming the pass rather than a section count. A round whose `sections` list is **empty** is refused `409 "the round carries no sections to approve"` — reachable, since `validate_review_input` accepts an empty list, and tested before the pass branch so the message never blames a conjunct for it. The recovery is the **next** round: this process loads its round once and replaces it only from `POST /next-round`, so a check answered on disk under the round already served is one this guard never sees. A pass never makes the request succeed where it would otherwise fail. Two exemptions, both by launch shape rather than by payload: a Q&A round carries `questions` and never `sections`, and a `--mode diff` server signs off with `changes` verdicts on record by design (`/viva-diff`'s empty-re-diff finish). The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 | `POST /abandon` | yes | Ends the session **without** finishing it — the route for a caller that decides to drop an unfinished round. Body is ignored. Sets the shutdown event immediately: no 2-second grace, and no SSE `"complete"` event, so the browser tab sees its `/events` stream drop and reports a lost connection rather than a completed review. Carries none of `/complete`'s sign-off meaning and writes no output file. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. |
 
 Every error response, on any endpoint, is `application/json` with body
@@ -209,7 +228,8 @@ JSON, wrong body shape, failed `validate_review_input`/`validate_verdicts`),
 `403` (forbidden cross-origin `Origin` — `/submit`, `/next-round`,
 `/complete`, and `/abandon` all run this check; the host must be exactly
 `127.0.0.1` or `localhost` over `http`, not merely a prefix of the Origin),
-`409` (`/complete` — the round is not all-approved; see its endpoint row),
+`409` (`/complete` — the round is not all-approved, or its `pass`'s added
+conjunct is unsatisfied; see its endpoint row),
 `413` (body over 256 MiB — same four endpoints), `415` (a request body whose
 `Content-Type` is not `application/json` — same four endpoints; this is what
 forces a cross-origin caller into a preflight rather than a simple POST),

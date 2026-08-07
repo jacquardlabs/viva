@@ -266,6 +266,58 @@ def test_approved_not_carried_if_content_changed() -> None:
     assert data["approved_ids"] == []
 
 
+def test_withdrawn_approval_is_not_carried_forward() -> None:
+    """The prior round's verdict outranks the stamp that round shipped with.
+
+    `approved_ids` is static — it records what was approved *coming into* the
+    round, so a section the reviewer withdrew and commented on is still listed
+    there. Carrying it forward on that stale stamp put an unapproved section
+    back on a carried card (which renders no thread) with an APPROVED stamp and
+    a round that would sign off over it. Reachable the moment the author leaves
+    content unchanged on purpose: a declined comment (#167), or a response with
+    no edit.
+    """
+    content_a = "## Alpha\n\nalpha body\n\n"
+    content_b = "## Beta\n\nbeta body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 2,
+        # Alpha was approved in round 1 and carries that stamp into round 2.
+        "approved_ids": ["s1"],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": content_a},
+            {"id": "s2", "title": "Beta",  "content": content_b},
+        ],
+    }
+    # Round 2: the reviewer withdrew Alpha's approval and requested changes;
+    # the author declined, so Alpha's content is byte-identical this round.
+    prior_verdicts = {
+        "round": 2, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "changes", "comments": [
+                {"cid": "s1-c1", "type": "changes", "note": "cut the caveat",
+                 "open": True, "settled": False}]},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ],
+    }
+    data = _run_round2(content_a + content_b, prior_input, prior_verdicts)
+    assert "s1" not in data["approved_ids"], (
+        "a withdrawn approval must not be resurrected by the stale stamp: %s"
+        % data["approved_ids"])
+    assert "s2" in data["approved_ids"], data["approved_ids"]
+
+    # A withdrawal with no note reads the same way — `pending` is the verdict
+    # the client submits for a section whose approval was cleared.
+    bare = json.loads(json.dumps(prior_verdicts))
+    bare["sections"][0] = {"id": "s1", "verdict": "pending"}
+    assert "s1" not in _run_round2(content_a + content_b, prior_input, bare)["approved_ids"]
+
+    # And a verdict file that says nothing about a section decides nothing:
+    # the stamp it carried in still stands.
+    silent = {"round": 2, "submitted_early": False,
+              "sections": [{"id": "s2", "verdict": "approved", "note": ""}]}
+    assert "s1" in _run_round2(content_a + content_b, prior_input, silent)["approved_ids"]
+
+
 def test_no_annotations_key_when_absent() -> None:
     # Zero-regression: a doc with no annotations must produce sections that
     # carry no `annotations` key at all (byte-identical to pre-feature output).
@@ -621,6 +673,51 @@ def test_no_split_on_key_when_flag_absent() -> None:
     assert [s["title"] for s in data["sections"]] == ["Doc", "Task 1", "Task 2"]
 
 
+def test_doc_type_recorded_and_absent_without_the_flag() -> None:
+    # Round state, same rule as `split_on`: recorded when given so `loop.py`
+    # can type round N+1 and a later resume the same way, and no key at all
+    # otherwise — an untyped round file stays byte-identical to what it was
+    # before the field existed. The parser resolves nothing; `doc_types.py`
+    # already did that.
+    doc = "# Doc\n\n## Problem & persona\n\na\n\n## Proposed design\n\nb\n"
+    data = run(doc, extra_args=["--doc-type", "design-doc"])
+    assert data["doc_type"] == "design-doc", data.get("doc_type")
+    assert "doc_type" not in run(doc), "no flag, no key"
+
+
+def test_pass_recorded_and_absent_without_the_flag() -> None:
+    # The pass is round state like the two above, with a harder absent rule:
+    # `schema.round_is_complete` falls through to the all-approved base only
+    # when the key is missing, so a round with no `--pass` must carry NO `pass`
+    # key — a written default would add a conjunct to every round in the repo.
+    doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
+    data = run(doc, extra_args=["--pass", "checks"])
+    assert data["pass"] == {"kind": "checks"}, data.get("pass")
+    posture = run(doc, extra_args=["--pass", "line", "--posture", "hard"])
+    assert posture["pass"] == {"kind": "line", "posture": "hard"}, posture.get("pass")
+    assert "pass" not in run(doc), "no flag, no key"
+
+
+def test_posture_without_a_pass_is_refused() -> None:
+    # A posture is a setting ON a pass, never a round field of its own. Dropping
+    # it on write would run the round at a posture the caller asked for and did
+    # not get, so the boundary refuses instead.
+    doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
+    result, written = run_expect_fail(doc, ["--posture", "hard"])
+    assert result.returncode != 0, result
+    assert "--posture needs --pass" in result.stderr, result.stderr
+    assert not written, "no round file may be written on a refused parse"
+
+
+def test_unknown_pass_kind_is_refused() -> None:
+    # argparse `choices` is the boundary here — an unknown depth never reaches
+    # the round file for `schema.validate_review_input` to catch second.
+    doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
+    result, written = run_expect_fail(doc, ["--pass", "polish"])
+    assert result.returncode == 2, result
+    assert not written
+
+
 def test_split_on_fixture_one_section_per_task() -> None:
     # Acceptance criterion: a fixture PLAN.md with ### Task N blocks parses
     # to one section per task with no custom parsing needed downstream.
@@ -863,6 +960,7 @@ def main() -> None:
         test_approved_matching_same_content,
         test_approved_carries_forward_across_non_sequential_round_numbers,
         test_approved_not_carried_if_content_changed,
+        test_withdrawn_approval_is_not_carried_forward,
         test_no_annotations_key_when_absent,
         test_annotations_carried_forward_when_unchanged,
         test_annotations_dropped_when_content_changed,
@@ -884,6 +982,10 @@ def main() -> None:
         test_split_on_default_path_byte_identical_without_flag,
         test_split_on_recorded_in_round_file,
         test_no_split_on_key_when_flag_absent,
+        test_doc_type_recorded_and_absent_without_the_flag,
+        test_pass_recorded_and_absent_without_the_flag,
+        test_posture_without_a_pass_is_refused,
+        test_unknown_pass_kind_is_refused,
         test_split_on_fixture_one_section_per_task,
         test_split_on_fixture_round2_carries_forward_through_section_key,
         test_split_on_identity_reuses_section_key_no_new_rule,

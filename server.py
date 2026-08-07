@@ -1074,6 +1074,10 @@ body {
 .cmt-add-btn:hover { --c: var(--text3); color: var(--text); }
 mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var(--orange); color: inherit; }
 mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
+/* A suggested span is the reviewer's own ink over the author's — the accent
+   slot, the same one `.cmt-pop-quote` uses for the span being acted on. Not a
+   verdict color: the three verdict inks stay approved/changes/info. */
+mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid var(--accent); color: inherit; }
 .comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
 .cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 /* The span being commented on — a focal accent callout so it reads clearly as
@@ -1099,6 +1103,10 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .cmt-chip:hover { --c: var(--text3); color: var(--text); }
 .cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
 .cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
+.cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
+/* The replacement field only exists while the suggestion chip is on; it reuses
+   `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
+.cmt-pop-repl { margin-top: 6px; }
 /* Popover save / cancel — reticle buttons like the verdict row; save reads
    affirmative (teal), cancel stays muted. */
 .cmt-save, .cmt-cancel {
@@ -1156,6 +1164,11 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 .settle-btn:hover { color: var(--teal); border-color: var(--teal); }
 .open-thread.is-settled { opacity: 0.55; }
 .open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+/* A thread the author declined: unresolved like an open one, so it keeps every
+   affordance — only the label and the rule change, so the reviewer can see at a
+   glance which threads are waiting on their accept-or-insist. */
+.open-thread.is-declined { border-left-color: var(--orange); }
+.open-thread.is-declined .open-thread-label { color: var(--orange); }
 /* Reply box at the foot of an open thread — continue the back-and-forth, or
    switch the chip to "request changes" to turn the discussion into an edit. */
 .thread-reply { margin-top: 7px; }
@@ -1189,6 +1202,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .exchange-verdict.v-changes { color: var(--orange); }
 .exchange-verdict.v-info    { color: var(--violet); }
+.exchange-verdict.v-suggestion { color: var(--accent); }
 .exchange-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 .exchange-a {
   margin-top: 3px; padding-left: 10px;
@@ -1196,6 +1210,16 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
   color: var(--text3);
 }
 .exchange-a::before { content: '↳ '; }
+/* The author's decline — their grounds for not complying with that turn. Sits
+   between the request and the response: it answers the reviewer's turn without
+   resolving it. */
+.exchange-d {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 1px solid var(--orange);
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+.exchange-d::before { content: '⊘ '; }
 .open-thread-quote {
   font-style: italic;
   font-size: 11px;
@@ -1225,6 +1249,12 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .v-changes .cmt-type { color: var(--orange); }
 .v-info    .cmt-type { color: var(--violet); }
+.v-suggestion .cmt-type { color: var(--accent); }
+/* The wording a suggestion carries, in both surfaces that show a comment: the
+   new-comment list and a carried thread's exchange. Its own line under the
+   note, accent-inked, arrow-led like `.exchange-a`'s reply. */
+.cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
+.cmt-repl::before { content: '→ '; }
 /* Anchor quotes can be a whole selected paragraph — ellipsize instead of
    squeezing the note beside them; the full text stays on the card itself
    and in the title tooltip. */
@@ -1700,6 +1730,7 @@ mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var
 }
 .pr-changes .pr-type { color: var(--orange); }
 .pr-info    .pr-type { color: var(--violet); }
+.pr-suggestion .pr-type { color: var(--accent); }
 .pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
 .pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
 
@@ -2368,13 +2399,20 @@ function openNotesHTML(exchanges) {
   return (exchanges || []).map(x => {
     x = x || {};
     const v = String(x.verdict || '');
-    const vClass = (v === 'changes' || v === 'info') ? ' v-' + v : '';
+    const vClass = (v === 'changes' || v === 'info' || v === 'suggestion') ? ' v-' + v : '';
     return '<div class="exchange">'
       + '<div class="exchange-q">'
       +   '<span class="exchange-round">R' + esc(x.round) + '</span>'
       +   '<span class="exchange-verdict' + vClass + '">' + esc(v) + '</span>'
-      +   '<span class="exchange-note">' + esc(x.note || '') + '</span>'
+      +   '<span class="exchange-note">' + esc(x.note || '')
+      +     (x.replacement ? '<span class="cmt-repl">' + esc(x.replacement) + '</span>' : '')
+      +   '</span>'
       + '</div>'
+      // The author's grounds for declining THAT turn, before the response,
+      // because it answers the reviewer's request without resolving it. Key
+      // presence, not truthiness: a decline with no grounds is still a decline.
+      + (x.grounds !== undefined
+          ? '<div class="exchange-d">declined: ' + esc(x.grounds) + '</div>' : '')
       + (x.response ? '<div class="exchange-a">' + esc(x.response) + '</div>' : '')
       + '</div>';
   }).join('');
@@ -2387,12 +2425,23 @@ function openThreadHTML(section) {
     const cid = esc(t.cid || '');
     const exs = t.exchanges || [];
     // The thread's current type carries to a reply (continuing an info thread
-    // stays info), defaulting to info.
-    const type = (exs.length && exs[exs.length - 1].verdict) || 'info';
+    // stays info), defaulting to info — but never as a suggestion: the reply
+    // box collects prose, not replacement wording, and a suggestion comment
+    // with no `replacement` is rejected at the server's boundary. Replying to a
+    // suggestion re-requests it, which is exactly `changes`.
+    const last = (exs.length && exs[exs.length - 1].verdict) || 'info';
+    const type = (last === 'changes' || last === 'suggestion') ? 'changes' : 'info';
     const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
-    return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
+    // A declined thread is unresolved, not closed: the author answered and the
+    // move is now the reviewer's — settle to accept, or reply to insist, which
+    // always wins. Same settle button, same reply box, different label and
+    // prompt; the clamp above already sends an insisting reply as `changes`.
+    const declined = t.status === 'declined';
+    return '<div class="open-thread' + (declined ? ' is-declined' : '')
+      + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
-      +   '<span class="open-thread-label">open note</span>' + quote
+      +   '<span class="open-thread-label">' + (declined ? 'declined' : 'open note')
+      +   '</span>' + quote
       +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
@@ -2404,7 +2453,10 @@ function openThreadHTML(section) {
       +       '" data-type="info">need info</button>'
       +   '</div>'
       +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
-      +     '" placeholder="Reply… (switch to “request changes” to turn the discussion into an edit)"></textarea>'
+      +     '" placeholder="' + (declined
+            ? 'Settle to accept the decline, or reply to insist — a reply is binding.'
+            : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
+      +     '"></textarea>'
       + '</div>';
   }).join('');
 }
@@ -2800,27 +2852,34 @@ function syncReviewCard(id) {
 /* ─── Comments (multi-comment review) ───────────────────────────
    A section owns a list of typed comments; the section verdict is DERIVED,
    never picked. No active comments → approved (if reviewer approved) or pending;
-   any `changes` comment → changes; otherwise info. Each comment is an open
-   thread by default (cid-keyed). */
+   any `changes` OR `suggestion` comment → changes; otherwise info. A suggestion
+   is a directive carrying the wording, so it lands with `changes`: a section
+   holding one is not approved. Each comment is an open thread by default
+   (cid-keyed). The same rule is stated in DESIGN.md ("Multiple inline
+   comments"), SKILL.md's verdict table, and `scripts/schema.py`'s
+   COMMENT_TYPES — all three move together. */
 function commentsOf(id) { return (rState.verdicts[id] ||= {}).comments ||= []; }
 
 // Comments that are real, unsettled feedback — the basis for the verdict, the
-// button count, the rendered list, and whether a section can be approved.
+// button count, the rendered list, and whether a section can be approved. A
+// suggestion qualifies on its `replacement` alone: the wording IS the comment,
+// and its note is optional rationale.
 function activeComments(id) {
-  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && c.note);
+  return (rState.verdicts[id]?.comments || []).filter(c => !c.settled && (c.note || c.replacement));
 }
 
 function deriveVerdict(id) {
   const active = activeComments(id);
   if (active.length === 0) return rState.verdicts[id]?.verdict === 'approved' ? 'approved' : 'pending';
-  return active.some(c => c.type === 'changes') ? 'changes' : 'info';
+  return active.some(c => c.type === 'changes' || c.type === 'suggestion') ? 'changes' : 'info';
 }
 
-function addComment(id, { type, note, anchor, images }) {
+function addComment(id, { type, note, anchor, images, replacement }) {
   const cs = commentsOf(id);
   const n = cs.reduce((m, c) => Math.max(m, +(String(c.cid).split('-c')[1] || 0)), 0);
   cs.push({ cid: id + '-c' + (n + 1), type, note: note || '',
             ...(anchor && { anchor }),
+            ...(replacement && { replacement }),
             ...(images?.length && { images }),
             open: true, settled: false });
   syncCard(id);
@@ -2860,7 +2919,7 @@ document.addEventListener('mouseup', () => {
   // Defer a tick so the browser has finalized the selection after mouseup.
   setTimeout(() => {
     const sel = document.getSelection();
-    if (!sel || sel.isCollapsed) return;
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     const text = sel.toString().trim();
     if (!text) return;
     const start = toElement(sel.anchorNode);
@@ -2875,7 +2934,16 @@ document.addEventListener('mouseup', () => {
     // the /viva-diff skill's grep fallback, so it degrades to an unanchored
     // whole-section note. Same guard the hand-rolled table carried.
     const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
-    openCommentPopover(m[1], crossesPanes ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
+    if (crossesPanes) { openCommentPopover(m[1], {}); return; }
+    // Which occurrence of a repeated phrase the reviewer picked exists only in
+    // the rendered content — that is where the selection lives. Read the
+    // ordinal there, resolve the SAME ordinal against the markdown source
+    // (issue #95). `getRangeAt(0)`, not anchorNode/focusNode: a backwards drag
+    // reports its endpoints in the opposite order, and the ordinal is counted
+    // from where the selection *starts* in document order.
+    const occurrence = occurrenceInRendered(content, sel.getRangeAt(0), text);
+    openCommentPopover(m[1],
+      { anchor: { text, offset: offsetInSource(m[1], text, occurrence), occurrence } });
   }, 0);
 });
 
@@ -2892,27 +2960,92 @@ function closestD2hPane(node) {
   return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
 }
 
-// Char offset of `text` in the section's raw markdown source — the rewrite
-// target. -1 when not found (anchor still stores text; agent falls back to grep).
-function offsetInSource(id, text) {
-  const src = _pendingMarkdown.get(id)
-    || REVIEW_DATA.sections.find(s => s.id === id)?.content || '';
-  return src.indexOf(text);
+/* ─── Anchor resolution: rendered occurrence → source offset (#95) ─────
+   The reviewer selects in rendered HTML; the anchor must address the markdown
+   source. A phrase that repeats has one identity — which occurrence — read
+   where the selection actually happened and then resolved against the source,
+   so the stored offset and the on-screen highlight name the same span. The
+   ordinal rides out on the anchor because it is the half that survives a
+   re-render; the offset is the half the source edit uses. */
+
+// 0-based ordinal of the selected occurrence of `text`: how many occurrences
+// *begin* before the selection starts, counted over the rendered text. In
+// diff2html's side-by-side output the count is scoped to the pane the
+// selection began in — the facing pane repeats the same lines and is not part
+// of the reviewer's reading order.
+function occurrenceInRendered(root, range, text) {
+  const scope = closestD2hPane(range.startContainer) || root;
+  if (!scope.contains || !scope.contains(range.startContainer)) return 0;
+  const all = document.createRange();
+  all.selectNodeContents(scope);
+  const pre = document.createRange();
+  pre.selectNodeContents(scope);
+  try { pre.setEnd(range.startContainer, range.startOffset); }
+  catch (e) { return 0; }
+  return countStartsBefore(all.toString(), text, pre.toString().length);
 }
 
-// A small popover with two type chips + a note field + save/cancel. `anchor`
+// Occurrences of `needle` in `hay` that start before index `limit`. Steps by 1
+// so an overlapping repeat ("aa" in "aaaa") counts the same way nthIndexOf
+// resolves it — the two must agree or the ordinal names a different span in
+// the source than it did on screen.
+function countStartsBefore(hay, needle, limit) {
+  if (!needle) return 0;
+  let n = 0, i = hay.indexOf(needle);
+  while (i >= 0 && i < limit) { n++; i = hay.indexOf(needle, i + 1); }
+  return n;
+}
+
+// Index of the `n`th (0-based) occurrence of `needle` in `hay`, -1 if there is
+// no such occurrence.
+function nthIndexOf(hay, needle, n) {
+  if (!needle) return -1;
+  let i = hay.indexOf(needle);
+  while (i >= 0 && n > 0) { i = hay.indexOf(needle, i + 1); n--; }
+  return i;
+}
+
+// Char offset of the reviewer's chosen occurrence of `text` in the section's
+// raw markdown source — the rewrite target. -1 when the ordinal does not
+// resolve there; the anchor still stores text + occurrence, and -1 says
+// "unplaced", not "absent" — the agent scopes by the section rather than
+// guessing a match.
+function offsetInSource(id, text, occurrence) {
+  const src = _pendingMarkdown.get(id)
+    || REVIEW_DATA.sections.find(s => s.id === id)?.content || '';
+  const n = occurrence > 0 ? occurrence : 0;
+  const at = nthIndexOf(src, text, n);
+  // Rendered and source occurrence counts can diverge — markdown syntax the
+  // renderer strips, diff chrome it adds. An ordinal that overruns the source
+  // still resolves when the source holds exactly one match, because one match
+  // is unambiguous; with two or more it stays honestly unresolved rather than
+  // silently collapsing back onto the first, which is the bug being fixed.
+  if (at < 0 && n > 0 && nthIndexOf(src, text, 1) < 0) return nthIndexOf(src, text, 0);
+  return at;
+}
+
+// A small popover with the type chips + a note field + save/cancel. `anchor`
 // is {text, offset} or null (whole-section note).
+//
+// The third chip, `suggest wording`, adds a replacement field: the reviewer
+// types the exact wording instead of describing the change, and the author
+// applies it verbatim to the anchored span. Review mode only — a diff hunk's
+// suggestion would be a verbatim code edit, and /viva-diff carries no
+// instruction to apply one (issue #166 scopes that out).
 function openCommentPopover(id, { anchor } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
+  const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';
   const captureState = {};
   pop.innerHTML =
       '<div class="cmt-pop-row">'
     +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
     +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
+    +   (canSuggest ? '<button type="button" class="cmt-chip cmt-chip-suggestion" data-type="suggestion">suggest wording</button>' : '')
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
+    + (canSuggest ? '<textarea class="note-field cmt-pop-repl" style="display:none" placeholder="Replacement wording — applied verbatim"></textarea>' : '')
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
     + '<input type="file" accept="image/*" multiple style="display:none">'
@@ -2921,6 +3054,7 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.style.display = '';
 
   const ta        = pop.querySelector('.cmt-pop-note');
+  const repl      = pop.querySelector('.cmt-pop-repl');
   const strip     = pop.querySelector('.thumb-strip');
   const attachBtn = pop.querySelector('.attach-btn');
   const fileInput = pop.querySelector('input[type="file"]');
@@ -2929,12 +3063,26 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+    if (repl) {
+      const on = pop.dataset.type === 'suggestion';
+      repl.style.display = on ? '' : 'none';
+      if (on) repl.focus();
+    }
   });
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
     const note = ta.value.trim();
-    if (!note) { ta.placeholder = 'a comment needs a note'; return; }
+    // A suggestion ships on its wording, not its note: the replacement is the
+    // payload the author applies, and the note is optional rationale. Every
+    // other type still needs a note — there is nothing else in it.
+    const isSuggestion = pop.dataset.type === 'suggestion';
+    const replacement = (isSuggestion && repl) ? repl.value.trim() : '';
+    if (isSuggestion && !replacement) {
+      repl.placeholder = 'a suggestion needs replacement wording'; repl.focus(); return;
+    }
+    if (!isSuggestion && !note) { ta.placeholder = 'a comment needs a note'; return; }
     addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined,
+                     replacement: replacement || undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
   };
@@ -2949,28 +3097,43 @@ function closeCommentPopover(id) {
 // Re-wrap each comment's anchored span in the rendered content with a typed mark.
 function renderHighlights(id) {
   const content = el('rcontent-' + id); if (!content) return;
-  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info').forEach(m => {
+  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info, mark.cmt-hl-suggestion').forEach(m => {
     m.replaceWith(document.createTextNode(m.textContent));
   });
   content.normalize();
   const cs = (rState.verdicts[id]?.comments || []).filter(c => c.anchor?.text);
-  cs.forEach(c => wrapFirst(content, c.anchor.text, 'cmt-hl-' + c.type));
+  cs.forEach(c => wrapNth(content, c.anchor.text, 'cmt-hl-' + c.type,
+                          c.anchor.occurrence > 0 ? c.anchor.occurrence : 0));
 }
 
-// Wrap the first text-node occurrence of `needle` in a <mark class=cls>.
-function wrapFirst(root, needle, cls) {
+// Wrap the `n`th (0-based) text-node occurrence of `needle` in a <mark
+// class=cls>. The ordinal is the anchor's own `occurrence`, so a comment on
+// the third "retries" highlights the third one and the reviewer sees the span
+// the stored offset names. Unchanged limitation from wrapFirst: a needle split
+// across element boundaries (an inline <code> mid-phrase) lives in no single
+// text node, so it is never matched — and because occurrenceInRendered counts
+// over the flat text where it *is* present, an earlier straddling occurrence
+// shifts this walk's count and the mark can land one occurrence late. Visual
+// only; the stored offset is unaffected.
+function wrapNth(root, needle, cls, n) {
+  if (!needle) return;
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let n;
-  while ((n = walk.nextNode())) {
-    const i = n.nodeValue.indexOf(needle);
-    if (i < 0) continue;
-    const after = n.splitText(i);
-    after.splitText(needle.length);
-    const mark = document.createElement('mark');
-    mark.className = cls;
-    mark.textContent = after.nodeValue;
-    after.replaceWith(mark);
-    return;
+  let node, seen = 0;
+  while ((node = walk.nextNode())) {
+    let i = node.nodeValue.indexOf(needle);
+    while (i >= 0) {
+      if (seen === n) {
+        const after = node.splitText(i);
+        after.splitText(needle.length);
+        const mark = document.createElement('mark');
+        mark.className = cls;
+        mark.textContent = after.nodeValue;
+        after.replaceWith(mark);
+        return;
+      }
+      seen++;
+      i = node.nodeValue.indexOf(needle, i + 1);
+    }
   }
 }
 
@@ -3021,7 +3184,9 @@ function renderCommentList(id) {
       '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
     +   '<span class="cmt-type">' + c.type + '</span>'
     +   (c.anchor?.text ? '<span class="cmt-quote" title="' + esc(c.anchor.text) + '">' + esc(c.anchor.text) + '</span>' : '')
-    +   '<span class="cmt-note">' + esc(c.note) + '</span>'
+    +   '<span class="cmt-note">' + esc(c.note)
+    +     (c.replacement ? '<span class="cmt-repl">' + esc(c.replacement) + '</span>' : '')
+    +   '</span>'
     +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
     + '</div>').join('');
   host.querySelectorAll('.cmt-del').forEach(b =>
@@ -3329,8 +3494,11 @@ let betweenRounds = null;
 function snapshotBetweenRounds() {
   betweenRounds = {
     round: REVIEW_DATA.round,
+    // A suggestion's note is optional, so the processing card falls back to the
+    // wording — a row reading only its section title says nothing.
     rows: REVIEW_DATA.sections.flatMap(s =>
-      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type, note: c.note })))
+      activeComments(s.id).map(c => ({ sectionTitle: s.title, type: c.type,
+                                       note: c.note || c.replacement || '' })))
   };
 }
 
@@ -4535,11 +4703,13 @@ class Handler(BaseHTTPRequestHandler):
                                      "nothing to complete")
                     return
                 if not schema.round_is_complete(round_input, submitted):
-                    # `round_is_complete` above is the gate; the count below is
-                    # only the message's detail, derived from today's rule for
-                    # the agent's recovery. When milestone 10's pass types make
-                    # completion a function of the pass, this text follows the
-                    # predicate — it never decides anything on its own.
+                    # `round_is_complete` above is the gate; the detail below is
+                    # only the message, and it follows the predicate rather than
+                    # deciding anything. A round's `pass` ADDS a conjunct to the
+                    # all-approved base, so a refusal with nothing pending is
+                    # now reachable — reporting "0 of N not approved" there would
+                    # send the caller to re-present a round the human already
+                    # approved, instead of to the conjunct that held it.
                     by_id = {s.get("id"): s
                              for s in submitted.get("sections", [])}
                     sections = round_input.get("sections", [])
@@ -4547,10 +4717,32 @@ class Handler(BaseHTTPRequestHandler):
                         1 for s in sections
                         if (by_id.get(s.get("id")) or {}).get("verdict")
                         != "approved")
-                    self._error(409, "refusing to complete: %d of %d section(s) "
-                                     "not approved. Nothing is auto-accepted; "
-                                     "re-present the round or abandon it."
-                                     % (pending, len(sections)))
+                    spec = round_input.get("pass")
+                    kind = spec.get("kind") if isinstance(spec, dict) else None
+                    if not sections:
+                        # Before the pass branch: an empty round is refused by
+                        # the base rule, and naming a conjunct here would blame
+                        # a `architecture`/`line` pass that adds none.
+                        why = "the round carries no sections to approve"
+                    elif pending:
+                        why = ("%d of %d section(s) not approved"
+                               % (pending, len(sections)))
+                    elif kind:
+                        # The recovery is the next round, not a merge into this
+                        # round's file: the round this process serves was loaded
+                        # once and is replaced only by `/next-round`, so a check
+                        # answered on disk under it is one this guard never sees.
+                        why = ("every section is approved, but the %s pass is "
+                               "not satisfied — a checks round holds until "
+                               "every check flag carries a result, a final round "
+                               "until no suggested edit is unresolved. Answer "
+                               "the flags in the next round and POST it to "
+                               "/next-round" % kind)
+                    else:
+                        why = "the round carries no sections to approve"
+                    self._error(409, "refusing to complete: %s. Nothing is "
+                                     "auto-accepted; re-present the round or "
+                                     "abandon it." % why)
                     return
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)

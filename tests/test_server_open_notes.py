@@ -28,6 +28,12 @@ def main():
     open_notes = [
         {"cid": "s1-c1", "quote": "intro", "status": "open",
          "exchanges": [{"round": 1, "verdict": "changes", "note": "tighten intro", "response": "Shortened."}]},
+        # A thread the author declined (#167): unresolved like an open one, so
+        # it carries here with the grounds the reviewer must read to accept it
+        # or insist.
+        {"cid": "s1-c2", "quote": "in most cases", "status": "declined",
+         "exchanges": [{"round": 1, "verdict": "changes", "note": "cut the caveat",
+                        "response": "", "grounds": "round 1 ruled it load-bearing"}]},
     ]
     r2 = {
         "mode": "review", "doc_file": "doc.md", "round": 2, "approved_ids": [],
@@ -49,7 +55,13 @@ def main():
         # Page ships the thread renderer and settle action.
         page = get_text(base, "/")
         for needle in ("openNotesHTML", "open-thread", "settleOpenNotes",
-                       "section.open_notes", "renderCommentList"):
+                       "section.open_notes", "renderCommentList",
+                       # A declined thread renders its grounds and says so in
+                       # the head; it keeps the settle button and reply box,
+                       # since accepting or insisting is the reviewer's move.
+                       "const declined = t.status === 'declined';",
+                       "'<div class=\"exchange-d\">declined: '",
+                       ".open-thread.is-declined"):
             assert needle in page, f"page missing: {needle}"
 
         # /submit preserves comments with settled flag; a bare verdict carries neither.

@@ -39,7 +39,8 @@ a different product.
 ## Principles
 
 1. **The section is the unit of trust.** Comment, request changes, or ask per
-   section. The document passes only when every section is approved.
+   section. The document passes only when every section is approved. A pass may
+   require more before a round closes; it may never require less.
 2. **Verbatim, not summarized.** Cards show section content byte-for-byte; the
    ledger records the human's notes verbatim. viva never paraphrases the human
    or the doc.
@@ -66,7 +67,10 @@ a different product.
   One reviewer, one local tab, one clone. Learned preferences are per-clone, not
   shared.
 - **Not a general document editor.** viva reviews and signs off; it does not
-  author from scratch or provide a WYSIWYG editing surface.
+  author from scratch or provide a free editing surface. A reviewer may supply
+  exact replacement wording for a span they selected — a comment with a payload,
+  applied by the author and recorded in the ledger — but there is no cursor in
+  the document.
 - **Not a heavyweight dependency.** stdlib-only server; no runtime packages.
 
 ## Feature map

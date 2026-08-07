@@ -1,0 +1,7 @@
+{
+  "name": "pr-description",
+  "title": "PR description",
+  "sections": [],
+  "checks": [],
+  "default_pass": "line"
+}

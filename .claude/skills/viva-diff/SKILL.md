@@ -71,14 +71,16 @@ always sees a complete JSON.
 | Verdict | Action |
 |---------|--------|
 | `approved` | Hunk accepted. Carries forward collapsed in next round. |
-| `changes` | Apply the comment's edit to the target source file. The comment's `anchor.text` identifies the exact span; `anchor.offset` disambiguates repeated spans. Scope the edit to the hunk named in the section title (`{filepath} hunk N`). |
+| `changes` | Apply the comment's edit to the target source file. The comment's `anchor.text` identifies the span and `anchor.offset` is its char offset in the hunk — already the occurrence the reviewer picked, so a phrase that repeats needs no guessing. `-1` means that ordinal did not resolve; scope by the hunk and the note instead. Scope the edit to the hunk named in the section title (`{filepath} hunk N`). |
 | `info` | Answer in the thread only. Do not edit the file until the discussion escalates to a `changes` turn (the reviewer switches chip to "request changes"). |
 | `pending` | Re-present unchanged next round. |
 
 For each section with a `changes` comment:
 - Parse the section `title` to extract the filepath (`title` = `"{filepath} hunk N"`)
 - Apply the targeted edit to `{filepath}` in the working tree
-- Use `anchor.text` + `anchor.offset` to locate the exact span within the hunk
+- Locate the span within the hunk at `anchor.offset`, confirming it with
+  `anchor.text`; on `-1` scope by the hunk and the note — never take the first
+  match, which is the wrong span whenever the text repeats
 
 **Every section approved** → go to step 5.
 **Any `changes`/`info`** → re-diff, re-parse, re-arm (step 4).

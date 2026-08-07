@@ -33,8 +33,9 @@ card, so the reviewer sees a flagged weak spot *before* choosing a verdict.
 - `message` *(required)* — the inline text shown beside the badge.
 - `anchor` *(optional)* — a **string**: surfaced as the badge's hover title, or,
   for a contradiction flag, another section's id rendered as a jump link. Not
-  the same field as a **comment's** `anchor`, which is a `{text, offset}` object
-  naming the reviewer's selection. Same name, two shapes, two schemas.
+  the same field as a **comment's** `anchor`, which is a
+  `{text, offset, occurrence?}` object naming the reviewer's selection. Same
+  name, two shapes, two schemas.
 
 Annotations never gate a verdict — the human still decides. A round with no
 `annotations` renders exactly as before.
@@ -70,7 +71,21 @@ python3 "$VIVA_DIR/scripts/drift.py" --input <the round file loop.py printed> \
 ```
 
 The merge is additive (carried-forward flags survive), idempotent, and a no-op
-on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`.
+on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`, plus
+confidence's `basis`/`level` and a check's `result`.
+
+A **check** producer's flag may carry `result` — what the check found for it. On
+a `checks` round the flag holds the round open until it does, so re-emitting
+the same flag with a `result` is how a check answers one: the merge writes the
+result onto the flag already there instead of appending a twin beside it.
+
+A new check producer must add its `kind` to `schema.CHECK_KINDS`. That registry
+fails **open**: an unregistered kind is invisible to `round_is_complete`, so its
+flags gate nothing and a `checks` round closes where it should have held.
+
+Answer flags in the round you are about to arm, never in the one already armed —
+the server loads its round once and replaces it only from `/next-round`, so
+`loop.py annotate` refuses a round the server is currently serving.
 
 Flag **new or changed** sections only: the parser carries a prior annotation
 forward for any section whose title and content are byte-identical, and drops it

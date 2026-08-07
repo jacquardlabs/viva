@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for scripts/schema.py — the shared protocol contract."""
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -70,6 +71,80 @@ def test_verdict_to_ledger_entry():
     print("  ok  test_verdict_to_ledger_entry")
 
 
+def test_ledger_note_records_suggested_wording_verbatim():
+    """A suggestion is a ledger event, and the wording is the event (#166).
+
+    Verbatim means byte-for-byte inside the fragment — asserted here, on
+    `ledger_note`'s own output, not on a rendered markdown row (`esc_cell`
+    escapes pipes and flattens newlines on the way into the table).
+    """
+    wording = "Ship the core in one round | no exceptions"
+    # Note + wording: the note is rationale, the wording is the payload.
+    assert schema.ledger_note({"comments": [
+        {"type": "suggestion", "note": "too vague", "replacement": wording},
+    ]}) == "too vague — suggested: " + wording
+    # A suggestion needs no note — the wording alone is a full row, and the
+    # blank-note filter must not drop it.
+    assert schema.ledger_note({"comments": [
+        {"type": "suggestion", "note": "", "replacement": wording},
+    ]}) == "suggested: " + wording
+    # Mixed section: fragments join with the same ` · ` as before.
+    assert schema.ledger_note({"comments": [
+        {"type": "changes", "note": "5x not 3x"},
+        {"type": "suggestion", "replacement": "retries 5x"},
+        {"type": "info", "note": "how long?"},
+    ]}) == "5x not 3x · suggested: retries 5x · how long?"
+    # Tagged, not bare: the ledger row's own `verdict` column carries the
+    # SECTION verdict, so the fragment is the only place the type shows.
+    row = schema.verdict_to_ledger_entry(
+        3, "Goals",
+        {"id": "s1", "verdict": "changes",
+         "comments": [{"type": "suggestion", "replacement": wording}]})
+    assert row == {"round": 3, "section_title": "Goals", "verdict": "changes",
+                   "note": "suggested: " + wording}, row
+    assert wording in row["note"]
+    print("  ok  test_ledger_note_records_suggested_wording_verbatim")
+
+
+def test_comment_types_carry_the_third_type():
+    # One tuple names the comment axis; open_notes.py threads on it, so a type
+    # missing here never carries across a round.
+    assert schema.SUGGESTION == "suggestion"
+    assert schema.COMMENT_TYPES == ("changes", "info", schema.SUGGESTION)
+    # A different axis from the section verdicts — a suggestion derives to
+    # `changes` and is never a verdict or a ledger verdict of its own.
+    assert schema.SUGGESTION not in schema.VERDICTS
+    assert schema.SUGGESTION not in schema.LEDGER_VERDICTS
+    print("  ok  test_comment_types_carry_the_third_type")
+
+
+def test_validate_verdicts_requires_replacement_on_a_suggestion():
+    """The wording IS the comment; an empty one is unappliable (#166)."""
+    ok = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "suggestion", "replacement": "Ship it."}]}]}
+    schema.validate_verdicts(ok)  # must not raise
+    for bad in ({"cid": "s1-c1", "type": "suggestion"},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": ""},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": "   "},
+                {"cid": "s1-c1", "type": "suggestion", "replacement": 7}):
+        try:
+            schema.validate_verdicts(
+                {"sections": [{"id": "s1", "verdict": "changes", "comments": [bad]}]})
+        except ValueError as e:
+            assert "replacement" in str(e), e
+        else:
+            raise AssertionError("accepted a suggestion with no wording: %r" % bad)
+    # Gated on the TYPE, so nothing written before this type existed can trip
+    # it: a changes/info comment needs no replacement, and a non-dict entry in
+    # comments stays as permissive as it was.
+    schema.validate_verdicts({"sections": [{"id": "s1", "verdict": "changes", "comments": [
+        {"cid": "s1-c1", "type": "changes", "note": "5x not 3x"},
+        {"cid": "s1-c2", "type": "info", "note": "how long?"},
+        "not a dict",
+    ]}]})
+    print("  ok  test_validate_verdicts_requires_replacement_on_a_suggestion")
+
+
 def test_validate_review_input_accepts_valid():
     schema.validate_review_input({
         "mode": "review", "round": 1, "approved_ids": [],
@@ -87,6 +162,24 @@ def test_validate_review_input_accepts_valid():
         "mode": "review", "split_on": r"^Task \d+",
         "sections": [{"id": "s1", "title": "Task 1", "content": "body"}],
     })
+    # `doc_type` — the resolved type name, carried the same way. Optional; a
+    # string when present.
+    schema.validate_review_input({
+        "mode": "review", "doc_type": "design-doc",
+        "sections": [{"id": "s1", "title": "Problem & persona", "content": "b"}],
+    })
+    # `pass` — the round's depth. Every kind, with and without a posture, and
+    # the posture is a key INSIDE the object, never beside it.
+    for kind in schema.PASS_KINDS:
+        schema.validate_review_input({
+            "mode": "review", "pass": {"kind": kind},
+            "sections": [{"id": "s1", "title": "Goals", "content": "b"}],
+        })
+        for posture in schema.PASS_POSTURES:
+            schema.validate_review_input({
+                "mode": "review", "pass": {"kind": kind, "posture": posture},
+                "sections": [{"id": "s1", "title": "Goals", "content": "b"}],
+            })
     print("  ok  test_validate_review_input_accepts_valid")
 
 
@@ -103,6 +196,22 @@ def test_validate_review_input_rejects_bad():
         # None) silently drop back to auto-detection mid-session.
         {"sections": [], "split_on": 123},
         {"sections": [], "split_on": None},
+        # `doc_type` is handed back to `parse_sections.py --doc-type` by both
+        # `rearm` and a resume — a non-string drops the type, and with it the
+        # round's check set, everywhere except where the bad value was written.
+        {"sections": [], "doc_type": 123},
+        {"sections": [], "doc_type": None},
+        # `pass` decides which conjunct `round_is_complete` adds, so a malformed
+        # one must fail on write rather than quietly reverting the round to the
+        # base rule — the reviewer asked for the stricter check, not the looser.
+        {"sections": [], "pass": None},
+        {"sections": [], "pass": "line"},          # not an object
+        {"sections": [], "pass": []},
+        {"sections": [], "pass": {}},              # no kind
+        {"sections": [], "pass": {"kind": "polish"}},        # unknown kind
+        {"sections": [], "pass": {"kind": None}},
+        {"sections": [], "pass": {"kind": "line", "posture": "brutal"}},
+        {"sections": [], "pass": {"kind": "line", "posture": None}},
     ):
         try:
             schema.validate_review_input(bad)
@@ -204,6 +313,199 @@ def test_round_is_complete_rejects_an_empty_round():
     print("  ok  test_round_is_complete_rejects_an_empty_round")
 
 
+def _round(pass_spec=None, annotations=None, open_notes=None):
+    """A one-section round input, optionally carrying a pass and section state."""
+    section = {"id": "s1", "title": "Goals", "content": "body"}
+    if annotations is not None:
+        section["annotations"] = annotations
+    if open_notes is not None:
+        section["open_notes"] = open_notes
+    data = {"mode": "review", "sections": [section]}
+    if pass_spec is not None:
+        data["pass"] = pass_spec
+    return data
+
+
+APPROVED = {"sections": [{"id": "s1", "verdict": "approved"}]}
+
+
+def test_absent_pass_is_todays_behavior_exactly():
+    """PRODUCT.md principle 4, at the one place it is load-bearing: a round with
+    no `pass` key completes on approvals alone, whatever else it carries.
+
+    The same round state that holds a `checks` round open — an unanswered
+    check flag — must not hold a passless one, or the field would have changed
+    behavior for every caller that never asked for a pass."""
+    flag = [{"kind": "headings-present", "severity": "warn", "message": "missing"}]
+    assert schema.round_is_complete(_round(annotations=flag), APPROVED)
+    assert "pass" not in _round(), "the helper must not default a pass in"
+    print("  ok  test_absent_pass_is_todays_behavior_exactly")
+
+
+def test_structure_and_line_are_the_base_rule():
+    """Two of the four kinds add nothing — asserted, not assumed, because the
+    only thing stopping a future edit from adding a conjunct here is a test."""
+    flag = [{"kind": "headings-present", "severity": "warn", "message": "missing"}]
+    for kind in ("architecture", "line"):
+        assert schema.round_is_complete(
+            _round({"kind": kind}, annotations=flag), APPROVED), kind
+        assert schema.round_is_complete(
+            _round({"kind": kind, "posture": "hard"}), APPROVED), kind
+    print("  ok  test_structure_and_line_are_the_base_rule")
+
+
+def test_checks_pass_holds_until_every_check_flag_is_answered():
+    """The added conjunct: approvals alone do not close a `checks` round.
+
+    A check flag is an annotation whose `kind` is in `CHECK_KINDS` — the handle
+    `headings_present.py` documents. An advisory producer's flag is not one, so
+    drift/checklist/preference/confidence flags never gate a round.
+    """
+    checks_pass = {"kind": "checks"}
+    unanswered = [{"kind": "headings-present", "severity": "warn",
+                   "message": "missing expected design-doc section: 'Goals'"}]
+    answered = [dict(unanswered[0], result="added in round 2")]
+
+    assert not schema.round_is_complete(_round(checks_pass, unanswered), APPROVED), \
+        "an unanswered check flag must hold the round even with every section approved"
+    assert schema.round_is_complete(_round(checks_pass, answered), APPROVED)
+    # No flags at all — the check ran and found nothing, or none ran.
+    assert schema.round_is_complete(_round(checks_pass), APPROVED)
+    assert schema.round_is_complete(_round(checks_pass, []), APPROVED)
+    # A blank result answers nothing.
+    for blank in ("", "   ", None, 0, ["x"]):
+        assert not schema.round_is_complete(
+            _round(checks_pass, [dict(unanswered[0], result=blank)]), APPROVED), blank
+    # An advisory producer's flag is not a check flag.
+    advisory = [{"kind": "drift", "severity": "error", "message": "3x vs 5x"},
+                {"kind": "confidence", "severity": "warn", "basis": "inferred",
+                 "level": "low", "message": "inferred · low"}]
+    assert schema.round_is_complete(_round(checks_pass, advisory), APPROVED), \
+        "a checks pass gates on checks, not on every advisory badge"
+    print("  ok  test_checks_pass_holds_until_every_check_flag_is_answered")
+
+
+def test_proof_holds_on_an_unresolved_suggested_edit():
+    """`final` adds a conjunct on the comment type the popover now writes (#166):
+    an unresolved suggestion holds the round even when every section is
+    approved."""
+    final = {"kind": "final"}
+    assert schema.round_is_complete(_round(final), APPROVED)
+
+    # A suggestion in the verdicts just submitted.
+    with_suggestion = {"sections": [
+        {"id": "s1", "verdict": "approved",
+         "comments": [{"cid": "s1-c1", "type": "suggestion",
+                       "note": "use this wording",
+                       "replacement": "Ship the core in one round."}]}]}
+    assert not schema.round_is_complete(_round(final), with_suggestion)
+    assert schema.round_is_complete(_round(), with_suggestion), \
+        "no pass, no conjunct — the same round closes without one"
+    settled = {"sections": [
+        {"id": "s1", "verdict": "approved",
+         "comments": [{"cid": "s1-c1", "type": "suggestion", "settled": True}]}]}
+    assert schema.round_is_complete(_round(final), settled)
+
+    # A carried thread whose LATEST exchange is the suggestion — the author has
+    # not answered it. An answered one (a later exchange) does not hold.
+    open_thread = [{"cid": "s1-c1", "status": "open", "exchanges": [
+        {"round": 1, "verdict": "suggestion", "note": "use this wording"}]}]
+    answered_thread = [{"cid": "s1-c1", "status": "open", "exchanges": [
+        {"round": 1, "verdict": "suggestion", "note": "use this wording"},
+        {"round": 2, "verdict": "changes", "note": "and one more thing"}]}]
+    assert not schema.round_is_complete(
+        _round(final, open_notes=open_thread), APPROVED)
+    assert schema.round_is_complete(
+        _round(final, open_notes=answered_thread), APPROVED)
+    print("  ok  test_proof_holds_on_an_unresolved_suggested_edit")
+
+
+def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
+    """A decline is a thread status, never a verdict — and it resolves nothing.
+
+    `open` and `declined` are the two unresolved statuses, which is what makes
+    `parse_sections` re-present a declined thread and `open_notes` settle it on
+    approval. The exchange keeps the REVIEWER's comment type as its `verdict`
+    (the author's answer rides in `grounds`), so a declined suggestion still
+    holds a `final` round: the author's refusal is not a resolution (#167).
+    """
+    assert schema.THREAD_STATUSES == ("open", "settled", "declined")
+    assert schema.THREAD_DECLINED not in schema.VERDICTS
+    assert schema.THREAD_DECLINED not in schema.COMMENT_TYPES
+    assert schema.thread_is_unresolved("open")
+    assert schema.thread_is_unresolved(schema.THREAD_DECLINED)
+    assert not schema.thread_is_unresolved(schema.THREAD_SETTLED)
+    assert not schema.thread_is_unresolved(None) and not schema.thread_is_unresolved("nope")
+
+    declined_thread = [{"cid": "s1-c1", "status": schema.THREAD_DECLINED,
+                        "exchanges": [{"round": 1, "verdict": "suggestion",
+                                       "note": "use this wording",
+                                       "grounds": "contradicts round 1"}]}]
+    assert not schema.round_is_complete(
+        _round({"kind": "final"}, open_notes=declined_thread), APPROVED), \
+        "declining a suggested edit must not release the final conjunct"
+    print("  ok  test_thread_statuses_and_a_declined_suggestion_still_holds_proof")
+
+
+def test_no_pass_relaxes_the_all_approved_base():
+    """THE invariant: a pass may only ADD conditions, never relax the base.
+
+    Enumerated from `PASS_KINDS` plus `None` rather than a hardcoded list, so a
+    fifth kind is covered the day it is added instead of being silently exempt.
+    Every round below is one today's rule refuses; no pass may accept any of
+    them, now or later — one that could would reopen the hole #102 closed,
+    `POST /complete` accepting a round the human never approved.
+    """
+    inp_sections = [{"id": "s1", "title": "Goals", "content": "b"},
+                    {"id": "s2", "title": "Scope", "content": "c"}]
+    refused = [
+        ("one section carries changes", {"sections": [
+            {"id": "s1", "verdict": "approved"},
+            {"id": "s2", "verdict": "changes"}]}),
+        ("one section still pending", {"sections": [
+            {"id": "s1", "verdict": "approved"},
+            {"id": "s2", "verdict": "pending"}]}),
+        ("a section has no verdict row at all", {"sections": [
+            {"id": "s1", "verdict": "approved"}]}),
+        ("no verdicts at all", {}),
+        ("empty verdicts", {"sections": []}),
+    ]
+    for kind in schema.PASS_KINDS + (None,):
+        data = {"mode": "review", "sections": inp_sections}
+        if kind is not None:
+            data["pass"] = {"kind": kind}
+        for why, verdicts in refused:
+            assert not schema.round_is_complete(data, verdicts), (
+                "pass %r accepted a round today's rule refuses (%s) — a pass may "
+                "only add conditions, never relax the all-approved base"
+                % (kind, why))
+        # …and the empty round stays refused under every pass too, since
+        # `all([])` would otherwise say yes.
+        empty = {"mode": "review", "sections": []}
+        if kind is not None:
+            empty["pass"] = {"kind": kind}
+        assert not schema.round_is_complete(empty, {"sections": []}), kind
+    print("  ok  test_no_pass_relaxes_the_all_approved_base")
+
+
+def test_check_kinds_covers_every_shipped_bundle_check():
+    """`CHECK_KINDS` is what a `checks` round recognizes as a check flag, and
+    a missing entry fails OPEN — the flag becomes invisible and the round closes
+    when it should have held. So every check a shipped type bundle names must be
+    in it. Not the reverse: a registered kind no bundle names yet is fine.
+    """
+    types_dir = Path(__file__).resolve().parent.parent / "types"
+    named = {check
+             for p in sorted(types_dir.glob("*.json"))
+             for check in json.loads(p.read_text(encoding="utf-8")).get("checks", [])}
+    assert named, "no shipped bundle names any check — did types/ move?"
+    missing = sorted(named - set(schema.CHECK_KINDS))
+    assert not missing, (
+        "shipped type bundles name check(s) %s that schema.CHECK_KINDS does not "
+        "carry — a checks round would never see their flags" % missing)
+    print("  ok  test_check_kinds_covers_every_shipped_bundle_check")
+
+
 def test_has_revision_history_is_anchored():
     """Substring matching is the defect this replaces: viva's own SKILL.md and
     DESIGN.md discuss the ledger by name, and a false positive takes `start`'s
@@ -228,6 +530,9 @@ def main():
     test_ledger_note_joins_comments()
     test_ledger_note_falls_back_to_note()
     test_verdict_to_ledger_entry()
+    test_ledger_note_records_suggested_wording_verbatim()
+    test_comment_types_carry_the_third_type()
+    test_validate_verdicts_requires_replacement_on_a_suggestion()
     test_validate_review_input_accepts_valid()
     test_validate_review_input_rejects_bad()
     test_validate_verdicts_accepts_valid()
@@ -235,8 +540,15 @@ def main():
     test_schema_reaches_no_io()
     test_round_is_complete_needs_a_row_per_input_section()
     test_round_is_complete_rejects_an_empty_round()
+    test_absent_pass_is_todays_behavior_exactly()
+    test_structure_and_line_are_the_base_rule()
+    test_checks_pass_holds_until_every_check_flag_is_answered()
+    test_proof_holds_on_an_unresolved_suggested_edit()
+    test_thread_statuses_and_a_declined_suggestion_still_holds_proof()
+    test_no_pass_relaxes_the_all_approved_base()
+    test_check_kinds_covers_every_shipped_bundle_check()
     test_has_revision_history_is_anchored()
-    print("OK (14 tests)")
+    print("OK (23 tests)")
 
 
 if __name__ == "__main__":

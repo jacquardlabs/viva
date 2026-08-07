@@ -159,6 +159,35 @@ def standing_preferences(viva: Path) -> list:
         return []
 
 
+def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
+    """Resolve a type name to its bundle. The name enters the system here.
+
+    A subprocess, not an import — `doc_types.py` is a sibling and `schema.py`
+    stays the one cross-import (CLAUDE.md). `--type` resolves before `start`
+    clears any state, so an unknown one costs nothing: recording a name that
+    resolves to nothing would strand the round's whole check set silently.
+
+    `fatal=False` is the resume path, where the name comes from the prior round
+    file rather than the command line. It warns instead: by then the scratch
+    carry-forward pair is already on disk, and a repo that dropped a
+    `.viva-types/` bundle between sessions must still be able to resume.
+    """
+    proc = run([sys.executable, SCRIPTS / "doc_types.py", name],
+               capture_output=True, text=True)
+    if proc.returncode != 0:
+        why = (proc.stderr or "").strip() or f"type {name!r} did not resolve"
+    else:
+        try:
+            return json.loads(proc.stdout)
+        except ValueError:
+            why = f"type {name!r} resolved to output that is not JSON"
+    if fatal:
+        die(why)
+    warn(f"{why} — carried from the prior session, so this round's checks "
+         f"cannot be named; pass --type to retype the session")
+    return None
+
+
 def _seam_stop(round_no: int, round_file: Path, why: str) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
     print("viva-loop: run your producer, then `loop.py annotate --sidecar "
@@ -178,6 +207,8 @@ def cmd_start(args) -> int:
     if not doc.exists():
         die(f"doc not found: {doc}")
 
+    bundle = resolve_doc_type(args.doc_type) if args.doc_type else None
+
     # Pre-flight guard. `cmd_start`'s own clear below deletes the round files
     # and `server.url`; without this check it would do that to a *live* session,
     # orphaning a running server with the reviewer's tab still attached. The
@@ -193,7 +224,7 @@ def cmd_start(args) -> int:
     # prior session's finishing round still on disk. Protect that pair OUTSIDE
     # the clear glob before clearing, or carry-forward dies with it.
     prior_in = prior_out = None
-    prior_split_on = None
+    prior_split_on = prior_doc_type = None
     if schema.has_revision_history(doc.read_text()):
         n = current_round(viva)
         if n:
@@ -208,7 +239,19 @@ def cmd_start(args) -> int:
                 # is the same question one session later, and re-deciding it by
                 # auto-detection changes every section's identity and silently
                 # carries forward nothing.
-                prior_split_on = load_json(prior_in).get("split_on")
+                prior_round = load_json(prior_in)
+                prior_split_on = prior_round.get("split_on")
+                # The type is round state on the same terms: a resume that
+                # re-decided it would silently drop the prior session's check
+                # set, so it is read back here and overridden only by an
+                # explicit `--type`.
+                prior_doc_type = prior_round.get("doc_type")
+                # The `pass` is deliberately NOT read back. Split pattern and
+                # type are session identity — re-deciding either changes section
+                # identity or drops the check set. Depth is a per-round decision,
+                # and a resumed round 1 inheriting the prior session's finishing
+                # `final` pass would add a conjunct nobody asked for. Name it
+                # again with `--pass` if the new session wants it.
 
     for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
         p.unlink()
@@ -221,11 +264,27 @@ def cmd_start(args) -> int:
     shutil.rmtree(viva / "attachments", ignore_errors=True)
 
     split_on = args.split_on if args.split_on is not None else prior_split_on
+    doc_type = args.doc_type if args.doc_type is not None else prior_doc_type
+    if bundle is None and doc_type is not None:
+        # A resume carries the type without an explicit `--type`, so resolve it
+        # here too — otherwise a resumed typed session names no check set and
+        # the producers nobody is told about never run. Non-fatal: the scratch
+        # pair above is already on disk, and dying here would strand it.
+        bundle = resolve_doc_type(doc_type, fatal=False)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
            "--output", viva / "review-input-r1.json", "--round", "1",
            "--doc-file", args.doc]
     if split_on is not None:
         cmd += ["--split-on", split_on]
+    if doc_type is not None:
+        cmd += ["--doc-type", doc_type]
+    if args.pass_kind is not None:
+        cmd += ["--pass", args.pass_kind]
+    if args.posture is not None:
+        # Handed over even without `--pass`, so `parse_sections.py` — the
+        # boundary — refuses a posture on no pass instead of this driver
+        # silently dropping it.
+        cmd += ["--posture", args.posture]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
     try:
@@ -237,6 +296,12 @@ def cmd_start(args) -> int:
         if prior_in:
             prior_in.unlink(missing_ok=True)
             prior_out.unlink(missing_ok=True)
+
+    if bundle:
+        # The type's check set, named once where it is resolved — the agent
+        # runs the producers, and a check nobody is told about never runs.
+        checks = ", ".join(bundle.get("checks") or []) or "none"
+        print(f"viva-loop: doc type {bundle['name']} · checks: {checks}")
 
     round_file = viva / "review-input-r1.json"
     if args.parse_only:
@@ -257,6 +322,19 @@ def cmd_annotate(args) -> int:
     if not n:
         die("no round to annotate — run `loop.py start --doc <path>` first")
     inp, _ = round_files(viva, n)
+    # Annotate is a PRE-ARM step. The server loads its round once and replaces
+    # it only from `/next-round`, so annotating the round it is already serving
+    # writes a file nobody re-reads: `loop.py finish` would pass its own gate off
+    # disk, append the ledger, and then be refused by `/complete` reading the
+    # stale copy. Loud here rather than silent there. Every real seam passes —
+    # round 1 annotates before any server exists, and `rearm --parse-only` leaves
+    # the server on round n-1 while this writes round n.
+    base = server_url(viva)
+    if base and probe_round(base) == n:
+        die(f"round {n} is already armed — the server at {base} holds it in "
+            f"memory and would never see this merge. Annotate before arming: "
+            f"finish or `rearm --parse-only` this round, annotate the next one, "
+            f"then `loop.py arm`.")
     # The producer seam's driver end: the agent names its sidecar, the driver
     # names the file. `annotate.py` reads '-' from stdin, and stdin is inherited
     # here, so a piped producer works unchanged.
@@ -393,19 +471,47 @@ def cmd_rearm(args) -> int:
     round_data = load_json(inp)
     doc = round_data.get("doc_file")
     split_on = round_data.get("split_on")
+    doc_type = round_data.get("doc_type")
+    prior_pass = round_data.get("pass")
     if not doc:
         die(f"round {n}'s input names no doc_file — cannot re-parse")
     if not Path(doc).exists():
         die(f"doc not found: {doc} (recorded as doc_file in {inp}). Re-run from "
             f"the directory the review was started in.")
 
+    # The pass carries within the session the way the pattern and the type do —
+    # round N+1 runs at round N's depth unless this call names another. It is
+    # the one of the three the agent is expected to change mid-session (round 1
+    # structural, round 2 line, a later one checks), so `rearm` takes the
+    # override the other two have no use for.
+    if args.pass_kind is not None:
+        next_pass = {"kind": args.pass_kind}
+        if args.posture is not None:
+            next_pass["posture"] = args.posture
+    else:
+        next_pass = dict(prior_pass) if isinstance(prior_pass, dict) else None
+        if next_pass is not None and not next_pass.get("kind"):
+            die(f"round {n}'s input carries a pass with no kind — fix {inp}, or "
+                f"name this round's pass with --pass")
+        if args.posture is not None:
+            if next_pass is None:
+                die("--posture needs a pass, and round %d runs none — name one "
+                    "with --pass" % n)
+            next_pass["posture"] = args.posture
+
     store = viva / "open-notes.json"
     cmd = [sys.executable, SCRIPTS / "open_notes.py", "update",
            "--store", store, "--round", str(n), "--verdicts", out, "--input", inp]
     for response in args.response:
         cmd += ["--response", response]
+    # The author's other move. `open_notes.py` owns the rule a decline can break
+    # — one per thread, because insisting wins — and refuses a second one, which
+    # `run_or_die` turns into a stopped round rather than a silent overwrite.
+    for decline in args.decline:
+        cmd += ["--decline", decline]
     run_or_die(cmd, "open-note update",
-               "No round was shipped; fix the --response cids and re-run.")
+               "No round was shipped; fix the --response/--decline cids and "
+               "re-run.")
 
     nxt_in, _ = round_files(viva, n + 1)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
@@ -417,6 +523,12 @@ def cmd_rearm(args) -> int:
     # so no round can be split by a rule a later round quietly re-decides.
     if split_on is not None:
         cmd += ["--split-on", split_on]
+    if doc_type is not None:
+        cmd += ["--doc-type", doc_type]
+    if next_pass is not None:
+        cmd += ["--pass", next_pass["kind"]]
+        if next_pass.get("posture") is not None:
+            cmd += ["--posture", next_pass["posture"]]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
 
     # The round 2+ producer seam — the same stop-after-parse `start` takes on
@@ -441,10 +553,35 @@ def cmd_finish(args) -> int:
         by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
         pending = [s.get("title") for s in input_data.get("sections", [])
                    if (by_id.get(s.get("id")) or {}).get("verdict") != "approved"]
-        die(f"refusing to finish: {len(pending)} of "
-            f"{len(input_data.get('sections', []))} section(s) not approved — "
-            f"{', '.join(repr(t) for t in pending[:5])}. Nothing is "
-            f"auto-accepted; re-present the round or abandon it.")
+        # `round_is_complete` is the gate; this text is only its detail. A pass
+        # ADDS a conjunct, so a round can be refused with everything approved —
+        # printing "0 of N not approved" there would send the agent to re-present
+        # a round the reviewer already signed.
+        spec = input_data.get("pass")
+        kind = spec.get("kind") if isinstance(spec, dict) else None
+        if not input_data.get("sections"):
+            # Tested before the pass: an empty round is refused by the base rule,
+            # and naming a conjunct here would blame a `architecture`/`line` pass
+            # that adds none.
+            why = "the round carries no sections to approve"
+        elif pending:
+            why = (f"{len(pending)} of {len(input_data.get('sections', []))} "
+                   f"section(s) not approved — "
+                   f"{', '.join(repr(t) for t in pending[:5])}")
+        elif kind:
+            # The recovery is the round loop, not a mid-round annotate: the
+            # server holds this round in memory, so a merge into the file it was
+            # armed from is one `/complete` never sees.
+            why = (f"every section is approved, but the {kind} pass is not "
+                   f"satisfied — a checks round holds until every check "
+                   f"flag carries a result, a final round until no suggested "
+                   f"edit is unresolved. Answer the flags in the NEXT round: "
+                   f"`loop.py rearm --parse-only`, `loop.py annotate --sidecar "
+                   f"<path>` (see {REFERENCES / 'producers.md'}), `loop.py arm`")
+        else:
+            why = "the round carries no sections to approve"
+        die(f"refusing to finish: {why}. Nothing is auto-accepted; "
+            f"re-present the round or abandon it.")
 
     # The doc comes off the round file, the way `rearm` reads it — a
     # caller-supplied `--doc` is how this step fails from a different cwd, and
@@ -534,6 +671,23 @@ def main() -> int:
                         "auto-detected level — a task-card plan. Recorded in "
                         "the round file, so later rounds and a later resume "
                         "re-split with it.")
+    p.add_argument("--type", dest="doc_type", metavar="NAME",
+                   help="doc type for this session — a name `doc_types.py` "
+                        "resolves (`design-doc`, `plan`, …, or one the repo "
+                        "committed under `.viva-types/`). Refused here if it "
+                        "does not resolve; recorded in the round file, so later "
+                        "rounds and a later resume carry it.")
+    p.add_argument("--pass", dest="pass_kind", choices=schema.PASS_KINDS,
+                   metavar="KIND",
+                   help="depth this round runs at — %s. Recorded in the round "
+                        "file and carried by `rearm` to round N+1; a later "
+                        "resume does NOT inherit it. Omit for a round with no "
+                        "pass, which behaves exactly as it does today."
+                        % "|".join(schema.PASS_KINDS))
+    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
+                   help="posture setting on the pass — %s, where hard licenses "
+                        "the author to argue rather than concede. Needs --pass."
+                        % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after parsing so a producer can annotate round 1 "
                         "before it is armed (the opt-in producer seam)")
@@ -561,6 +715,23 @@ def main() -> int:
     p.add_argument("--response", action="append", default=[], metavar="CID=TEXT",
                    help='what you changed for one comment, as "<cid>=text" '
                         '(repeatable)')
+    p.add_argument("--decline", action="append", default=[],
+                   metavar="CID=GROUNDS",
+                   help='refuse one comment instead of complying, as '
+                        '"<cid>=grounds" — a criterion, a prior ruling, a '
+                        'measurement (repeatable). The thread goes `declined`, '
+                        'which resolves nothing: it carries to the next round '
+                        'and holds its section until the reviewer settles it or '
+                        'insists. Insisting wins — there is no second decline '
+                        'on the same thread.')
+    p.add_argument("--pass", dest="pass_kind", choices=schema.PASS_KINDS,
+                   metavar="KIND",
+                   help="run round N+1 at this depth instead of the one round N "
+                        "recorded — %s. Omit to carry the round's pass forward "
+                        "unchanged." % "|".join(schema.PASS_KINDS))
+    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
+                   help="re-posture the pass (%s); alone, it re-postures the "
+                        "carried kind." % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after the re-parse so a producer can annotate it")
     p.set_defaults(func=cmd_rearm)
