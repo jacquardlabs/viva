@@ -560,11 +560,22 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
     'round' handler consumes it, and qa submits never snapshot — while the
     snapshot stays in-memory only (a tab reload during revision re-boots
     into the prior round, exactly as before)."""
-    # In-memory only: declared null, and no web-storage API in the page.
+    # In-memory only: declared null, and never handed to web storage.
+    #
+    # This used to ban `localStorage` from the whole page, which proved the
+    # point when the page had no storage at all. The theme toggle introduced a
+    # legitimate use, so the check moved from "no storage exists" to "storage
+    # holds nothing but the theme" — a stricter guarantee, since it now pins
+    # which keys may exist rather than trusting that none do.
     assert 'let betweenRounds = null;' in page, \
         "page missing the betweenRounds snapshot declaration"
-    assert 'localStorage' not in page and 'sessionStorage' not in page, \
-        "the snapshot must never persist across a reload"
+    assert 'sessionStorage' not in page, "the snapshot must not reach sessionStorage"
+    keys = set(re.findall(r"(?:local|session)Storage\.\w+\(\s*'([^']+)'", page))
+    assert keys <= {'viva-theme'}, \
+        f"the snapshot must never persist across a reload — unexpected storage keys: {sorted(keys - {'viva-theme'})}"
+    for call in re.findall(r'(?:local|session)Storage\.\w+\([^)]*\)', page):
+        assert 'betweenRounds' not in call, \
+            f"the between-rounds snapshot must stay in memory: {call}"
     # The snapshot is taken inside submitReview, before the POST — the POST is
     # the sendSubmit(result) call at the tail (the fetch itself lives in the
     # shared sendSubmit helper).

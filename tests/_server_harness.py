@@ -45,15 +45,20 @@ def assert_catalog_ground(text: str) -> None:
     source alignment is not. Structural markup and aria literals stay exact.
     `text` is the served page or the HTML constant (byte-identical: the server
     serves HTML.encode())."""
-    # The four party inks, each defined once per theme block (light :root +
-    # dark override). These carry the ink discipline documented in DESIGN.md.
+    # The four party inks, each defined once per theme block. Three blocks
+    # carry the palette: light `:root`, the `prefers-color-scheme: dark`
+    # override, and the explicit `[data-theme="dark"]` the toggle sets. The two
+    # dark blocks hold the same values by construction — `test_theme_toggle`
+    # owns that invariant and fails on any drift; here we only pin the count,
+    # so a fourth definition appearing anywhere is caught as a new source of
+    # truth rather than a duplicate.
     for token, light in (('--paper', '#ffffff'), ('--touch', '#ffec8f'),
                          ('--acc', '#2946c4'), ('--machine', '#0c7f6b'),
                          ('--fact', '#a06a12')):
         assert re.search(re.escape(token) + r':\s+' + re.escape(light) + ';', text), \
             f"light token block missing {token}: {light}"
-        assert text.count(token + ':') == 2, \
-            f"{token} must be defined once per theme block (light + dark)"
+        assert text.count(token + ':') == 3, \
+            f"{token} must be defined once per theme block (light, media dark, explicit dark)"
     assert 'background: var(--paper);' in text, "body must sit on the catalog page"
     assert re.search(r'@media \(prefers-color-scheme: dark\)', text), \
         "dark is the override; light is the primary theme"

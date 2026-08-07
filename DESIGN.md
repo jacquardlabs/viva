@@ -54,6 +54,37 @@ literals in component styles.
 Yellow is dimmed to a wash in dark rather than reused at full strength: on a
 charcoal ground, full-strength yellow is a highlighter, not a touch.
 
+### Theme selection
+
+The reader chooses, and the choice wins over the OS. `[data-theme]` on `<html>`
+cycles **system → light → dark → system**, where *system* is the **absence** of
+the attribute rather than a third value — an untouched page behaves exactly as
+it did before the toggle existed, and returning to system means having no
+opinion recorded rather than recording "system".
+
+Two rules make the override work in both directions:
+
+- `:root[data-theme="dark"]` beats the bare `:root` inside the media query on
+  specificity, so dark is reachable on a light-mode machine.
+- The media block is scoped `:root:not([data-theme="light"])`, so it stands
+  down when the reader has explicitly chosen light. Without that `:not`, the
+  toggle would appear dead for exactly the reader who most needs it — someone
+  on a dark-mode machine trying to see the primary theme.
+
+`color-scheme` follows the choice so browser chrome (form controls, scrollbars,
+the canvas behind unpainted area) matches the page instead of flashing the
+opposite ground. The stored choice is applied by a synchronous script in
+`<head>`, ahead of the stylesheet: restoring it after the body renders paints
+the OS theme first and then flips, which is the flash the toggle exists to
+remove.
+
+**The dark palette is written twice** — once under the media query, once under
+`[data-theme="dark"]` — because CSS cannot name a palette and apply it from two
+selectors without a preprocessor, and viva ships no build step. That
+duplication is licensed by `tests/test_theme_toggle.py`, which parses both
+blocks and fails on a single drifted value. Do not "fix" the duplication by
+deleting one block; both are load-bearing.
+
 **Component aliases.** The older token names (`--bg`, `--bg2`, `--border`,
 `--text`, `--teal`, `--orange`, `--violet`, …) remain as aliases pointing at the
 party inks, so component styles written against them kept working when the

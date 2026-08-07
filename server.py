@@ -58,6 +58,20 @@ HTML = r"""<!DOCTYPE html>
 <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"></script>
 <script defer id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"></script>
+<script>
+/* Theme, applied before first paint. This runs synchronously in <head> —
+   ahead of the stylesheet and every deferred CDN script — because reading the
+   stored choice after the body renders means painting the OS theme first and
+   flipping to the reader's, which is the flash the toggle exists to avoid.
+   Deliberately dependency-free and inside a try: localStorage throws in a
+   private-mode iframe, and a theme preference is never worth a broken page. */
+(function () {
+  try {
+    var t = localStorage.getItem('viva-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { /* no storage — follow the system, which is the default */ }
+})();
+</script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Catalog: a parts-catalog page — white ground, compact type, every state
@@ -117,9 +131,20 @@ HTML = r"""<!DOCTYPE html>
 /* ─── Dark ───────────────────────────────────────────────── */
 /* The catalog page after hours: same ink discipline, inverted ground. Each
    party ink is lifted for contrast on charcoal rather than reused — yellow
-   at full strength on dark is a highlighter, not a touch. */
+   at full strength on dark is a highlighter, not a touch.
+
+   The dark palette is written twice, and that duplication is deliberate:
+     1. under `prefers-color-scheme: dark` for readers who never touch the
+        toggle, scoped `:not([data-theme="light"])` so an explicit light
+        choice wins over the OS;
+     2. under `[data-theme="dark"]` for readers who picked dark on a
+        light-mode machine.
+   CSS has no way to name a palette and apply it from two selectors without a
+   preprocessor, so instead of a comment asking the next editor to keep them
+   in sync, `test_theme_toggle.py` parses both blocks and fails if a single
+   value drifts. The invariant is enforced, not requested. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper:   #16181a;
     --sunk:    #1c1e21;
     --ink:     #e6e7e8;
@@ -139,6 +164,37 @@ HTML = r"""<!DOCTYPE html>
     --violet-bg: rgba(209,154,63,0.12);
   }
 }
+
+/* Dark, chosen explicitly. Same values as the media block above — kept in
+   sync by test_theme_toggle.py, not by hope. `[data-theme]` on <html> beats
+   the media query's bare `:root` on specificity in both directions, which is
+   what lets the toggle override the OS rather than merely agree with it. */
+:root[data-theme="dark"] {
+  --paper:   #16181a;
+  --sunk:    #1c1e21;
+  --ink:     #e6e7e8;
+  --ink2:    #d5d7d8;
+  --soft:    #9a9ea1;
+  --faint:   #5f6265;
+  --rule:    #2f3235;
+  --touch:   rgba(255,236,143,0.22);
+  --acc:     #8fa6f5;
+  --acc-dim: rgba(143,166,245,0.12);
+  --machine: #4fc2a5;
+  --fact:    #d19a3f;
+
+  --bg3:     #232629;
+  --scrim:   rgba(10,11,12,0.72);
+  --teal-bg: rgba(79,194,165,0.10);
+  --violet-bg: rgba(209,154,63,0.12);
+}
+
+/* `color-scheme` follows the choice so the browser's own chrome — form
+   controls, scrollbars, the canvas behind an unpainted area — matches the
+   page instead of flashing the opposite ground. */
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
 
 
 /* ─── Reset ──────────────────────────────────────────────── */
@@ -437,6 +493,25 @@ body {
   background: none;
 }
 .prefs-toggle:hover { color: var(--text); border-color: var(--text3); }
+
+/* Theme toggle — sits beside the prefs toggle and wears the same control
+   grammar, square per the catalog's shape rule. It states the current mode in
+   words rather than showing a sun or a moon, because a glyph makes the reader
+   guess which state it names: the one it is in, or the one it switches to. */
+.theme-toggle {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--soft);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  margin-left: auto;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
 
 .card {
   position: relative;
@@ -1394,6 +1469,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .recap-row:focus-visible, .recap-close:focus-visible,
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
+.theme-toggle:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1970,6 +2046,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
       <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
+      <button type="button" class="theme-toggle" id="theme-toggle"
+              title="Cycle theme: follow system, light, dark">theme: system</button>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -3878,6 +3956,49 @@ function closePrefsPanel() {
   setBackgroundInert(false);   // clear inert BEFORE restoring focus, same order as closeRecap
   if (hadFocus) (_prefsTriggerEl || el('prefs-toggle')).focus();
 }
+
+/* ─── Theme toggle ──────────────────────────────────────────
+   Three states, cycled in this order: system → light → dark → system.
+   "system" is the absence of the attribute, not a third value — the page
+   falls back to the `prefers-color-scheme` media query, so a reader who never
+   touches this control is unaffected and a reader who wants to hand control
+   back can reach that state without clearing storage by hand.
+
+   The pre-paint script in <head> is what applies a stored choice; this only
+   changes it. Both write the same key, and both treat any other value as
+   "system", so a corrupted entry degrades to following the OS. */
+const THEME_CYCLE = [null, 'light', 'dark'];
+
+function currentTheme() {
+  const t = document.documentElement.dataset.theme;
+  return (t === 'light' || t === 'dark') ? t : null;
+}
+
+function paintThemeToggle() {
+  const t = currentTheme();
+  const btn = el('theme-toggle');
+  btn.textContent = 'theme: ' + (t || 'system');
+  /* The label states which theme is ON, so the accessible name has to say
+     what the button DOES — otherwise a screen reader hears "theme: dark" and
+     cannot tell whether that is the state or the action. */
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(t) + 1) % THEME_CYCLE.length];
+  btn.setAttribute('aria-label',
+    'Theme: ' + (t || 'following system') + '. Activate to switch to ' + (next || 'follow system') + '.');
+}
+
+function cycleTheme() {
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(currentTheme()) + 1) % THEME_CYCLE.length];
+  if (next) document.documentElement.dataset.theme = next;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (next) localStorage.setItem('viva-theme', next);
+    else localStorage.removeItem('viva-theme');
+  } catch (e) { /* no storage: the choice holds for this tab only */ }
+  paintThemeToggle();
+}
+
+el('theme-toggle').addEventListener('click', cycleTheme);
+paintThemeToggle();
 
 el('prefs-toggle').addEventListener('click', () => openPrefsPanel(el('prefs-toggle')));
 el('prefs-close').addEventListener('click', closePrefsPanel);
