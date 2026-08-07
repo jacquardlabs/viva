@@ -251,6 +251,14 @@ def _load_approved(
     A section is only kept approved if its title matches exactly (case-insensitive)
     AND its content is byte-for-byte identical to the prior approved version.
     Changed content requires re-review.
+
+    The prior round's verdict outranks the stamp it shipped with: an ID the
+    reviewer did not approve last round is dropped even when `approved_ids`
+    still lists it. Without that subtraction a withdrawn approval only sticks
+    while the section is also rewritten, so a section the reviewer reopened and
+    the author did not edit — a declined comment (#167), or a response with no
+    edit — comes back stamped APPROVED with its thread on a carried card that
+    renders none, and the round can be signed off over it.
     """
     if prior_in is None or prior_v is None:
         return []
@@ -263,7 +271,17 @@ def _load_approved(
     verdict_approved: set[str] = {
         s["id"] for s in prior_v.get("sections", []) if s.get("verdict") == "approved"
     }
-    all_approved = pre_approved | verdict_approved
+    # …and the ones it explicitly did NOT approve, which revoke a carried stamp.
+    # Truthy, not `is not None`: a row carrying no verdict at all decides
+    # nothing and leaves the stamp standing (a caller may write only the
+    # sections it acted on), while `pending` is a withdrawal the reviewer
+    # submitted without a note and drops it. Subtracting is monotone — this can
+    # only shrink `approved_ids`, never grow it, so completion never gets easier.
+    withdrawn: set[str] = {
+        s.get("id") for s in prior_v.get("sections", []) or []
+        if s.get("id") and s.get("verdict") and s.get("verdict") != "approved"
+    }
+    all_approved = (pre_approved | verdict_approved) - withdrawn
 
     # Map section identity → content for every approved section
     approved_content: dict[str, str] = {

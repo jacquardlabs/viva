@@ -266,6 +266,58 @@ def test_approved_not_carried_if_content_changed() -> None:
     assert data["approved_ids"] == []
 
 
+def test_withdrawn_approval_is_not_carried_forward() -> None:
+    """The prior round's verdict outranks the stamp that round shipped with.
+
+    `approved_ids` is static — it records what was approved *coming into* the
+    round, so a section the reviewer withdrew and commented on is still listed
+    there. Carrying it forward on that stale stamp put an unapproved section
+    back on a carried card (which renders no thread) with an APPROVED stamp and
+    a round that would sign off over it. Reachable the moment the author leaves
+    content unchanged on purpose: a declined comment (#167), or a response with
+    no edit.
+    """
+    content_a = "## Alpha\n\nalpha body\n\n"
+    content_b = "## Beta\n\nbeta body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 2,
+        # Alpha was approved in round 1 and carries that stamp into round 2.
+        "approved_ids": ["s1"],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": content_a},
+            {"id": "s2", "title": "Beta",  "content": content_b},
+        ],
+    }
+    # Round 2: the reviewer withdrew Alpha's approval and requested changes;
+    # the author declined, so Alpha's content is byte-identical this round.
+    prior_verdicts = {
+        "round": 2, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "changes", "comments": [
+                {"cid": "s1-c1", "type": "changes", "note": "cut the caveat",
+                 "open": True, "settled": False}]},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ],
+    }
+    data = _run_round2(content_a + content_b, prior_input, prior_verdicts)
+    assert "s1" not in data["approved_ids"], (
+        "a withdrawn approval must not be resurrected by the stale stamp: %s"
+        % data["approved_ids"])
+    assert "s2" in data["approved_ids"], data["approved_ids"]
+
+    # A withdrawal with no note reads the same way — `pending` is the verdict
+    # the client submits for a section whose approval was cleared.
+    bare = json.loads(json.dumps(prior_verdicts))
+    bare["sections"][0] = {"id": "s1", "verdict": "pending"}
+    assert "s1" not in _run_round2(content_a + content_b, prior_input, bare)["approved_ids"]
+
+    # And a verdict file that says nothing about a section decides nothing:
+    # the stamp it carried in still stands.
+    silent = {"round": 2, "submitted_early": False,
+              "sections": [{"id": "s2", "verdict": "approved", "note": ""}]}
+    assert "s1" in _run_round2(content_a + content_b, prior_input, silent)["approved_ids"]
+
+
 def test_no_annotations_key_when_absent() -> None:
     # Zero-regression: a doc with no annotations must produce sections that
     # carry no `annotations` key at all (byte-identical to pre-feature output).
@@ -908,6 +960,7 @@ def main() -> None:
         test_approved_matching_same_content,
         test_approved_carries_forward_across_non_sequential_round_numbers,
         test_approved_not_carried_if_content_changed,
+        test_withdrawn_approval_is_not_carried_forward,
         test_no_annotations_key_when_absent,
         test_annotations_carried_forward_when_unchanged,
         test_annotations_dropped_when_content_changed,
