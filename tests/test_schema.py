@@ -87,6 +87,12 @@ def test_validate_review_input_accepts_valid():
         "mode": "review", "split_on": r"^Task \d+",
         "sections": [{"id": "s1", "title": "Task 1", "content": "body"}],
     })
+    # `doc_type` — the resolved type name, carried the same way. Optional; a
+    # string when present.
+    schema.validate_review_input({
+        "mode": "review", "doc_type": "design-doc",
+        "sections": [{"id": "s1", "title": "Problem & persona", "content": "b"}],
+    })
     print("  ok  test_validate_review_input_accepts_valid")
 
 
@@ -103,6 +109,11 @@ def test_validate_review_input_rejects_bad():
         # None) silently drop back to auto-detection mid-session.
         {"sections": [], "split_on": 123},
         {"sections": [], "split_on": None},
+        # `doc_type` is handed back to `parse_sections.py --doc-type` by both
+        # `rearm` and a resume — a non-string drops the type, and with it the
+        # round's check set, everywhere except where the bad value was written.
+        {"sections": [], "doc_type": 123},
+        {"sections": [], "doc_type": None},
     ):
         try:
             schema.validate_review_input(bad)

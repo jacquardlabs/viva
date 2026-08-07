@@ -159,6 +159,35 @@ def standing_preferences(viva: Path) -> list:
         return []
 
 
+def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
+    """Resolve a type name to its bundle. The name enters the system here.
+
+    A subprocess, not an import — `doc_types.py` is a sibling and `schema.py`
+    stays the one cross-import (CLAUDE.md). `--type` resolves before `start`
+    clears any state, so an unknown one costs nothing: recording a name that
+    resolves to nothing would strand the round's whole check set silently.
+
+    `fatal=False` is the resume path, where the name comes from the prior round
+    file rather than the command line. It warns instead: by then the scratch
+    carry-forward pair is already on disk, and a repo that dropped a
+    `.viva-types/` bundle between sessions must still be able to resume.
+    """
+    proc = run([sys.executable, SCRIPTS / "doc_types.py", name],
+               capture_output=True, text=True)
+    if proc.returncode != 0:
+        why = (proc.stderr or "").strip() or f"type {name!r} did not resolve"
+    else:
+        try:
+            return json.loads(proc.stdout)
+        except ValueError:
+            why = f"type {name!r} resolved to output that is not JSON"
+    if fatal:
+        die(why)
+    warn(f"{why} — carried from the prior session, so this round's checks "
+         f"cannot be named; pass --type to retype the session")
+    return None
+
+
 def _seam_stop(round_no: int, round_file: Path, why: str) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
     print("viva-loop: run your producer, then `loop.py annotate --sidecar "
@@ -178,6 +207,8 @@ def cmd_start(args) -> int:
     if not doc.exists():
         die(f"doc not found: {doc}")
 
+    bundle = resolve_doc_type(args.doc_type) if args.doc_type else None
+
     # Pre-flight guard. `cmd_start`'s own clear below deletes the round files
     # and `server.url`; without this check it would do that to a *live* session,
     # orphaning a running server with the reviewer's tab still attached. The
@@ -193,7 +224,7 @@ def cmd_start(args) -> int:
     # prior session's finishing round still on disk. Protect that pair OUTSIDE
     # the clear glob before clearing, or carry-forward dies with it.
     prior_in = prior_out = None
-    prior_split_on = None
+    prior_split_on = prior_doc_type = None
     if schema.has_revision_history(doc.read_text()):
         n = current_round(viva)
         if n:
@@ -208,7 +239,13 @@ def cmd_start(args) -> int:
                 # is the same question one session later, and re-deciding it by
                 # auto-detection changes every section's identity and silently
                 # carries forward nothing.
-                prior_split_on = load_json(prior_in).get("split_on")
+                prior_round = load_json(prior_in)
+                prior_split_on = prior_round.get("split_on")
+                # The type is round state on the same terms: a resume that
+                # re-decided it would silently drop the prior session's check
+                # set, so it is read back here and overridden only by an
+                # explicit `--type`.
+                prior_doc_type = prior_round.get("doc_type")
 
     for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
         p.unlink()
@@ -221,11 +258,20 @@ def cmd_start(args) -> int:
     shutil.rmtree(viva / "attachments", ignore_errors=True)
 
     split_on = args.split_on if args.split_on is not None else prior_split_on
+    doc_type = args.doc_type if args.doc_type is not None else prior_doc_type
+    if bundle is None and doc_type is not None:
+        # A resume carries the type without an explicit `--type`, so resolve it
+        # here too — otherwise a resumed typed session names no check set and
+        # the producers nobody is told about never run. Non-fatal: the scratch
+        # pair above is already on disk, and dying here would strand it.
+        bundle = resolve_doc_type(doc_type, fatal=False)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
            "--output", viva / "review-input-r1.json", "--round", "1",
            "--doc-file", args.doc]
     if split_on is not None:
         cmd += ["--split-on", split_on]
+    if doc_type is not None:
+        cmd += ["--doc-type", doc_type]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
     try:
@@ -237,6 +283,12 @@ def cmd_start(args) -> int:
         if prior_in:
             prior_in.unlink(missing_ok=True)
             prior_out.unlink(missing_ok=True)
+
+    if bundle:
+        # The type's check set, named once where it is resolved — the agent
+        # runs the producers, and a check nobody is told about never runs.
+        checks = ", ".join(bundle.get("checks") or []) or "none"
+        print(f"viva-loop: doc type {bundle['name']} · checks: {checks}")
 
     round_file = viva / "review-input-r1.json"
     if args.parse_only:
@@ -393,6 +445,7 @@ def cmd_rearm(args) -> int:
     round_data = load_json(inp)
     doc = round_data.get("doc_file")
     split_on = round_data.get("split_on")
+    doc_type = round_data.get("doc_type")
     if not doc:
         die(f"round {n}'s input names no doc_file — cannot re-parse")
     if not Path(doc).exists():
@@ -417,6 +470,8 @@ def cmd_rearm(args) -> int:
     # so no round can be split by a rule a later round quietly re-decides.
     if split_on is not None:
         cmd += ["--split-on", split_on]
+    if doc_type is not None:
+        cmd += ["--doc-type", doc_type]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
 
     # The round 2+ producer seam — the same stop-after-parse `start` takes on
@@ -534,6 +589,12 @@ def main() -> int:
                         "auto-detected level — a task-card plan. Recorded in "
                         "the round file, so later rounds and a later resume "
                         "re-split with it.")
+    p.add_argument("--type", dest="doc_type", metavar="NAME",
+                   help="doc type for this session — a name `doc_types.py` "
+                        "resolves (`design-doc`, `plan`, …, or one the repo "
+                        "committed under `.viva-types/`). Refused here if it "
+                        "does not resolve; recorded in the round file, so later "
+                        "rounds and a later resume carry it.")
     p.add_argument("--parse-only", action="store_true",
                    help="stop after parsing so a producer can annotate round 1 "
                         "before it is armed (the opt-in producer seam)")

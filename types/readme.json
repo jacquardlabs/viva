@@ -1,0 +1,7 @@
+{
+  "name": "readme",
+  "title": "README",
+  "sections": ["Install", "Usage", "Contributing", "License"],
+  "checks": ["headings-present"],
+  "default_pass": "structure"
+}

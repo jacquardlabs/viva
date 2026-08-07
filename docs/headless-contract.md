@@ -105,6 +105,7 @@ review or diff round):
 | `round` | no | Round number. |
 | `approved_ids` | no | Section ids approved in prior rounds. |
 | `split_on` | no | The `--split-on` regex this round was parsed with, recorded by `parse_sections.py`. **Absent** — not `null` — when the round used the auto-detected split level; a present non-string is a hard `validate_review_input` failure, because `loop.py rearm` hands this value straight back to `--split-on` and a `null` would silently re-split the next round by auto-detection. |
+| `doc_type` | no | The doc type this session was started with (`loop.py start --type`), recorded by `parse_sections.py` and carried into every later round and a resume. Names a bundle `scripts/doc_types.py` resolves — shipped defaults in the plugin's `types/`, repo overrides in `.viva-types/`, repo wins on a name collision. **Absent** — not `null` — for an untyped session; a present non-string is a hard `validate_review_input` failure, for the same reason `split_on`'s is. Passthrough: `server.py` neither reads nor renders it. |
 | `sections` | **yes** | List of `ReviewSection`. |
 
 **`ReviewSection`** (one entry per `sections[]`):

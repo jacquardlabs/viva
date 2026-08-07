@@ -22,6 +22,9 @@ Optional:
                       coarsening fallback. Omit for today's unchanged
                       auto-detect behavior. Zero matches is a hard error, not
                       a silent fallback to auto-detection.
+  --doc-type NAME    Record the doc type this round was started with (a name
+                      `scripts/doc_types.py` resolves). Recorded only, never
+                      resolved here — the parser owns no type semantics.
 
 Exits non-zero if the doc can't be read, parsing fails the integrity check,
 --split-on matches no heading, or prior round files are specified but can't
@@ -52,6 +55,12 @@ def _parse_args() -> argparse.Namespace:
         help="Regex (re.search): a heading is a split point iff its title matches, "
              "regardless of depth. Overrides auto-detection. Omit for unchanged "
              "default behavior.",
+    )
+    p.add_argument(
+        "--doc-type",
+        dest="doc_type",
+        help="Doc-type name to record on the round (resolved by doc_types.py "
+             "before it gets here). Omit for an untyped round.",
     )
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
@@ -398,6 +407,13 @@ def main() -> None:
     # forward rather than only round 1.
     if args.split_on is not None:
         data["split_on"] = args.split_on
+    # Same rule for the type: recorded outside the literal and only when given,
+    # so an untyped session's round file stays byte-identical to what it was
+    # before this field existed. It is round state for the same reason the
+    # pattern is — `loop.py` reads it back to type round N+1 and a later resume
+    # identically, rather than asking the agent to re-name it.
+    if args.doc_type is not None:
+        data["doc_type"] = args.doc_type
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)

@@ -22,7 +22,8 @@ only by JSON files under `.viva/`:
    siblings as subprocesses** rather than importing them, so part 3's
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
-   `drift`, `checklist`, `open_notes`, `preferences`, `revision_history`). Each
+   `drift`, `checklist`, `doc_types`, `headings_present`, `open_notes`,
+   `preferences`, `revision_history`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
@@ -89,6 +90,14 @@ skill) follow the same import-only-schema rule.
   This is the preferred extension point — add a producer, not a server endpoint
   or a new schema field. (Confidence annotations also carry `basis`/`level`,
   preserved through the merge.)
+- **Doc-type bundles.** A type is section grammar + check set + default pass, one
+  JSON file per name: shipped defaults in `types/`, a repo's overrides in
+  `.viva-types/`, the repo's copy winning **wholesale** on a name collision so it
+  can drop a shipped check as well as add one. Both directories are committed
+  config and deliberately outside `.viva/`, which is cleared every `start`.
+  `scripts/doc_types.py` is the only place a name becomes a bundle and the read
+  boundary that validates one; a bundle's `checks[]` names producers by the
+  mechanical mapping `<name with - as _>.py`.
 - **State lifecycle.** `preferences.json` survives the round-1 state clear (it is
   cross-session, gitignored, per-clone); everything else under `.viva/` is
   disposable and reset each session. Don't add new state that must survive

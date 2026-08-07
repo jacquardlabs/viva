@@ -123,6 +123,11 @@ class ReviewInput(TypedDict, total=False):
     # `parse_sections.py` so `loop.py rearm` re-splits round N+1 identically.
     # Absent when the round used the auto-detected split level.
     split_on: str
+    # optional — the resolved doc-type name (`scripts/doc_types.py`), recorded
+    # by `parse_sections.py` and carried round to round the way `split_on` is.
+    # Passthrough: nothing in `server.py` reads or renders it. Absent when the
+    # session was started without `--type`.
+    doc_type: str
     sections: List[ReviewSection]
 
 
@@ -166,6 +171,12 @@ def validate_review_input(data: dict) -> None:
     # with. Loud here beats a mid-session split change nobody asked for.
     if "split_on" in data and not isinstance(data["split_on"], str):
         raise ValueError("review-input.split_on must be a string")
+    # Presence-gated for the same reason: `loop.py`'s resume and `rearm` hand
+    # this value straight back to `parse_sections.py --doc-type`, and a `null`
+    # would silently drop the type — and with it the round's check set — rather
+    # than failing where the bad value was written.
+    if "doc_type" in data and not isinstance(data["doc_type"], str):
+        raise ValueError("review-input.doc_type must be a string")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")

@@ -1,0 +1,14 @@
+{
+  "name": "design-doc",
+  "title": "Design doc",
+  "sections": [
+    "Problem & persona",
+    "Proposed design",
+    "User journey",
+    "Out of scope",
+    "Alternatives considered",
+    "Open questions"
+  ],
+  "checks": ["headings-present"],
+  "default_pass": "structure"
+}

@@ -285,6 +285,109 @@ def check_split_on_session() -> None:
         loop(viva, tmp, "abandon")
 
 
+def check_doc_type_session() -> None:
+    """`--type` resolves where the name enters the system, then carries.
+
+    The type names the round's check set, so a name that resolves to nothing has
+    to be refused before any state is cleared — and once recorded it must reach
+    round 2 the way `split_on` does, or a typed session silently becomes untyped
+    at the first re-parse. No server here: `--parse-only` at both ends keeps the
+    carry-forward the only thing under test.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "design.md"
+        doc.write_text("# Design: a thing\n\n## Problem & persona\n\nwho\n\n"
+                       "## Proposed design\n\nwhat\n")
+
+        r = loop(viva, td, "start", "--doc", "design.md", "--type", "no-such-type")
+        assert r.returncode != 0, "an unresolvable --type must not start a session"
+        assert "unknown doc type" in r.stderr, r.stderr
+        assert not (viva / "review-input-r1.json").exists(), \
+            "the refusal must land before round 1 is parsed"
+
+        r = loop(viva, td, "start", "--doc", "design.md",
+                 "--type", "design-doc", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        assert "checks: headings-present" in r.stdout, (
+            "the type's check set must be named where it resolves — a check "
+            "nobody is told about never runs:\n%s" % r.stdout)
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        assert r1["doc_type"] == "design-doc", r1.get("doc_type")
+
+        ids = [s["id"] for s in r1["sections"]]
+        (viva / "review-r1.json").write_text(json.dumps(
+            {"round": 1, "submitted_early": False,
+             "sections": [{"id": i, "verdict": "approved"} for i in ids]}))
+
+        r = loop(viva, td, "rearm", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        assert r2["doc_type"] == "design-doc", (
+            "rearm dropped the type — round 2 re-parsed as untyped: %s"
+            % r2.get("doc_type"))
+    print("  ok  check_doc_type_session")
+
+
+def check_untyped_session_records_no_doc_type() -> None:
+    """No `--type`, no key: an untyped round file stays byte-identical to what
+    it was before the field existed, which is what tells `rearm` there is
+    nothing to carry."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        data = json.loads((viva / "review-input-r1.json").read_text())
+        assert "doc_type" not in data, data
+    print("  ok  check_untyped_session_records_no_doc_type")
+
+
+def check_resume_warns_on_a_type_that_no_longer_resolves() -> None:
+    """A carried type is resolved like any other, but not fatally.
+
+    The name comes off the prior round file, by which point the scratch
+    carry-forward pair is already on disk — dying there would strand it and
+    make a repo that dropped a `.viva-types/` bundle unable to resume at all.
+    So: a warning, the type still recorded, and the resume proceeds."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        body = "# T\n\n## A\n\naaa\n\n## B\n\nbbb\n"
+        doc.write_text(body)
+        subprocess.run(
+            [sys.executable, str(PARSE), str(doc), "--output",
+             str(viva / "review-input-r1.json"), "--round", "1",
+             "--doc-file", str(doc), "--doc-type", "gone-type"],
+            check=True, capture_output=True)
+        first = json.loads((viva / "review-input-r1.json").read_text())
+        (viva / "review-r1.json").write_text(json.dumps(
+            {"round": 1, "submitted_early": False,
+             "sections": [{"id": s["id"], "verdict": "approved"}
+                          for s in first["sections"]]}))
+        doc.write_text(body + "\n---\n\n## Revision History\n\nsigned off\n")
+
+        r = loop(viva, td, "start", "--doc", str(doc), "--parse-only")
+        assert r.returncode == 0, (
+            "an unresolvable carried type must not block the resume:\n%s"
+            % r.stderr)
+        assert "unknown doc type" in r.stderr, r.stderr
+        second = json.loads((viva / "review-input-r1.json").read_text())
+        assert second.get("doc_type") == "gone-type", (
+            "the resume must keep the recorded type rather than silently "
+            "untyping the session: %s" % second.get("doc_type"))
+        assert not (viva / "prior-review-input.json").exists(), \
+            "the scratch pair must not survive the warning path either"
+    print("  ok  check_resume_warns_on_a_type_that_no_longer_resolves")
+
+
 def check_no_subcommand_takes_a_round() -> None:
     """The counter nobody holds: no subcommand accepts a round argument.
 
@@ -471,8 +574,9 @@ def check_start_resume_carries_prior_approvals() -> None:
     """`start`'s resume branch: a doc already carrying a sign-off ledger, with
     the prior round still on disk. The copy-out must happen before the clear
     glob or carry-forward dies with it, and the scratch pair must not survive.
-    Also pins that a recorded `split_on` is handed back — re-deciding it by
-    auto-detection changes every section's identity and carries nothing."""
+    Also pins that a recorded `split_on` and `doc_type` are handed back —
+    re-deciding the split by auto-detection changes every section's identity and
+    carries nothing, and a dropped type silently takes the check set with it."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -488,7 +592,8 @@ def check_start_resume_carries_prior_approvals() -> None:
         subprocess.run(
             [sys.executable, str(PARSE), str(doc), "--output",
              str(viva / "review-input-r1.json"), "--round", "1",
-             "--doc-file", str(doc), "--split-on", pattern],
+             "--doc-file", str(doc), "--split-on", pattern,
+             "--doc-type", "plan"],
             check=True, capture_output=True)
         first = json.loads((viva / "review-input-r1.json").read_text())
         ids = [s["id"] for s in first["sections"]]
@@ -503,6 +608,13 @@ def check_start_resume_carries_prior_approvals() -> None:
         second = json.loads((viva / "review-input-r1.json").read_text())
         assert second.get("split_on") == pattern, \
             "the resume must re-split with the pattern the prior round recorded"
+        assert second.get("doc_type") == "plan", \
+            "the resume must carry the prior round's doc type — dropping it " \
+            "drops the session's check set: %s" % second.get("doc_type")
+        assert "checks: headings-present" in r.stdout, (
+            "a resumed typed session must name its checks too — carrying the "
+            "type but telling nobody which producers to run is the same "
+            "silence:\n%s" % r.stdout)
         assert [s["title"] for s in second["sections"]] == \
                [s["title"] for s in first["sections"]], \
             "same pattern, same sections — otherwise identity moved"
@@ -587,6 +699,9 @@ def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
 def main() -> None:
     check_round_trip()
     check_split_on_session()
+    check_doc_type_session()
+    check_untyped_session_records_no_doc_type()
+    check_resume_warns_on_a_type_that_no_longer_resolves()
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     check_skill_carries_no_bookkeeping_bash()

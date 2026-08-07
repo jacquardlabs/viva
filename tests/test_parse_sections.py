@@ -621,6 +621,18 @@ def test_no_split_on_key_when_flag_absent() -> None:
     assert [s["title"] for s in data["sections"]] == ["Doc", "Task 1", "Task 2"]
 
 
+def test_doc_type_recorded_and_absent_without_the_flag() -> None:
+    # Round state, same rule as `split_on`: recorded when given so `loop.py`
+    # can type round N+1 and a later resume the same way, and no key at all
+    # otherwise — an untyped round file stays byte-identical to what it was
+    # before the field existed. The parser resolves nothing; `doc_types.py`
+    # already did that.
+    doc = "# Doc\n\n## Problem & persona\n\na\n\n## Proposed design\n\nb\n"
+    data = run(doc, extra_args=["--doc-type", "design-doc"])
+    assert data["doc_type"] == "design-doc", data.get("doc_type")
+    assert "doc_type" not in run(doc), "no flag, no key"
+
+
 def test_split_on_fixture_one_section_per_task() -> None:
     # Acceptance criterion: a fixture PLAN.md with ### Task N blocks parses
     # to one section per task with no custom parsing needed downstream.
@@ -884,6 +896,7 @@ def main() -> None:
         test_split_on_default_path_byte_identical_without_flag,
         test_split_on_recorded_in_round_file,
         test_no_split_on_key_when_flag_absent,
+        test_doc_type_recorded_and_absent_without_the_flag,
         test_split_on_fixture_one_section_per_task,
         test_split_on_fixture_round2_carries_forward_through_section_key,
         test_split_on_identity_reuses_section_key_no_new_rule,
