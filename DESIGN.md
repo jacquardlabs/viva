@@ -2,39 +2,65 @@
 
 ## Metaphor
 
-Blueprint/drafting-table. Dark mode: drafting board illuminated in cyan linework
-on midnight blue. Light mode: blueline print on white vellum. The document is a
-bounded drawing sheet resting on a flat table — no background grid at any layer.
-Every visual decision flows from this metaphor: square corners, registration-mark
-crop ticks on active cards, monospace labels, the sheet's edge coordinates and
-corner marks, and drafting-room gestures — revision triangles, a transmittal slip
-on re-issue, and an approval stamp.
+Parts catalog. A white page, compact type, every state visible and tabular,
+nothing animated, nothing withheld — the register of a supplier's catalog that
+expects to be scanned by someone who already knows what they came for. Light is
+the primary theme (the ground the design was drawn on); dark is an override.
+Every visual decision flows from this: square corners, full 1px rules rather
+than corner ticks, a 2px ink bar closing the header and the footer, monospace
+for everything the machine says, and density in place of decoration.
+
+Superseded 2026-08-07: the blueprint/drafting-table metaphor — sheet edge,
+7px inner rule, corner registration marks, A/B/C/D edge coordinates, crop-tick
+control edges, cyan-on-midnight ground. It is gone at every layer, not hidden.
+
+### Ink discipline
+
+Four parties, one hue each, never shared. This is the load-bearing rule of the
+system: a new surface picks its ink by asking whose voice it is, not by taste.
+
+| Ink | Token | Belongs to | Appears as |
+|-----|-------|-----------|-----------|
+| Catalog yellow | `--touch` | the reviewer's touch **on the text** | anchored spans, applied replacement wording, palette selection — never a label, never a border, never syntax |
+| Cobalt | `--acc` | the reviewer's party | their comments and suggestions, open judgment, every interactive control |
+| Teal | `--machine` | the machine's party | passed checks, approved verdicts |
+| Amber | `--fact` | machine-flagged open facts | a claim missing a source, an unanswered check, `info` verdicts |
+
+Red and green are **not tokens**. They appear in exactly one place — the
+suggestion fence and rendered diff lines — where diff semantics already own
+them and every reviewer already reads them.
 
 ## Color tokens
 
-All colors are CSS custom properties defined in `:root` with a full `@media
-(prefers-color-scheme: light)` override. Never use hex literals in component styles.
+All colors are CSS custom properties defined in `:root` (light — the primary
+theme) with a `@media (prefers-color-scheme: dark)` override. Never use hex
+literals in component styles.
 
-| Token | Dark | Light | Semantic role |
-|-------|------|-------|---------------|
-| `--bg` | #0a1727 | #f3f6fa | Sheet fill (and inset panels) |
-| `--bg2` | #0f1f33 | #e9eef5 | Card / panel background |
-| `--bg3` | #152840 | #dde5ef | Hover state |
-| `--table` | #060e1a | #e2e8f1 | Flat table the sheet sits on (body background) |
-| `--border` | #1d324e | #cdd9e8 | Default border |
-| `--border2` | #2a4768 | #a8bdd4 | Emphasized border |
-| `--text` | #d8e7f5 | #13293f | Primary text |
-| `--text2` | #7f9cba | #446080 | Secondary text |
-| `--text3` | #48648a | #8aa0b8 | Tertiary / disabled |
-| `--accent` | #5cc8ff | #1271b8 | Interactive / selected |
-| `--accent-dim` | rgba(92,200,255,.08) | rgba(18,113,184,.08) | Accent wash |
-| `--scrim` | rgba(6,14,26,.72) | rgba(19,41,63,.32) | Recap-overlay modal scrim (midnight dark; blue-ink over vellum light) |
-| `--teal` | #43e0a8 | #0c8a63 | **Approved** verdict |
-| `--teal-bg` | rgba(67,224,168,.06) | rgba(12,138,99,.07) | Approved wash |
-| `--orange` | #ff5a36 | #cf3f1d | **Changes / error** verdict |
-| `--orange-bg` | rgba(255,90,54,.08) | rgba(207,63,29,.07) | Changes wash |
-| `--violet` | #ffc857 | #9a6b00 | **Info / question** verdict |
-| `--violet-bg` | rgba(255,200,87,.08) | rgba(154,107,0,.08) | Info wash |
+| Token | Light | Dark | Semantic role |
+|-------|-------|------|---------------|
+| `--paper` | #ffffff | #16181a | The page (and the body ground) |
+| `--sunk` | #f8f8f7 | #1c1e21 | Recessed wells: code blocks, inputs, table heads |
+| `--ink` | #1d1f21 | #e6e7e8 | Rules, headings, the dispatch stamp |
+| `--ink2` | #2c2e30 | #d5d7d8 | Body copy |
+| `--soft` | #6b6e71 | #9a9ea1 | Labels, secondary |
+| `--faint` | #b0b1ae | #5f6265 | Settled, disabled |
+| `--rule` | #d9dad8 | #2f3235 | Hairline |
+| `--touch` | #ffec8f | rgba(255,236,143,.22) | The reviewer's touch on the text |
+| `--acc` | #2946c4 | #8fa6f5 | The reviewer's party / interactive |
+| `--machine` | #0c7f6b | #4fc2a5 | The machine's party — checks, approved |
+| `--fact` | #a06a12 | #d19a3f | Machine-flagged open facts |
+| `--scrim` | rgba(29,31,33,.28) | rgba(10,11,12,.72) | Recap-overlay modal scrim |
+
+Yellow is dimmed to a wash in dark rather than reused at full strength: on a
+charcoal ground, full-strength yellow is a highlighter, not a touch.
+
+**Component aliases.** The older token names (`--bg`, `--bg2`, `--border`,
+`--text`, `--teal`, `--orange`, `--violet`, …) remain as aliases pointing at the
+party inks, so component styles written against them kept working when the
+ground changed. They are not the source of truth — anything new takes a party
+ink directly. Two aliases carry a deliberate remapping: `--orange` (the
+`changes` verdict) is cobalt, because requesting a change is reviewer judgment;
+`--violet` (the `info` verdict) is amber, because a question is an open fact.
 
 ### Verdict color mapping
 
@@ -60,15 +86,44 @@ in `--accent` (see Multiple inline comments).
 
 Two families only. No exceptions.
 
-- **Bricolage Grotesque** — body text, section content, textareas, processing/complete messages.
-- **Fragment Mono** — labels, badges, all monospace data (round numbers, paths, ids), small-caps headings, revision triangles, stamp lettering.
+- **Compact grotesque** (`'Helvetica Neue', Helvetica, Inter, system-ui`) —
+  everything a human reads: section content, headings, prose.
+- **Monospace** (`ui-monospace, 'SF Mono', Menlo`) — everything the machine
+  says: labels, badges, ids, paths, round numbers, buttons and controls, code.
 
-Label convention: 8–10px, `letter-spacing: 0.08–0.16em`, `text-transform: uppercase`, `color: var(--text3)`.
+No display face. A catalog page earns its character from density and rules, not
+from a headline font. `font-variant-numeric: tabular-nums` is set on `body`, so
+every column of digits aligns without per-rule opt-in.
+
+Label convention: 8–10px, `letter-spacing: 0.08–0.16em`, `text-transform: uppercase`, `color: var(--soft)`.
+
+### Reading measure
+
+Prose stops at **72ch** (`.section-content`), independent of how wide the
+window or the card is. The shell is fluid to 1240px and spare width goes to the
+margin conversation, never to longer lines. Wide content — code blocks, tables —
+escapes the measure and scrolls inside its own container, so the page body
+never scrolls sideways.
+
+`.section-content` carries **no nested scroll**. An earlier `max-height: 60vh;
+overflow-y: auto` put a second scrollbar inside every long section: the reader
+scrolled a viewport to reach content already on screen, and the page scrollbar
+lied about how much was left. The page is the only scroll.
+
+### Syntax highlighting
+
+highlight.js is applied to language-tagged blocks; the theme is viva's own, not
+a preset, because a stock theme spends the reviewer's colors on syntax. The
+palette obeys the ink discipline: no catalog yellow (that means the reviewer
+touched the text), no red or green (fence-only). Comments recede to `--faint`
+italic, keywords carry `--ink` at weight 600 rather than a hue, strings take
+the machine's `--machine`, numbers take `--fact`. The result is near-monochrome
+on purpose — on a catalog page, code is a specification.
 
 ## Shape
 
-**Square corners by default.** A single grouped rule under the "Blueprint geometry"
-comment enforces it — keep it grouped:
+**Square corners by default.** A single grouped rule enforces it — keep it
+grouped:
 
 ```css
 .card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
@@ -100,63 +155,61 @@ surfaces) — each value taken from its own rule in the current CSS:
 | `.diff-block` | 6px |
 | `.d2h-file-wrapper` (diff mode, viva override) | 6px |
 
-The blueprint gestures (`.rev-tri`, `.approve-stamp` / `.stamp-rule`) and the
-sheet itself (`#paper` and its `.paper-marks` decoration) carry no
-border-radius — they are square by design, extending the drafting geometry.
+`#paper` carries no border-radius: on the catalog ground it is a bare content
+wrapper with no fill, edge, or decoration of its own.
 
 ## Layout
 
-### Sheet on table — the ground
+### The page — the ground
 
-`<body>` is the flat drafting table: `background: var(--table)` and nothing
-else — no background grid at any layer. The document is a bounded drawing
-sheet, `#paper`, that wraps `<main class="shell">` and grows with it
-(content-bounded, not a fixed viewport frame):
+`<body>` is the catalog page: `background: var(--paper)` and nothing else. There
+is no sheet, no table beneath it, and no frame — the ground is legible as a page
+without one.
 
-- **Sheet edge**: `#paper` — `position: relative; max-width: 700px;
-  margin: 32px auto 96px; background: var(--bg);
-  border: 1px solid var(--border2)`.
-- **Inner rule**: `#paper::before` — `1px solid var(--border)` at `inset: 7px`,
-  `pointer-events: none`.
-- **Decoration** (`.paper-marks`, `aria-hidden="true"`, hidden below 740px):
-  four corner `+` registration marks (`.pmark` — Fragment Mono 13px,
-  `var(--accent)` at 0.7 opacity, hanging 7px outside each corner) and edge
-  coordinates (`.pcoord` — Fragment Mono 10px, `var(--text3)`): numbers 1–4
-  across the top edge (`.pc-n`), letters A–D down both side edges
-  (`.pc-w` / `.pc-e`).
+`#paper` survives as the content wrapper that `<main class="shell">` sits
+inside, because every layout rule and served-page test hangs off it, but it is
+now bare: `position: relative; max-width: 1240px; margin: 0 auto;
+background: var(--paper)`. Its sheet dress — the edge border, the `::before`
+inner rule at 7px inset, the four corner registration marks, and the A/B/C/D
+edge coordinates — was **deleted**, markup included, not hidden.
 
-The skip link, bottom bar, and recap overlay sit outside `#paper`; everything
-that scrolls sits on the sheet.
+The skip link, bottom bar, and recap overlay sit outside `#paper`.
 
 ### Shell
 
-Single-column shell, `max-width: 700px`, centered. Bottom bar is fixed, matches
-the shell's max-width with `bottom-inner`. Shell has `padding-bottom: 140px` to
-clear the bar. Do not exceed 700px in the shell (diff mode is the one exception:
-`body.mode-diff` widens `.shell`, `.bottom-inner`, **and `#paper`** together to
-`min(95vw, 1600px)` — see Diff-first layout).
+Fluid shell, `max-width: 1240px`, centered, `padding: 32px clamp(16px, 3vw, 44px) 140px`
+(the bottom value clears the fixed bar). The shell is *not* the reading measure —
+`.section-content` caps prose at 72ch and the shell's extra width belongs to the
+margin conversation. The bottom bar matches the shell's max-width via
+`.bottom-inner`, is opaque (`var(--paper)`, no backdrop blur), and closes the
+page with the same 2px ink rule that opens it.
+
+Diff mode widens `.shell`, `.bottom-inner`, **and `#paper`** together to
+`min(95vw, 1600px)` — see Diff-first layout.
 
 ## Interactive controls
 
-### Reticle pattern
+### Control edges
 
-Corner tick marks replace a full border. Implemented via a `background` gradient
-trick with the `--c` CSS custom property (registered with `@property` so the recolor
-animates) for animatable color transitions. All interactive controls in this class
-share the same base rule — add new controls to the selector group, do not
-re-implement. Current membership:
+Every selectable control (verdict actions, Q&A chips and buttons, comment
+chips, attach, save/cancel) wears a **full 1px square border** on the page's own
+ground. This replaced the reticle: four corner tick marks painted as eight
+background gradients with no edge between them, a drafting gesture that the
+catalog does not make.
 
-```
-.action-btn, .qa-btn, .choice-chip, .attach-btn,
-.cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel
-```
+The `--c` custom property (registered with `@property` so the recolor animates)
+survived the change unaltered — it now feeds `border-color` instead of the
+gradient stack, so every state rule still works by reassigning one property:
 
-(The `.cmt-*` controls were added by #68's multi-comment review.)
+| State | `--c` |
+|-------|-------|
+| rest | `var(--rule)` |
+| hover | `var(--ink)` |
+| `.sel-approve` | `var(--machine)` |
+| `.sel-changes` | `var(--acc)` |
+| `.sel-info` | `var(--fact)` |
 
-States:
-- Idle: `--c: var(--border2)`
-- Hover: `--c: var(--text3)`
-- Active/selected: `--c: var(--teal|--orange|--violet)` depending on verdict
+Controls are set in the monospace family: a button is an instruction, not prose.
 
 ### Focus
 

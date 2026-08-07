@@ -33,39 +33,71 @@ ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server.py"
 
 
-def assert_sheet_ground(text: str) -> None:
-    """Shared sheet-ground needle checks — the single owner of the bounded
-    #paper-sheet-on-flat-table contract, so a chrome change edits one place
-    (was duplicated verbatim across test_server_a11y and this suite). CSS-rule
-    checks are whitespace-tolerant regexes: the values are the design contract,
-    the source alignment is not — reformatting the token block or the rule must
-    not break the test. Structural markup and aria literals stay exact, because
-    there the literal *is* the contract. `text` is the served page or the HTML
-    constant (byte-identical: the server serves HTML.encode())."""
-    assert re.search(r'--table:\s+#060e1a;', text), "dark token block missing --table"
-    assert re.search(r'--table:\s+#e2e8f1;', text), "light token block missing --table"
-    assert text.count('--table:') == 2, "--table must be defined once per theme block"
-    assert 'background: var(--table);' in text, "body must sit on the flat table"
-    assert '<div id="paper">' in text, "missing the #paper sheet"
-    assert re.search(r'#paper\s*\{[^}]*max-width:\s*700px[^}]*'
-                     r'border:\s*1px solid var\(--border2\)', text), \
-        "#paper missing its content-bounded 700px edge"
-    assert re.search(r'#paper::before\s*\{[^}]*inset:\s*7px[^}]*'
-                     r'border:\s*1px solid var\(--border\)', text), \
-        "#paper missing the 1px inner rule at 7px inset"
-    assert '<div class="paper-marks" aria-hidden="true">' in text, \
-        "sheet decoration must be aria-hidden"
-    assert text.count('class="pmark') == 4, "expected 4 corner registration marks"
-    assert '<span class="pcoord pc-n" style="left:12.5%">1</span>' in text, \
-        "missing edge coordinate numbers"
-    assert '<span class="pcoord pc-w" style="top:12.5%">A</span>' in text, \
-        "missing edge coordinate letters"
+def assert_catalog_ground(text: str) -> None:
+    """Shared catalog-ground needle checks — the single owner of the ground
+    contract, so a chrome change edits one place (was duplicated verbatim
+    across test_server_a11y and this suite).
+
+    Replaces `assert_sheet_ground`: the drafting sheet on a flat table gave way
+    to the catalog page, so the needles moved from the sheet's edge and corner
+    marks to the party inks and the reading measure. CSS-rule checks are
+    whitespace-tolerant regexes — the values are the design contract, the
+    source alignment is not. Structural markup and aria literals stay exact.
+    `text` is the served page or the HTML constant (byte-identical: the server
+    serves HTML.encode())."""
+    # The four party inks, each defined once per theme block (light :root +
+    # dark override). These carry the ink discipline documented in DESIGN.md.
+    for token, light in (('--paper', '#ffffff'), ('--touch', '#ffec8f'),
+                         ('--acc', '#2946c4'), ('--machine', '#0c7f6b'),
+                         ('--fact', '#a06a12')):
+        assert re.search(re.escape(token) + r':\s+' + re.escape(light) + ';', text), \
+            f"light token block missing {token}: {light}"
+        assert text.count(token + ':') == 2, \
+            f"{token} must be defined once per theme block (light + dark)"
+    assert 'background: var(--paper);' in text, "body must sit on the catalog page"
+    assert re.search(r'@media \(prefers-color-scheme: dark\)', text), \
+        "dark is the override; light is the primary theme"
+    assert '@media (prefers-color-scheme: light)' not in text, \
+        "light must be :root, not a media override — the ground inverted"
+
+    # #paper survives as the content wrapper; its sheet dress does not.
+    assert '<div id="paper">' in text, "missing the #paper wrapper"
+    assert re.search(r'#paper\s*\{[^}]*max-width:\s*1240px', text), \
+        "#paper missing its 1240px bound"
+    assert '#paper::before' not in text, "the sheet's 7px inner rule must be gone"
+    assert 'paper-marks' not in text, "sheet decoration markup must be gone"
+    assert 'pcoord' not in text, "edge coordinates must be gone"
     assert text.index('<div id="paper">') < text.index('<main class="shell"'), \
         "#paper must open before main.shell"
     assert text.index('</main>') < text.index('</div><!-- /#paper -->'), \
         "#paper must close after main"
     assert re.search(r'\.mode-diff #paper\s*\{\s*max-width:\s*min\(95vw, 1600px\)', text), \
         "missing the diff-mode #paper widening rule"
+
+    # The reading measure, and the nested scroll that is not coming back.
+    assert re.search(r'\.section-content\s*\{[^}]*max-width:\s*72ch', text), \
+        ".section-content must cap the prose at a 72ch measure"
+    assert not re.search(r'\.section-content\s*\{[^}]*max-height:\s*60vh', text), \
+        ".section-content must not nest a second scroll context inside the card"
+
+
+def assert_ink_discipline(text: str) -> None:
+    """The syntax theme may not spend the reviewer's ink.
+
+    Catalog yellow means "the reviewer touched this text" and red/green belong
+    to the suggestion fence, where diff semantics already own them. A stock
+    highlight.js theme would violate both on its first line, so this guards the
+    boundary rather than the palette's taste."""
+    block = text[text.index('/* ─── Syntax highlighting'):text.index('</style>')]
+    assert '--touch' not in block, \
+        "syntax highlighting must not use catalog yellow — that is the reviewer's touch"
+    for rule in ('.hljs-comment', '.hljs-keyword', '.hljs-string'):
+        assert rule in block, f"syntax theme missing {rule}"
+    # Red and green appear only on the diff-line classes, never on a token class.
+    for line in block.splitlines():
+        if 'rgba(26,127,55' in line or 'rgba(209,36,47' in line:
+            assert 'addition' in line or 'deletion' in line, \
+                f"diff red/green leaked onto a syntax token: {line.strip()}"
 
 
 def assert_grid_gone(text: str) -> None:

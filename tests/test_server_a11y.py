@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 import server  # noqa: E402
-from _server_harness import assert_grid_gone, assert_sheet_ground  # noqa: E402
+from _server_harness import (  # noqa: E402
+    assert_catalog_ground, assert_grid_gone, assert_ink_discipline)
 
 HTML = server.HTML
 
@@ -147,13 +148,14 @@ def test_a_key_calls_approve_section():
     print("  ok  test_a_key_calls_approve_section")
 
 
-def test_sheet_ground_ships():
-    # The review sits on a bounded drawing sheet (#paper) over a flat table.
-    # The needle set is shared with test_frontend_v2_phase1 via
-    # assert_sheet_ground (one owner for the sheet-chrome contract), checked
-    # here against the HTML constant.
-    assert_sheet_ground(HTML)
-    print("  ok  test_sheet_ground_ships")
+def test_catalog_ground_ships():
+    # The review sits on a catalog page: light primary, four party inks, a
+    # 72ch measure, no sheet chrome. The needle set is shared with
+    # test_frontend_v2_phase1 via assert_catalog_ground (one owner for the
+    # ground contract), checked here against the HTML constant.
+    assert_catalog_ground(HTML)
+    assert_ink_discipline(HTML)
+    print("  ok  test_catalog_ground_ships")
 
 
 def test_grid_and_sheet_frame_gone():
@@ -360,7 +362,7 @@ def main():
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
     test_a_key_calls_approve_section()
-    test_sheet_ground_ships()
+    test_catalog_ground_ships()
     test_grid_and_sheet_frame_gone()
     test_prefs_toggle_is_native_button_static_label()
     test_prefs_toggle_gated_on_empty_store()
