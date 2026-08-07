@@ -73,9 +73,9 @@ COMMENT_TYPES = ("changes", "info", SUGGESTION)
 # `open_notes.py`. `declined` is the AUTHOR's turn — they did not comply and
 # recorded `grounds` on that exchange. It is a THREAD status and NOT a verdict:
 # `VERDICTS` is the section's state, and a section with two comments, one applied
-# and one declined, has no coherent section-level verdict (design:
-# editorial-frame.md). Only the reviewer settles, so a decline never closes
-# anything; it is an answer the reviewer accepts (settle) or overrides (reply).
+# and one declined, has no coherent section-level verdict (#167). Only the
+# reviewer settles, so a decline never closes anything; it is an answer the
+# reviewer accepts (settle) or overrides (reply).
 THREAD_OPEN = "open"
 THREAD_SETTLED = "settled"
 THREAD_DECLINED = "declined"
@@ -266,7 +266,7 @@ class SectionVerdict(TypedDict, total=False):
     # wording for the anchored span, applied verbatim. It is the payload that
     # makes the comment appliable, so `validate_verdicts` requires a non-empty
     # one — reviewer-authored and BINDING, unlike an `Annotation`, which is
-    # producer-authored and advisory (design: editorial-frame.md).
+    # producer-authored and advisory (#166).
     comments: list
 
 
