@@ -2,6 +2,74 @@
 
 <!-- version list -->
 
+## v1.22.0 (2026-08-07)
+
+### Bug Fixes
+
+- A withdrawn approval must not be resurrected by the stale stamp
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Anchor the reviewer's chosen occurrence, not the first match
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Answering a check flag must reach the server, not just disk
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Keep the parse fixture out of the PLAN.md ignore rule
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+### Chores
+
+- Design docs and build plans stay untracked ([#183](https://github.com/jacquardlabs/viva/pull/183),
+  [`a9f7b25`](https://github.com/jacquardlabs/viva/commit/a9f7b2599adb464bf942ea472aea749f0d6b1999))
+
+- Prune the removed implementation tools' archives
+  ([#181](https://github.com/jacquardlabs/viva/pull/181),
+  [`04fec63`](https://github.com/jacquardlabs/viva/commit/04fec632bd2a90aec72a826e39f68fcc2453346a))
+
+### Documentation
+
+- Drop references to the removed implementation tools
+  ([#180](https://github.com/jacquardlabs/viva/pull/180),
+  [`cacdedd`](https://github.com/jacquardlabs/viva/commit/cacdedd5c8d2121996c013b67527338b55a85f09))
+
+- Reconcile the binding docs with the editorial-workspace milestone
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+### Features
+
+- Declines — the author pushes back with grounds
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Doc types — shipped bundles, repo override, and the headings-present check
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Editorial workspace — passes, doc types, suggested edits, declines, honest anchors
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Passes — depth and posture as round parameters
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+- Suggested edits — the reviewer supplies the wording
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+### Refactoring
+
+- Pass kinds speak code review, not copyediting
+  ([#184](https://github.com/jacquardlabs/viva/pull/184),
+  [`6541960`](https://github.com/jacquardlabs/viva/commit/654196030419235a203bca363181be702d103bb4))
+
+
 ## v1.21.0 (2026-08-05)
 
 ### Bug Fixes
