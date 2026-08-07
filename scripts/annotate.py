@@ -74,7 +74,7 @@ def _clean(item: dict) -> dict | None:
         annot["level"] = item["level"]
     # A check's finding for this flag (schema.CHECK_KINDS / `Annotation.result`).
     # Preserved through the merge like basis/level, and non-empty by
-    # construction: a blank result answers nothing, and a `fact-check` round
+    # construction: a blank result answers nothing, and a `checks` round
     # stays held until every check flag carries one.
     if isinstance(item.get("result"), str) and item["result"].strip():
         annot["result"] = item["result"]
@@ -87,7 +87,7 @@ def _same_flag(a: dict, b: dict) -> bool:
     The result is the ANSWER to a flag, not part of its identity — so a producer
     re-emitting its flag with a result lands on the flag it answers instead of
     appending a result-less twin beside it. Without this, an answered
-    `fact-check` round would still carry the unanswered original and could never
+    `checks` round would still carry the unanswered original and could never
     close.
     """
     return ({k: v for k, v in a.items() if k != "result"}

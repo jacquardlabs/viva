@@ -3,5 +3,5 @@
   "title": "README",
   "sections": ["Install", "Usage", "Contributing", "License"],
   "checks": ["headings-present"],
-  "default_pass": "structure"
+  "default_pass": "architecture"
 }

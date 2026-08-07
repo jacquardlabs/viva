@@ -9,7 +9,7 @@ one name to one bundle and prints it as JSON:
 
   {"name": "design-doc", "title": "Design doc",
    "sections": ["Problem & persona", ...],
-   "checks": ["headings-present"], "default_pass": "structure"}
+   "checks": ["headings-present"], "default_pass": "architecture"}
 
 Resolution: shipped defaults live in `<plugin>/types/<name>.json`; a repo adds
 or overrides a type by committing `.viva-types/<name>.json`. The two directories
@@ -24,7 +24,7 @@ Bundles never live under `.viva/`: that directory is cleared at every
 Every failure is loud and exits non-zero — an unresolved type must never reach a
 producer as an empty grammar. Refused: an unknown name, a name that is not a
 bare lowercase token, unreadable or malformed JSON, a missing/mistyped required
-key, a `default_pass` outside `structure|line|fact-check|proof`, and a bundle
+key, a `default_pass` outside `architecture|line|checks|final`, and a bundle
 whose `name` disagrees with its filename (the filename is what `--type` keys on,
 so `--type foo` must never hand back a bundle calling itself `bar`).
 

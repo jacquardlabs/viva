@@ -10,5 +10,5 @@
     "Open questions"
   ],
   "checks": ["headings-present"],
-  "default_pass": "structure"
+  "default_pass": "architecture"
 }

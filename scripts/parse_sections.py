@@ -25,8 +25,8 @@ Optional:
   --doc-type NAME    Record the doc type this round was started with (a name
                       `scripts/doc_types.py` resolves). Recorded only, never
                       resolved here — the parser owns no type semantics.
-  --pass KIND        Record the depth this round runs at (structure | line |
-                      fact-check | proof). Omit for a round with no pass, which
+  --pass KIND        Record the depth this round runs at (architecture | line |
+                      checks | final). Omit for a round with no pass, which
                       carries no `pass` key and completes exactly as it did
                       before the field existed.
   --posture P        normal | hard — a setting ON the pass, written inside the

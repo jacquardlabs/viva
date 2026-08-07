@@ -5,7 +5,7 @@
 it, from its own process, with a round that arrived over HTTP. Three sessions,
 identical but for the round file:
 
-  1. `fact-check` with an unanswered check flag → refused, every section
+  1. `checks` with an unanswered check flag → refused, every section
      approved. The pass ADDS a condition; approvals alone no longer close it.
   2. the same round with that flag answered → 200.
   3. the same unanswered flag with NO `pass` → 200. Absent is today's behavior
@@ -67,12 +67,12 @@ def complete_after_approving_everything(data: dict) -> tuple:
 
 def check_fact_check_holds_an_unanswered_flag() -> None:
     status, body = complete_after_approving_everything(
-        round_input({"kind": "fact-check"}))
+        round_input({"kind": "checks"}))
     assert status == 409, (
-        "a fact-check round with an unanswered check flag must be refused even "
+        "a checks round with an unanswered check flag must be refused even "
         "with every section approved — got %d %r" % (status, body))
     error = body.get("error", "")
-    assert "fact-check pass" in error, (
+    assert "checks pass" in error, (
         "the refusal must name the conjunct that held the round, not a section "
         "count the reviewer already satisfied: %r" % error)
     assert "0 of 2" not in error, error
@@ -81,7 +81,7 @@ def check_fact_check_holds_an_unanswered_flag() -> None:
 
 def check_fact_check_closes_once_the_flag_is_answered() -> None:
     status, body = complete_after_approving_everything(
-        round_input({"kind": "fact-check"}, result="added in round 2"))
+        round_input({"kind": "checks"}, result="added in round 2"))
     assert (status, body) == (200, {"ok": True}), (
         "an answered check flag must let the round close: %d %r" % (status, body))
     print("  ok  check_fact_check_closes_once_the_flag_is_answered")
@@ -154,7 +154,7 @@ def check_annotate_refuses_the_round_the_server_is_serving() -> None:
         viva.mkdir()
         (td / "d.md").write_text("# T\n", encoding="utf-8")
         inp, out = viva / "review-input-r1.json", viva / "review-r1.json"
-        inp.write_text(json.dumps(round_input({"kind": "fact-check"})),
+        inp.write_text(json.dumps(round_input({"kind": "checks"})),
                        encoding="utf-8")
         sidecar = td / "sidecar.json"
         sidecar.write_text(json.dumps([dict(FLAG, id="s1", result="sourced")]),

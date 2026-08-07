@@ -75,13 +75,13 @@ on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`, plus
 confidence's `basis`/`level` and a check's `result`.
 
 A **check** producer's flag may carry `result` — what the check found for it. On
-a `fact-check` round the flag holds the round open until it does, so re-emitting
+a `checks` round the flag holds the round open until it does, so re-emitting
 the same flag with a `result` is how a check answers one: the merge writes the
 result onto the flag already there instead of appending a twin beside it.
 
 A new check producer must add its `kind` to `schema.CHECK_KINDS`. That registry
 fails **open**: an unregistered kind is invisible to `round_is_complete`, so its
-flags gate nothing and a `fact-check` round closes where it should have held.
+flags gate nothing and a `checks` round closes where it should have held.
 
 Answer flags in the round you are about to arm, never in the one already armed —
 the server loads its round once and replaces it only from `/next-round`, so

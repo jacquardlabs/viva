@@ -4722,7 +4722,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not sections:
                         # Before the pass branch: an empty round is refused by
                         # the base rule, and naming a conjunct here would blame
-                        # a `structure`/`line` pass that adds none.
+                        # a `architecture`/`line` pass that adds none.
                         why = "the round carries no sections to approve"
                     elif pending:
                         why = ("%d of %d section(s) not approved"
@@ -4733,8 +4733,8 @@ class Handler(BaseHTTPRequestHandler):
                         # once and is replaced only by `/next-round`, so a check
                         # answered on disk under it is one this guard never sees.
                         why = ("every section is approved, but the %s pass is "
-                               "not satisfied — a fact-check round holds until "
-                               "every check flag carries a result, a proof round "
+                               "not satisfied — a checks round holds until "
+                               "every check flag carries a result, a final round "
                                "until no suggested edit is unresolved. Answer "
                                "the flags in the next round and POST it to "
                                "/next-round" % kind)

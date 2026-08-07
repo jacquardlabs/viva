@@ -132,7 +132,7 @@ def test_check_result_answers_the_flag_in_place() -> None:
     """A check's `result` is preserved, and re-emitting the flag WITH one lands
     on the flag already there.
 
-    This is what makes a `fact-check` round closable: `schema.round_is_complete`
+    This is what makes a `checks` round closable: `schema.round_is_complete`
     holds it until every check flag carries a result, and appending an answered
     twin beside the unanswered original would leave the original blocking
     forever — `parse_sections._carry_annotations` copies a flag onto a
@@ -161,7 +161,7 @@ def test_check_result_answers_the_flag_in_place() -> None:
         "a result-less re-run must not unanswer the flag"
 
     # A blank or non-string result is dropped at the boundary — it answers
-    # nothing, and a `fact-check` round must stay held rather than read it as an
+    # nothing, and a `checks` round must stay held rather than read it as an
     # answer.
     for blank in ("", "   ", 7, None):
         out = run(data, [dict(flag, result=blank)])
@@ -170,7 +170,7 @@ def test_check_result_answers_the_flag_in_place() -> None:
     # The realistic shape: `headings_present` emits one flag per missing heading
     # on the SAME card, same kind and anchor, differing only in `message`. They
     # must stay distinct flags, and answering one must not answer the other —
-    # otherwise a single result would close a fact-check round with a finding
+    # otherwise a single result would close a checks round with a finding
     # still outstanding.
     other = dict(flag, message="missing expected design-doc section: 'Out of scope'")
     both = run(data, [flag, other])

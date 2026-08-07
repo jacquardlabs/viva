@@ -69,8 +69,8 @@ import. It holds:
   **The conjunct-only invariant — the milestone's load-bearing guarantee.**
   The base is every section in the round *input* carrying an `approved`
   verdict. A round's optional `pass` may only **ADD** a condition to that base
-  and may never relax it: `structure`/`line` add none, `fact-check` also
-  requires every `CHECK_KINDS` flag to carry a non-empty `result`, `proof` also
+  and may never relax it: `architecture`/`line` add none, `checks` also
+  requires every `CHECK_KINDS` flag to carry a non-empty `result`, `final` also
   requires no unresolved suggested edit. Run the base first and return early;
   a branch that dispatches on `pass` before checking it reopens the hole #102
   closed. Enforced at both call sites, and both enumerate `PASS_KINDS` so a
@@ -105,7 +105,7 @@ in `PASS_POSTURES`), because it is the one field that moves the completion gate.
 session identity: `loop.py rearm` carries them round to round *and* `cmd_start`'s
 resume branch carries them across sessions. `pass` is a per-round decision —
 `rearm` carries it, a resume does **not**, because inheriting a finished
-session's `proof` pass would add a conjunct nobody asked for.
+session's `final` pass would add a conjunct nobody asked for.
 
 **Validate at the boundary** — on parse write and server read — never
 at the point of use. A field that a reader forgets silently drops a feature; the
@@ -127,10 +127,10 @@ skill) follow the same import-only-schema rule.
   or a new schema field. (Confidence annotations also carry `basis`/`level`,
   preserved through the merge.)
 
-  **A producer whose flags must gate a `fact-check` round registers its `kind`
+  **A producer whose flags must gate a `checks` round registers its `kind`
   in `schema.CHECK_KINDS`.** That registry **fails open**: an unregistered kind
   raises no error anywhere — it simply becomes invisible to `round_is_complete`,
-  so its flags gate nothing and a `fact-check` round closes where it should have
+  so its flags gate nothing and a `checks` round closes where it should have
   held. `result` is the field such a flag is answered with, and it is answered in
   the round *about to be armed*, never the one already armed: the server loads
   its round once and replaces it only from `POST /next-round`, so a merge into

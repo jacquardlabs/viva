@@ -3,5 +3,5 @@
   "title": "Progress note",
   "sections": [],
   "checks": [],
-  "default_pass": "fact-check"
+  "default_pass": "checks"
 }

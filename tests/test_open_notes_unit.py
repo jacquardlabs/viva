@@ -88,7 +88,7 @@ def test_suggestion_thread_carries_its_replacement():
 
     Without `replacement` on the exchange, round N+1 re-presents the thread with
     the rationale and the wording stripped — and "apply verbatim" has nothing
-    left to apply. `schema.round_is_complete`'s `proof` conjunct also reads the
+    left to apply. `schema.round_is_complete`'s `final` conjunct also reads the
     latest exchange's `verdict`, so an unthreaded suggestion would silently stop
     holding the round (#166).
     """
@@ -139,7 +139,7 @@ def test_decline_records_grounds_and_holds_the_thread():
 
     # The exchange's `verdict` stays the REVIEWER's comment type — the author's
     # answer never overwrites the request. `schema._has_unresolved_suggestion`
-    # reads that field, so a declined suggestion still holds a `proof` round.
+    # reads that field, so a declined suggestion still holds a `final` round.
     assert out["s1-c1"]["exchanges"][0]["verdict"] == "changes"
 
     # Presence-gated: a turn nobody declined is byte-identical to before.

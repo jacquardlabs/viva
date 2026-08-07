@@ -24,7 +24,7 @@ PARSE = ROOT / "scripts" / "parse_sections.py"
 BUNDLE = {
     "name": "design-doc", "title": "Design doc",
     "sections": ["Problem & persona", "Proposed design", "Out of scope"],
-    "checks": ["headings-present"], "default_pass": "structure",
+    "checks": ["headings-present"], "default_pass": "architecture",
 }
 
 
@@ -92,7 +92,7 @@ def test_in_body_heading_counts_as_present() -> None:
     body. Scanning card titles alone would report a heading the doc has."""
     plan = {"name": "plan", "title": "Build plan",
             "sections": ["Not-here follow-ups"], "checks": ["headings-present"],
-            "default_pass": "structure"}
+            "default_pass": "architecture"}
     body = ("### Task 2 — write it\n\nbody two\n\n"
             "## Not-here follow-ups\n\n- something later\n")
     assert sidecar({"sections": [

@@ -41,15 +41,15 @@ VERDICTS = ("approved", "changes", "info", "pending")
 # absent means today's behavior exactly — never defaulted, never written as
 # `null` (PRODUCT.md principle 4). `doc_types.py` reads these too: a bundle's
 # `default_pass` must name a kind a round can actually run.
-PASS_KINDS = ("structure", "line", "fact-check", "proof")
+PASS_KINDS = ("architecture", "line", "checks", "final")
 # Posture is a setting ON the pass, not a second round field — `hard` licenses
 # the author to argue rather than concede. Absent reads as `normal`.
 PASS_POSTURES = ("normal", "hard")
 
 # The annotation `kind`s a check producer emits — the handle `round_is_complete`
-# reads to find a `fact-check` round's flags (`headings_present.py`'s `KIND` is
+# reads to find a `checks` round's flags (`headings_present.py`'s `KIND` is
 # the first, and its docstring names this key as that handle). A new check
-# producer ADDS ITS KIND HERE, or a `fact-check` pass never sees its flags and
+# producer ADDS ITS KIND HERE, or a `checks` pass never sees its flags and
 # closes a round it should have held. Deliberately not "every warn/error
 # annotation": drift, checklist, contradiction, confidence, and preference flags
 # are advisory producers with nothing to do with checking claims.
@@ -190,7 +190,7 @@ class Annotation(TypedDict, total=False):
     level: str      # confidence only — high | medium | low
     # optional — the check's finding for this flag, written by the producer that
     # raised it or merged onto it later (`annotate.py` answers a flag in place).
-    # Only load-bearing for a `fact-check` pass: `round_is_complete()` holds such
+    # Only load-bearing for a `checks` pass: `round_is_complete()` holds such
     # a round until every `CHECK_KINDS` flag carries one. Advisory everywhere
     # else, like the rest of this shape.
     result: str
@@ -434,7 +434,7 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     An exchange's `verdict` is the REVIEWER's comment type, never the author's
     answer — declining a suggestion adds `grounds` and moves the thread to
     `THREAD_DECLINED`, leaving that exchange's verdict `suggestion`. That is
-    what keeps a declined suggestion holding a `proof` round: the author's
+    what keeps a declined suggestion holding a `final` round: the author's
     refusal is not a resolution; only the reviewer's settle is.
     """
     for s in verdicts.get("sections", []) or []:
@@ -469,15 +469,15 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     reopen the hole #102 closed: `POST /complete` accepting a round the human
     never approved.
 
-      | pass                      | complete when                              |
-      | absent, structure, line   | every section approved                     |
-      | fact-check                | …and every check flag carries a result     |
-      | proof                     | …and no suggested edit is unresolved       |
+      | pass                       | complete when                              |
+      | absent, architecture, line | every section approved                     |
+      | checks                     | …and every check flag carries a result     |
+      | final                      | …and no suggested edit is unresolved       |
 
     `tests/test_schema.py`'s `test_no_pass_relaxes_the_all_approved_base` walks
     `PASS_KINDS` and enforces this, so a fifth kind is covered the day it lands.
 
-    The `fact-check` conjunct reads flags off the round input, where
+    The `checks` conjunct reads flags off the round input, where
     `annotate.py` merged them, so a flag answered in round N rides into N+1 with
     its answer (`parse_sections._carry_annotations` copies whole annotations onto
     byte-identical sections). That carry is also how a stale flag survives its
@@ -500,9 +500,9 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
 
     spec = input_data.get("pass")
     kind = spec.get("kind") if isinstance(spec, dict) else None
-    if kind == "fact-check":
+    if kind == "checks":
         return all(_flag_is_answered(f) for f in _check_flags(input_data))
-    if kind == "proof":
+    if kind == "final":
         return not _has_unresolved_suggestion(input_data, verdicts)
     return True
 

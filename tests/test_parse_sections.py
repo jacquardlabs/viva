@@ -691,8 +691,8 @@ def test_pass_recorded_and_absent_without_the_flag() -> None:
     # when the key is missing, so a round with no `--pass` must carry NO `pass`
     # key — a written default would add a conjunct to every round in the repo.
     doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
-    data = run(doc, extra_args=["--pass", "fact-check"])
-    assert data["pass"] == {"kind": "fact-check"}, data.get("pass")
+    data = run(doc, extra_args=["--pass", "checks"])
+    assert data["pass"] == {"kind": "checks"}, data.get("pass")
     posture = run(doc, extra_args=["--pass", "line", "--posture", "hard"])
     assert posture["pass"] == {"kind": "line", "posture": "hard"}, posture.get("pass")
     assert "pass" not in run(doc), "no flag, no key"

@@ -25,7 +25,7 @@ import doc_types  # noqa: E402
 # Spelled out, not imported from `schema`: an independent oracle. Reading the
 # same tuple `validate_bundle` checks against would make the assertion below
 # tautological — the same reason `EXPECTED_SHIPPED` is a literal.
-PASS_KINDS = ("structure", "line", "fact-check", "proof")
+PASS_KINDS = ("architecture", "line", "checks", "final")
 # Per the design's open question 2 — the types this repo actually produces.
 EXPECTED_SHIPPED = {"design-doc", "plan", "pr-description", "readme",
                     "progress-note"}
@@ -120,7 +120,7 @@ def test_repo_adds_a_type_shipped_set_survives() -> None:
         write_bundle(types_dir, "runbook", {
             "name": "runbook", "title": "Runbook",
             "sections": ["Trigger", "Steps", "Rollback"],
-            "checks": ["headings-present"], "default_pass": "structure",
+            "checks": ["headings-present"], "default_pass": "architecture",
         })
         added = resolve_ok("runbook", types_dir)
         assert added["title"] == "Runbook", added
@@ -158,7 +158,7 @@ def test_bundle_name_must_match_its_filename() -> None:
         types_dir = Path(td) / ".viva-types"
         write_bundle(types_dir, "spec", {
             "name": "design-doc", "title": "Spec", "sections": [],
-            "checks": [], "default_pass": "structure",
+            "checks": [], "default_pass": "architecture",
         })
         r = resolve("spec", types_dir)
     assert r.returncode != 0, "a bundle that renames itself must be refused"
@@ -169,11 +169,11 @@ def test_bundle_name_must_match_its_filename() -> None:
 def test_structurally_invalid_bundles_are_refused() -> None:
     cases = {
         "missing sections": {"name": "x", "title": "X", "checks": [],
-                             "default_pass": "structure"},
+                             "default_pass": "architecture"},
         "sections not strings": {"name": "x", "title": "X", "sections": [1],
-                                 "checks": [], "default_pass": "structure"},
+                                 "checks": [], "default_pass": "architecture"},
         "missing title": {"name": "x", "sections": [], "checks": [],
-                          "default_pass": "structure"},
+                          "default_pass": "architecture"},
         "unknown pass": {"name": "x", "title": "X", "sections": [],
                          "checks": [], "default_pass": "vibes"},
         "not an object": ["x"],

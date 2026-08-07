@@ -250,7 +250,7 @@ def cmd_start(args) -> int:
                 # type are session identity — re-deciding either changes section
                 # identity or drops the check set. Depth is a per-round decision,
                 # and a resumed round 1 inheriting the prior session's finishing
-                # `proof` pass would add a conjunct nobody asked for. Name it
+                # `final` pass would add a conjunct nobody asked for. Name it
                 # again with `--pass` if the new session wants it.
 
     for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
@@ -482,7 +482,7 @@ def cmd_rearm(args) -> int:
     # The pass carries within the session the way the pattern and the type do —
     # round N+1 runs at round N's depth unless this call names another. It is
     # the one of the three the agent is expected to change mid-session (round 1
-    # structural, round 2 line, a later one fact-check), so `rearm` takes the
+    # structural, round 2 line, a later one checks), so `rearm` takes the
     # override the other two have no use for.
     if args.pass_kind is not None:
         next_pass = {"kind": args.pass_kind}
@@ -561,7 +561,7 @@ def cmd_finish(args) -> int:
         kind = spec.get("kind") if isinstance(spec, dict) else None
         if not input_data.get("sections"):
             # Tested before the pass: an empty round is refused by the base rule,
-            # and naming a conjunct here would blame a `structure`/`line` pass
+            # and naming a conjunct here would blame a `architecture`/`line` pass
             # that adds none.
             why = "the round carries no sections to approve"
         elif pending:
@@ -573,8 +573,8 @@ def cmd_finish(args) -> int:
             # server holds this round in memory, so a merge into the file it was
             # armed from is one `/complete` never sees.
             why = (f"every section is approved, but the {kind} pass is not "
-                   f"satisfied — a fact-check round holds until every check "
-                   f"flag carries a result, a proof round until no suggested "
+                   f"satisfied — a checks round holds until every check "
+                   f"flag carries a result, a final round until no suggested "
                    f"edit is unresolved. Answer the flags in the NEXT round: "
                    f"`loop.py rearm --parse-only`, `loop.py annotate --sidecar "
                    f"<path>` (see {REFERENCES / 'producers.md'}), `loop.py arm`")

@@ -333,7 +333,7 @@ def test_absent_pass_is_todays_behavior_exactly():
     """PRODUCT.md principle 4, at the one place it is load-bearing: a round with
     no `pass` key completes on approvals alone, whatever else it carries.
 
-    The same round state that holds a `fact-check` round open — an unanswered
+    The same round state that holds a `checks` round open — an unanswered
     check flag — must not hold a passless one, or the field would have changed
     behavior for every caller that never asked for a pass."""
     flag = [{"kind": "headings-present", "severity": "warn", "message": "missing"}]
@@ -346,7 +346,7 @@ def test_structure_and_line_are_the_base_rule():
     """Two of the four kinds add nothing — asserted, not assumed, because the
     only thing stopping a future edit from adding a conjunct here is a test."""
     flag = [{"kind": "headings-present", "severity": "warn", "message": "missing"}]
-    for kind in ("structure", "line"):
+    for kind in ("architecture", "line"):
         assert schema.round_is_complete(
             _round({"kind": kind}, annotations=flag), APPROVED), kind
         assert schema.round_is_complete(
@@ -354,43 +354,43 @@ def test_structure_and_line_are_the_base_rule():
     print("  ok  test_structure_and_line_are_the_base_rule")
 
 
-def test_fact_check_holds_until_every_check_flag_is_answered():
-    """The added conjunct: approvals alone do not close a `fact-check` round.
+def test_checks_pass_holds_until_every_check_flag_is_answered():
+    """The added conjunct: approvals alone do not close a `checks` round.
 
     A check flag is an annotation whose `kind` is in `CHECK_KINDS` — the handle
     `headings_present.py` documents. An advisory producer's flag is not one, so
     drift/checklist/preference/confidence flags never gate a round.
     """
-    fact_check = {"kind": "fact-check"}
+    checks_pass = {"kind": "checks"}
     unanswered = [{"kind": "headings-present", "severity": "warn",
                    "message": "missing expected design-doc section: 'Goals'"}]
     answered = [dict(unanswered[0], result="added in round 2")]
 
-    assert not schema.round_is_complete(_round(fact_check, unanswered), APPROVED), \
+    assert not schema.round_is_complete(_round(checks_pass, unanswered), APPROVED), \
         "an unanswered check flag must hold the round even with every section approved"
-    assert schema.round_is_complete(_round(fact_check, answered), APPROVED)
+    assert schema.round_is_complete(_round(checks_pass, answered), APPROVED)
     # No flags at all — the check ran and found nothing, or none ran.
-    assert schema.round_is_complete(_round(fact_check), APPROVED)
-    assert schema.round_is_complete(_round(fact_check, []), APPROVED)
+    assert schema.round_is_complete(_round(checks_pass), APPROVED)
+    assert schema.round_is_complete(_round(checks_pass, []), APPROVED)
     # A blank result answers nothing.
     for blank in ("", "   ", None, 0, ["x"]):
         assert not schema.round_is_complete(
-            _round(fact_check, [dict(unanswered[0], result=blank)]), APPROVED), blank
+            _round(checks_pass, [dict(unanswered[0], result=blank)]), APPROVED), blank
     # An advisory producer's flag is not a check flag.
     advisory = [{"kind": "drift", "severity": "error", "message": "3x vs 5x"},
                 {"kind": "confidence", "severity": "warn", "basis": "inferred",
                  "level": "low", "message": "inferred · low"}]
-    assert schema.round_is_complete(_round(fact_check, advisory), APPROVED), \
-        "a fact-check pass gates on checks, not on every advisory badge"
-    print("  ok  test_fact_check_holds_until_every_check_flag_is_answered")
+    assert schema.round_is_complete(_round(checks_pass, advisory), APPROVED), \
+        "a checks pass gates on checks, not on every advisory badge"
+    print("  ok  test_checks_pass_holds_until_every_check_flag_is_answered")
 
 
 def test_proof_holds_on_an_unresolved_suggested_edit():
-    """`proof` adds a conjunct on the comment type the popover now writes (#166):
+    """`final` adds a conjunct on the comment type the popover now writes (#166):
     an unresolved suggestion holds the round even when every section is
     approved."""
-    proof = {"kind": "proof"}
-    assert schema.round_is_complete(_round(proof), APPROVED)
+    final = {"kind": "final"}
+    assert schema.round_is_complete(_round(final), APPROVED)
 
     # A suggestion in the verdicts just submitted.
     with_suggestion = {"sections": [
@@ -398,13 +398,13 @@ def test_proof_holds_on_an_unresolved_suggested_edit():
          "comments": [{"cid": "s1-c1", "type": "suggestion",
                        "note": "use this wording",
                        "replacement": "Ship the core in one round."}]}]}
-    assert not schema.round_is_complete(_round(proof), with_suggestion)
+    assert not schema.round_is_complete(_round(final), with_suggestion)
     assert schema.round_is_complete(_round(), with_suggestion), \
         "no pass, no conjunct — the same round closes without one"
     settled = {"sections": [
         {"id": "s1", "verdict": "approved",
          "comments": [{"cid": "s1-c1", "type": "suggestion", "settled": True}]}]}
-    assert schema.round_is_complete(_round(proof), settled)
+    assert schema.round_is_complete(_round(final), settled)
 
     # A carried thread whose LATEST exchange is the suggestion — the author has
     # not answered it. An answered one (a later exchange) does not hold.
@@ -414,9 +414,9 @@ def test_proof_holds_on_an_unresolved_suggested_edit():
         {"round": 1, "verdict": "suggestion", "note": "use this wording"},
         {"round": 2, "verdict": "changes", "note": "and one more thing"}]}]
     assert not schema.round_is_complete(
-        _round(proof, open_notes=open_thread), APPROVED)
+        _round(final, open_notes=open_thread), APPROVED)
     assert schema.round_is_complete(
-        _round(proof, open_notes=answered_thread), APPROVED)
+        _round(final, open_notes=answered_thread), APPROVED)
     print("  ok  test_proof_holds_on_an_unresolved_suggested_edit")
 
 
@@ -427,7 +427,7 @@ def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
     `parse_sections` re-present a declined thread and `open_notes` settle it on
     approval. The exchange keeps the REVIEWER's comment type as its `verdict`
     (the author's answer rides in `grounds`), so a declined suggestion still
-    holds a `proof` round: the author's refusal is not a resolution (#167).
+    holds a `final` round: the author's refusal is not a resolution (#167).
     """
     assert schema.THREAD_STATUSES == ("open", "settled", "declined")
     assert schema.THREAD_DECLINED not in schema.VERDICTS
@@ -442,8 +442,8 @@ def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
                                        "note": "use this wording",
                                        "grounds": "contradicts round 1"}]}]
     assert not schema.round_is_complete(
-        _round({"kind": "proof"}, open_notes=declined_thread), APPROVED), \
-        "declining a suggested edit must not release the proof conjunct"
+        _round({"kind": "final"}, open_notes=declined_thread), APPROVED), \
+        "declining a suggested edit must not release the final conjunct"
     print("  ok  test_thread_statuses_and_a_declined_suggestion_still_holds_proof")
 
 
@@ -489,7 +489,7 @@ def test_no_pass_relaxes_the_all_approved_base():
 
 
 def test_check_kinds_covers_every_shipped_bundle_check():
-    """`CHECK_KINDS` is what a `fact-check` round recognizes as a check flag, and
+    """`CHECK_KINDS` is what a `checks` round recognizes as a check flag, and
     a missing entry fails OPEN — the flag becomes invisible and the round closes
     when it should have held. So every check a shipped type bundle names must be
     in it. Not the reverse: a registered kind no bundle names yet is fine.
@@ -502,7 +502,7 @@ def test_check_kinds_covers_every_shipped_bundle_check():
     missing = sorted(named - set(schema.CHECK_KINDS))
     assert not missing, (
         "shipped type bundles name check(s) %s that schema.CHECK_KINDS does not "
-        "carry — a fact-check round would never see their flags" % missing)
+        "carry — a checks round would never see their flags" % missing)
     print("  ok  test_check_kinds_covers_every_shipped_bundle_check")
 
 
@@ -542,7 +542,7 @@ def main():
     test_round_is_complete_rejects_an_empty_round()
     test_absent_pass_is_todays_behavior_exactly()
     test_structure_and_line_are_the_base_rule()
-    test_fact_check_holds_until_every_check_flag_is_answered()
+    test_checks_pass_holds_until_every_check_flag_is_answered()
     test_proof_holds_on_an_unresolved_suggested_edit()
     test_thread_statuses_and_a_declined_suggestion_still_holds_proof()
     test_no_pass_relaxes_the_all_approved_base()
