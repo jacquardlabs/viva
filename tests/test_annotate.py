@@ -8,8 +8,7 @@ anchor?} merged into the round's review-input. The merge is additive
 and a no-op sidecar leaves the input byte-identical.
 
 The last test covers the producer seam's *driver* end: `loop.py annotate`
-supplies the round number so a producer call never re-templates `{N}`
-(docs/design/loop-driver.md).
+supplies the round number so a producer call never re-templates `{N}` (#104).
 """
 from __future__ import annotations
 

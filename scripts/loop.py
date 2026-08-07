@@ -3,7 +3,7 @@
 → rewrite loop, so SKILL.md can carry judgment work only.
 
 Seven subcommands: `start`, `annotate`, `arm`, `wait`, `rearm`, `finish`,
-`abandon`. Design: docs/design/loop-driver.md. Issues: #104, #102, #103, #125.
+`abandon`. Issues: #104, #102, #103, #125.
 
 Three rules this file exists to keep:
   * The agent never types a round number. Every subcommand derives it from disk.

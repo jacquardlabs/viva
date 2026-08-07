@@ -4508,7 +4508,7 @@ class Handler(BaseHTTPRequestHandler):
             # line, and a check that lives only in `loop.py finish` is a norm the
             # next caller walks around — so the server refuses on its own too,
             # asking `schema.round_is_complete`, the one predicate both processes
-            # share (docs/design/loop-driver.md).
+            # share.
             with _data_lock:
                 round_input = _input_data
                 submitted   = _last_verdicts

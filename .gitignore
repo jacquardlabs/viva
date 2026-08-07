@@ -5,3 +5,10 @@
 # Python bytecode — never tracked; a test run would otherwise dirty the tree
 __pycache__/
 *.pyc
+
+# Transient story scaffolding — a design doc and its build plan live in the
+# branch until the story ships, then disappear with the worktree. What survives
+# lands in PRODUCT.md, DESIGN.md, CLAUDE.md, or docs/headless-contract.md; the
+# decision itself lives in the issue.
+docs/design/
+PLAN.md
