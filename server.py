@@ -4631,14 +4631,25 @@ class Handler(BaseHTTPRequestHandler):
                         != "approved")
                     spec = round_input.get("pass")
                     kind = spec.get("kind") if isinstance(spec, dict) else None
-                    if pending:
+                    if not sections:
+                        # Before the pass branch: an empty round is refused by
+                        # the base rule, and naming a conjunct here would blame
+                        # a `structure`/`line` pass that adds none.
+                        why = "the round carries no sections to approve"
+                    elif pending:
                         why = ("%d of %d section(s) not approved"
                                % (pending, len(sections)))
                     elif kind:
+                        # The recovery is the next round, not a merge into this
+                        # round's file: the round this process serves was loaded
+                        # once and is replaced only by `/next-round`, so a check
+                        # answered on disk under it is one this guard never sees.
                         why = ("every section is approved, but the %s pass is "
                                "not satisfied — a fact-check round holds until "
                                "every check flag carries a result, a proof round "
-                               "until no suggested edit is unresolved" % kind)
+                               "until no suggested edit is unresolved. Answer "
+                               "the flags in the next round and POST it to "
+                               "/next-round" % kind)
                     else:
                         why = "the round carries no sections to approve"
                     self._error(409, "refusing to complete: %s. Nothing is "

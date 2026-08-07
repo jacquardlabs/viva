@@ -22,6 +22,9 @@ SHIPPED = ROOT / "types"
 sys.path.insert(0, str(ROOT / "scripts"))
 import doc_types  # noqa: E402
 
+# Spelled out, not imported from `schema`: an independent oracle. Reading the
+# same tuple `validate_bundle` checks against would make the assertion below
+# tautological — the same reason `EXPECTED_SHIPPED` is a literal.
 PASS_KINDS = ("structure", "line", "fact-check", "proof")
 # Per the design's open question 2 — the types this repo actually produces.
 EXPECTED_SHIPPED = {"design-doc", "plan", "pr-description", "readme",
@@ -199,7 +202,8 @@ def test_name_must_be_a_bare_token() -> None:
 
 def test_doc_types_cross_imports_no_sibling() -> None:
     """CLAUDE.md's one-cross-import rule: `schema` is the only sibling any
-    script may import, and this one needs nothing from it."""
+    script may import, and this one imports exactly that — `PASS_KINDS`, so a
+    bundle's `default_pass` is checked against the tuple a round is."""
     siblings = {p.stem for p in (ROOT / "scripts").glob("*.py")} - {"doc_types"}
     imported = set()
     for node in ast.walk(ast.parse(SCRIPT.read_text(encoding="utf-8"))):

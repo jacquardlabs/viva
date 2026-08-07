@@ -14,6 +14,7 @@ identical but for the round file:
      start getting a 409 it cannot fix.
 """
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -137,12 +138,49 @@ def check_a_malformed_pass_is_refused_at_the_boundary() -> None:
     print("  ok  check_a_malformed_pass_is_refused_at_the_boundary")
 
 
+def check_annotate_refuses_the_round_the_server_is_serving() -> None:
+    """A check flag is answered in the NEXT round, never in the armed one.
+
+    The server loads its round once and replaces it only from `/next-round`, so
+    a merge into the file it was armed from is invisible to `/complete`. Before
+    the pass work that divergence was inert — annotations gated nothing. Now it
+    is reachable and expensive: `loop.py finish` would pass its own gate reading
+    disk, append the Revision History to the doc, and only then be refused by a
+    server reading its stale copy. `annotate` refuses instead.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        (td / "d.md").write_text("# T\n", encoding="utf-8")
+        inp, out = viva / "review-input-r1.json", viva / "review-r1.json"
+        inp.write_text(json.dumps(round_input({"kind": "fact-check"})),
+                       encoding="utf-8")
+        sidecar = td / "sidecar.json"
+        sidecar.write_text(json.dumps([dict(FLAG, id="s1", result="sourced")]),
+                           encoding="utf-8")
+        loop_py = Path(__file__).resolve().parent.parent / "scripts" / "loop.py"
+        with launch_server(inp, out, cwd=td):
+            r = subprocess.run(
+                [sys.executable, str(loop_py), "--viva-dir", str(viva),
+                 "annotate", "--sidecar", str(sidecar)],
+                capture_output=True, text=True, cwd=str(td))
+        assert r.returncode != 0, (
+            "annotate merged into the round the server is serving — the server "
+            "would never see it: %s" % r.stdout)
+        assert "already armed" in r.stderr, r.stderr
+        assert "result" not in json.dumps(json.loads(inp.read_text())), \
+            "the refused merge must leave the round file untouched"
+    print("  ok  check_annotate_refuses_the_round_the_server_is_serving")
+
+
 def main() -> None:
     check_fact_check_holds_an_unanswered_flag()
     check_fact_check_closes_once_the_flag_is_answered()
     check_absent_pass_is_unchanged()
     check_a_pass_never_signs_off_an_unapproved_round()
     check_a_malformed_pass_is_refused_at_the_boundary()
+    check_annotate_refuses_the_round_the_server_is_serving()
     print("OK")
 
 

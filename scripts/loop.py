@@ -322,6 +322,19 @@ def cmd_annotate(args) -> int:
     if not n:
         die("no round to annotate — run `loop.py start --doc <path>` first")
     inp, _ = round_files(viva, n)
+    # Annotate is a PRE-ARM step. The server loads its round once and replaces
+    # it only from `/next-round`, so annotating the round it is already serving
+    # writes a file nobody re-reads: `loop.py finish` would pass its own gate off
+    # disk, append the ledger, and then be refused by `/complete` reading the
+    # stale copy. Loud here rather than silent there. Every real seam passes —
+    # round 1 annotates before any server exists, and `rearm --parse-only` leaves
+    # the server on round n-1 while this writes round n.
+    base = server_url(viva)
+    if base and probe_round(base) == n:
+        die(f"round {n} is already armed — the server at {base} holds it in "
+            f"memory and would never see this merge. Annotate before arming: "
+            f"finish or `rearm --parse-only` this round, annotate the next one, "
+            f"then `loop.py arm`.")
     # The producer seam's driver end: the agent names its sidecar, the driver
     # names the file. `annotate.py` reads '-' from stdin, and stdin is inherited
     # here, so a piped producer works unchanged.
@@ -540,16 +553,25 @@ def cmd_finish(args) -> int:
         # a round the reviewer already signed.
         spec = input_data.get("pass")
         kind = spec.get("kind") if isinstance(spec, dict) else None
-        if pending:
+        if not input_data.get("sections"):
+            # Tested before the pass: an empty round is refused by the base rule,
+            # and naming a conjunct here would blame a `structure`/`line` pass
+            # that adds none.
+            why = "the round carries no sections to approve"
+        elif pending:
             why = (f"{len(pending)} of {len(input_data.get('sections', []))} "
                    f"section(s) not approved — "
                    f"{', '.join(repr(t) for t in pending[:5])}")
         elif kind:
+            # The recovery is the round loop, not a mid-round annotate: the
+            # server holds this round in memory, so a merge into the file it was
+            # armed from is one `/complete` never sees.
             why = (f"every section is approved, but the {kind} pass is not "
                    f"satisfied — a fact-check round holds until every check "
-                   f"flag carries a result (answer them with `loop.py annotate "
-                   f"--sidecar <path>`; see {REFERENCES / 'producers.md'}), a "
-                   f"proof round until no suggested edit is unresolved")
+                   f"flag carries a result, a proof round until no suggested "
+                   f"edit is unresolved. Answer the flags in the NEXT round: "
+                   f"`loop.py rearm --parse-only`, `loop.py annotate --sidecar "
+                   f"<path>` (see {REFERENCES / 'producers.md'}), `loop.py arm`")
         else:
             why = "the round carries no sections to approve"
         die(f"refusing to finish: {why}. Nothing is auto-accepted; "

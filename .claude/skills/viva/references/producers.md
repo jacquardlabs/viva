@@ -79,6 +79,14 @@ a `fact-check` round the flag holds the round open until it does, so re-emitting
 the same flag with a `result` is how a check answers one: the merge writes the
 result onto the flag already there instead of appending a twin beside it.
 
+A new check producer must add its `kind` to `schema.CHECK_KINDS`. That registry
+fails **open**: an unregistered kind is invisible to `round_is_complete`, so its
+flags gate nothing and a `fact-check` round closes where it should have held.
+
+Answer flags in the round you are about to arm, never in the one already armed —
+the server loads its round once and replaces it only from `/next-round`, so
+`loop.py annotate` refuses a round the server is currently serving.
+
 Flag **new or changed** sections only: the parser carries a prior annotation
 forward for any section whose title and content are byte-identical, and drops it
 from a rewritten section, so a round-2+ producer looks only at sections without
