@@ -135,10 +135,13 @@ Loop over `comments[]` for each section and act **by type**, as the verdict
 table says. Before applying or answering a comment, if `comment.attachments` is
 present, `Read` each listed path — the image is context for the edit or answer.
 For a **`changes`** comment, rewrite directly in the source file:
-`anchor.offset` locates the edit within the section source (the offset
-disambiguates a repeated phrase), `anchor.text` confirms it, and an un-anchored
-comment scopes to the whole section. For an **`info`** comment, do not edit the
-source — answer in the thread response only. For a carried-forward thread, act
+`anchor.offset` locates the edit within the section source and `anchor.text`
+confirms it. The offset already names the occurrence the reviewer picked, so a
+repeated phrase needs no guessing. `offset: -1` means that ordinal did not
+resolve — `anchor.text` may still appear in the source, just not there — so
+scope the edit by the section and the note, never by the first match of a
+phrase that repeats. An un-anchored comment scopes to the whole section. For an
+**`info`** comment, do not edit the source — answer in the thread response only. For a carried-forward thread, act
 on its **latest** reviewer turn's type the same way; `wait` prints the path to
 the thread rules when the round has work. Preserve each heading's text exactly —
 next-round title matching depends on it.

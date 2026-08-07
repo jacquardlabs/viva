@@ -2860,7 +2860,7 @@ document.addEventListener('mouseup', () => {
   // Defer a tick so the browser has finalized the selection after mouseup.
   setTimeout(() => {
     const sel = document.getSelection();
-    if (!sel || sel.isCollapsed) return;
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     const text = sel.toString().trim();
     if (!text) return;
     const start = toElement(sel.anchorNode);
@@ -2875,7 +2875,16 @@ document.addEventListener('mouseup', () => {
     // the /viva-diff skill's grep fallback, so it degrades to an unanchored
     // whole-section note. Same guard the hand-rolled table carried.
     const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
-    openCommentPopover(m[1], crossesPanes ? {} : { anchor: { text, offset: offsetInSource(m[1], text) } });
+    if (crossesPanes) { openCommentPopover(m[1], {}); return; }
+    // Which occurrence of a repeated phrase the reviewer picked exists only in
+    // the rendered content — that is where the selection lives. Read the
+    // ordinal there, resolve the SAME ordinal against the markdown source
+    // (issue #95). `getRangeAt(0)`, not anchorNode/focusNode: a backwards drag
+    // reports its endpoints in the opposite order, and the ordinal is counted
+    // from where the selection *starts* in document order.
+    const occurrence = occurrenceInRendered(content, sel.getRangeAt(0), text);
+    openCommentPopover(m[1],
+      { anchor: { text, offset: offsetInSource(m[1], text, occurrence), occurrence } });
   }, 0);
 });
 
@@ -2892,12 +2901,68 @@ function closestD2hPane(node) {
   return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
 }
 
-// Char offset of `text` in the section's raw markdown source — the rewrite
-// target. -1 when not found (anchor still stores text; agent falls back to grep).
-function offsetInSource(id, text) {
+/* ─── Anchor resolution: rendered occurrence → source offset (#95) ─────
+   The reviewer selects in rendered HTML; the anchor must address the markdown
+   source. A phrase that repeats has one identity — which occurrence — read
+   where the selection actually happened and then resolved against the source,
+   so the stored offset and the on-screen highlight name the same span. The
+   ordinal rides out on the anchor because it is the half that survives a
+   re-render; the offset is the half the source edit uses. */
+
+// 0-based ordinal of the selected occurrence of `text`: how many occurrences
+// *begin* before the selection starts, counted over the rendered text. In
+// diff2html's side-by-side output the count is scoped to the pane the
+// selection began in — the facing pane repeats the same lines and is not part
+// of the reviewer's reading order.
+function occurrenceInRendered(root, range, text) {
+  const scope = closestD2hPane(range.startContainer) || root;
+  if (!scope.contains || !scope.contains(range.startContainer)) return 0;
+  const all = document.createRange();
+  all.selectNodeContents(scope);
+  const pre = document.createRange();
+  pre.selectNodeContents(scope);
+  try { pre.setEnd(range.startContainer, range.startOffset); }
+  catch (e) { return 0; }
+  return countStartsBefore(all.toString(), text, pre.toString().length);
+}
+
+// Occurrences of `needle` in `hay` that start before index `limit`. Steps by 1
+// so an overlapping repeat ("aa" in "aaaa") counts the same way nthIndexOf
+// resolves it — the two must agree or the ordinal names a different span in
+// the source than it did on screen.
+function countStartsBefore(hay, needle, limit) {
+  if (!needle) return 0;
+  let n = 0, i = hay.indexOf(needle);
+  while (i >= 0 && i < limit) { n++; i = hay.indexOf(needle, i + 1); }
+  return n;
+}
+
+// Index of the `n`th (0-based) occurrence of `needle` in `hay`, -1 if there is
+// no such occurrence.
+function nthIndexOf(hay, needle, n) {
+  if (!needle) return -1;
+  let i = hay.indexOf(needle);
+  while (i >= 0 && n > 0) { i = hay.indexOf(needle, i + 1); n--; }
+  return i;
+}
+
+// Char offset of the reviewer's chosen occurrence of `text` in the section's
+// raw markdown source — the rewrite target. -1 when the ordinal does not
+// resolve there; the anchor still stores text + occurrence, and -1 says
+// "unplaced", not "absent" — the agent scopes by the section rather than
+// guessing a match.
+function offsetInSource(id, text, occurrence) {
   const src = _pendingMarkdown.get(id)
     || REVIEW_DATA.sections.find(s => s.id === id)?.content || '';
-  return src.indexOf(text);
+  const n = occurrence > 0 ? occurrence : 0;
+  const at = nthIndexOf(src, text, n);
+  // Rendered and source occurrence counts can diverge — markdown syntax the
+  // renderer strips, diff chrome it adds. An ordinal that overruns the source
+  // still resolves when the source holds exactly one match, because one match
+  // is unambiguous; with two or more it stays honestly unresolved rather than
+  // silently collapsing back onto the first, which is the bug being fixed.
+  if (at < 0 && n > 0 && nthIndexOf(src, text, 1) < 0) return nthIndexOf(src, text, 0);
+  return at;
 }
 
 // A small popover with two type chips + a note field + save/cancel. `anchor`
@@ -2954,23 +3019,38 @@ function renderHighlights(id) {
   });
   content.normalize();
   const cs = (rState.verdicts[id]?.comments || []).filter(c => c.anchor?.text);
-  cs.forEach(c => wrapFirst(content, c.anchor.text, 'cmt-hl-' + c.type));
+  cs.forEach(c => wrapNth(content, c.anchor.text, 'cmt-hl-' + c.type,
+                          c.anchor.occurrence > 0 ? c.anchor.occurrence : 0));
 }
 
-// Wrap the first text-node occurrence of `needle` in a <mark class=cls>.
-function wrapFirst(root, needle, cls) {
+// Wrap the `n`th (0-based) text-node occurrence of `needle` in a <mark
+// class=cls>. The ordinal is the anchor's own `occurrence`, so a comment on
+// the third "retries" highlights the third one and the reviewer sees the span
+// the stored offset names. Unchanged limitation from wrapFirst: a needle split
+// across element boundaries (an inline <code> mid-phrase) lives in no single
+// text node, so it is never matched — and because occurrenceInRendered counts
+// over the flat text where it *is* present, an earlier straddling occurrence
+// shifts this walk's count and the mark can land one occurrence late. Visual
+// only; the stored offset is unaffected.
+function wrapNth(root, needle, cls, n) {
+  if (!needle) return;
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let n;
-  while ((n = walk.nextNode())) {
-    const i = n.nodeValue.indexOf(needle);
-    if (i < 0) continue;
-    const after = n.splitText(i);
-    after.splitText(needle.length);
-    const mark = document.createElement('mark');
-    mark.className = cls;
-    mark.textContent = after.nodeValue;
-    after.replaceWith(mark);
-    return;
+  let node, seen = 0;
+  while ((node = walk.nextNode())) {
+    let i = node.nodeValue.indexOf(needle);
+    while (i >= 0) {
+      if (seen === n) {
+        const after = node.splitText(i);
+        after.splitText(needle.length);
+        const mark = document.createElement('mark');
+        mark.className = cls;
+        mark.textContent = after.nodeValue;
+        after.replaceWith(mark);
+        return;
+      }
+      seen++;
+      i = node.nodeValue.indexOf(needle, i + 1);
+    }
   }
 }
 

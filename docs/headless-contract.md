@@ -125,7 +125,7 @@ review or diff round):
 |---|---|---|
 | `id` | **yes** | Section id. |
 | `verdict` | **yes** | One of `approved`, `changes`, `info`, `pending`. |
-| `comments` | no | Typed comment threads; each may carry `anchor: {text, offset}` (the reviewer's exact selection). |
+| `comments` | no | Typed comment threads; each may carry `anchor: {text, offset, occurrence?}` (the reviewer's exact selection). `occurrence` is the 0-based index of that selection among the identical matches in the **rendered** section content, where the selection was made; `offset` is that same ordinal resolved against the markdown source, or `-1` when it does not resolve there. `-1` does not mean `anchor.text` is absent from the source — it means the ordinal did not land, so a caller must scope by the section rather than take the first match of a phrase that repeats. |
 
 The full output file (`ReviewOutput`) also carries `round` and
 `submitted_early` at the top level, alongside `sections: [SectionVerdict]`.

@@ -33,8 +33,9 @@ card, so the reviewer sees a flagged weak spot *before* choosing a verdict.
 - `message` *(required)* — the inline text shown beside the badge.
 - `anchor` *(optional)* — a **string**: surfaced as the badge's hover title, or,
   for a contradiction flag, another section's id rendered as a jump link. Not
-  the same field as a **comment's** `anchor`, which is a `{text, offset}` object
-  naming the reviewer's selection. Same name, two shapes, two schemas.
+  the same field as a **comment's** `anchor`, which is a
+  `{text, offset, occurrence?}` object naming the reviewer's selection. Same
+  name, two shapes, two schemas.
 
 Annotations never gate a verdict — the human still decides. A round with no
 `annotations` renders exactly as before.

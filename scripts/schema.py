@@ -130,8 +130,12 @@ class SectionVerdict(TypedDict, total=False):
     id: str        # required — section id
     verdict: str   # required — one of VERDICTS
     # optional — typed comment threads (issue #68). Each comment may carry an
-    # `anchor` object {text, offset}: the reviewer's exact selection, used to
-    # scope the rewrite. Distinct from Annotation.anchor (a string) above.
+    # `anchor` object {text, offset, occurrence?}: the reviewer's exact
+    # selection, used to scope the rewrite. `occurrence` is the 0-based index of
+    # that selection among the identical matches in the RENDERED section
+    # content, where the selection was made; `offset` is that same ordinal
+    # resolved against the markdown source, or -1 when it does not resolve there
+    # (#95). Distinct from Annotation.anchor (a string) above.
     comments: list
 
 
