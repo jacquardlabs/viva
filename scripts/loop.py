@@ -246,6 +246,12 @@ def cmd_start(args) -> int:
                 # set, so it is read back here and overridden only by an
                 # explicit `--type`.
                 prior_doc_type = prior_round.get("doc_type")
+                # The `pass` is deliberately NOT read back. Split pattern and
+                # type are session identity — re-deciding either changes section
+                # identity or drops the check set. Depth is a per-round decision,
+                # and a resumed round 1 inheriting the prior session's finishing
+                # `proof` pass would add a conjunct nobody asked for. Name it
+                # again with `--pass` if the new session wants it.
 
     for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
         p.unlink()
@@ -272,6 +278,13 @@ def cmd_start(args) -> int:
         cmd += ["--split-on", split_on]
     if doc_type is not None:
         cmd += ["--doc-type", doc_type]
+    if args.pass_kind is not None:
+        cmd += ["--pass", args.pass_kind]
+    if args.posture is not None:
+        # Handed over even without `--pass`, so `parse_sections.py` — the
+        # boundary — refuses a posture on no pass instead of this driver
+        # silently dropping it.
+        cmd += ["--posture", args.posture]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
     try:
@@ -446,11 +459,32 @@ def cmd_rearm(args) -> int:
     doc = round_data.get("doc_file")
     split_on = round_data.get("split_on")
     doc_type = round_data.get("doc_type")
+    prior_pass = round_data.get("pass")
     if not doc:
         die(f"round {n}'s input names no doc_file — cannot re-parse")
     if not Path(doc).exists():
         die(f"doc not found: {doc} (recorded as doc_file in {inp}). Re-run from "
             f"the directory the review was started in.")
+
+    # The pass carries within the session the way the pattern and the type do —
+    # round N+1 runs at round N's depth unless this call names another. It is
+    # the one of the three the agent is expected to change mid-session (round 1
+    # structural, round 2 line, a later one fact-check), so `rearm` takes the
+    # override the other two have no use for.
+    if args.pass_kind is not None:
+        next_pass = {"kind": args.pass_kind}
+        if args.posture is not None:
+            next_pass["posture"] = args.posture
+    else:
+        next_pass = dict(prior_pass) if isinstance(prior_pass, dict) else None
+        if next_pass is not None and not next_pass.get("kind"):
+            die(f"round {n}'s input carries a pass with no kind — fix {inp}, or "
+                f"name this round's pass with --pass")
+        if args.posture is not None:
+            if next_pass is None:
+                die("--posture needs a pass, and round %d runs none — name one "
+                    "with --pass" % n)
+            next_pass["posture"] = args.posture
 
     store = viva / "open-notes.json"
     cmd = [sys.executable, SCRIPTS / "open_notes.py", "update",
@@ -472,6 +506,10 @@ def cmd_rearm(args) -> int:
         cmd += ["--split-on", split_on]
     if doc_type is not None:
         cmd += ["--doc-type", doc_type]
+    if next_pass is not None:
+        cmd += ["--pass", next_pass["kind"]]
+        if next_pass.get("posture") is not None:
+            cmd += ["--posture", next_pass["posture"]]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
 
     # The round 2+ producer seam — the same stop-after-parse `start` takes on
@@ -496,10 +534,26 @@ def cmd_finish(args) -> int:
         by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
         pending = [s.get("title") for s in input_data.get("sections", [])
                    if (by_id.get(s.get("id")) or {}).get("verdict") != "approved"]
-        die(f"refusing to finish: {len(pending)} of "
-            f"{len(input_data.get('sections', []))} section(s) not approved — "
-            f"{', '.join(repr(t) for t in pending[:5])}. Nothing is "
-            f"auto-accepted; re-present the round or abandon it.")
+        # `round_is_complete` is the gate; this text is only its detail. A pass
+        # ADDS a conjunct, so a round can be refused with everything approved —
+        # printing "0 of N not approved" there would send the agent to re-present
+        # a round the reviewer already signed.
+        spec = input_data.get("pass")
+        kind = spec.get("kind") if isinstance(spec, dict) else None
+        if pending:
+            why = (f"{len(pending)} of {len(input_data.get('sections', []))} "
+                   f"section(s) not approved — "
+                   f"{', '.join(repr(t) for t in pending[:5])}")
+        elif kind:
+            why = (f"every section is approved, but the {kind} pass is not "
+                   f"satisfied — a fact-check round holds until every check "
+                   f"flag carries a result (answer them with `loop.py annotate "
+                   f"--sidecar <path>`; see {REFERENCES / 'producers.md'}), a "
+                   f"proof round until no suggested edit is unresolved")
+        else:
+            why = "the round carries no sections to approve"
+        die(f"refusing to finish: {why}. Nothing is auto-accepted; "
+            f"re-present the round or abandon it.")
 
     # The doc comes off the round file, the way `rearm` reads it — a
     # caller-supplied `--doc` is how this step fails from a different cwd, and
@@ -595,6 +649,17 @@ def main() -> int:
                         "committed under `.viva-types/`). Refused here if it "
                         "does not resolve; recorded in the round file, so later "
                         "rounds and a later resume carry it.")
+    p.add_argument("--pass", dest="pass_kind", choices=schema.PASS_KINDS,
+                   metavar="KIND",
+                   help="depth this round runs at — %s. Recorded in the round "
+                        "file and carried by `rearm` to round N+1; a later "
+                        "resume does NOT inherit it. Omit for a round with no "
+                        "pass, which behaves exactly as it does today."
+                        % "|".join(schema.PASS_KINDS))
+    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
+                   help="posture setting on the pass — %s, where hard licenses "
+                        "the author to argue rather than concede. Needs --pass."
+                        % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after parsing so a producer can annotate round 1 "
                         "before it is armed (the opt-in producer seam)")
@@ -622,6 +687,14 @@ def main() -> int:
     p.add_argument("--response", action="append", default=[], metavar="CID=TEXT",
                    help='what you changed for one comment, as "<cid>=text" '
                         '(repeatable)')
+    p.add_argument("--pass", dest="pass_kind", choices=schema.PASS_KINDS,
+                   metavar="KIND",
+                   help="run round N+1 at this depth instead of the one round N "
+                        "recorded — %s. Omit to carry the round's pass forward "
+                        "unchanged." % "|".join(schema.PASS_KINDS))
+    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
+                   help="re-posture the pass (%s); alone, it re-postures the "
+                        "carried kind." % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after the re-parse so a producer can annotate it")
     p.set_defaults(func=cmd_rearm)

@@ -25,6 +25,12 @@ Optional:
   --doc-type NAME    Record the doc type this round was started with (a name
                       `scripts/doc_types.py` resolves). Recorded only, never
                       resolved here — the parser owns no type semantics.
+  --pass KIND        Record the depth this round runs at (structure | line |
+                      fact-check | proof). Omit for a round with no pass, which
+                      carries no `pass` key and completes exactly as it did
+                      before the field existed.
+  --posture P        normal | hard — a setting ON the pass, written inside the
+                      `pass` object, never as its own round field. Needs --pass.
 
 Exits non-zero if the doc can't be read, parsing fails the integrity check,
 --split-on matches no heading, or prior round files are specified but can't
@@ -61,6 +67,21 @@ def _parse_args() -> argparse.Namespace:
         dest="doc_type",
         help="Doc-type name to record on the round (resolved by doc_types.py "
              "before it gets here). Omit for an untyped round.",
+    )
+    p.add_argument(
+        "--pass",
+        dest="pass_kind",
+        choices=schema.PASS_KINDS,
+        help="Depth this round runs at. Recorded only — the parser owns no pass "
+             "semantics; `schema.round_is_complete` is what reads it. Omit for a "
+             "round with no pass (today's behavior, unchanged).",
+    )
+    p.add_argument(
+        "--posture",
+        dest="posture",
+        choices=schema.PASS_POSTURES,
+        help="Posture setting on the pass ('hard' licenses the author to argue "
+             "rather than concede). Requires --pass; absent reads as normal.",
     )
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
@@ -374,6 +395,13 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
 def main() -> None:
     args = _parse_args()
 
+    # A posture with no pass is a setting on nothing. Refused here, at the
+    # boundary, rather than dropped on write where the caller would never learn
+    # the round runs at a posture it asked for and did not get.
+    if args.posture is not None and args.pass_kind is None:
+        sys.exit("viva: --posture needs --pass — a posture is a setting on a "
+                 "pass, not a round field of its own")
+
     try:
         text = Path(args.doc).read_text(encoding="utf-8")
     except OSError as e:
@@ -414,6 +442,17 @@ def main() -> None:
     # identically, rather than asking the agent to re-name it.
     if args.doc_type is not None:
         data["doc_type"] = args.doc_type
+    # Same rule once more for the pass, and here it is load-bearing rather than
+    # tidy: a round that runs no pass must carry NO `pass` key, because absent
+    # is what makes `round_is_complete` fall through to the base rule. A written
+    # default would silently add a conjunct to every round in the repo.
+    # `posture` lives inside the object — a pass is one thing to carry and
+    # validate, not two fields that can disagree.
+    if args.pass_kind is not None:
+        pass_spec = {"kind": args.pass_kind}
+        if args.posture is not None:
+            pass_spec["posture"] = args.posture
+        data["pass"] = pass_spec
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)

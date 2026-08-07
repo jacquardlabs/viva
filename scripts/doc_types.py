@@ -28,9 +28,9 @@ key, a `default_pass` outside `structure|line|fact-check|proof`, and a bundle
 whose `name` disagrees with its filename (the filename is what `--type` keys on,
 so `--type foo` must never hand back a bundle calling itself `bar`).
 
-Imports no sibling — not even `schema`, which carries nothing this needs.
-`PASS_KINDS` lives here rather than in `schema.py` because the round-level
-`pass` field is a separate story; when it lands, its home is the shared contract.
+Imports one sibling, `schema` — the permitted cross-import (CLAUDE.md) — for
+`PASS_KINDS`. The round-level `pass` field now lives in the shared contract, so
+a bundle's `default_pass` is validated against the same tuple a round is.
 """
 from __future__ import annotations
 
@@ -40,6 +40,8 @@ import re
 import sys
 from pathlib import Path
 
+import schema
+
 # `doc_types.py` lives in <plugin-root>/scripts/, so the shipped bundles are its
 # parent's sibling — resolved from the file, never from a caller's cwd.
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -47,8 +49,6 @@ SHIPPED_DIR = PLUGIN_ROOT / "types"
 
 # The repo-side override directory, relative to wherever the caller is running.
 REPO_TYPES_DIR = ".viva-types"
-
-PASS_KINDS = ("structure", "line", "fact-check", "proof")
 
 # A bare lowercase token: the filename IS the identity, so a name carrying a
 # separator, a dot segment, or a space is rejected before any path is built.
@@ -84,10 +84,10 @@ def validate_bundle(bundle: object, name: str, where: str) -> None:
         raise ValueError(
             f"{where}: bundle names itself {bundle['name']!r} but resolves as "
             f"{name!r} — the filename is the identity, so the two must agree")
-    if bundle["default_pass"] not in PASS_KINDS:
+    if bundle["default_pass"] not in schema.PASS_KINDS:
         raise ValueError(
             f"{where}: default_pass {bundle['default_pass']!r} is not one of "
-            f"{'|'.join(PASS_KINDS)}")
+            f"{'|'.join(schema.PASS_KINDS)}")
 
 
 def load_bundle(path: Path, name: str) -> dict:

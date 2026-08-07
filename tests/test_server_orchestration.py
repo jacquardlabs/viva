@@ -345,7 +345,70 @@ def check_untyped_session_records_no_doc_type() -> None:
         assert r.returncode == 0, r.stderr
         data = json.loads((viva / "review-input-r1.json").read_text())
         assert "doc_type" not in data, data
+        assert "pass" not in data, (
+            "and no pass either — absent is what keeps `round_is_complete` on "
+            "the base rule: %s" % data.get("pass"))
     print("  ok  check_untyped_session_records_no_doc_type")
+
+
+def check_pass_carries_within_a_session_not_across_a_resume() -> None:
+    """The pass is round state `rearm` carries and a resume deliberately drops.
+
+    Depth is the one round parameter a caller changes mid-session (structural,
+    then line, then fact-check), so `rearm` takes an override the split pattern
+    and the type have no use for — but round N+1 runs round N's depth when it is
+    given none, or every later round silently falls back to the base rule. A
+    resume is the opposite case: it is a new review of a changed doc, and
+    inheriting the prior session's finishing pass would add a conjunct nobody
+    asked for.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        body = "# T\n\n## A\n\naaa\n\n## B\n\nbbb\n"
+        doc.write_text(body)
+
+        r = loop(viva, td, "start", "--doc", "d.md",
+                 "--pass", "structure", "--posture", "hard", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        assert r1["pass"] == {"kind": "structure", "posture": "hard"}, r1.get("pass")
+
+        ids = [s["id"] for s in r1["sections"]]
+        approved = json.dumps({"round": 1, "submitted_early": False,
+                               "sections": [{"id": i, "verdict": "approved"}
+                                            for i in ids]})
+        (viva / "review-r1.json").write_text(approved)
+
+        # No override: round 2 runs at round 1's depth and posture.
+        r = loop(viva, td, "rearm", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        assert r2["pass"] == {"kind": "structure", "posture": "hard"}, (
+            "rearm dropped the pass — round 2 fell back to the base rule: %s"
+            % r2.get("pass"))
+
+        # Override: the named kind wins, and it does not inherit the carried
+        # posture — `--pass` names the whole pass.
+        (viva / "review-r2.json").write_text(approved)
+        r = loop(viva, td, "rearm", "--pass", "fact-check", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r3 = json.loads((viva / "review-input-r3.json").read_text())
+        assert r3["pass"] == {"kind": "fact-check"}, r3.get("pass")
+
+        # Resume: sign the doc off, start again, and the pass must be gone.
+        (viva / "review-r3.json").write_text(approved)
+        doc.write_text(body + "\n---\n\n## Revision History\n\nsigned off\n")
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        resumed = json.loads((viva / "review-input-r1.json").read_text())
+        assert "pass" not in resumed, (
+            "a resume must not inherit the prior session's depth — that adds a "
+            "conjunct nobody asked for: %s" % resumed.get("pass"))
+        assert resumed.get("approved_ids"), "the resume carried no approvals"
+    print("  ok  check_pass_carries_within_a_session_not_across_a_resume")
 
 
 def check_resume_warns_on_a_type_that_no_longer_resolves() -> None:
@@ -701,6 +764,7 @@ def main() -> None:
     check_split_on_session()
     check_doc_type_session()
     check_untyped_session_records_no_doc_type()
+    check_pass_carries_within_a_session_not_across_a_resume()
     check_resume_warns_on_a_type_that_no_longer_resolves()
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()

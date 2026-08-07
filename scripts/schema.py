@@ -10,6 +10,10 @@ load-bearing pieces of the protocol:
   for which verdicts become a Revision-History row and how the note is derived.
 - **The round shapes** — `TypedDict`s documenting `review-input-r{N}.json` and
   `review-r{N}.json` (documentation only; CI runs no type checker).
+- **The completion rule** — `round_is_complete()`, the one predicate
+  `loop.py finish` and the server's `/complete` both ask, plus the conjunct-only
+  invariant a round's optional `pass` obeys: a pass may only add a condition to
+  the all-approved base, never relax it.
 - **Boundary validation** — `validate_review_input()` / `validate_verdicts()`,
   called where data enters the system so a missed producer fails loudly instead
   of silently corrupting a downstream reader.
@@ -31,6 +35,30 @@ from typing import List, Optional, TypedDict
 LEDGER_VERDICTS = ("changes", "info")
 # Every verdict a review output section may carry.
 VERDICTS = ("approved", "changes", "info", "pending")
+
+# ── Passes — depth and posture as round parameters ────────────────────────────
+# The four depths a round can run at. A pass is OPTIONAL on `ReviewInput`, and
+# absent means today's behavior exactly — never defaulted, never written as
+# `null` (PRODUCT.md principle 4). `doc_types.py` reads these too: a bundle's
+# `default_pass` must name a kind a round can actually run.
+PASS_KINDS = ("structure", "line", "fact-check", "proof")
+# Posture is a setting ON the pass, not a second round field — `hard` licenses
+# the author to argue rather than concede. Absent reads as `normal`.
+PASS_POSTURES = ("normal", "hard")
+
+# The annotation `kind`s a check producer emits — the handle `round_is_complete`
+# reads to find a `fact-check` round's flags (`headings_present.py`'s `KIND` is
+# the first, and its docstring names this key as that handle). A new check
+# producer ADDS ITS KIND HERE, or a `fact-check` pass never sees its flags and
+# closes a round it should have held. Deliberately not "every warn/error
+# annotation": drift, checklist, contradiction, confidence, and preference flags
+# are advisory producers with nothing to do with checking claims.
+CHECK_KINDS = ("headings-present",)
+
+# The comment type a reviewer's suggested edit carries, beside today's `changes`
+# and `info`. Nothing writes it yet — the mechanism is a later story — so the
+# `proof` conjunct that reads it reduces to the all-approved base today.
+SUGGESTION = "suggestion"
 
 
 # ── Section identity ──────────────────────────────────────────────────────────
@@ -103,6 +131,12 @@ class Annotation(TypedDict, total=False):
     anchor: str
     basis: str      # confidence only — sourced | inferred
     level: str      # confidence only — high | medium | low
+    # optional — the check's finding for this flag, written by the producer that
+    # raised it or merged onto it later (`annotate.py` answers a flag in place).
+    # Only load-bearing for a `fact-check` pass: `round_is_complete()` holds such
+    # a round until every `CHECK_KINDS` flag carries one. Advisory everywhere
+    # else, like the rest of this shape.
+    result: str
 
 
 class ReviewSection(TypedDict, total=False):
@@ -114,7 +148,27 @@ class ReviewSection(TypedDict, total=False):
     open_notes: list              # optional — carried-forward threads
 
 
-class ReviewInput(TypedDict, total=False):
+class ReviewPass(TypedDict, total=False):
+    kind: str      # required when a pass is present — one of PASS_KINDS
+    posture: str   # optional — one of PASS_POSTURES; absent reads as `normal`
+
+
+# `ReviewInput.pass` — optional; the depth and posture this round runs at.
+# ABSENT for a round that runs no pass, and absent is today's behavior exactly:
+# the round parses, arms, waits, and completes as it did before this field
+# existed (PRODUCT.md principle 4). Present, it can only make
+# `round_is_complete()` stricter — never looser. Recorded by
+# `parse_sections.py`; carried within a session by `loop.py rearm`, deliberately
+# NOT across a resume (depth is a per-round decision, unlike the session
+# identity `split_on`/`doc_type` carry). `server.py` renders nothing from it —
+# only `/complete`'s finish guard reads it, through `round_is_complete()`.
+#
+# Declared with the functional form because `pass` is a Python keyword and
+# cannot be a class-body annotation; mixed into `ReviewInput` below.
+_ReviewInputPass = TypedDict("_ReviewInputPass", {"pass": ReviewPass}, total=False)
+
+
+class ReviewInput(_ReviewInputPass, total=False):
     mode: str                       # "review"
     doc_file: str                   # relative path for the UI
     round: int                      # round number
@@ -128,6 +182,7 @@ class ReviewInput(TypedDict, total=False):
     # Passthrough: nothing in `server.py` reads or renders it. Absent when the
     # session was started without `--type`.
     doc_type: str
+    # `pass` — see `_ReviewInputPass` above; the key cannot be spelled here.
     sections: List[ReviewSection]
 
 
@@ -177,6 +232,25 @@ def validate_review_input(data: dict) -> None:
     # than failing where the bad value was written.
     if "doc_type" in data and not isinstance(data["doc_type"], str):
         raise ValueError("review-input.doc_type must be a string")
+    # Presence-gated like the two above, for a sharper reason: the pass is the
+    # only round field that changes when `POST /complete` may succeed. A
+    # malformed one must fail where it was written — a `null` or a typo'd kind
+    # would otherwise revert the round to the base rule silently, dropping a
+    # conjunct the reviewer asked for. Absent stays absent; nothing defaults it.
+    if "pass" in data:
+        spec = data["pass"]
+        if not isinstance(spec, dict):
+            raise ValueError(
+                "review-input.pass must be an object {kind, posture} — omit the "
+                "key entirely for a round that runs no pass, never null")
+        if spec.get("kind") not in PASS_KINDS:
+            raise ValueError(
+                "review-input.pass.kind %r is not one of %s"
+                % (spec.get("kind"), "|".join(PASS_KINDS)))
+        if "posture" in spec and spec["posture"] not in PASS_POSTURES:
+            raise ValueError(
+                "review-input.pass.posture %r is not one of %s"
+                % (spec.get("posture"), "|".join(PASS_POSTURES)))
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")
@@ -235,6 +309,56 @@ def has_revision_history(doc_text: str) -> bool:
     return REVISION_HISTORY_RE.search(doc_text) is not None
 
 
+def _check_flags(input_data: dict) -> list:
+    """Every check-producer flag on this round — the annotations whose `kind` is
+    in `CHECK_KINDS`. Advisory producers' flags are not check flags."""
+    return [a
+            for s in input_data.get("sections", []) or []
+            for a in (s.get("annotations") or [])
+            if isinstance(a, dict) and a.get("kind") in CHECK_KINDS]
+
+
+def _flag_is_answered(flag: dict) -> bool:
+    """Does this check flag carry a result — i.e. did the check come back?
+
+    A non-empty string `result`. Emptiness is the whole point: the producer
+    raises the flag, the result is what answers it, and a blank one answers
+    nothing.
+    """
+    result = flag.get("result")
+    return isinstance(result, str) and result.strip() != ""
+
+
+def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
+    """Does this round carry a suggested edit nobody has settled?
+
+    A suggested edit is a reviewer comment typed `SUGGESTION`. Nothing writes
+    that type yet — the mechanism is a later story — so this returns False and
+    `proof`'s conjunct reduces to the all-approved base today. It ships now so
+    that story adds a producer, not a completion rule.
+
+    Two places one can be outstanding, both existing shapes:
+      * the verdicts just submitted — a `suggestion` comment not marked
+        `settled`;
+      * the round's carried open threads — `parse_sections.py` attaches only
+        threads still `open`, and `open_notes.py` records each turn's comment
+        type as that exchange's `verdict`, so a thread whose LATEST exchange is
+        a suggestion is one the author has not answered yet.
+    """
+    for s in verdicts.get("sections", []) or []:
+        for c in s.get("comments") or []:
+            if (isinstance(c, dict) and c.get("type") == SUGGESTION
+                    and not c.get("settled")):
+                return True
+    for s in input_data.get("sections", []) or []:
+        for thread in s.get("open_notes") or []:
+            exchanges = (thread or {}).get("exchanges") or []
+            last = exchanges[-1] if exchanges else None
+            if isinstance(last, dict) and last.get("verdict") == SUGGESTION:
+                return True
+    return False
+
+
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     """Is this round finished — i.e. may the session sign off?
 
@@ -242,9 +366,32 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     ask, so the invariant lives in one place rather than being re-derived at two
     call sites in two processes. Pure: dicts in, bool out, no disk.
 
-    Today: every section in the round's input carries an `approved` verdict. The
-    input side matters — a section present in the input with no verdict row at
-    all is incomplete, which a scan of `verdicts` alone cannot see.
+    The base: every section in the round's input carries an `approved` verdict.
+    The input side matters — a section present in the input with no verdict row
+    at all is incomplete, which a scan of `verdicts` alone cannot see.
+
+    **The conjunct-only invariant.** A round's optional `pass` may only ADD a
+    condition to that base; it may never relax it. Every branch below runs the
+    base first and returns False the moment it fails, so no pass — now or later
+    — can return True where a passless round returns False. One that could would
+    reopen the hole #102 closed: `POST /complete` accepting a round the human
+    never approved.
+
+      | pass                      | complete when                              |
+      | absent, structure, line   | every section approved                     |
+      | fact-check                | …and every check flag carries a result     |
+      | proof                     | …and no suggested edit is unresolved       |
+
+    `tests/test_schema.py`'s `test_no_pass_relaxes_the_all_approved_base` walks
+    `PASS_KINDS` and enforces this, so a fifth kind is covered the day it lands.
+
+    The `fact-check` conjunct reads flags off the round input, where
+    `annotate.py` merged them, so a flag answered in round N rides into N+1 with
+    its answer (`parse_sections._carry_annotations` copies whole annotations onto
+    byte-identical sections). That carry is also how a stale flag survives its
+    own fix — a pre-existing limit `headings_present.py` documents, and the
+    reason answering a flag in place, rather than waiting for it to disappear,
+    is the satisfying move.
 
     Callers gate on shape and mode: Q&A rounds carry `questions` rather than
     `sections`, and diff rounds legitimately sign off with `changes` verdicts on
@@ -254,9 +401,18 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     if not section_ids:
         return False
     by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
-    return all(
+    if not all(
         (by_id.get(sid) or {}).get("verdict") == "approved" for sid in section_ids
-    )
+    ):
+        return False  # the base — no pass relaxes it
+
+    spec = input_data.get("pass")
+    kind = spec.get("kind") if isinstance(spec, dict) else None
+    if kind == "fact-check":
+        return all(_flag_is_answered(f) for f in _check_flags(input_data))
+    if kind == "proof":
+        return not _has_unresolved_suggestion(input_data, verdicts)
+    return True
 
 
 # ── Q&A round shapes ──────────────────────────────────────────────────────────

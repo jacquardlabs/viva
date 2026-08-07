@@ -71,7 +71,13 @@ python3 "$VIVA_DIR/scripts/drift.py" --input <the round file loop.py printed> \
 ```
 
 The merge is additive (carried-forward flags survive), idempotent, and a no-op
-on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`.
+on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`, plus
+confidence's `basis`/`level` and a check's `result`.
+
+A **check** producer's flag may carry `result` — what the check found for it. On
+a `fact-check` round the flag holds the round open until it does, so re-emitting
+the same flag with a `result` is how a check answers one: the merge writes the
+result onto the flag already there instead of appending a twin beside it.
 
 Flag **new or changed** sections only: the parser carries a prior annotation
 forward for any section whose title and content are byte-identical, and drops it

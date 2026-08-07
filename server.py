@@ -4615,11 +4615,13 @@ class Handler(BaseHTTPRequestHandler):
                                      "nothing to complete")
                     return
                 if not schema.round_is_complete(round_input, submitted):
-                    # `round_is_complete` above is the gate; the count below is
-                    # only the message's detail, derived from today's rule for
-                    # the agent's recovery. When milestone 10's pass types make
-                    # completion a function of the pass, this text follows the
-                    # predicate — it never decides anything on its own.
+                    # `round_is_complete` above is the gate; the detail below is
+                    # only the message, and it follows the predicate rather than
+                    # deciding anything. A round's `pass` ADDS a conjunct to the
+                    # all-approved base, so a refusal with nothing pending is
+                    # now reachable — reporting "0 of N not approved" there would
+                    # send the caller to re-present a round the human already
+                    # approved, instead of to the conjunct that held it.
                     by_id = {s.get("id"): s
                              for s in submitted.get("sections", [])}
                     sections = round_input.get("sections", [])
@@ -4627,10 +4629,21 @@ class Handler(BaseHTTPRequestHandler):
                         1 for s in sections
                         if (by_id.get(s.get("id")) or {}).get("verdict")
                         != "approved")
-                    self._error(409, "refusing to complete: %d of %d section(s) "
-                                     "not approved. Nothing is auto-accepted; "
-                                     "re-present the round or abandon it."
-                                     % (pending, len(sections)))
+                    spec = round_input.get("pass")
+                    kind = spec.get("kind") if isinstance(spec, dict) else None
+                    if pending:
+                        why = ("%d of %d section(s) not approved"
+                               % (pending, len(sections)))
+                    elif kind:
+                        why = ("every section is approved, but the %s pass is "
+                               "not satisfied — a fact-check round holds until "
+                               "every check flag carries a result, a proof round "
+                               "until no suggested edit is unresolved" % kind)
+                    else:
+                        why = "the round carries no sections to approve"
+                    self._error(409, "refusing to complete: %s. Nothing is "
+                                     "auto-accepted; re-present the round or "
+                                     "abandon it." % why)
                     return
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("complete", summary)
