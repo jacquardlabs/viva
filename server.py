@@ -248,44 +248,68 @@ body {
   animation: fadeUp 0.4s ease both;
 }
 
-/* ─── Title block — the drafting-sheet header ───────────── */
+/* ─── Status bar — the catalog header ────────────────────
+   Was a drafting title block: four bordered cells stacking an 8px uppercase
+   label over a value, captioned DRAWING / REV / TITLE / SIGNED. That is the
+   corner of an engineering drawing, and it survived the ground change as the
+   loudest remaining piece of the old metaphor.
+
+   A catalog states its facts on one line and gets out of the way: filename,
+   round, progress, reading left to right in one weight, closed by the same
+   2px ink rule that closes the page at the bottom bar. The cell markup is
+   unchanged — the same ids are filled by the same code — but the cells are
+   now inline runs, and each label sits BEFORE its value rather than above it,
+   so the bar costs one line instead of four stacked boxes. */
 .titleblock {
   display: flex;
-  border: 1px solid var(--border2);
-  background: var(--bg2);
-  margin-bottom: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  background: none;
+  padding-bottom: 8px;
+  margin-bottom: 18px;
 }
-/* Short data cells (rev, signed) hold their width; long cells (drawing,
-   title) get tb-flex and truncate. overflow:hidden keeps nowrap labels
-   from spilling into the next cell when space is tight. */
-.tb-cell { padding: 10px 14px; border-right: 1px solid var(--border2); min-width: 0; flex: 0 0 auto; overflow: hidden; }
-.tb-cell:last-child { border-right: none; }
-.tb-flex { flex: 1 1 0; }
-.tb-wide { flex: 2 1 0; }
+.tb-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+/* The filename takes the room; the last cell (progress) is pushed to the far
+   end, where a catalog puts its count. */
+.tb-flex { flex: 0 1 auto; }
+.tb-wide { flex: 0 1 auto; }
+.tb-cell:last-child { margin-left: auto; }
 .tb-label {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 8px;
-  letter-spacing: 0.16em;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 4px;
+  color: var(--soft);
+  margin-bottom: 0;
   white-space: nowrap;
 }
 .tb-val {
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tb-val em { font-style: italic; color: var(--text2); }
+.tb-val em { font-style: normal; color: var(--soft); font-weight: 400; }
 .tb-val.mono {
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 12px;
-  color: var(--accent);
-  padding-top: 2px;
+  color: var(--ink);
+  padding-top: 0;
 }
 
 /* ─── Revision ledger ────────────────────────────────────── */
@@ -521,26 +545,11 @@ body {
   animation: fadeUp 0.4s ease both;
 }
 
-/* registration marks pin the active sheet to the table */
-.card::before, .card::after {
-  content: '+';
-  position: absolute;
-  font-family: 'Fragment Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--accent);
-  opacity: 0;
-  transition: opacity 0.2s;
-  pointer-events: none;
-}
-.card::before { top: -7px; left: -6px; }
-.card::after  { bottom: -7px; right: -6px; }
+/* The active card's `+` registration marks — which pinned it to the drafting
+   table like a sheet — are gone with the rest of the blueprint chrome. The
+   active card is marked by its edge and elevation below, not by hanging
+   drafting glyphs outside its corners. */
 
-/* The drawing sheet: the document is a bounded sheet on the flat table —
-   edge border, inner rule, corner registration marks, edge coordinate
-   letters/numbers. Content-bounded (#paper wraps main.shell and grows with
-   it), not a fixed viewport frame; the decoration hangs just outside the
-   edge and hides where the sheet meets the viewport. */
 /* The catalog has no sheet. #paper survives as the page's content wrapper —
    the element every layout rule and test already hangs off — but its
    drawing-sheet dress is gone: no edge border, no 7px inner rule, no corner
@@ -548,7 +557,6 @@ body {
    hidden). Those said "this is a drafting sheet resting on a table"; the
    ground now says "this is a catalog page," which needs no frame to be read. */
 #paper { position: relative; max-width: 1240px; margin: 0 auto; background: var(--paper); }
-.card.is-active::before, .card.is-active::after { opacity: 1; }
 
 /* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
    in buildReviewCard/buildQACard — it scales to any doc length and, being an
@@ -614,9 +622,13 @@ body {
 }
 .carried-body { padding: 0 14px 14px; }
 
+/* The live card takes a 2px ink edge on its left — the catalog's own way of
+   marking the row you are working — instead of a full-perimeter ring and a
+   dark drop shadow, which read as a sheet lifted off a table. */
 .card.is-active {
-  border-color: var(--border2);
-  box-shadow: 0 0 0 1px var(--border2), 0 4px 24px rgba(0,0,0,0.4);
+  border-color: var(--rule);
+  border-left: 2px solid var(--ink);
+  box-shadow: none;
 }
 
 /* ─── Card head ──────────────────────────────────────────── */
@@ -1203,7 +1215,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
 /* The replacement field only exists while the suggestion chip is on; it reuses
    `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
-.cmt-pop-repl { margin-top: 6px; }
 /* Popover save / cancel — reticle buttons like the verdict row; save reads
    affirmative (teal), cancel stays muted. */
 .cmt-save, .cmt-cancel {
@@ -1947,10 +1958,10 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   <div id="review-view" style="display:none">
     <div class="header">
       <div class="titleblock">
-        <div class="tb-cell tb-flex tb-wide"><div class="tb-label">drawing</div><div class="tb-val mono" id="doc-path"></div></div>
-        <div class="tb-cell"><div class="tb-label">rev</div><div class="tb-val mono" id="round-badge"></div></div>
-        <div class="tb-cell tb-flex"><div class="tb-label">title</div><div class="tb-val" id="doc-title"></div></div>
-        <div class="tb-cell"><div class="tb-label">signed</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="doc-path"></div></div>
+        <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
+        <div class="tb-cell"><div class="tb-label">approved</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
       </div>
       <div class="progress-track">
         <div class="progress-fill" id="r-progress" style="width:0%"></div>
@@ -3196,7 +3207,6 @@ function openCommentPopover(id, { anchor } = {}) {
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
-    + (canSuggest ? '<textarea class="note-field cmt-pop-repl" style="display:none" placeholder="Replacement wording — applied verbatim"></textarea>' : '')
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
     + '<input type="file" accept="image/*" multiple style="display:none">'
@@ -3205,35 +3215,52 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.style.display = '';
 
   const ta        = pop.querySelector('.cmt-pop-note');
-  const repl      = pop.querySelector('.cmt-pop-repl');
   const strip     = pop.querySelector('.thumb-strip');
   const attachBtn = pop.querySelector('.attach-btn');
   const fileInput = pop.querySelector('input[type="file"]');
   wireCapture(() => captureState, ta, strip, attachBtn, fileInput, el('rcard-' + id));
 
+  /* One field, whose JOB changes with the type — not a second field that
+     appears beneath the first. Picking `suggest wording` used to reveal a
+     `.cmt-pop-repl` textarea below the note, which asked the reviewer to fill
+     two boxes to say one thing and made the popover taller than the card it
+     annotates. The type chips choose what the box means:
+
+       changes / info  → the box is the note
+       suggestion      → the box is the replacement wording, applied verbatim
+
+     Anything already typed carries across the switch, because a described
+     change ("cut the second clause") is usually a draft of the wording that
+     replaces it. A suggestion's rationale is optional by schema
+     (`_comment_fragment`: the wording alone is a full ledger row), so nothing
+     is lost by not asking for one here. */
+  const PLACEHOLDERS = {
+    changes:    'Describe the change or question…',
+    info:       'Describe the change or question…',
+    suggestion: 'Replacement wording — applied verbatim',
+  };
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
-    if (repl) {
-      const on = pop.dataset.type === 'suggestion';
-      repl.style.display = on ? '' : 'none';
-      if (on) repl.focus();
-    }
+    ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
+    ta.focus();
   });
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
-    const note = ta.value.trim();
-    // A suggestion ships on its wording, not its note: the replacement is the
-    // payload the author applies, and the note is optional rationale. Every
-    // other type still needs a note — there is nothing else in it.
+    const text = ta.value.trim();
+    // A suggestion ships on its wording: the same box the other types use for
+    // a note carries the replacement the author applies verbatim.
     const isSuggestion = pop.dataset.type === 'suggestion';
-    const replacement = (isSuggestion && repl) ? repl.value.trim() : '';
-    if (isSuggestion && !replacement) {
-      repl.placeholder = 'a suggestion needs replacement wording'; repl.focus(); return;
+    if (!text) {
+      ta.placeholder = isSuggestion ? 'a suggestion needs replacement wording'
+                                    : 'a comment needs a note';
+      ta.focus();
+      return;
     }
-    if (!isSuggestion && !note) { ta.placeholder = 'a comment needs a note'; return; }
-    addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined,
-                     replacement: replacement || undefined,
+    addComment(id, { type: pop.dataset.type,
+                     note: isSuggestion ? '' : text,
+                     anchor: anchor || undefined,
+                     replacement: isSuggestion ? text : undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
   };
