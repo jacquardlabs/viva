@@ -172,6 +172,15 @@ python3 "$VIVA_DIR/scripts/loop.py" rearm \
   --response "s4-c1=Answered in thread; no edit"
 ```
 
+**Declining.** Comply by default. When a comment is wrong on the record — it
+contradicts a decision made this session, a source, or a measurement — refuse it
+with `--decline "<cid>=<grounds>"` in place of that comment's `--response`. Taste
+is not grounds, and a decline without them reads as a refusal to work. It settles
+nothing: the thread carries to the next round marked `declined`, so the section
+stays held. The reviewer then settles it (they accept) or replies (they insist) —
+**insisting wins**: apply the change that round. There is no second decline on a
+thread; `open_notes.py` refuses one and the round does not ship until you comply.
+
 `rearm` records the exchanges, re-parses the doc, and ships the next round to
 the running tab — the browser updates in place, no new tab. A section carries
 forward as approved only when its title matches exactly (case-insensitive) AND

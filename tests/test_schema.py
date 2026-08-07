@@ -420,6 +420,33 @@ def test_proof_holds_on_an_unresolved_suggested_edit():
     print("  ok  test_proof_holds_on_an_unresolved_suggested_edit")
 
 
+def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
+    """A decline is a thread status, never a verdict — and it resolves nothing.
+
+    `open` and `declined` are the two unresolved statuses, which is what makes
+    `parse_sections` re-present a declined thread and `open_notes` settle it on
+    approval. The exchange keeps the REVIEWER's comment type as its `verdict`
+    (the author's answer rides in `grounds`), so a declined suggestion still
+    holds a `proof` round: the author's refusal is not a resolution (#167).
+    """
+    assert schema.THREAD_STATUSES == ("open", "settled", "declined")
+    assert schema.THREAD_DECLINED not in schema.VERDICTS
+    assert schema.THREAD_DECLINED not in schema.COMMENT_TYPES
+    assert schema.thread_is_unresolved("open")
+    assert schema.thread_is_unresolved(schema.THREAD_DECLINED)
+    assert not schema.thread_is_unresolved(schema.THREAD_SETTLED)
+    assert not schema.thread_is_unresolved(None) and not schema.thread_is_unresolved("nope")
+
+    declined_thread = [{"cid": "s1-c1", "status": schema.THREAD_DECLINED,
+                        "exchanges": [{"round": 1, "verdict": "suggestion",
+                                       "note": "use this wording",
+                                       "grounds": "contradicts round 1"}]}]
+    assert not schema.round_is_complete(
+        _round({"kind": "proof"}, open_notes=declined_thread), APPROVED), \
+        "declining a suggested edit must not release the proof conjunct"
+    print("  ok  test_thread_statuses_and_a_declined_suggestion_still_holds_proof")
+
+
 def test_no_pass_relaxes_the_all_approved_base():
     """THE invariant: a pass may only ADD conditions, never relax the base.
 
@@ -517,6 +544,7 @@ def main():
     test_structure_and_line_are_the_base_rule()
     test_fact_check_holds_until_every_check_flag_is_answered()
     test_proof_holds_on_an_unresolved_suggested_edit()
+    test_thread_statuses_and_a_declined_suggestion_still_holds_proof()
     test_no_pass_relaxes_the_all_approved_base()
     test_check_kinds_covers_every_shipped_bundle_check()
     test_has_revision_history_is_anchored()

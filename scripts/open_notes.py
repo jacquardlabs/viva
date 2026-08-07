@@ -18,13 +18,21 @@ anchored quote (if any).
       "cid": "s1-c1",
       "title": "Goals",
       "quote": "retries 3x",
-      "status": "open",            # open | settled
+      "status": "open",            # schema.THREAD_STATUSES: open|declined|settled
       "exchanges": [
         {"round": 1, "verdict": "changes", "note": "5x not 3x", "response": "Done."}
         # a `suggestion` turn also carries "replacement": the exact wording
+        # a DECLINED turn also carries "grounds": why the author did not comply
       ]
     }
   }
+
+`declined` is the author's turn, not a verdict (see `schema.THREAD_STATUSES`).
+It resolves nothing: the thread carries into the next round exactly as an open
+one does, so the section stays held until the reviewer either settles it
+(accepting the decline) or replies (insisting). **Insisting wins** — a reply
+re-opens the thread and the author has no second decline on it; this script
+refuses one.
 
 Usage:
   open_notes.py update \\
@@ -32,7 +40,8 @@ Usage:
     --round N \\
     --verdicts .viva/review-rN.json \\
     --input .viva/review-input-rN.json \\
-    [--response "<cid>=one-line summary of the rewrite" ...]
+    [--response "<cid>=one-line summary of the rewrite" ...] \\
+    [--decline "<cid>=why you did not comply" ...]
 """
 from __future__ import annotations
 
@@ -50,6 +59,7 @@ def update(
     verdicts: dict,
     input_data: dict,
     responses: dict,
+    declines: dict | None = None,
 ) -> dict:
     """Apply one round's verdicts to the per-comment thread store. Pure.
 
@@ -59,9 +69,21 @@ def update(
         (create the thread if new), carrying the agent's `responses[cid]` and,
         for a suggestion, the replacement wording.
       - settled truthy      → mark that thread settled.
-    Approving a section settles every still-open thread whose `cid` belongs to it
-    (matched by the section's stable title), so approval clears the section's
-    conversation. A section with no comments is a no-op (today's behavior).
+    Approving a section settles every still-unresolved thread whose `cid` belongs
+    to it (matched by the section's stable title), so approval clears the
+    section's conversation — including a declined one, which is how the reviewer
+    accepts a decline. A section with no comments is a no-op (today's behavior).
+
+    `declines[cid]` is the author's grounds for *not* complying with that turn.
+    It rides on the same exchange the turn creates (`grounds`) and moves the
+    thread to `schema.THREAD_DECLINED`. A `responses[cid]` may accompany it —
+    grounds are why the author did not comply, a response is what they did
+    instead — and neither settles anything.
+
+    Raises `ValueError` on a second decline of the same thread: the reviewer has
+    already seen those grounds and re-requested, so the turn is spent. A decline
+    for a comment the reviewer settled this round is dropped, as a response is —
+    settling is decisive, and there is no turn left to answer.
     """
     titles = {s.get("id"): s.get("title", s.get("id"))
               for s in input_data.get("sections", [])}
@@ -75,13 +97,15 @@ def update(
         comments = s.get("comments") or []
 
         if verdict == "approved":
-            # Settle every open thread belonging to this section (by title).
-            # Mutating `thread["status"]` in place is safe: `out` holds fresh
-            # copies (`{**v, ...}` above), not aliases into the input `store`.
+            # Settle every unresolved thread belonging to this section (by
+            # title) — open or declined, since approving the section IS how the
+            # reviewer accepts a decline. Mutating `thread["status"]` in place is
+            # safe: `out` holds fresh copies (`{**v, ...}` above), not aliases
+            # into the input `store`.
             for thread in out.values():
                 if (schema.section_key(thread.get("title")) == schema.section_key(title)
-                        and thread.get("status") == "open"):
-                    thread["status"] = "settled"
+                        and schema.thread_is_unresolved(thread.get("status"))):
+                    thread["status"] = schema.THREAD_SETTLED
             continue
 
         for c in comments:
@@ -93,15 +117,18 @@ def update(
                 # Settling is decisive: close the thread and ignore any note on
                 # this turn (a reply typed then settled is intentionally dropped).
                 if thread:
-                    thread["status"] = "settled"
+                    thread["status"] = schema.THREAD_SETTLED
                 continue
             if c.get("type") in schema.COMMENT_TYPES and c.get("open"):
                 anchor = c.get("anchor") or {}
                 if thread is None:
                     thread = {"cid": cid, "title": title, "quote": anchor.get("text", ""),
-                              "status": "open", "exchanges": []}
+                              "status": schema.THREAD_OPEN, "exchanges": []}
                     out[cid] = thread
-                thread["status"] = "open"
+                # A reviewer turn returns a declined thread to `open` — this one
+                # assignment is insisting-wins: they answered the decline, so the
+                # author's refusal no longer stands and the request is live again.
+                thread["status"] = schema.THREAD_OPEN
                 thread["title"] = title          # keep display title fresh
                 if anchor.get("text"):
                     thread["quote"] = anchor["text"]
@@ -118,11 +145,28 @@ def update(
                 # changes/info exchange stays byte-identical to today's.
                 if c.get("replacement"):
                     exchange["replacement"] = c["replacement"]
+                # The author's turn. `is not None`, not truthiness: a decline
+                # with no grounds is still a decline — it just reads weaker than
+                # one with them — and the KEY is what marks the turn declined.
+                grounds = (declines or {}).get(cid)
+                if grounds is not None:
+                    if any("grounds" in x for x in thread["exchanges"]):
+                        raise ValueError(
+                            f"{cid} was already declined and the reviewer has "
+                            f"re-requested it — insisting wins, so there is no "
+                            f"second decline on this thread. Comply and record "
+                            f"it with --response instead."
+                        )
+                    exchange["grounds"] = grounds
+                    # After the open branch above deliberately: a declined turn
+                    # is unresolved, not open, and only the reviewer's next move
+                    # settles it or returns it to open.
+                    thread["status"] = schema.THREAD_DECLINED
                 thread["exchanges"].append(exchange)
     return out
 
 
-def _parse_responses(pairs: list) -> dict:
+def _parse_pairs(pairs: list) -> dict:
     """Turn ['s2=text', ...] into {'s2': 'text'}. Splits on the first '='."""
     out = {}
     for p in pairs or []:
@@ -149,21 +193,36 @@ def main() -> None:
     up.add_argument("--input", required=True)
     up.add_argument("--response", action="append", default=[],
                     help='Agent response for a comment, as "<cid>=text" (repeatable)')
+    up.add_argument("--decline", action="append", default=[],
+                    help='Decline a comment with grounds, as "<cid>=why you did '
+                         'not comply" (repeatable). The thread goes `declined`, '
+                         'which resolves nothing — one decline per thread.')
     args = p.parse_args()
 
     store_path = Path(args.store)
     store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
     verdicts = _load_json(args.verdicts)
     input_data = _load_json(args.input)
-    responses = _parse_responses(args.response)
+    responses = _parse_pairs(args.response)
+    declines = _parse_pairs(args.decline)
 
-    store = update(store, args.round_num, verdicts, input_data, responses)
+    try:
+        store = update(store, args.round_num, verdicts, input_data, responses,
+                       declines)
+    except ValueError as e:
+        # Nothing is written on a refusal: the store on disk still records the
+        # first decline, which is the state the reviewer is answering.
+        sys.exit(f"viva open_notes: {e}")
 
     store_path.parent.mkdir(parents=True, exist_ok=True)
     store_path.write_text(json.dumps(store, indent=2, ensure_ascii=False),
                           encoding="utf-8")
-    open_threads = sum(1 for t in store.values() if t.get("status") == "open")
-    print(f"viva: open-note store updated → {store_path} ({open_threads} open)",
+    open_threads = sum(1 for t in store.values()
+                       if t.get("status") == schema.THREAD_OPEN)
+    declined = sum(1 for t in store.values()
+                   if t.get("status") == schema.THREAD_DECLINED)
+    print(f"viva: open-note store updated → {store_path} ({open_threads} open"
+          + (f", {declined} declined" if declined else "") + ")",
           flush=True)
 
 

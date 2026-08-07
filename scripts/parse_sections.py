@@ -358,10 +358,13 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
     """Attach each open thread's exchanges onto the matching section, in place.
 
     The open-note store (maintained by open_notes.py) is keyed by normalized
-    title. A thread still `open` re-presents on its section's card next round so
-    the reviewer sees the prior exchange; a settled thread is dropped. Sections
-    with no open thread gain no `open_notes` key — output stays byte-identical to
-    a run without the store.
+    title. A thread the reviewer has not settled — `open`, or `declined` by the
+    author — re-presents on its section's card next round so the reviewer sees
+    the prior exchange and either settles it or insists; only a settled thread is
+    dropped. That single filter is the whole holding mechanism for a decline: it
+    is unresolved, so it carries, and its section comes back live. Sections with
+    no unresolved thread gain no `open_notes` key — output stays byte-identical
+    to a run without the store.
     """
     if not open_notes_path:
         return
@@ -374,12 +377,12 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
         sys.exit(f"viva: could not read open-notes store {open_notes_path}: {e}")
     by_title: dict[str, list] = {}
     for t in store.values():
-        if t.get("status") != "open":
+        if not schema.thread_is_unresolved(t.get("status")):
             continue  # settled threads drop from later rounds
         by_title.setdefault(schema.section_key(t.get("title")), []).append({
             "cid": t.get("cid"),
             "quote": t.get("quote", ""),
-            "status": t.get("status", "open"),
+            "status": t.get("status", schema.THREAD_OPEN),
             "exchanges": t.get("exchanges", []),
         })
     for threads in by_title.values():

@@ -56,8 +56,39 @@ def test_suggestion_exchange_renders_its_wording():
     assert "suggested:" not in rh.build_threads_block(plain)
 
 
+def test_declined_exchange_renders_its_grounds():
+    """A decline and its grounds reach the ledger verbatim (#167).
+
+    Without them the Open-notes block shows a change the reviewer asked for and
+    the author never made, with no record of why — and the thread's own status
+    line is the only other trace.
+    """
+    grounds = "round 1 ruled the caveat load-bearing"
+    threads = [{"title": "Goals", "quote": "in most cases", "status": "declined",
+                "exchanges": [{"round": 2, "verdict": "changes",
+                               "note": "cut the caveat", "grounds": grounds,
+                               "response": "narrowed it instead"}]}]
+    block = rh.build_threads_block(threads)
+    assert ("  - R2 changes: cut the caveat — declined: " + grounds
+            + " → narrowed it instead") in block, block
+    # The thread's own status reaches the head line too, not just the exchange.
+    assert "in most cases_ — declined" in block, block
+
+    # A decline with no grounds is still a decline — it just reads weaker.
+    bare = [{"title": "Goals", "quote": "", "status": "declined",
+             "exchanges": [{"round": 1, "verdict": "changes", "note": "cut it",
+                            "grounds": "", "response": ""}]}]
+    assert "  - R1 changes: cut it — declined" in rh.build_threads_block(bare)
+    # And an exchange nobody declined renders exactly as it did before.
+    plain = [{"title": "Goals", "quote": "", "status": "open",
+              "exchanges": [{"round": 1, "verdict": "changes", "note": "5x",
+                             "response": "done"}]}]
+    assert "declined" not in rh.build_threads_block(plain)
+
+
 def main():
     test_threads_grouped_by_section_with_quote()
+    test_declined_exchange_renders_its_grounds()
     test_whole_section_and_missing_field_fallbacks()
     test_suggestion_exchange_renders_its_wording()
     print("OK")

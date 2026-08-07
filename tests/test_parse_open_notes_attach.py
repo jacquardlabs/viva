@@ -27,8 +27,35 @@ def test_attaches_open_threads_grouped_by_title():
     assert "open_notes" not in sections[1]  # no threads → stays bare
 
 
+def test_declined_thread_attaches_and_holds_its_section():
+    """A decline resolves nothing, so the thread carries exactly as an open one
+    does — the single filter here is the whole holding mechanism (#167). If it
+    dropped, the author's refusal would silently close the reviewer's request.
+    """
+    tmp = Path(tempfile.mkdtemp())
+    store = {
+        "s1-c1": {"cid": "s1-c1", "title": "Goals", "quote": "in most cases",
+                  "status": "declined", "exchanges": [
+                      {"round": 1, "verdict": "changes", "note": "cut the caveat",
+                       "response": "", "grounds": "round 1 ruled it load-bearing"}]},
+        "s1-c2": {"cid": "s1-c2", "title": "Goals", "quote": "y", "status": "settled",
+                  "exchanges": [{"round": 1, "verdict": "info", "note": "m", "response": "r"}]},
+    }
+    sp = tmp / "open-notes.json"
+    sp.write_text(json.dumps(store))
+    sections = [{"id": "s1", "title": "Goals", "content": "g"}]
+    ps._attach_open_notes(str(sp), sections)
+    threads = sections[0]["open_notes"]
+    assert [t["cid"] for t in threads] == ["s1-c1"], threads
+    assert threads[0]["status"] == "declined", threads[0]
+    # The grounds ride with the exchange, or the reviewer cannot read the
+    # refusal they are being asked to accept or override.
+    assert threads[0]["exchanges"][0]["grounds"] == "round 1 ruled it load-bearing"
+
+
 def main():
     test_attaches_open_threads_grouped_by_title()
+    test_declined_thread_attaches_and_holds_its_section()
     print("OK")
 
 

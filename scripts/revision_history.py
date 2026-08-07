@@ -60,7 +60,7 @@ def build_threads_block(threads: list[dict]) -> str:
             lines.append(f"**{title}**")
             lines.append("")
             current_title = title
-        status = t.get("status", "open")
+        status = t.get("status", schema.THREAD_OPEN)
         quote = t.get("quote", "")
         head = f"- _{flat(quote)}_ — {status}" if quote else f"- (whole section) — {status}"
         lines.append(head)
@@ -70,8 +70,17 @@ def build_threads_block(threads: list[dict]) -> str:
             # row, so the two surfaces name the reviewer's wording identically.
             repl = flat(x.get("replacement", ""))
             resp = flat(x.get("response", ""))
+            # The author's refusal, verbatim beside the request it refused —
+            # otherwise the ledger shows a change that was asked for and never
+            # made, with no record of why. Key presence, not truthiness: a
+            # decline with no grounds is still a decline, it just reads weaker.
+            declined = ""
+            if "grounds" in x:
+                grounds = flat(x.get("grounds") or "")
+                declined = f" — declined: {grounds}" if grounds else " — declined"
             lines.append(f"  - R{x.get('round', '?')} {x.get('verdict', '?')}: {note}"
                          + (f" — suggested: {repl}" if repl else "")
+                         + declined
                          + (f" → {resp}" if resp else ""))
         lines.append("")
     return "\n".join(lines).rstrip()

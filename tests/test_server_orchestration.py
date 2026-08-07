@@ -808,6 +808,98 @@ def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
     print("  ok  check_wait_refuses_a_parsed_but_unarmed_round")
 
 
+def check_decline_carries_and_insisting_wins() -> None:
+    """`rearm --decline` is how the author records a refusal (#167).
+
+    Three things have to hold end to end, through the real driver: the grounds
+    reach the store as a `declined` thread; that thread carries into round N+1,
+    which is the whole holding mechanism (no new one was added); and a second
+    decline after the reviewer insists is refused before any round ships.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+
+        r = loop(viva, td, "start", "--doc", "d.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        ids = {s["title"]: s["id"] for s in r1["sections"]}
+        sid, other = ids["A"], ids["B"]
+        cid = sid + "-c1"
+        grounds = "round 1 ruled the caveat load-bearing"
+
+        request = {"round": 1, "submitted_early": False, "sections": [
+            {"id": sid, "verdict": "changes", "comments": [
+                {"cid": cid, "type": "changes", "note": "cut the caveat",
+                 "anchor": {"text": "aaa", "offset": 0},
+                 "open": True, "settled": False}]},
+            {"id": other, "verdict": "approved"}]}
+        (viva / "review-r1.json").write_text(json.dumps(request))
+
+        # The author declines instead of complying — the doc is NOT edited.
+        r = loop(viva, td, "rearm", "--decline", cid + "=" + grounds, "--parse-only")
+        assert r.returncode == 0, r.stderr
+        thread = json.loads((viva / "open-notes.json").read_text())[cid]
+        assert thread["status"] == "declined", thread
+        assert thread["exchanges"][0]["grounds"] == grounds, thread
+
+        # Held: the thread carries onto the next round's card with its grounds,
+        # and the section is not carried approved. Both fall out of what already
+        # existed — the unresolved filter and the approval carry-forward.
+        r2 = json.loads((viva / "review-input-r2.json").read_text())
+        card = next(s for s in r2["sections"] if s["title"] == "A")
+        assert card["open_notes"][0]["status"] == "declined", card["open_notes"]
+        assert card["open_notes"][0]["exchanges"][0]["grounds"] == grounds
+        assert sid not in r2["approved_ids"], (
+            "a declined request must leave its section held: %s" % r2["approved_ids"])
+
+        # The reviewer insists — a reply on the same cid.
+        insist = {"round": 2, "submitted_early": False, "sections": [
+            {"id": sid, "verdict": "changes", "comments": [
+                {"cid": cid, "type": "changes", "note": "cut it anyway",
+                 "open": True, "settled": False, "reply": True}]},
+            {"id": other, "verdict": "approved"}]}
+        (viva / "review-r2.json").write_text(json.dumps(insist))
+
+        r = loop(viva, td, "rearm", "--decline", cid + "=still contradicts round 1",
+                 "--parse-only")
+        assert r.returncode != 0, "a second decline on the same thread must be refused"
+        assert cid in r.stderr and "insisting wins" in r.stderr, r.stderr
+        assert not (viva / "review-input-r3.json").exists(), \
+            "the refusal must land before the next round is parsed"
+        assert len(json.loads((viva / "open-notes.json").read_text())[cid]["exchanges"]) == 1, \
+            "a refused decline must not write a turn to the store"
+
+        # Complying ships it, and the thread is open again.
+        r = loop(viva, td, "rearm", "--response", cid + "=cut", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        thread = json.loads((viva / "open-notes.json").read_text())[cid]
+        assert thread["status"] == "open", thread
+        assert len(thread["exchanges"]) == 2, thread
+    print("  ok  check_decline_carries_and_insisting_wins")
+
+
+def check_skill_carries_the_decline_rule() -> None:
+    """The half of insisting-wins that only prose can carry (#167).
+
+    `open_notes.py` can refuse a second decline; it cannot make the author
+    decline for cause, or comply once the reviewer has insisted. SKILL.md is
+    where that rule lives, so it is asserted here beside the executed one.
+    """
+    low = " ".join(SKILL.read_text().lower().split())
+    assert "--decline" in low, "SKILL.md never names the flag that records a refusal"
+    assert "insisting wins" in low, (
+        "SKILL.md must state that the reviewer's insistence wins — an author "
+        "that can re-decline has an unbounded veto")
+    assert "no second decline" in low, \
+        "SKILL.md must rule out a second decline on the same thread"
+    assert "grounds" in low, "SKILL.md must require grounds for a decline"
+    print("  ok  check_skill_carries_the_decline_rule")
+
+
 def main() -> None:
     check_round_trip()
     check_split_on_session()
@@ -821,6 +913,8 @@ def main() -> None:
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
     check_skill_applies_suggestions_verbatim()
+    check_decline_carries_and_insisting_wins()
+    check_skill_carries_the_decline_rule()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
     check_start_resume_carries_prior_approvals()

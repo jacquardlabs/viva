@@ -504,8 +504,14 @@ def cmd_rearm(args) -> int:
            "--store", store, "--round", str(n), "--verdicts", out, "--input", inp]
     for response in args.response:
         cmd += ["--response", response]
+    # The author's other move. `open_notes.py` owns the rule a decline can break
+    # — one per thread, because insisting wins — and refuses a second one, which
+    # `run_or_die` turns into a stopped round rather than a silent overwrite.
+    for decline in args.decline:
+        cmd += ["--decline", decline]
     run_or_die(cmd, "open-note update",
-               "No round was shipped; fix the --response cids and re-run.")
+               "No round was shipped; fix the --response/--decline cids and "
+               "re-run.")
 
     nxt_in, _ = round_files(viva, n + 1)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
@@ -709,6 +715,15 @@ def main() -> int:
     p.add_argument("--response", action="append", default=[], metavar="CID=TEXT",
                    help='what you changed for one comment, as "<cid>=text" '
                         '(repeatable)')
+    p.add_argument("--decline", action="append", default=[],
+                   metavar="CID=GROUNDS",
+                   help='refuse one comment instead of complying, as '
+                        '"<cid>=grounds" — a criterion, a prior ruling, a '
+                        'measurement (repeatable). The thread goes `declined`, '
+                        'which resolves nothing: it carries to the next round '
+                        'and holds its section until the reviewer settles it or '
+                        'insists. Insisting wins — there is no second decline '
+                        'on the same thread.')
     p.add_argument("--pass", dest="pass_kind", choices=schema.PASS_KINDS,
                    metavar="KIND",
                    help="run round N+1 at this depth instead of the one round N "

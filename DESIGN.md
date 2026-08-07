@@ -349,6 +349,12 @@ Design elements:
 - **Suggested wording** (`.cmt-repl`) — the replacement, arrow-led on its own line
   under the note it belongs to, in `--accent`. Used in both surfaces that show a
   comment: the comment list and a carried thread's exchange.
+- **Decline** (`.exchange-d`) — the author's grounds for not complying with a
+  carried turn, `⊘`-led between the request (`.exchange-q`) and the response
+  (`.exchange-a`), `--text2` text on a `--orange` rule. Its thread head reads
+  `declined` and takes the same ink (`.open-thread.is-declined`) — unresolved,
+  so it keeps the settle button and the reply box: the reviewer accepts or
+  insists. Not a verdict ink change; the three verdict colors are untouched.
 
 ## Blueprint elements (#69, v1.11.0)
 

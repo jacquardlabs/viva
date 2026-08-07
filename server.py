@@ -1164,6 +1164,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .settle-btn:hover { color: var(--teal); border-color: var(--teal); }
 .open-thread.is-settled { opacity: 0.55; }
 .open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+/* A thread the author declined: unresolved like an open one, so it keeps every
+   affordance — only the label and the rule change, so the reviewer can see at a
+   glance which threads are waiting on their accept-or-insist. */
+.open-thread.is-declined { border-left-color: var(--orange); }
+.open-thread.is-declined .open-thread-label { color: var(--orange); }
 /* Reply box at the foot of an open thread — continue the back-and-forth, or
    switch the chip to "request changes" to turn the discussion into an edit. */
 .thread-reply { margin-top: 7px; }
@@ -1205,6 +1210,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
 }
 .exchange-a::before { content: '↳ '; }
+/* The author's decline — their grounds for not complying with that turn. Sits
+   between the request and the response: it answers the reviewer's turn without
+   resolving it. */
+.exchange-d {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 1px solid var(--orange);
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+.exchange-d::before { content: '⊘ '; }
 .open-thread-quote {
   font-style: italic;
   font-size: 11px;
@@ -2393,6 +2408,11 @@ function openNotesHTML(exchanges) {
       +     (x.replacement ? '<span class="cmt-repl">' + esc(x.replacement) + '</span>' : '')
       +   '</span>'
       + '</div>'
+      // The author's grounds for declining THAT turn, before the response,
+      // because it answers the reviewer's request without resolving it. Key
+      // presence, not truthiness: a decline with no grounds is still a decline.
+      + (x.grounds !== undefined
+          ? '<div class="exchange-d">declined: ' + esc(x.grounds) + '</div>' : '')
       + (x.response ? '<div class="exchange-a">' + esc(x.response) + '</div>' : '')
       + '</div>';
   }).join('');
@@ -2412,9 +2432,16 @@ function openThreadHTML(section) {
     const last = (exs.length && exs[exs.length - 1].verdict) || 'info';
     const type = (last === 'changes' || last === 'suggestion') ? 'changes' : 'info';
     const quote = t.quote ? '<span class="open-thread-quote">' + esc(t.quote) + '</span>' : '';
-    return '<div class="open-thread" id="rthread-' + cid + '" data-cid="' + cid + '">'
+    // A declined thread is unresolved, not closed: the author answered and the
+    // move is now the reviewer's — settle to accept, or reply to insist, which
+    // always wins. Same settle button, same reply box, different label and
+    // prompt; the clamp above already sends an insisting reply as `changes`.
+    const declined = t.status === 'declined';
+    return '<div class="open-thread' + (declined ? ' is-declined' : '')
+      + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
-      +   '<span class="open-thread-label">open note</span>' + quote
+      +   '<span class="open-thread-label">' + (declined ? 'declined' : 'open note')
+      +   '</span>' + quote
       +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
@@ -2426,7 +2453,10 @@ function openThreadHTML(section) {
       +       '" data-type="info">need info</button>'
       +   '</div>'
       +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
-      +     '" placeholder="Reply… (switch to “request changes” to turn the discussion into an edit)"></textarea>'
+      +     '" placeholder="' + (declined
+            ? 'Settle to accept the decline, or reply to insist — a reply is binding.'
+            : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
+      +     '"></textarea>'
       + '</div>';
   }).join('');
 }

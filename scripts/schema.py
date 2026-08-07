@@ -68,6 +68,34 @@ SUGGESTION = "suggestion"
 # tuple, so a fourth type carries across rounds the day it is added here.
 COMMENT_TYPES = ("changes", "info", SUGGESTION)
 
+# ── Open-note thread statuses ─────────────────────────────────────────────────
+# One thread per comment `cid` in `.viva/open-notes.json`, whose single writer is
+# `open_notes.py`. `declined` is the AUTHOR's turn — they did not comply and
+# recorded `grounds` on that exchange. It is a THREAD status and NOT a verdict:
+# `VERDICTS` is the section's state, and a section with two comments, one applied
+# and one declined, has no coherent section-level verdict (design:
+# editorial-frame.md). Only the reviewer settles, so a decline never closes
+# anything; it is an answer the reviewer accepts (settle) or overrides (reply).
+THREAD_OPEN = "open"
+THREAD_SETTLED = "settled"
+THREAD_DECLINED = "declined"
+THREAD_STATUSES = (THREAD_OPEN, THREAD_SETTLED, THREAD_DECLINED)
+
+
+def thread_is_unresolved(status: object) -> bool:
+    """Is this thread still live — does it carry into the next round?
+
+    `open` and `declined` both are: an unresolved decline holds its section
+    exactly as an open thread does, because the reviewer has yet to accept it or
+    insist. `settled` is the one closed status.
+
+    Membership, not `!= settled`, so an unknown status is never silently treated
+    as live. The two readers ask the same question from opposite ends:
+    `parse_sections._attach_open_notes` re-presents what is unresolved, and
+    `open_notes.update` settles what is unresolved when its section is approved.
+    """
+    return status in (THREAD_OPEN, THREAD_DECLINED)
+
 
 # ── Section identity ──────────────────────────────────────────────────────────
 def section_key(title: str) -> str:
@@ -174,7 +202,14 @@ class ReviewSection(TypedDict, total=False):
     content: str                  # required — verbatim markdown
     annotations: List[Annotation]  # optional — advisory badges
     diff: dict                    # optional — round-to-round change
-    open_notes: list              # optional — carried-forward threads
+    # optional — carried-forward threads, `parse_sections._attach_open_notes`'s
+    # projection of the `.viva/open-notes.json` store: each is
+    # `{cid, quote, status, exchanges}`, `status` one of `THREAD_STATUSES` (only
+    # the unresolved ones attach — a settled thread drops), and each exchange is
+    # `{round, verdict, note, response}` plus, presence-gated, `replacement`
+    # (the reviewer's suggested wording) and `grounds` (the author's reason for
+    # declining that turn).
+    open_notes: list
 
 
 class ReviewPass(TypedDict, total=False):
@@ -395,6 +430,12 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
         threads still `open`, and `open_notes.py` records each turn's comment
         type as that exchange's `verdict`, so a thread whose LATEST exchange is
         a suggestion is one the author has not answered yet.
+
+    An exchange's `verdict` is the REVIEWER's comment type, never the author's
+    answer — declining a suggestion adds `grounds` and moves the thread to
+    `THREAD_DECLINED`, leaving that exchange's verdict `suggestion`. That is
+    what keeps a declined suggestion holding a `proof` round: the author's
+    refusal is not a resolution; only the reviewer's settle is.
     """
     for s in verdicts.get("sections", []) or []:
         for c in s.get("comments") or []:
