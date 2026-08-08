@@ -85,6 +85,33 @@ def assert_catalog_ground(text: str) -> None:
     assert not re.search(r'\.section-content\s*\{[^}]*max-height:\s*60vh', text), \
         ".section-content must not nest a second scroll context inside the card"
 
+    # ── The doc + margin grid (#186) — the ground's structure, extended into
+    # this same owner rather than forked into a second contract.
+    assert re.search(
+        r'\.doc \.row\s*\{[^}]*grid-template-columns:\s*var\(--gutter-w\)'
+        r'\s+minmax\(0,\s*72ch\)\s+var\(--margin-w\)', text), \
+        "the doc row must be `check gutter | 72ch prose | margin`"
+    assert re.search(r'\.doc \.row\.wide\s*\{[^}]*minmax\(0,\s*1fr\)', text), \
+        "a wide row must let code and tables break out of the prose measure"
+    # The wasted-space rule: both side columns collapse to zero width.
+    assert re.search(r'\.doc\.no-gutter\s*\{\s*--gutter-w:\s*0px;\s*\}', text), \
+        "the gutter column must collapse to 0 when nothing uses it"
+    assert re.search(r'\.doc\.no-margin\s*\{\s*--margin-w:\s*0px;\s*\}', text), \
+        "the margin column must collapse to 0 when nothing uses it"
+    # The 28px alley rides in the side cells, never in column-gap — a gap is
+    # drawn between zero-width tracks too, which would defeat the collapse.
+    assert not re.search(r'\.doc \.row\s*\{[^}]*column-gap', text), \
+        "the row must not use column-gap — a collapsed column would still cost its alley"
+    for cell, edge in (('rg', 'padding-right'), ('rm', 'padding-left')):
+        assert re.search(r'\.doc \.' + cell + r'\s*\{[^}]*' + edge + r':\s*28px', text), \
+            f".{cell} must carry the 28px alley itself"
+    # The segmented rule's fixed order is the colorblind-safe second encoding,
+    # so the three segment inks must each exist and stay distinct.
+    for cls, token in (('seg-judgment', '--acc'), ('seg-fact', '--fact'),
+                       ('seg-settled', '--settled')):
+        assert re.search(r'\.' + cls + r'\s*\{\s*background:\s*var\(' + token + r'\)', text), \
+            f".{cls} must be inked from var({token})"
+
 
 def assert_ink_discipline(text: str) -> None:
     """The syntax theme may not spend the reviewer's ink.

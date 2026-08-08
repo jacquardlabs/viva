@@ -218,6 +218,136 @@ page with the same 2px ink rule that opens it.
 Diff mode widens `.shell`, `.bottom-inner`, **and `#paper`** together to
 `min(95vw, 1600px)` — see Diff-first layout.
 
+### The document grid — doc + margin (#186, unreleased)
+
+**Review mode only.** `initReview` stamps `.doc` on `#review-cards` when
+`REVIEW_DATA.mode === 'review'`; that class arms every rule below. Diff mode
+keeps the accordion (`buildReviewCard`, Card accordion) unchanged — a hunk is
+not prose, it has no margin to annotate and no measure to hold, and a 200-hunk
+changeset read as one continuous print is a worse surface than one hunk at a
+time.
+
+Sections print **open, in document order** (`buildDocSection`), every one
+rendered up front. A settled section **dims in place** (`.is-approved` →
+`opacity: 0.5` on its prose) rather than collapsing to a clickable row: the
+point of a document review is reading the document.
+
+Each section is a run of rows. The rendered markdown's top-level blocks become
+the prose column of one row each, so a note sits beside the paragraph it
+annotates rather than beside the section.
+
+| Track | Holds | Width |
+|-------|-------|-------|
+| gutter (`.rg`) | producer check flags (`.lchip`), right-aligned | `--gutter-w: 98px` (70px + alley) |
+| prose (`.rp`) | one markdown block | `minmax(0, 72ch)`; `.row.wide` → `minmax(0, 1fr)` for code and tables |
+| margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 328px)` |
+
+**The wasted-space rule.** Both side columns collapse to `0px`
+(`.doc.no-gutter` / `.doc.no-margin`), decided **once per document** by
+`updateDocColumns` reading the live DOM — so a comment made a moment ago counts
+like a thread that shipped with the round. Per-row would jog the prose sideways
+between paragraphs and per-section between sections; a column of text that
+moves as you read it is worse than the space it saves. The 28px alley rides in
+`.rg`'s `padding-right` and `.rm`'s `padding-left`, never in `column-gap`,
+because a gap is drawn between zero-width tracks too. With the margin collapsed,
+`.doc.no-margin .row-head` drops to two tracks and the section's controls print
+under its heading — pure CSS, so a collapse never moves a focused control
+between hosts. Below 920px the third column has no room to be a margin: notes
+fall under their passage and the gutter narrows to a 30px glyph rail.
+
+**Section numbers.** `N ·` in `.doc-num`, document order, 1-based, counting
+carried sections.
+
+**Actions.** The per-section action row is gone. Approve and add-note live in
+the head row's margin with the note grammar (`.nt-btn`), keeping the
+`rbtn-primary-`/`rcmtnote-` ids the rest of the app addresses them by;
+`renderPrimaryButton` reads `.nt-btn` off the element to pick which dress to
+draw, so one label rule (approve only with nothing open) serves both surfaces.
+On an approved section the same control reads `↺ withdraw approval` and calls
+`docWithdraw` — nothing was ever collapsed, so withdrawing is only the verdict
+going back to pending. **Approve stays per-section for accessibility**: the head
+is a heading now (`<h2 class="doc-head">`, `aria-labelledby` on the section, no
+permanently-true `aria-expanded`), which would leave a section carrying no notes
+with zero focusable elements. ⌘K is a second path to the same verbs, never the
+only one.
+
+### Margin notes and pins (#186, unreleased)
+
+The margin holds two kinds of note, deliberately built differently:
+
+- **Carried threads** (`section.open_notes`) are built once by
+  `openThreadItemHTML` — the *same* builder the accordion uses; `.doc
+  .open-thread` restyles it into the note grammar rather than forking the
+  markup — and **placed once**, beside their `quote`'s row. A thread owns a
+  reply textarea, so re-rendering it mid-keystroke would steal focus;
+  `placeDocThreads` moves a node only when it is in the wrong cell.
+- **This round's comments** are static text and rebuilt freely on every sync
+  (`.rm-notes .nt`), carrying the anchor quote, the note, and — for a
+  suggestion — D's `−/+` fence against the wording it replaces.
+
+**Numbering.** `docNotesOrdered` sorts by the row an anchor resolves into
+(unanchored → the section head), then by creation order. `markAndPin` assigns
+the number and writes **both** ends in one pass — the pin in the text and the
+note in the margin can never disagree about which span is note 3. The pin is a
+button and jumps to its own note.
+
+**Ink.** An anchored span in the doc print wears `var(--touch)` and nothing
+else, per the ink discipline ("the reviewer's touch ON THE TEXT"); the **pin**,
+not the highlight, carries whose note it is — `.pin-you` (`--acc`),
+`.pin-fact` (`--fact`), `.pin-author` (outlined `--soft`, a declined thread).
+
+**Flags.** `docFlagSplit` sends plain severity and check flags to the 70px
+gutter as `.lchip` glyphs (`✓` info, `△` warn, `✗` error; a check flag's
+`result` prints under it), and any flag carrying an **interactive jump** — a
+contradiction's cross-section link, a preference's badge-to-entry link — to the
+margin through `annotStripHTML`, which keeps that wiring. 70px is a glance, not
+a control.
+
+**The round diff** gets a full-width `.row.wide.row-diff` of its own, directly
+under the head row, **shipped collapsed**. It is the widest object on the page
+and what a round-2 run found stacked at full width between the reader and the
+text; collapsed-above is the one place it fits without becoming the page.
+
+### Segmented rule (#186, unreleased)
+
+State × party under an open heading, in honest counts. `sectionBalance` owns the
+single denominator:
+
+| Segment | Ink | Counts |
+|---------|-----|--------|
+| judgment | `--acc` | open `changes`/`suggestion` threads and comments, plus declined threads (waiting on accept-or-insist) |
+| facts | `--fact` | open `info` threads and comments, unanswered `CHECK_KINDS` flags, warn/error producer flags |
+| settled | `--settled` | settled threads, answered checks, and the section's own approval |
+
+The order is **fixed** (judgment → facts → settled) and that fixed order is the
+colorblind-safe second encoding. Raw counts ride out in the `aria-label`
+("open: 2 judgment, 1 fact; 1 settled"), so the honest-proportions claim is
+auditable rather than asserted. Drawn **only where something is open**: a
+section with nothing open takes the thin `.rule-s` hairline, because a state bar
+on a settled section is decoration.
+
+`--settled` is a token, not a party ink — settled belongs to nobody, so it is a
+filled neutral (`#e3e4e2` light, `#3a3e41` dark) rather than a hue.
+
+The **footer** (`.foot-seg`, inside the fixed bottom bar, review mode only)
+carries the same grammar over the whole document, denominated in sections:
+`changes` → judgment, `info` → facts, `approved` → settled. What it does not
+fill is what nobody has looked at yet — unreviewed sections are the bare track,
+the one honest way to draw "not yet decided" without a fourth color.
+
+### Command palette (⌘K, #186, unreleased)
+
+A directory of the keyboard layer, never a second interaction model: every verb
+it lists is one the page also carries as a control or a keycap. `.pal` takes the
+floor's materials — square, 1px ink border, selection on `var(--touch)` rather
+than a tint of the accent. Built from live state on each open, so "Approve
+section 9" names the section actually under the reader.
+
+⌘K is handled **ahead of** the `TEXTAREA`/`INPUT` guard (a reviewer mid-reply is
+exactly who wants "jump to next open thread" without reaching for the mouse) but
+**never opens over** the prefs panel or the recap gate — both are modal and both
+own Escape, so a third would leave two things claiming the same key.
+
 ## Interactive controls
 
 ### Control edges
@@ -278,6 +408,10 @@ added to this group; the panel's new instances of it made the gap visible.)
 
 ## Card accordion
 
+**Diff mode's surface.** Review mode prints the document continuously — see
+The document grid. Everything below still governs `buildReviewCard`,
+`buildCarriedCard`, and every hunk `/viva-diff` puts on screen.
+
 A card has three states:
 - **Idle** — closed, `dot-idle`, no `is-active` class.
 - **Active** — open, `dot-active` (if no verdict), `is-active` class, body animates in.
@@ -304,9 +438,12 @@ completion stamp), and the `× withdraw approval` control.
 
 Rules:
 
-- **Gate**: `REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)` — a round-1
-  boot can never render a carried card, and the accordion card markup is
-  unchanged beside it.
+- **Gate**: `!asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id)` — a
+  round-1 boot can never render a carried card, and the accordion card markup
+  is unchanged beside it. Since #186 the gate is also accordion-only: in review
+  mode a carried section dims in place with its prose on the page, and
+  `buildCarriedCard` is diff mode's path, where a carried hunk really does have
+  nothing left to read.
 - **Withdraw** clears the verdict back to pending and swaps in a normal
   accordion card **in place** (document order is canonical — withdrawn cards
   never reorder), opened for re-review.

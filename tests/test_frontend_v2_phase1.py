@@ -143,11 +143,19 @@ def test_round2_serves_carried_markup(page: str, data: dict) -> None:
     assert by_id["s5"].get("diff") and not by_id["s5"].get("open_notes"), by_id["s5"]
     assert by_id["s6"].get("annotations") and by_id["s7"].get("annotations")
 
-    # The page ships the carried builder, gated to round >= 2 members.
-    assert 'const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page, \
-        "page missing the round >= 2 carried gate"
+    # The page ships the carried builder, gated to round >= 2 members AND to
+    # the accordion. Premise changed in #186: review mode prints the document
+    # continuously, so a carried section dims in place with its prose on the
+    # page instead of collapsing to a head-only line — a reader of a document
+    # review is reading the document, and a carried section is part of it.
+    # buildCarriedCard is now the diff-mode path, where a carried hunk really
+    # does have nothing left to read.
+    assert 'const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page, \
+        "page missing the round >= 2 + accordion-only carried gate"
     assert 'isCarried ? buildCarriedCard(s) : buildReviewCard(s)' in page, \
         "initReview must route carried sections to buildCarriedCard"
+    assert "const asDoc = REVIEW_DATA.mode === 'review';" in page, \
+        "continuous print must be gated on review mode, never applied to diff"
     assert 'function buildCarriedCard(section)' in page, "page missing buildCarriedCard"
     assert "card.className = 'card is-carried';" in page, "carried card missing is-carried"
     assert '<span class="carried-marker">carried</span>' in page, \
@@ -279,10 +287,14 @@ def test_round1_zero_carried_markers(page: str, data: dict) -> None:
     gated to round >= 2 — and the accordion card markup is unchanged."""
     assert data["round"] == 1, data
     assert data.get("approved_ids") == [], data
-    # The only carried-render path is gated on round > 1 membership, so a
-    # round-1 boot can never produce a carried card.
-    assert 'const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page
+    # The only carried-render path is gated on round > 1 membership (and, since
+    # #186, on the accordion), so a round-1 boot can never produce a carried card.
+    assert 'const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page
     # Unchanged accordion card markup (head button + body region + actions).
+    # These are DIFF MODE's surface now. #186 left buildReviewCard alone on
+    # purpose: a 200-hunk changeset read as one continuous print is a worse
+    # surface than one hunk at a time, so the restructure is additive and the
+    # accordion's contract is still the contract that governs it.
     assert ('<button type="button" class="card-head" aria-expanded="false" '
             'aria-controls="rbody-${section.id}">') in page, \
         "round-1 accordion card head changed"
@@ -499,7 +511,7 @@ def test_activate_carried_scrolls_not_activates(page: str) -> None:
     return inside activateReviewCard — dropping it would strand a jump on an
     'under review' card with no accordion body, and every existing test would
     still pass."""
-    fn = page.index("function activateReviewCard(id)")
+    fn = page.index("function activateReviewCard(id, opts)")
     nxt = page.index("function ", fn + 1)
     body = page[fn:nxt]
     assert "classList.contains('is-carried')" in body, \

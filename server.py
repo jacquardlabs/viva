@@ -104,6 +104,10 @@ HTML = r"""<!DOCTYPE html>
   --acc-dim:   rgba(41,70,196,0.08);
   --machine:   #0c7f6b;
   --fact:      #a06a12;
+  /* The closed mass in a segmented rule. Not a fifth party ink — settled
+     belongs to nobody, so it is a filled neutral rather than a hue, and it
+     is the one bar color that carries no meaning beyond "done". */
+  --settled:   #e3e4e2;
 
   /* Component aliases. Component styles keep using these names, so the
      catalog palette lands without rewriting every rule; the four party inks
@@ -157,6 +161,7 @@ HTML = r"""<!DOCTYPE html>
     --acc-dim: rgba(143,166,245,0.12);
     --machine: #4fc2a5;
     --fact:    #d19a3f;
+    --settled: #3a3e41;
 
     --bg3:     #232629;
     --scrim:   rgba(10,11,12,0.72);
@@ -182,6 +187,7 @@ HTML = r"""<!DOCTYPE html>
   --acc-dim: rgba(143,166,245,0.12);
   --machine: #4fc2a5;
   --fact:    #d19a3f;
+  --settled: #3a3e41;
 
   --bg3:     #232629;
   --scrim:   rgba(10,11,12,0.72);
@@ -1058,6 +1064,429 @@ body {
 .section-content hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .section-content img { max-width: 100%; }
 
+/* ─── The document grid — doc + margin (issue #186) ───────────
+   #185 shipped the catalog's MATERIALS on the old accordion. This is its
+   STRUCTURE: a continuous print of rows, each `check gutter | prose |
+   margin`, in document order. The reader reads the document; the
+   commentary sits beside the passage it annotates instead of stacking on
+   top of it.
+
+   REVIEW MODE ONLY. `.doc` is stamped on #review-cards by initReview when
+   REVIEW_DATA.mode === 'review'; diff mode keeps the accordion (`.card`,
+   above) untouched. A 200-hunk diff read as one continuous print is a
+   worse surface than one hunk at a time, and a hunk is not prose — it has
+   no margin to annotate and no measure to hold.
+
+   THE WASTED-SPACE RULE. The composite reserves 70px of gutter and 300px
+   of margin on every row; production must not. Both side columns are
+   variables and both go to 0 when the DOCUMENT has nothing to put in
+   them. The decision is per-document, not per-row or per-section, and
+   that is the one judgment call in this layout: a per-row decision jogs
+   the prose column sideways between paragraphs, a per-section one jogs it
+   between sections, and a column of text that moves as you read it is
+   worse than the space it saves. The 28px alley rides inside each side
+   cell's own padding rather than in `column-gap`, because a gap is drawn
+   between zero-width tracks too — this way a collapsed column costs
+   exactly zero. */
+.doc {
+  --gutter-w: 98px;                    /* 70px chip column + the 28px alley */
+  --margin-w: minmax(253px, 328px);    /* 225–300px column + the same alley */
+  /* .cards is the flex column the sections sit in; its gap is the space
+     between entries, so the sections carry no margin of their own. */
+  gap: 22px;
+}
+.doc.no-gutter { --gutter-w: 0px; }
+.doc.no-margin { --margin-w: 0px; }
+.doc .row {
+  display: grid;
+  grid-template-columns: var(--gutter-w) minmax(0, 72ch) var(--margin-w);
+  align-items: start;
+}
+/* Code and tables are not prose and do not take the prose measure — the
+   catalog's break-out rule, at row scale instead of `.section-content > pre`. */
+.doc .row.wide { grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w); }
+/* Explicit column placement, so a row that omits an empty side cell still
+   prints its prose in the middle track instead of sliding left. */
+.doc .rg { grid-column: 1; padding-right: 28px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 3px; }
+.doc .rp { grid-column: 2; min-width: 0; }
+.doc .rm { grid-column: 3; padding-left: 28px; min-width: 0; }
+/* With the margin collapsed there is nowhere beside the heading to hang the
+   section's own controls, so the head row drops to two tracks and its margin
+   cell prints under the heading instead. Pure CSS: the cluster is built once
+   and never moved between hosts, so a collapse/expand can't blur focus. */
+.doc.no-margin .row-head { grid-template-columns: var(--gutter-w) minmax(0, 72ch); }
+.doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+.doc.no-margin .row-head .rm .spec { max-width: 340px; }
+/* Below the composite's own breakpoint the third column has no room to be a
+   margin; notes fall under the passage they annotate and the gutter narrows
+   to a glyph rail. */
+@media (max-width: 920px) {
+  .doc .row, .doc .row.wide, .doc.no-margin .row-head { grid-template-columns: 30px minmax(0, 1fr); }
+  .doc .rg { padding-right: 8px; }
+  .doc .rm, .doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+}
+
+.doc-section { position: relative; animation: fadeUp 0.4s ease both; }
+/* Continuous print: nothing collapses, so a settled section dims in place.
+   Its prose stays on the page and stays readable — that is the whole point
+   of printing the document rather than one section of it. */
+.doc-section.is-approved .rp { opacity: 0.5; }
+.doc-section.is-approved .doc-head { color: var(--faint); }
+.doc-section.is-approved:hover .rp { opacity: 0.85; transition: opacity 0.2s; }
+
+/* The section heading carries its catalog number, the way a parts catalog
+   numbers its entries — `9 · One human, N threads`. */
+.doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+  scroll-margin-top: 16px;
+}
+.doc-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+/* The live section is marked where the reader's eye already is — at the
+   heading — the same rule the accordion's active card used. */
+.doc-section.is-active .doc-head { border-left: 2px solid var(--ink); margin-left: -10px; padding-left: 8px; }
+
+/* ─── Segmented rule ──────────────────────────────────────────
+   State × party under an open heading, in honest counts: blue open
+   judgment, amber open facts, the settled remainder. The order is FIXED
+   (judgment → facts → settled) and that fixed order is the colorblind-safe
+   second encoding — position says which is which when hue does not. The
+   raw counts ride in the aria-label, so the honest-proportions claim is
+   auditable rather than asserted.
+
+   Drawn only where something is open. A settled section keeps the thin
+   hairline: a state bar on a section with nothing open is decoration. */
+.seg { display: flex; height: 4px; margin: 0 0 10px; }
+.seg i { display: block; height: 4px; min-width: 2px; }
+.seg-judgment { background: var(--acc); }
+.seg-fact     { background: var(--fact); }
+.seg-settled  { background: var(--settled); }
+.rule-s { border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 10px; }
+
+/* ─── Check gutter ────────────────────────────────────────────
+   Producer flags print beside the paragraph they concern, right-aligned
+   against the prose column, in the machine's own face. A flag that carries
+   an interactive jump (a contradiction's cross-section link, a learned
+   preference's badge) does not fit in 70px and is not a glance — those
+   route to the margin as notes instead. */
+.lchip {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--soft);
+  overflow-wrap: anywhere;
+}
+.lchip-info  { color: var(--machine); }
+.lchip-warn  { color: var(--fact); }
+.lchip-error { color: var(--acc); }
+
+/* ─── Margin notes ────────────────────────────────────────────
+   One note per thread or comment, numbered, sitting beside its own anchor.
+   The number is the same on both ends: the pin in the text and the note in
+   the margin. */
+.nt {
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 7px 9px 8px;
+}
+.nt.is-settled { opacity: 0.55; }
+.nh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-bottom: 4px;
+}
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--soft);
+}
+.nt-fact  .nh { color: var(--fact); }
+.nt-check .nh { color: var(--machine); }
+/* The author's party, not the reviewer's: a declined thread is the author
+   answering, and it speaks in the neutral ink. */
+.nt-author .nh { color: var(--soft); }
+.nt-author { border-left: 2px solid var(--soft); }
+.nt-body { color: var(--text2); overflow-wrap: anywhere; }
+.nt-quote {
+  display: block;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.nt-acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.nt-btn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.nt-btn:hover { background: var(--bg3); }
+.nt-btn.is-pri { background: var(--ink); color: var(--paper); }
+.nt-btn.is-pri:hover { opacity: 0.85; }
+.nt-btn.is-quiet { border-color: var(--rule); color: var(--soft); }
+.nt-btn.is-quiet:hover { border-color: var(--ink); color: var(--ink); background: none; }
+
+/* Keycaps sit on the control they name rather than being hover-revealed —
+   the palette is a directory of this same layer, never a second one. */
+.doc kbd, .pal kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 5px;
+  color: var(--soft);
+  background: var(--sunk);
+}
+.nt-btn.is-pri kbd { border-color: var(--soft); background: none; color: var(--paper); }
+
+/* ─── Pins ────────────────────────────────────────────────────
+   The mark in the text that matches the note in the margin. The anchored
+   span wears catalog yellow and nothing else does — per the ink discipline,
+   `--touch` is the reviewer's touch ON THE TEXT — so the pin, not the
+   highlight, is what carries whose note it is. */
+.doc mark[class^="cmt-hl-"] { background: var(--touch); border-bottom: none; color: inherit; }
+.pin {
+  display: inline-block;
+  min-width: 14px;
+  height: 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  vertical-align: 3px;
+  margin-left: 2px;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.pin-you    { background: var(--acc); color: var(--paper); }
+.pin-author { border: 1.5px solid var(--soft); color: var(--soft); background: none; }
+.pin-fact   { background: var(--fact); color: var(--paper); }
+
+/* ─── Margin spec table ───────────────────────────────────────
+   The transmittal slip's successor at section scale: what is open on this
+   section, stated as a spec rather than described. */
+.spec {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.spec caption {
+  text-align: left;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--soft);
+  padding-bottom: 3px;
+}
+.spec td { border: 1px solid var(--rule); padding: 3px 7px; }
+.spec td:first-child { color: var(--soft); width: 62%; }
+.spec .spec-open td:last-child { color: var(--acc); font-weight: 600; }
+
+/* ─── Suggestion fence ────────────────────────────────────────
+   The one place red and green are correct: the fence and the diff are the
+   same object, and diff semantics already own those two colors. Squared off
+   — the recognizable part is the −/+ grammar, not the radius. */
+.fence {
+  margin-top: 6px;
+  border: 1px solid var(--rule);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.fence-h {
+  background: var(--sunk);
+  border-bottom: 1px solid var(--rule);
+  padding: 3px 8px;
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--soft);
+}
+.fence-ln { display: grid; grid-template-columns: 16px minmax(0, 1fr); }
+.fence-g { text-align: center; user-select: none; }
+.fence-tx { padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fence-del { background: rgba(209,36,47,0.12); }
+.fence-add { background: rgba(26,127,55,0.12); }
+.fence-del .fence-g { color: #d1242f; }
+.fence-add .fence-g { color: #1a7f37; }
+
+/* The round-to-round diff is the widest object on the page, so it gets a
+   full-width row of its own rather than a 253px margin cell — but it ships
+   collapsed, because "what changed since last round" is not what the reader
+   opened the document to read. The margin holds the control; the row holds
+   the diff. */
+.doc .diff-block { border-radius: 0; border-color: var(--rule); margin-bottom: 0; }
+.doc .diff-toggle { border-bottom-color: var(--rule); }
+
+/* ─── Command palette (⌘K) ────────────────────────────────────
+   A directory of the keyboard layer, not a second interaction model: every
+   verb it lists is one the page also shows as a keycap or a control. It
+   takes the floor's materials — square, 1px ink border, selection on
+   catalog yellow rather than a tint of the accent. */
+.pal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--scrim);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+.pal {
+  width: min(460px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+  font-size: 13px;
+  overflow: hidden;
+}
+.pal-input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: var(--ink);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12.5px;
+  padding: 9px 12px;
+}
+.pal-input:focus { outline: none; }
+.pal-input::placeholder { color: var(--faint); }
+.pal-list { max-height: 46vh; overflow-y: auto; }
+.pal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.pal-row.is-on { background: var(--touch); }
+.pal-row .k {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+.pal-empty { padding: 10px 12px; font-size: 12px; color: var(--soft); }
+
+/* The section container is the row host, not the measure: the 72ch cap moved
+   to the grid's middle track, and the padding that framed a card body would
+   only push the rows off the alley they share with every other row. */
+.doc .section-content { max-width: none; padding: 0; margin-bottom: 0; }
+/* The break-out rule, at row scale. The `wide` row already gives the middle
+   track the room; this is what lets the block use it. */
+.doc .rp > pre, .doc .rp > table, .doc .rp > .table-wrap {
+  max-width: none;
+  width: 100%;
+  overflow-x: auto;
+}
+.doc .rp > *:last-child { margin-bottom: 0; }
+.doc .row + .row { margin-top: 10px; }
+
+/* A carried thread keeps every affordance it had in the accordion — settle,
+   reply, the type chips — and takes the margin's note dress. One builder,
+   two surfaces (openThreadItemHTML); this is the restyle, not a fork. */
+.doc .open-thread {
+  margin-bottom: 12px;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--acc);
+  border-radius: 0;
+  background: var(--paper);
+}
+.doc .open-thread.is-declined { border-left-color: var(--soft); }
+.doc .open-thread-head { flex-wrap: wrap; gap: 5px; padding: 6px 9px 5px; border-bottom: none; }
+.doc .open-thread-label { color: var(--acc); }
+.doc .open-thread.is-declined .open-thread-label { color: var(--soft); }
+.doc .open-thread-quote { max-width: 100%; white-space: normal; }
+.doc .open-thread-body { padding: 0 9px; }
+.doc .exchange { padding: 5px 0; }
+.doc .thread-reply { padding: 0 9px 8px; margin-top: 0; }
+.doc .settle-btn { border-radius: 0; }
+/* The note number, shared by the margin's two note builders and by the pin
+   that answers it. Empty in the accordion — only the margin numbers notes. */
+.nh-num, .nh .nh-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 700;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.nh-num:empty { display: none; }
+.open-thread-head .pn,
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+.lchip-result { display: block; color: var(--machine); }
+.doc .comment-popover { border-radius: 0; margin-top: 0; margin-bottom: 12px; }
+.doc .annot { border-radius: 0; margin-bottom: 12px; flex-direction: column; gap: 3px; }
+/* The whole-document invitation, printed once at the foot of the print
+   instead of once per section — the per-section hint was a line of chrome
+   between every passage and the next. */
+.doc-hint {
+  margin: 22px 0 0;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+
+/* The document's own balance, drawn across the footer that closes the page —
+   same grammar as a section's rule, same fixed order, one document-wide
+   denominator. Unreviewed sections are the bare track it does not fill. */
+.foot-seg { position: absolute; top: 0; left: 0; right: 0; display: flex; height: 4px; }
+.foot-seg i { display: block; height: 4px; }
+
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
 .card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
 .section-content, .choice-chip, .qa-btn,
@@ -1498,6 +1927,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
+.nt-btn:focus-visible, .pin:focus-visible, .pal-row:focus-visible,
 .transmittal-row:focus-visible,
 .recap-row:focus-visible, .recap-close:focus-visible,
 .annot-jump:focus-visible,
@@ -2003,6 +2433,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
     <div class="cards" id="review-cards"></div>
+    <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Q&A mode ─────────────────────────────────────────── -->
@@ -2061,6 +2492,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
   </details>
@@ -2069,8 +2501,12 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
 
 </div><!-- /#paper -->
 
-<!-- Bottom bar -->
+<!-- Bottom bar. `position: fixed` is the containing block .foot-seg hangs
+     off; the balance bar prints just inside the 2px ink rule that closes
+     the page. Ships empty and hidden — updateReviewStats fills it in
+     review mode only, since a diff or Q&A round has no document balance. -->
 <div class="bottom-bar" id="bottom-bar-el">
+  <div class="foot-seg" id="foot-seg" style="display:none"></div>
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
@@ -2119,6 +2555,18 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     </div>
     <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
     <div class="prefs-list" id="prefs-list"></div>
+  </div>
+</div>
+
+<!-- Command palette (⌘K, issue #186) — E's keyboard layer. A directory of
+     verbs the page already carries as controls and keycaps, never a second
+     interaction model. Ships hidden and empty; openPalette() fills the list
+     from live state each open. -->
+<div class="pal-overlay" id="pal-overlay" style="display:none">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette">
+    <input type="text" class="pal-input" id="pal-input" placeholder="&gt; type a command" autocomplete="off"
+           role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+    <div class="pal-list" id="pal-list" role="listbox" aria-label="Commands"></div>
   </div>
 </div>
 
@@ -2394,6 +2842,12 @@ function diffFileHunkCounts(sections) {
 function initReview() {
   _pendingMarkdown.clear();
   const container = el('review-cards');
+  // Review mode prints the document; diff mode keeps the accordion. The class
+  // is what arms every `.doc` rule in the stylesheet, so the two surfaces
+  // share one page and one set of builders without a runtime branch in CSS.
+  const asDoc = REVIEW_DATA.mode === 'review';
+  container.classList.toggle('doc', asDoc);
+  el('doc-hint').style.display = asDoc ? '' : 'none';
   const priorApprovedSet = new Set(REVIEW_DATA.approved_ids || []);
   // Pre-populate approved state for sections approved in previous rounds
   priorApprovedSet.forEach(id => {
@@ -2421,8 +2875,15 @@ function initReview() {
     // Sections approved in a prior round (round >= 2) collapse to carried
     // cards — a head-only line with the read-only content one reveal away.
     // Round 1 keeps the normal-card path even when a resume pre-approves ids.
-    const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
-    const card = isCarried ? buildCarriedCard(s) : buildReviewCard(s);
+    //
+    // Continuous print retires that collapse in review mode (issue #186): a
+    // settled section DIMS IN PLACE, prose and all, because the point of a
+    // document review is reading the document and a carried section is still
+    // part of it. buildCarriedCard stays the diff-mode path, where a carried
+    // hunk genuinely has nothing to read.
+    const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
+    const card = asDoc ? buildDocSection(s, i)
+                       : isCarried ? buildCarriedCard(s) : buildReviewCard(s);
     // Carried cards appear instantly (no fade) — only new/changed cards get
     // the staggered fade-in, re-indexed among themselves so the stagger stays
     // tight regardless of how many sections are already carried.
@@ -2437,6 +2898,11 @@ function initReview() {
     // carried cards bake their collapsed state into their own markup.
     if (!isCarried && priorApprovedSet.has(s.id)) syncReviewCard(s.id);
   });
+  // Continuous print renders every section up front — there is nothing to
+  // open, so there is nothing to render lazily. `_pendingMarkdown` and the
+  // late-CDN retry keep working unchanged: `retryOnceScriptsLoad` selects on
+  // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
+  if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
   if (firstPending) activateReviewCard(firstPending.id);
@@ -2600,10 +3066,15 @@ function openNotesHTML(exchanges) {
   }).join('');
 }
 
-function openThreadHTML(section) {
-  const ex = section.open_notes;
-  if (!Array.isArray(ex) || ex.length === 0) return '';
-  return ex.map(t => {
+// One carried thread, as a complete element. Split out of openThreadHTML so
+// the margin (issue #186) can place each thread beside its own anchor instead
+// of stacking the whole run above the prose — both surfaces build from this
+// one function, and the doc grid restyles `.open-thread` into the margin's
+// note grammar rather than forking the markup.
+// The `.nh-num` span ships empty and stays empty in the accordion; only the
+// margin numbers its notes, and it fills this in place (renumberDocNotes) so
+// the reply textarea beside it never gets rebuilt out from under a keystroke.
+function openThreadItemHTML(t) {
     const cid = esc(t.cid || '');
     const exs = t.exchanges || [];
     // The thread's current type carries to a reply (continuing an info thread
@@ -2622,8 +3093,9 @@ function openThreadHTML(section) {
     return '<div class="open-thread' + (declined ? ' is-declined' : '')
       + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
+      +   '<span class="nh-num" id="rnum-' + cid + '" aria-hidden="true"></span>'
       +   '<span class="open-thread-label">' + (declined ? 'declined' : 'open note')
-      +   '</span>' + quote
+      +   '</span><span class="pn">&middot; ' + cid + '</span>' + quote
       +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
@@ -2639,8 +3111,14 @@ function openThreadHTML(section) {
             ? 'Settle to accept the decline, or reply to insist — a reply is binding.'
             : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
       +     '"></textarea>'
-      + '</div>';
-  }).join('');
+      + '</div>'
+      + '</div>';   // close .open-thread — unclosed, two threads nested
+}
+
+function openThreadHTML(section) {
+  const ex = section.open_notes;
+  if (!Array.isArray(ex) || ex.length === 0) return '';
+  return ex.map(openThreadItemHTML).join('');
 }
 
 /* ─── Confidence triage (issue #12) ───────────────────────────
@@ -2745,21 +3223,10 @@ function buildReviewCard(section) {
     e.stopPropagation(); skipReviewCard(section.id);
   });
 
-  // Open-note controls (issue #16). Wire each per-cid settle button + reply box.
-  card.querySelectorAll('.settle-btn').forEach(b =>
-    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
-  card.querySelectorAll('.thread-reply').forEach(wrap => {
-    const cid = wrap.dataset.cid;
-    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
-      e.stopPropagation();
-      wrap.dataset.type = ch.dataset.type;
-      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
-      replyToThread(section.id, cid);   // re-tag any pending reply with the new type
-    }));
-    const field = wrap.querySelector('.thread-reply-field');
-    field.addEventListener('input', () => replyToThread(section.id, cid));
-    field.addEventListener('click', e => e.stopPropagation());
-  });
+  // Open-note controls (issue #16) — the per-cid settle button + reply box,
+  // bound by the same helper the margin uses so one thread behaves the same
+  // way in both surfaces.
+  wireOpenThread(section.id, card);
 
   const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
   if (diffToggle) diffToggle.addEventListener('click', e => {
@@ -2855,6 +3322,565 @@ function withdrawApproval(id) {
   renderTransmittal();   // the withdrawn section is no longer "approved & unchanged"
 }
 
+/* ═════════════════════════════════════════════════════════════
+   THE DOCUMENT PRINT — doc + margin (issue #186)
+   ─────────────────────────────────────────────────────────────
+   Review mode's renderer. Sections print open, in document order, as a run
+   of `check gutter | prose | margin` rows; a settled section dims in place
+   instead of collapsing to a clickable row. Commentary sits BESIDE the
+   passage it annotates — the reading-order inversion this story fixes was
+   that a round-2 section put ~700px of threads, diff and slip between the
+   reader and the paragraph all of it was about.
+
+   Diff mode is untouched and keeps the accordion (buildReviewCard): a hunk
+   is not prose, it has no margin to annotate and no measure to hold, and a
+   200-hunk changeset read as one continuous print is a worse surface than
+   one hunk at a time.
+
+   The registry of check kinds is injected from scripts/schema.py rather
+   than restated here — CHECK_KINDS is the flag registry that gates a
+   `checks` round, and a second copy of it in the frontend is exactly the
+   fail-open drift the schema module exists to prevent. ═════════════════ */
+const CHECK_KINDS = __CHECK_KINDS__;
+
+function isDocMode() { return !!(REVIEW_DATA && REVIEW_DATA.mode === 'review'); }
+
+/* ─── Flags: which column a producer flag belongs in ─────────
+   The 70px gutter is for a glance — a severity glyph and a short message
+   read at the edge of vision while the eye stays on the prose. A flag that
+   carries an interactive jump (a contradiction's cross-section link, a
+   learned preference's badge-to-entry link) is neither short nor a glance,
+   so it routes to the margin and renders through annotStripHTML, keeping
+   the jump wiring those two features already ship. */
+function docFlagSplit(section) {
+  const titles = reviewSectionTitles();
+  const gutter = [], margin = [];
+  (section.annotations || []).forEach(a => {
+    if (!a) return;
+    const anchorId = a.anchor != null ? String(a.anchor) : '';
+    const m = a.kind === 'preference' ? PREF_ID_RE.exec(a.message || '') : null;
+    const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
+    (jumps ? margin : gutter).push(a);
+  });
+  return { gutter, margin };
+}
+
+const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
+
+function gutterChipHTML(a) {
+  const sev = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
+  // A check flag's `result` is the answer the round is waiting on — printed
+  // under the flag it answers, so an armed `checks` round shows at a glance
+  // which of its flags are still open.
+  const result = a.result ? '<span class="lchip-result">&rarr; ' + esc(a.result) + '</span>' : '';
+  return '<span class="lchip lchip-' + sev + '" title="' + esc(a.kind || 'note') + '">'
+    + '<span aria-hidden="true">' + FLAG_GLYPH[sev] + '</span> ' + esc(a.message || '')
+    + result + '</span>';
+}
+
+/* ─── Rows ───────────────────────────────────────────────────
+   The rendered markdown's top-level blocks become the prose column of one
+   row each, so a note can sit beside the paragraph it annotates rather
+   than beside the section. Code and tables take a `wide` row: they are not
+   prose and do not hold the prose measure. */
+function docRow(wide) {
+  const row = document.createElement('div');
+  row.className = 'row' + (wide ? ' wide' : '');
+  const rp = document.createElement('div');
+  rp.className = 'rp';
+  row.appendChild(rp);
+  return row;
+}
+
+function layoutDocRows(id) {
+  const host = el('rcontent-' + id); if (!host) return;
+  if (host.querySelector(':scope > .row')) return;          // already laid out
+  // marked/DOMPurify missing → renderMarkdown wrote raw text, no elements.
+  // One row keeps the raw fallback inside the grid instead of outside it.
+  if (!host.firstElementChild) {
+    if (!host.textContent) return;
+    const row = docRow(false);
+    row.querySelector('.rp').textContent = host.textContent;
+    host.textContent = '';
+    host.appendChild(row);
+    return;
+  }
+  // The head row already prints the section title; markdown's own leading
+  // heading is the same words twice (what `.section-content > h1:first-child`
+  // hid in the accordion, done here because the heading is no longer a
+  // first child of anything once the blocks are distributed).
+  const first = host.firstElementChild;
+  if (first && /^H[1-3]$/.test(first.tagName)) first.remove();
+  Array.from(host.children).forEach(node => {
+    const wide = node.tagName === 'PRE' || node.tagName === 'TABLE'
+              || node.classList.contains('table-wrap') || node.classList.contains('d2h-wrapper');
+    const row = docRow(wide);
+    host.appendChild(row);
+    row.querySelector('.rp').appendChild(node);
+  });
+}
+
+function docRows(id) {
+  const host = el('rcontent-' + id);
+  return host ? Array.from(host.querySelectorAll(':scope > .row')) : [];
+}
+
+function docHeadRow(id) {
+  const sec = el('rcard-' + id);
+  return sec ? sec.querySelector('.row-head') : null;
+}
+
+// The row whose prose holds the given occurrence of `text`. Counts occurrences
+// across rows in document order so a phrase repeated in three paragraphs puts
+// the note beside the paragraph the reviewer actually selected in, the same
+// ordinal renderHighlights marks. Null when nothing matches — an unresolvable
+// anchor is a whole-section note, never a silently misplaced one.
+function rowForAnchor(id, text, occurrence) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  let n = occurrence > 0 ? occurrence : 0;
+  const rows = docRows(id);
+  for (const r of rows) {
+    const hay = (r.querySelector('.rp') || {}).textContent || '';
+    let c = 0, i = hay.indexOf(t);
+    while (i >= 0) { c++; i = hay.indexOf(t, i + 1); }
+    if (c > n) return r;
+    n -= c;
+  }
+  return rows.find(r => (((r.querySelector('.rp') || {}).textContent) || '').includes(t)) || null;
+}
+
+// Side cells are created on demand and never pre-reserved: a row that gains a
+// note grows a margin cell, a row that never has one never carries an empty
+// box. The COLUMN's width is a separate, document-level decision
+// (updateDocColumns) — this is only about the box.
+function docCell(row, cls) {
+  let cell = row.querySelector(':scope > .' + cls);
+  if (!cell) {
+    cell = document.createElement('div');
+    cell.className = cls;
+    if (cls === 'rg') row.insertBefore(cell, row.firstChild);
+    else row.appendChild(cell);
+  }
+  return cell;
+}
+
+function docNoteHost(id, row) {
+  const target = row || docHeadRow(id);
+  if (!target) return null;
+  const rm = docCell(target, 'rm');
+  let host = rm.querySelector(':scope > .rm-notes');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'rm-notes';
+    rm.appendChild(host);
+  }
+  return host;
+}
+
+/* ─── Notes: what the margin holds ───────────────────────────
+   Two sources, deliberately kept apart. A carried THREAD is built once and
+   placed once — it owns a reply textarea, and rebuilding it mid-keystroke
+   would steal focus, which is exactly the invariant the accordion's
+   separate `.comment-list` host protected. This round's COMMENTS are
+   static text and are rebuilt freely on every sync. */
+function docNotes(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const out = threads.map(t => ({
+    kind: 'thread', cid: t.cid, thread: t,
+    comment: cs.find(c => c.cid === t.cid) || null,
+    anchor: t.quote ? { text: t.quote, occurrence: 0 } : null,
+  }));
+  activeComments(id)
+    .filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => out.push({ kind: 'comment', cid: c.cid, comment: c, anchor: c.anchor || null }));
+  return out;
+}
+
+// Notes in reading order: by the row their anchor lands in, then by the order
+// they were made. An unanchored note sorts to -1 — the section head, which is
+// above every row — because a whole-section note is about all of it.
+function docNotesOrdered(section) {
+  const rows = docRows(section.id);
+  return docNotes(section)
+    .map((n, i) => {
+      const r = n.anchor ? rowForAnchor(section.id, n.anchor.text, n.anchor.occurrence) : null;
+      return Object.assign({}, n, { row: r ? rows.indexOf(r) : -1, seq: i });
+    })
+    .sort((a, b) => a.row - b.row || a.seq - b.seq);
+}
+
+function noteTypeOf(n) {
+  if (n.kind === 'thread') {
+    const last = (n.thread.exchanges || []).slice(-1)[0] || {};
+    return last.verdict === 'changes' || last.verdict === 'suggestion' ? last.verdict : 'info';
+  }
+  return n.comment.type === 'changes' || n.comment.type === 'suggestion' ? n.comment.type : 'info';
+}
+
+/* D's fence, squared: the reviewer's replacement against the wording it
+   replaces. Red and green live here and nowhere else — the fence and the
+   diff are the same object, and diff semantics already own those colors. */
+function suggestionFenceHTML(c) {
+  const was = (c.anchor || {}).text || '';
+  return '<div class="fence"><div class="fence-h">suggestion &middot; ' + esc(c.cid) + '</div>'
+    + (was ? '<div class="fence-ln fence-del"><span class="fence-g" aria-hidden="true">&minus;</span>'
+           + '<span class="fence-tx">' + esc(was) + '</span></div>' : '')
+    + '<div class="fence-ln fence-add"><span class="fence-g" aria-hidden="true">+</span>'
+    + '<span class="fence-tx">' + esc(c.replacement) + '</span></div></div>';
+}
+
+function commentNoteHTML(n) {
+  const c = n.comment;
+  const word = c.type === 'suggestion' ? 'suggestion' : c.type === 'info' ? 'question' : 'comment';
+  const cls = c.type === 'info' ? ' nt-fact' : '';
+  return '<div class="nt' + cls + '" data-cid="' + esc(c.cid) + '">'
+    + '<div class="nh"><span class="nh-num">' + n.num + '</span> you &mdash; ' + word
+    + '<span class="pn">&middot; ' + esc(c.cid) + '</span></div>'
+    + (c.anchor && c.anchor.text && c.type !== 'suggestion'
+        ? '<span class="nt-quote">' + esc(c.anchor.text) + '</span>' : '')
+    + (c.note ? '<div class="nt-body">' + esc(c.note) + '</div>' : '')
+    + (c.replacement ? suggestionFenceHTML(c) : '')
+    + '<div class="nt-acts">'
+    +   '<button type="button" class="nt-btn is-quiet cmt-del" data-cid="' + esc(c.cid) + '">remove</button>'
+    + '</div></div>';
+}
+
+/* ─── Spec table ─────────────────────────────────────────────
+   The transmittal slip's successor at section scale, and the margin's
+   answer to "what is open here" — stated as a spec, not described. Drawn
+   for the LIVE section only: a spec table on every section at once is a
+   table of contents, not a state readout. */
+function sectionSpec(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const isSettled = cid => cs.some(c => c.cid === cid && c.settled);
+  let comments = 0, suggestions = 0, declined = 0;
+  threads.forEach(t => {
+    if (isSettled(t.cid)) return;
+    if (t.status === 'declined') { declined++; return; }
+    const last = (t.exchanges || []).slice(-1)[0] || {};
+    if (last.verdict === 'suggestion') suggestions++; else comments++;
+  });
+  activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => { if (c.type === 'suggestion') suggestions++; else comments++; });
+  const checks = (section.annotations || []).filter(a => a && CHECK_KINDS.includes(a.kind));
+  return { comments, suggestions, declined,
+           checks: checks.length, checksDone: checks.filter(a => a.result).length };
+}
+
+function specHTML(section) {
+  const s = sectionSpec(section);
+  const row = (label, value, open) =>
+    '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
+  const rows = row('comments open', s.comments, s.comments > 0)
+    + row('suggestions open', s.suggestions, s.suggestions > 0)
+    + row('author kept as-is', s.declined, false)
+    + (s.checks ? row('checks', s.checksDone + '/' + s.checks
+        + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '');
+  return '<table class="spec"><caption>' + esc(section.title) + ' &mdash; state</caption>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+
+/* ─── Segmented rule ─────────────────────────────────────────
+   One denominator, one place. Every open item is either JUDGMENT (the
+   reviewer's call — changes, a suggestion, a decline waiting on accept-or-
+   insist) or an open FACT (a question, an unanswered check, a producer's
+   warn/error flag); everything resolved is SETTLED. The order is fixed and
+   that fixed order is the colorblind-safe second encoding. The raw counts
+   ride out in the aria-label so the honest-proportions claim is auditable
+   rather than asserted. */
+function sectionBalance(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const isSettled = cid => cs.some(c => c.cid === cid && c.settled);
+  let judgment = 0, facts = 0, settled = 0;
+  threads.forEach(t => {
+    if (isSettled(t.cid)) { settled++; return; }
+    const last = (t.exchanges || []).slice(-1)[0] || {};
+    if (t.status === 'declined' || last.verdict === 'changes' || last.verdict === 'suggestion') judgment++;
+    else facts++;
+  });
+  activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => { if (c.type === 'changes' || c.type === 'suggestion') judgment++; else facts++; });
+  (section.annotations || []).forEach(a => {
+    if (!a) return;
+    if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; else facts++; return; }
+    if (a.severity === 'warn' || a.severity === 'error') facts++;
+  });
+  if (deriveVerdict(id) === 'approved') settled++;
+  return { judgment, facts, settled };
+}
+
+function segHTML(bal) {
+  const total = bal.judgment + bal.facts + bal.settled;
+  if (!total) return '';
+  // Nothing open: the thin settled hairline. A state bar on a settled
+  // section is decoration, and decoration is what this ground removed.
+  if (!bal.judgment && !bal.facts) return '<div class="rule-s"></div>';
+  const pct = n => (n / total * 100).toFixed(2) + '%';
+  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
+  const label = 'open: ' + bal.judgment + ' judgment, ' + bal.facts + ' fact'
+    + (bal.facts === 1 ? '' : 's') + '; ' + bal.settled + ' settled';
+  return '<div class="seg" role="img" aria-label="' + esc(label) + '">'
+    + seg('seg-judgment', bal.judgment) + seg('seg-fact', bal.facts)
+    + seg('seg-settled', bal.settled) + '</div>';
+}
+
+/* ─── Build ──────────────────────────────────────────────────
+   The section element keeps the `rcard-` id the rest of the app addresses
+   sections by, so activateReviewCard, advanceFrom, the transmittal jumps
+   and the Tab handler all keep working against it unchanged. */
+function buildDocSection(section, index) {
+  const id = section.id;
+  const sec = document.createElement('section');
+  sec.className = 'doc-section';
+  sec.id = 'rcard-' + id;
+  sec.setAttribute('aria-labelledby', 'rhead-' + id);
+
+  _pendingMarkdown.set(id, section.content ?? '');
+
+  sec.innerHTML = `
+    <div class="row row-head">
+      <div class="rp">
+        <h2 class="doc-head" id="rhead-${id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(section.title)}</h2>
+        <div id="rseg-${id}"></div>
+      </div>
+      <div class="rm" id="rspec-${id}">
+        <div class="rm-spec" id="rspecbody-${id}"></div>
+        <div class="rm-notes"></div>
+        <div class="nt-acts doc-acts">
+          <button type="button" class="nt-btn is-pri" id="rbtn-primary-${id}"><span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>
+          <button type="button" class="nt-btn is-quiet" id="rcmtnote-${id}">+ note</button>
+        </div>
+      </div>
+    </div>
+    ${section.diff ? `<div class="row wide row-diff" id="rdiffrow-${id}"><div class="rp">${diffStripHTML(id, section.diff)}</div></div>` : ''}
+    <div class="section-content" id="rcontent-${id}"></div>
+    <div class="comment-popover" id="rpop-${id}" style="display:none"></div>`;
+
+  // The live section follows the reader: pointing at or tabbing into one
+  // makes it active without yanking the page, which is what the jump paths
+  // (transmittal rows, pins, the palette) deliberately still do.
+  sec.addEventListener('mousedown', () => activateReviewCard(id, { noScroll: true }));
+  sec.addEventListener('focusin',   () => activateReviewCard(id, { noScroll: true }));
+
+  // Approve is the section's own control and it stays reachable by pointer
+  // and by Tab: with the action row gone, a section carrying no notes would
+  // otherwise hold no focusable element at all, and keyboard access to every
+  // section is a hard requirement (test_server_a11y). ⌘K is a second path to
+  // the same verb, never the only one.
+  sec.querySelector('#rbtn-primary-' + id).addEventListener('click', e => {
+    e.stopPropagation();
+    if (deriveVerdict(id) === 'approved') docWithdraw(id); else approveSection(id);
+  });
+  sec.querySelector('#rcmtnote-' + id).addEventListener('click', e => {
+    e.stopPropagation(); openCommentPopover(id, {});
+  });
+
+  const diffToggle = sec.querySelector('#rdiff-toggle-' + id);
+  if (diffToggle) {
+    // Ships collapsed. "What changed since last round" is not what the reader
+    // opened the document to read, and at full width above the prose it was
+    // the single largest thing between them and the text.
+    sec.querySelector('#rdiff-' + id).classList.add('collapsed');
+    diffToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      sec.querySelector('#rdiff-' + id).classList.toggle('collapsed');
+    });
+  }
+
+  // A pin is a jump to its own note — the pairing works in both directions.
+  sec.addEventListener('click', e => {
+    const pin = e.target.closest ? e.target.closest('.pin') : null;
+    if (!pin) return;
+    e.stopPropagation();
+    const note = sec.querySelector('[data-cid="' + pin.dataset.cid + '"]');
+    if (note) {
+      note.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const field = note.querySelector('textarea');
+      if (field) field.focus({ preventScroll: true });
+    }
+  });
+  return sec;
+}
+
+// Withdraw, in continuous print. The accordion swapped a collapsed carried
+// card for an open one; here nothing was ever collapsed, so withdrawing is
+// only the verdict going back to pending — the prose stays exactly where the
+// reader was reading it.
+function docWithdraw(id) {
+  if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
+  syncReviewCard(id);
+  updateReviewStats();
+  renderTransmittal();
+}
+
+/* ─── Place: flags, threads, notes, pins ─────────────────────
+   Called once per section after its markdown is laid out into rows, then
+   surgically on every sync. Placement is idempotent — a thread already in
+   the right cell is left alone, because moving a DOM node blurs whatever
+   is focused inside it and a thread owns a reply textarea. */
+function placeDocFlags(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const split = docFlagSplit(section);
+  const byRow = new Map();
+  split.gutter.forEach(a => {
+    const row = a.anchor != null ? rowForAnchor(id, String(a.anchor), 0) : null;
+    const key = row || docHeadRow(id);
+    if (!key) return;
+    if (!byRow.has(key)) byRow.set(key, []);
+    byRow.get(key).push(a);
+  });
+  byRow.forEach((flags, row) => {
+    docCell(row, 'rg').innerHTML = flags.map(gutterChipHTML).join('');
+  });
+  if (split.margin.length) {
+    const host = docNoteHost(id, null);
+    if (host) {
+      host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
+      host.querySelectorAll('.annot-jump').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const prefId = btn.getAttribute('data-pref-id');
+          if (prefId) openPrefsPanel(btn, prefId);
+          else activateReviewCard(btn.getAttribute('data-target'));
+        });
+      });
+    }
+  }
+}
+
+function placeDocThreads(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const threads = section.open_notes || [];
+  if (!threads.length) return;
+  const sec = el('rcard-' + id); if (!sec) return;
+  threads.forEach(t => {
+    let node = el('rthread-' + t.cid);
+    if (!node) {
+      const holder = document.createElement('div');
+      holder.innerHTML = openThreadItemHTML(t);
+      node = holder.firstElementChild;
+      wireOpenThread(id, node);
+    }
+    const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
+    const rm = docCell(row || docHeadRow(id), 'rm');
+    let host = rm.querySelector(':scope > .rm-threads');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'rm-threads';
+      // Threads precede this round's fresh notes: a carried thread is older
+      // business than a comment made a minute ago.
+      rm.insertBefore(host, rm.querySelector(':scope > .rm-notes'));
+    }
+    if (node.parentElement !== host) host.appendChild(node);
+  });
+}
+
+// The settle button + reply box wiring, lifted out of buildReviewCard so both
+// surfaces bind one thread the same way. `node` is a scope, not one thread:
+// the accordion passes its whole card, the margin passes a single thread.
+function wireOpenThread(id, node) {
+  node.querySelectorAll('.settle-btn').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(id, b.dataset.cid); }));
+  node.querySelectorAll('.thread-reply').forEach(wrap => {
+    const cid = wrap.dataset.cid;
+    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.dataset.type = ch.dataset.type;
+      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+      replyToThread(id, cid);
+    }));
+    const field = wrap.querySelector('.thread-reply-field');
+    field.addEventListener('input', () => replyToThread(id, cid));
+    field.addEventListener('click', e => e.stopPropagation());
+  });
+}
+
+// Mark every note's anchor and pin it with the note's own number. One pass
+// owns both ends of the pairing, so the number in the text and the number in
+// the margin can never disagree.
+function markAndPin(id, ordered) {
+  const content = el('rcontent-' + id); if (!content) return;
+  content.querySelectorAll('.pin').forEach(p => p.remove());
+  content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>
+    m.replaceWith(document.createTextNode(m.textContent)));
+  content.normalize();
+  ordered.forEach(n => {
+    const a = n.anchor;
+    if (!a || !a.text) return;
+    const type = noteTypeOf(n);
+    const mark = wrapNth(content, a.text, 'cmt-hl-' + type, a.occurrence > 0 ? a.occurrence : 0);
+    if (!mark) return;
+    const declined = n.kind === 'thread' && n.thread.status === 'declined';
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'pin ' + (declined ? 'pin-author' : type === 'info' ? 'pin-fact' : 'pin-you');
+    pin.dataset.cid = n.cid;
+    pin.textContent = String(n.num);
+    pin.setAttribute('aria-label', 'Go to note ' + n.num);
+    mark.after(pin);
+  });
+}
+
+function renderDocMargin(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const sec = el('rcard-' + id); if (!sec) return;
+  // Only the dynamic hosts are wiped. Thread notes and their reply textareas
+  // are never rebuilt — the accordion protected the same invariant by keeping
+  // threads out of `.comment-list`.
+  sec.querySelectorAll('.rm-notes .nt').forEach(n => n.remove());
+
+  const ordered = docNotesOrdered(section);
+  ordered.forEach((n, i) => {
+    n.num = i + 1;
+    if (n.kind === 'thread') {
+      const numEl = el('rnum-' + n.cid);
+      if (numEl) numEl.textContent = String(n.num);
+      const node = el('rthread-' + n.cid);
+      if (node) node.classList.toggle('is-settled', !!(n.comment && n.comment.settled));
+      return;
+    }
+    const host = docNoteHost(id, n.row < 0 ? null : docRows(id)[n.row]);
+    if (host) host.insertAdjacentHTML('beforeend', commentNoteHTML(n));
+  });
+  sec.querySelectorAll('.rm-notes .cmt-del').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); removeComment(id, b.dataset.cid); }));
+
+  markAndPin(id, ordered);
+  renderDocSeg(id);
+  renderDocSpec(id);
+  updateDocColumns();
+}
+
+function renderDocSeg(id) {
+  const mount = el('rseg-' + id); if (!mount) return;
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  mount.innerHTML = segHTML(sectionBalance(section));
+}
+
+function renderDocSpec(id) {
+  const mount = el('rspecbody-' + id); if (!mount) return;
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  mount.innerHTML = rState.active === id ? specHTML(section) : '';
+}
+
+/* The wasted-space rule, decided once for the whole print. Read off the DOM
+   rather than off the round data, so a comment made a moment ago counts the
+   same as a thread that shipped with the round. */
+function updateDocColumns() {
+  const doc = el('review-cards');
+  if (!doc || !doc.classList.contains('doc')) return;
+  doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lchip'));
+  doc.classList.toggle('no-margin',
+    !doc.querySelector('.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread'));
+}
+
 // Open/close a card, keeping the header button's aria-expanded in sync.
 // `is-active` is the single source of truth for "expanded", so every site that
 // flips it routes through here — otherwise aria-expanded desyncs on auto-advance
@@ -2866,7 +3892,11 @@ function setCardExpanded(cardEl, expanded) {
   if (head) head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
-function activateReviewCard(id) {
+// `opts.noScroll` marks a passive activation — the reader pointed at or tabbed
+// into a section in the continuous print and the live section should follow
+// them without the page moving under their hands. Every explicit jump
+// (transmittal row, pin, palette, annotation link) omits it and still scrolls.
+function activateReviewCard(id, opts) {
   // A carried card has no accordion body to activate — reveal its read-only
   // content and scroll to it instead (annotation jumps, all-carried resumes).
   // It never becomes rState.active: active means "under review".
@@ -2876,19 +3906,23 @@ function activateReviewCard(id) {
     target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
+  const prev = rState.active;
   // Deactivate previous
-  if (rState.active && rState.active !== id) {
-    setCardExpanded(el('rcard-' + rState.active), false);
-    syncReviewDot(rState.active);
-    syncNoteInline(rState.active);
+  if (prev && prev !== id) {
+    setCardExpanded(el('rcard-' + prev), false);
+    syncReviewDot(prev);
+    syncNoteInline(prev);
   }
   rState.active = id;
   _ensureRendered(id);
   const card = el('rcard-' + id);
   if (card) {
     setCardExpanded(card, true);
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!(opts && opts.noScroll)) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  // The spec table is the LIVE section's readout, so both ends of a handover
+  // repaint: the section that lost it and the one that gained it.
+  if (isDocMode() && prev !== id) { renderDocSpec(prev); renderDocSpec(id); }
   syncReviewDot(id);
 }
 
@@ -2910,7 +3944,16 @@ function _ensureRendered(id) {
   // late-loading-dependency lesson as the marked/DOMPurify retry, and the
   // hljs race the gate-audit pass caught).
   if (!contentEl.classList.contains('d2h-pending')) _pendingMarkdown.delete(id);
+  // The doc grid distributes the freshly rendered blocks into rows before
+  // anything is placed beside them — a note cannot find its paragraph until
+  // the paragraph is a row.
+  if (isDocMode()) {
+    layoutDocRows(id);
+    placeDocFlags(id);
+    placeDocThreads(id);
+  }
   renderHighlights(id);
+  if (isDocMode()) renderDocMargin(id);
 }
 
 // One-time-per-script retry for late-loading CDN renderers: a card opened
@@ -3079,13 +4122,28 @@ function syncCard(id) {
   syncReviewDot(id);
   renderPrimaryButton(id);
   if (typeof renderHighlights === 'function') renderHighlights(id);
-  if (typeof renderCommentList === 'function') renderCommentList(id);
+  // The margin is the doc print's comment list: same job, different column.
+  if (isDocMode()) renderDocMargin(id);
+  else if (typeof renderCommentList === 'function') renderCommentList(id);
   updateReviewStats();
 }
 
 function renderPrimaryButton(id) {
   const btn = el('rbtn-primary-' + id); if (!btn) return;
   const n = activeComments(id).length;
+  // The doc print's control wears the margin's button grammar (`.nt-btn`),
+  // the accordion's wears the action row's (`.action-btn`); the LABEL rule —
+  // approve only with nothing open — is one rule for both. Read the class
+  // before overwriting it.
+  const doc = btn.classList.contains('nt-btn');
+  if (doc) {
+    const approved = deriveVerdict(id) === 'approved';
+    btn.className = 'nt-btn ' + (approved || n ? 'is-quiet' : 'is-pri');
+    btn.innerHTML = approved ? '&#8634; withdraw approval'
+      : n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
+          : '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd>';
+    return;
+  }
   btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
   btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
                     : '&#10003; approve';
@@ -3232,6 +4290,16 @@ function openCommentPopover(id, { anchor } = {}) {
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
+  // In the doc print the popover composes a MARGIN note, so it opens in the
+  // margin beside the passage being annotated rather than at the foot of the
+  // section — the note lands where the reviewer is already looking, and the
+  // prose never shifts to make room for a compose box. Moved before focus:
+  // relocating a node after focusing inside it blurs the field.
+  if (isDocMode()) {
+    const row = anchor ? rowForAnchor(id, anchor.text, anchor.occurrence) : null;
+    const host = docNoteHost(id, row);
+    if (host && pop.parentElement !== host) host.appendChild(pop);
+  }
   pop.style.display = '';
 
   const ta        = pop.querySelector('.cmt-pop-note');
@@ -3295,10 +4363,15 @@ function closeCommentPopover(id) {
 // Re-wrap each comment's anchored span in the rendered content with a typed mark.
 function renderHighlights(id) {
   const content = el('rcontent-' + id); if (!content) return;
+  content.querySelectorAll('.pin').forEach(p => p.remove());
   content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info, mark.cmt-hl-suggestion').forEach(m => {
     m.replaceWith(document.createTextNode(m.textContent));
   });
   content.normalize();
+  // The doc print marks and pins in one pass (markAndPin), because there the
+  // mark carries a number and the number is the margin note's — two passes
+  // could disagree about which span is note 3.
+  if (isDocMode()) return;
   const cs = (rState.verdicts[id]?.comments || []).filter(c => c.anchor?.text);
   cs.forEach(c => wrapNth(content, c.anchor.text, 'cmt-hl-' + c.type,
                           c.anchor.occurrence > 0 ? c.anchor.occurrence : 0));
@@ -3313,8 +4386,10 @@ function renderHighlights(id) {
 // over the flat text where it *is* present, an earlier straddling occurrence
 // shifts this walk's count and the mark can land one occurrence late. Visual
 // only; the stored offset is unaffected.
+// Returns the <mark> it created (null if the needle never resolved), so the
+// doc print can hang that note's pin off it without walking the tree twice.
 function wrapNth(root, needle, cls, n) {
-  if (!needle) return;
+  if (!needle) return null;
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node, seen = 0;
   while ((node = walk.nextNode())) {
@@ -3327,7 +4402,7 @@ function wrapNth(root, needle, cls, n) {
         mark.className = cls;
         mark.textContent = after.nodeValue;
         after.replaceWith(mark);
-        return;
+        return mark;
       }
       seen++;
       i = node.nodeValue.indexOf(needle, i + 1);
@@ -3434,6 +4509,129 @@ function updateReviewStats() {
   const sub = el('btn-submit');
   if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit all'; }
   else                                 { sub.className='btn-submit disabled'; sub.textContent=remaining>0?`submit all (${remaining} remaining)`:'submit all'; }
+
+  renderFootSeg(sections, total);
+}
+
+/* The whole document's balance, across the footer that closes the page. Same
+   grammar and same fixed order as a section's rule, one denominator: every
+   section. What the bar does NOT fill is what nobody has looked at yet —
+   unreviewed sections are the bare track, which is the one honest way to
+   draw "not yet decided" without inventing a fourth color. */
+function renderFootSeg(sections, total) {
+  const bar = el('foot-seg'); if (!bar) return;
+  if (!isDocMode() || !total) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  let judgment = 0, facts = 0, settled = 0;
+  sections.forEach(s => {
+    const v = deriveVerdict(s.id);
+    if (v === 'approved') settled++;
+    else if (v === 'changes') judgment++;
+    else if (v === 'info') facts++;
+  });
+  const pct = n => (n / total * 100).toFixed(2) + '%';
+  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
+  bar.style.display = '';
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', 'document balance: ' + judgment + ' judgment, ' + facts
+    + ' fact' + (facts === 1 ? '' : 's') + ', ' + settled + ' settled of ' + total + ' sections');
+  bar.innerHTML = seg('seg-judgment', judgment) + seg('seg-fact', facts) + seg('seg-settled', settled);
+}
+
+/* ═════════════════════════════════════════════════════════════
+   COMMAND PALETTE (⌘K, issue #186)
+   A directory of the keyboard layer, never a second interaction model:
+   every verb listed here is one the page also carries as a control or a
+   keycap. Built from live state on each open, so "approve section 9" names
+   the section actually under the reader. ═══════════════════════════════ */
+function paletteCommands() {
+  const cmds = [];
+  const live = rState.active ? REVIEW_DATA.sections.find(s => s.id === rState.active) : null;
+  if (live && deriveVerdict(live.id) !== 'approved' && !activeComments(live.id).length) {
+    const n = REVIEW_DATA.sections.indexOf(live) + 1;
+    cmds.push({ label: 'Approve section ' + n + ' — ' + live.title, key: '⏎',
+                run: () => approveSection(live.id) });
+  }
+  const unblocked = REVIEW_DATA.sections.filter(s =>
+    deriveVerdict(s.id) === 'pending' && !activeComments(s.id).length);
+  if (unblocked.length) {
+    cmds.push({ label: 'Approve all unblocked (' + unblocked.length + ')', key: '⇧⏎',
+                run: () => { unblocked.forEach(s => approveSection(s.id)); } });
+  }
+  const openThread = nextOpenThread();
+  if (openThread) cmds.push({ label: 'Jump to next open thread', key: 'j',
+                              run: () => activateReviewCard(openThread) });
+  cmds.push({ label: 'Open revision ledger', key: 'l', run: () => {
+    const p = el('ledger');
+    if (p && p.style.display !== 'none') { p.classList.remove('is-collapsed'); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  } });
+  cmds.push({ label: 'Open recap and submit', key: 'o', run: () => openRecap() });
+  cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
+  return cmds;
+}
+
+// The next section carrying live business, from the live section forward and
+// wrapping — `open` and `declined` are both unresolved; only settled closes.
+function nextOpenThread() {
+  const secs = REVIEW_DATA.sections;
+  const start = Math.max(0, secs.findIndex(s => s.id === rState.active)) + 1;
+  const order = [...secs.slice(start), ...secs.slice(0, start)];
+  const live = s => {
+    const cs = (rState.verdicts[s.id] || {}).comments || [];
+    return (s.open_notes || []).some(t => !cs.some(c => c.cid === t.cid && c.settled))
+        || activeComments(s.id).length > 0;
+  };
+  const hit = order.find(live);
+  return hit ? hit.id : null;
+}
+
+let _palCmds = [];
+let _palIdx = 0;
+
+function paletteIsOpen() { return el('pal-overlay').style.display !== 'none'; }
+
+function openPalette() {
+  if (!REVIEW_DATA || paletteIsOpen()) return;
+  el('pal-overlay').style.display = '';
+  el('pal-input').value = '';
+  renderPalette('');
+  el('pal-input').focus();
+}
+
+function closePalette() {
+  el('pal-overlay').style.display = 'none';
+  el('pal-list').innerHTML = '';
+  _palCmds = [];
+}
+
+function renderPalette(query) {
+  const q = String(query || '').trim().toLowerCase();
+  _palCmds = paletteCommands().filter(c => !q || c.label.toLowerCase().includes(q));
+  _palIdx = 0;
+  const list = el('pal-list');
+  if (!_palCmds.length) { list.innerHTML = '<div class="pal-empty">no matching command</div>'; return; }
+  list.innerHTML = _palCmds.map((c, i) =>
+    '<button type="button" class="pal-row' + (i === 0 ? ' is-on' : '') + '" role="option"'
+    + ' aria-selected="' + (i === 0) + '" data-i="' + i + '">'
+    + '<span>' + esc(c.label) + '</span><span class="k">' + esc(c.key) + '</span></button>').join('');
+  list.querySelectorAll('.pal-row').forEach(b =>
+    b.addEventListener('click', () => runPalette(+b.dataset.i)));
+}
+
+function movePalette(delta) {
+  const rows = el('pal-list').querySelectorAll('.pal-row');
+  if (!rows.length) return;
+  _palIdx = (_palIdx + delta + rows.length) % rows.length;
+  rows.forEach((r, i) => {
+    r.classList.toggle('is-on', i === _palIdx);
+    r.setAttribute('aria-selected', String(i === _palIdx));
+  });
+  rows[_palIdx].scrollIntoView({ block: 'nearest' });
+}
+
+function runPalette(i) {
+  const cmd = _palCmds[i];
+  closePalette();
+  if (cmd) cmd.run();
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -4220,8 +5418,37 @@ function connectSSE() {
   };
 }
 
+/* ─── Command palette wiring ────────────────────────────── */
+el('pal-input').addEventListener('input', e => renderPalette(e.target.value));
+el('pal-overlay').addEventListener('mousedown', e => {
+  if (e.target === el('pal-overlay')) closePalette();
+});
+
 /* ─── Keyboard shortcuts ────────────────────────────────── */
 document.addEventListener('keydown', e => {
+  // ⌘K opens the palette from anywhere, including from inside a textarea —
+  // it is the one global verb, and a reviewer mid-reply is exactly who wants
+  // "jump to next open thread" without reaching for the mouse. This sits
+  // ahead of the TEXTAREA/INPUT guard for that reason.
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    // Never over another dialog: the prefs panel and the recap gate are both
+    // modal and both own Escape, so stacking a third would leave two things
+    // claiming the same key.
+    if (prefsIsOpen() || (REVIEW_DATA && recapIsOpen())) return;
+    e.preventDefault();
+    if (paletteIsOpen()) closePalette(); else openPalette();
+    return;
+  }
+  // The palette is modal, and its own input is where typing goes — so its
+  // keys are handled before the TEXTAREA guard would return on that input.
+  if (paletteIsOpen()) {
+    if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1);  return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); movePalette(-1); return; }
+    if (e.key === 'Enter')     { e.preventDefault(); runPalette(_palIdx); return; }
+    return;
+  }
+
   const tag = document.activeElement?.tagName;
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
@@ -4394,7 +5621,14 @@ Promise.all([
   });
 </script>
 </body>
-</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS)
+</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
+    # The check-flag registry, injected rather than restated in JS. `CHECK_KINDS`
+    # is what makes a producer's flags gate a `checks` round, and it fails open —
+    # an unregistered kind is simply invisible. A hand-kept second copy in the
+    # frontend would fail open the same silent way, in the surface that draws
+    # `checks N/M`, so the frontend reads the registry itself.
+    "__CHECK_KINDS__", json.dumps(list(schema.CHECK_KINDS))
+)
 
 _HTML_BYTES = HTML.encode()
 
