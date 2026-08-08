@@ -313,9 +313,13 @@ body {
 }
 
 /* ─── Revision ledger ────────────────────────────────────── */
+/* One rule under the header, not two. The status bar closes with a 2px ink
+   rule; the ledger sat directly beneath it wearing a full 1px border, so the
+   page opened with a doubled line and a boxed strip nothing else on the page
+   matched. */
 .ledger {
-  border: 1px solid var(--border2);
-  background: var(--bg2);
+  border: none;
+  background: none;
   margin-bottom: 14px;
   animation: fadeUp 0.4s ease both;
 }
@@ -327,7 +331,7 @@ body {
   cursor: pointer;
   user-select: none;
 }
-.ledger-head:hover { background: var(--bg3); }
+.ledger-head:hover { background: none; color: var(--acc); }
 .ledger-title {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -880,10 +884,15 @@ body {
   overflow: hidden;
 }
 
+/* Prose sits on the page, not in a tray. Flattening `.card` removed the
+   panel's border but left this fill and its top rule behind, so a section
+   still read as a filled box with a lid — the exact framing the flattening
+   was for. The left padding matches `.card-head`'s so the heading and the
+   text it titles share one left edge, as they do in a printed entry. */
 .card-body {
-  padding: 14px 16px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
+  padding: 0 14px 18px;
+  border-top: none;
+  background: none;
 }
 
 .section-summary {
