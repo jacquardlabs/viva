@@ -25,7 +25,7 @@ One browser tab stays open for the entire session. After you submit a round, a s
 |---------|-----|
 | `/viva <file.md>` | Section-by-section markdown review. Human signs off on every section; agent rewrites and loops until all approved. |
 | `/viva-diff [ref]` | Hunk-by-hunk code review of a git diff. Human approves or requests changes per hunk; agent revises working-tree files and loops until all hunks are approved. |
-| `/viva-qa` | Batch Q&A human gate — present structured questions in the browser and collect answers. Used internally by the `brainstorming` skill's integration below. |
+| `/viva-qa` | Batch Q&A human gate — present structured questions in the browser and collect answers. Any skill can write `.viva/qa-input.json` and invoke it. |
 
 ## Install
 
@@ -88,14 +88,10 @@ Diff mode is a separate gate from `/code-review` (which is an LLM pass).
 They compose: run `/code-review` first, apply its suggestions, then
 `/viva-diff` for human sign-off before committing.
 
-## Brainstorming integration
+## Q&A as a primitive
 
-viva adds a batch Q&A phase to the `brainstorming` skill via the `/viva-qa`
-primitive. When viva is installed, the brainstorming skill calls `/viva-qa`
-directly — no install step or patching required.
-
-To collect Q&A answers from your own skills, write `.viva/qa-input.json` and
-invoke `/viva-qa`:
+`/viva-qa` is a human gate any skill can call: write `.viva/qa-input.json`
+and invoke it. Answers come back in `.viva/answers.json`.
 
 ```json
 {
@@ -152,7 +148,7 @@ python3 "$VIVA_DIR/server.py" \
   --input .viva/review-input-r1.json \
   --output .viva/review-r1.json
 
-# Q&A mode (brainstorming integration)
+# Q&A mode
 python3 "$VIVA_DIR/server.py" \
   --mode qa \
   --input .viva/qa-input.json \

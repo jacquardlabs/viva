@@ -157,8 +157,8 @@ on purpose — on a catalog page, code is a specification.
 grouped:
 
 ```css
-.card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
-.section-content, .choice-chip, .qa-btn,
+.card, .note-field, .vbadge, .btn-skip, .btn-submit,
+.section-content, .choice-chip,
 .progress-track, .progress-fill { border-radius: 0; }
 ```
 
@@ -220,17 +220,31 @@ Diff mode widens `.shell`, `.bottom-inner`, **and `#paper`** together to
 
 ### The document grid — doc + margin (#186, unreleased)
 
-**Review mode only.** `initReview` stamps `.doc` on `#review-cards` when
-`REVIEW_DATA.mode === 'review'`; that class arms every rule below. Diff mode
-keeps the accordion (`buildReviewCard`, Card accordion) unchanged — a hunk is
-not prose, it has no margin to annotate and no measure to hold, and a 200-hunk
-changeset read as one continuous print is a worse surface than one hunk at a
-time.
+**Two classes, two ideas — do not re-fuse them.**
 
-Sections print **open, in document order** (`buildDocSection`), every one
-rendered up front. A settled section **dims in place** (`.is-approved` →
-`opacity: 0.5` on its prose) rather than collapsing to a clickable row: the
-point of a document review is reading the document.
+| Class | Is | Worn by |
+|-------|-----|---------|
+| `.doc` | the **grammar**: three-column rows, margin notes with numbered pins, the glyph rail, the segmented rule, the spec table, per-note verbs | every card container that renders sections — review, diff, Q&A |
+| `.print` | **continuous print**: every section open at once, a settled one dimming in place | review alone |
+
+Both shipped behind one `.doc` and one `isDocMode()` in #186, which is exactly
+why the restructure reached review mode only. Nothing about a hunk or a
+question resists a margin; what *is* review's alone is printing everything at
+once, because a 200-hunk changeset read that way is a worse surface than one
+hunk at a time and a question at a time is the point of an interview.
+
+`isContinuousPrint()` is the one predicate, and there is deliberately **no
+companion `usesMargin()`**: every place the old predicate branched is reached
+only from a surface that renders sections, and all of them wear the margin, so
+that question's honest form is no condition at all. Anything print-only is
+keyed on `.doc-section`, which no other surface builds.
+
+In the print, sections appear **open, in document order** (`buildDocSection`),
+every one rendered up front. A settled section **dims in place**
+(`.is-approved` → `opacity: 0.5` on its prose) rather than collapsing to a
+clickable row: the point of a document review is reading the document. In the
+accordion (diff, Q&A) one entry is open at a time and the rows live inside its
+body.
 
 Each section is a run of rows. The rendered markdown's top-level blocks become
 the prose column of one row each, so a note sits beside the paragraph it
@@ -279,42 +293,68 @@ Four ways this went wrong first, all of them visible only in a browser:
 letter, so a `72ch` column fits ~88 real characters of English prose. Measure
 the wrap point, not the `ch` count, before concluding a column is narrow.
 
-**Code breaks out where the room is actually spare.**
-`.doc .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4 }` — a code or table
-row with nothing to annotate takes the margin's track too (540px → 1056px at a
-1240px shell); one that carries a note keeps three columns and scrolls sideways
-in its own container, exactly as `.section-content > pre` always did. `:has()`
-reads the row's own contents, so no JS has to remember to set a class when a
-note is added or removed.
+**Code breaks out where the room is actually spare — in the print only.**
+`.doc.print .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4 }` — a code or
+table row with nothing to annotate takes the margin's track too (540px →
+1056px at a 1240px shell); one that carries a note keeps three columns and
+scrolls sideways in its own container, exactly as `.section-content > pre`
+always did. `:has()` reads the row's own contents, so no JS has to remember to
+set a class when a note is added or removed.
+
+The `.print` scope is load-bearing. There a wide block is one row among a
+dozen and borrowing the empty column beside it costs the reader nothing; in
+the accordion the wide row **is** the section — a hunk — so `:has()` would
+turn the first comment on it into a 328px re-layout of the very lines being
+commented on, under the cursor. Whether a hunk is inset is the per-document
+decision `--margin-w` already makes, made once for all of them.
 
 **The wasted-space rule.** Both side columns collapse to `0px`
-(`.doc.no-gutter` / `.doc.no-margin`), decided **once per document** by
-`updateDocColumns` reading the live DOM — so a comment made a moment ago counts
-like a thread that shipped with the round. Per-row would jog the prose sideways
-between paragraphs and per-section between sections; a column of text that
-moves as you read it is worse than the space it saves. The 28px alley rides in
-`.rg`'s `padding-right` and `.rm`'s `padding-left`, never in `column-gap`,
-because a gap is drawn between zero-width tracks too. With the margin collapsed,
-`.doc.no-margin .row-head` drops to two tracks and the section's controls print
-under its heading — pure CSS, so a collapse never moves a focused control
-between hosts. Below 920px the third column has no room to be a margin: notes
-fall under their passage and the gutter narrows to a 30px glyph rail.
+(`.doc.no-gutter` / `.doc.no-margin`), decided **once per round** by
+`updateDocColumns` reading the **round**, not the DOM. Per-row would jog the
+prose sideways between paragraphs and per-section between sections; a column of
+text that moves as you read it is worse than the space it saves — and a DOM
+read makes it worse still on the accordion, which renders a section's rows only
+when that section is opened, so the decision would flip the first time the
+reviewer reached a hunk carrying a note. `docNotes` reads `rState`, so a
+comment made a moment ago still counts, which is the property the DOM read was
+there for.
+
+The 28px alley rides in `.rg`'s `padding-right` and `.rm`'s `padding-left`,
+never in `column-gap`, because a gap is drawn between zero-width tracks too.
+With the margin collapsed, `.doc.no-margin .row-head` drops to two tracks at
+`minmax(0, 1fr)` — the rows' own measure, not the `72ch` it shipped with, which
+was the last `ch` in a grid template — and the section's controls print under
+its heading. Pure CSS, so a collapse never moves a focused control between
+hosts. Below 920px the third column has no room to be a margin: notes fall
+under their passage and the gutter narrows to a 30px glyph rail.
+
+Q&A sets both classes as **constants** rather than computing them: a question
+carries no producer flags to rail, and the margin always holds its verbs.
 
 **Section numbers.** `N ·` in `.doc-num`, document order, 1-based, counting
 carried sections.
 
-**Actions.** The per-section action row is gone. Approve and add-note live in
-the head row's margin with the note grammar (`.nt-btn`), keeping the
-`rbtn-primary-`/`rcmtnote-` ids the rest of the app addresses them by;
-`renderPrimaryButton` reads `.nt-btn` off the element to pick which dress to
-draw, so one label rule (approve only with nothing open) serves both surfaces.
-On an approved section the same control reads `↺ withdraw approval` and calls
-`docWithdraw` — nothing was ever collapsed, so withdrawing is only the verdict
-going back to pending. **Approve stays per-section for accessibility**: the head
-is a heading now (`<h2 class="doc-head">`, `aria-labelledby` on the section, no
-permanently-true `aria-expanded`), which would leave a section carrying no notes
-with zero focusable elements. ⌘K is a second path to the same verbs, never the
-only one.
+**Actions.** The per-section action row is gone from every surface. Approve
+and add-note live in the head row's margin with the note grammar (`.nt-btn`),
+keeping the `rbtn-primary-`/`rcmtnote-` ids the rest of the app addresses them
+by. One control, one grammar, one label rule (`renderPrimaryButton`): approve
+reads `approve` only while nothing is open, `✓ done · N comments` while
+something is, and `↺ withdraw approval` on an approved section — which calls
+`docWithdraw`, since nothing was ever collapsed and withdrawing is only the
+verdict going back to pending.
+
+`docHeadRowHTML` builds that head row for **both** builders. The prose cell
+differs by surface (the print prints the section's heading, the accordion has
+already printed it in the disclosure button); the margin cell does not, so a
+verb added to a document review cannot go missing from a diff review. `skip` is
+the accordion's alone (`{ skip: true }`): with one entry open at a time, "not
+this one, not now" is a real move; in the print it is just reading on.
+
+**Approve stays per-section for accessibility.** In the print the head is a
+heading (`<h2 class="doc-head">`, `aria-labelledby` on the section, no
+permanently-true `aria-expanded`), which would leave a section carrying no
+notes with zero focusable elements. ⌘K is a second path to the same verbs,
+never the only one.
 
 ### Margin notes and pins (#186, unreleased)
 
@@ -486,9 +526,10 @@ arithmetic behind them, so `7 items · 5 open` in the bar can never disagree wit
 `blocked · 5 open` below it. An **item** is what `sectionBalance` counts: a
 thread, a comment, a check, a producer flag, and a section's own sign-off.
 
-**Bar** (review mode only, cells ship hidden and `renderDocStatus` reveals
+**Bar** (review and diff; cells ship hidden and `renderDocStatus` reveals
 them): `doc · round NN · pass · checks N/M · N items · M open · approved N/M ·
-palette ⌘K`. No progress track — the footer's segmented rule is the document's
+palette ⌘K`. Q&A carries the same bar in its own vocabulary —
+`topic · phase Q&A · viva interview · questions N · answered N/M · palette ⌘K`. No progress track — the footer's segmented rule is the document's
 progress, in state rather than in percent, and two bars saying the same thing
 differently is one bar too many. `palette ⌘K` is stated here rather than buried
 in the legend at the foot of the page: a palette nobody knows about is a palette
@@ -510,6 +551,10 @@ reads only round data (carried threads all arrive unsettled, unanswered checks
 and warn/error flags arrive open) and never live reviewer state; that is what
 makes it a baseline rather than a second view of the same number.
 
+`renderFootSeg` takes **counts and a label**, not sections, so the one object
+both footers share holds no mode branch; `reviewFootSeg` speaks the sections'
+own vocabulary and Q&A fills `settled` alone (an answer is given or it is not).
+
 The **transmittal slip** ships collapsed — a disclosure whose head states
 `Transmittal · REV NN · N changes`. #186's reading-order finding applies to it
 as much as to the threads: it is the round's cover note, not the round's
@@ -522,6 +567,11 @@ it lists is one the page also carries as a control or a keycap. `.pal` takes the
 floor's materials — square, 1px ink border, selection on `var(--touch)` rather
 than a tint of the accent. Built from live state on each open, so "Approve
 section 9" names the section actually under the reader.
+
+Two directories, one shape: `reviewPaletteCommands` for the review and diff
+pages, `qaPaletteCommands` for the interview (the choices by their digits,
+confirm, skip, the jump). `openPalette` used to refuse without `REVIEW_DATA`,
+which meant ⌘K silently did nothing in a Q&A session.
 
 ⌘K is handled **ahead of** the `TEXTAREA`/`INPUT` guard (a reviewer mid-reply is
 exactly who wants "jump to next open thread" without reaching for the mouse) but
@@ -560,8 +610,8 @@ focus styles to individual controls — add them to the group selector. Current
 membership is the reticle group plus every other focusable control:
 
 ```
-.card-head, .action-btn, .qa-btn, .choice-chip, .attach-btn,
-.cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel,
+.card-head, .choice-chip, .attach-btn,
+.cmt-chip, .cmt-save, .cmt-cancel,
 .settle-btn, .diff-toggle,
 .carried-show, .carried-withdraw, .transmittal-row,
 .recap-row, .recap-close,
@@ -588,9 +638,27 @@ added to this group; the panel's new instances of it made the gap visible.)
 
 ## Card accordion
 
-**Diff mode's surface.** Review mode prints the document continuously — see
-The document grid. Everything below still governs `buildReviewCard`,
-`buildCarriedCard`, and every hunk `/viva-diff` puts on screen.
+**Diff mode's and Q&A's surface.** Review prints the document continuously —
+see The document grid. Everything below governs `buildReviewCard`,
+`buildCarriedCard`, `buildQACard`, and every hunk `/viva-diff` puts on screen.
+
+What survives here is the **accordion**: one entry open at a time, a real
+disclosure `<button>` head with `aria-expanded`, the animating body region. Its
+**chrome** does not. The annotation strip, the stacked thread list, the
+add-a-note row and the action row all sat between the reviewer and the thing
+they were about — the same reading-order inversion the print fixed, in a
+narrower frame — so they are margin objects now, and deleted rather than
+hidden. The body is the page continuing under the head: no fill, no second
+rule, left edge aligned with the title above it.
+
+A **pin on a diff line leads the line and sticks** (`.pin-line`,
+`position: sticky; left: 0`). Prose wraps, so a pin set after its anchor is
+always on screen; a code line scrolls, and one measured at x=1052 inside a
+445px-wide pane is nowhere the reviewer will ever see it. The unit a diff note
+pairs with is the line. For the same reason a carried **suggestion** on a diff
+line takes the margin's −/+ fence rather than an inline strike: `n.inCode`
+counts `.d2h-code-line` / `.d2h-code-side-line` as code wells, because a
+`del`/`ins` pair spliced into a `+` line reads as neither version of anything.
 
 A card has three states:
 - **Idle** — closed, `dot-idle`, no `is-active` class.
@@ -602,6 +670,39 @@ with an 80ms delay. The same 80ms delay applies to skip.
 
 On round ≥ 2, sections approved in a prior round don't render as accordion
 cards at all — see Carried approvals.
+
+## Q&A — the interview (#186, unreleased)
+
+`/viva-qa` is the interview step of `/viva-write` (#170), not a leftover, and
+it is designed as a first-class surface: the **grammar** without the **print**.
+One question at a time is the point of an interview, so the accordion stays.
+
+- **The prose column is the question.** It prints as the entry's own heading,
+  numbered like a catalog entry (`<h2 class="doc-head">`, `N ·`), over a
+  `.rule-s` hairline, with the choices under it as `.choice-chip`s. Each chip
+  carries the digit that picks it (`<kbd>`, 1–9) — the keyboard layer on the
+  control rather than only in the legend.
+- **The disclosure head is an index line**: the same question, clamped to one
+  line and dropped to `var(--soft)` at regular weight once its entry is open.
+  Without that, the same sentence printed twice a line apart reads as a
+  duplication rather than as an index pointing at its entry.
+- **The margin is the commentary**: the machine's `hint` as a `.nt.nt-check`
+  note, the reviewer's optional context and its attachments inside one
+  `.nt.nt-compose` note, and the verbs (`✓ confirm` with its `c` keycap,
+  `↓ skip`) in `.nt-acts`.
+- **The recommended-choice badge stays in the prose column**, on its chip. It
+  is advice *about a control*; in the margin the reviewer would read it, look
+  back, and hunt for the chip it meant. Still advisory only — no pre-selection,
+  no default focus, no restyle as primary (#114).
+- **Both side columns are constants** (`cards doc no-gutter`, never
+  `no-margin`): a question carries no producer flags to rail, and the margin
+  always holds this question's verbs, so there is nothing to decide.
+- **`pickQAChoice` is the one place a choice is picked**, so the chip, the
+  digit key and the palette cannot disagree about what a second press means
+  (it clears the answer).
+- The page takes the review print's cap (`.mode-qa`, 1054px): a column that
+  holds a measure plus a margin, and no wider. The round hand-off removes the
+  class with the view.
 
 ## Carried approvals (frontend v2 phase 1, unreleased)
 
@@ -671,8 +772,11 @@ attribution.
 
 ## Recap overlay — the submit gate (frontend v2 phase 1, unreleased)
 
-Submit never fires blind in review/diff mode. `#recap-overlay` is a hidden
-`role="dialog" aria-modal="true"` shipped in the static page; `openRecap()`
+Submit never fires blind in review/diff mode. The panel takes the palette's
+materials — paper ground, square 1px ink border, the same lift off the scrim —
+because the palette is what a catalog overlay looks like here; a row under the
+pointer takes `var(--touch)`, the ground's one selection ink. `#recap-overlay`
+is a hidden `role="dialog" aria-modal="true"` shipped in the static page; `openRecap()`
 rebuilds its grid from live verdict state on every open. Each `.recap-row`
 (a jump-link button) indexes one section: mono id, title, verdict dot + label
 (reusing the card dot slots, colored `rv-approved` / `rv-changes` / `rv-info`
@@ -683,8 +787,8 @@ rebuilds its grid from live verdict state on every open. Each `.recap-row`
   overlay's `confirm & submit` control (`#recap-confirm`), which mirrors
   `btn-submit`'s readiness class at open — a recap opened mid-review via `o`
   can't submit a round the bottom bar wouldn't.
-- `o` toggles the overlay anytime in review; Escape, the `×` close, and a
-  backdrop click close it; a row click closes-and-activates its section.
+- `o` toggles the overlay anytime in review; Escape, the `esc` keycap close,
+  and a backdrop click close it; a row click closes-and-activates its section.
   Focus moves to the confirm control on open and returns to `btn-submit` on
   close if it was inside the overlay.
 - `skip rest & submit` (`btn-skip`) stays a direct `submitReview(true)`
@@ -696,12 +800,18 @@ rebuilds its grid from live verdict state on every open. Each `.recap-row`
 
 ## Between rounds (frontend v2 phase 1, unreleased)
 
-No full-view takeover while the agent revises: `#processing-view` is the
-between-rounds card. A pulsing accent dot (`.processing-dot`, 10px,
-`viva-pulse`) sits over the heading `REV 0N submitted — the agent is revising`
-and `.processing-requests` — the reviewer's just-submitted `changes`/`info`
-rows verbatim (`.pr-row`: mono type colored `--orange`/`--violet`, section
-title, untruncated note).
+No full-view takeover while the agent revises: `#processing-view` is **the
+same page, waiting** — it keeps the page's left edge and its measure rather
+than centering in an empty viewport. A pulsing accent dot (`.processing-dot`,
+8px, `viva-pulse`) sits over the heading
+`REV 0N submitted — the agent is revising`, stated in the machine's face over a
+hairline, and then the reviewer's just-submitted `changes`/`info` requests
+verbatim.
+
+Those requests print as **notes**, in the margin's own grammar (`.nt` / `.nh` /
+`.nt-body`, `info` taking `.nt-fact`'s ink): they *are* the notes the reviewer
+wrote a moment ago, echoed back. A parallel `.pr-*` row vocabulary for the same
+objects is what this replaced.
 
 `submitReview` snapshots `{sectionTitle, type, note}` rows from the active
 comments **before** the POST; the `processing` SSE handler renders from that
@@ -722,9 +832,9 @@ otherwise info. A comment is active when it is unsettled and carries a note — 
 for a suggestion, replacement wording, which is the comment's whole payload.
 
 Design elements:
-- **Add row** (`.comment-add-row`) — a `.cmt-add-hint` ("select text above to comment")
-  plus a reticle `.cmt-add-btn` ("+ add note"). The hint pushes the button right with
-  `margin-right: auto`.
+- **The invitation** (`.doc-hint`) — "select any passage to comment", printed
+  once at the foot of the whole page rather than once per section, and `+ note`
+  is a margin verb. The per-section add row went with the action row.
 - **Comment popover** (`.comment-popover`) — the only rounded surface in the review
   body (`border-radius: 4px`, `1px solid var(--border2)`, `background: var(--bg2)`).
   Holds the quoted span, type chips, an image attach control (`.attach-btn` +
@@ -735,21 +845,19 @@ Design elements:
   `.cmt-chip-suggestion`) — reticle controls; the selected chip carries `.is-on` and
   recolors `--c` to `--orange` (changes), `--violet` (info), or `--accent`
   (suggestion). The suggestion chip is review-mode only.
-- **Replacement field** (`.cmt-pop-repl`, on `.note-field`) — the reviewer's exact
-  wording, revealed only while the suggestion chip is on (#166).
 - **Save / cancel** (`.cmt-save`, `.cmt-cancel`) — reticle controls; save reads
   affirmative (`--c: var(--teal)`), cancel stays muted.
 - **Inline highlight** (`mark.cmt-hl-changes`, `mark.cmt-hl-info`,
   `mark.cmt-hl-suggestion`) — the anchored span in the section body gets a `2px`
   colored bottom border and the matching `*-bg` wash (`--accent-dim` for a
   suggestion: the reviewer's own ink over the author's).
-- **Comment list** (`.comment-list` → `.cmt` rows) — this round's freshly added
-  comments. Each row: `.cmt-type` (mono, uppercase, colored by verdict), `.cmt-quote`
-  (italic muted excerpt), `.cmt-note` (the note text), and a `.cmt-del` remove button.
-  Rows divide with `1px solid var(--border)`.
+- **The margin is the comment list.** A comment lives in its own `.nt` beside
+  its anchor, on every surface — the stacked `.cmt` rows under a card are gone,
+  and `.cmt-del` survives as a wiring hook only (its old rule sat later in the
+  sheet than `.nt-btn` and quietly stripped the margin's `remove` verb of its
+  box).
 - **Suggested wording** (`.cmt-repl`) — the replacement, arrow-led on its own line
-  under the note it belongs to, in `--accent`. Used in both surfaces that show a
-  comment: the comment list and a carried thread's exchange.
+  under the note it belongs to, in `--accent`. Used by a carried thread's exchange.
 - **Decline** (`.exchange-d`) — the author's grounds for not complying with a
   carried turn, `⊘`-led between the request (`.exchange-q`) and the response
   (`.exchange-a`), `--text2` text on a `--orange` rule. Its thread head reads

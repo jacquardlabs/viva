@@ -9,12 +9,11 @@ Section-by-section markdown review. Human signs off on every section; agent rewr
 
 Replaces: `plan-reviewer`
 
-## Brainstorming Q&A
+## Batch Q&A
 
-viva exposes a `/viva-qa` skill for batch Q&A sessions. The superpowers
-`brainstorming` skill calls `/viva-qa` directly when viva is installed — no
-`install.sh` patch is needed. See the sibling `/viva-qa` skill for the full
-invocation contract.
+`/viva-qa` is a sibling skill: a human gate any skill can call by writing
+`.viva/qa-input.json` and invoking it. See that skill for the full invocation
+contract.
 
 ---
 
@@ -250,10 +249,10 @@ that stops at the seam and prints both the round file and `producers.md`.
 └── attachments/           ← image attachments, written during /submit
 ```
 
-For brainstorming Q&A:
+For batch Q&A:
 ```
 .viva/
-├── qa-input.json          ← brainstorming skill writes
+├── qa-input.json          ← the calling skill writes
 ├── answers.json           ← server writes
 └── attachments/           ← server writes image attachments during /submit
 ```
