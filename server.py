@@ -1992,19 +1992,29 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    under its heading — no `Choices` label above them, because a row of
    pickable chips under a question needs no caption to be read as the answer.
    Each carries the digit that picks it, the way every other control in this
-   ground carries its own keycap. */
-.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+   ground carries its own keycap.
+
+   ONE PER LINE. Wrapped into a ragged row they read as a grid — the eye has
+   to find where each option ends — and the digit that picks an option lands
+   somewhere different on every row. Stacked, the labels start on one left
+   edge and the keycaps end on one right edge, which is exactly the shape
+   `.pal-row` already uses for the same job: a list of things you pick, each
+   with the key that picks it. */
+.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; }
 
 .choice-chip {
   font-size: 12px;
   font-weight: 400;
-  padding: 5px 12px;
+  padding: 6px 12px;
   color: var(--text2);
   cursor: pointer;
   text-align: left;
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
+  gap: 8px;
 }
+/* The label takes the row; the badge and the keycap ride its right edge. */
+.chip-label { flex: 1; min-width: 0; }
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
 
@@ -2021,7 +2031,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 1px 5px;
-  margin: 0 6px;
   border-radius: 0;
   background: var(--teal-bg);
   color: var(--teal);
@@ -5318,7 +5327,7 @@ function buildQACard(q, index) {
       ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
       : '';
     const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';
-    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}${cap}</button>`;
+    return `<button class="choice-chip" data-choice="${esc(c)}"><span class="chip-label">${esc(c)}</span>${badge}${cap}</button>`;
   }).join('');
 
   card.innerHTML = `

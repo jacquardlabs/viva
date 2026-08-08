@@ -685,9 +685,13 @@ One question at a time is the point of an interview, so the accordion stays.
 
 - **The prose column is the question.** It prints as the entry's own heading,
   numbered like a catalog entry (`<h2 class="doc-head">`, `N ·`), over a
-  `.rule-s` hairline, with the choices under it as `.choice-chip`s. Each chip
-  carries the digit that picks it (`<kbd>`, 1–9) — the keyboard layer on the
-  control rather than only in the legend.
+  `.rule-s` hairline, with the choices under it as `.choice-chip`s, **one per
+  line**. Each chip carries the digit that picks it (`<kbd>`, 1–9) — the
+  keyboard layer on the control rather than only in the legend. Wrapped into a
+  ragged row they read as a grid and the digit lands somewhere different on
+  every row; stacked, the `.chip-label` takes the row (`flex: 1`) so the
+  labels start on one left edge and the badges and keycaps end on one right
+  edge. That is `.pal-row`'s shape, for `.pal-row`'s job.
 - **The disclosure head is an index line**: the same question, clamped to one
   line and dropped to `var(--soft)` at regular weight once its entry is open.
   Without that, the same sentence printed twice a line apart reads as a

@@ -635,6 +635,14 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
         "the reviewer's context and its attachments live in one margin note"
     assert '<span class="chip-badge"' in page, \
         "the recommendation stays beside the control it recommends"
+    # One choice per line. Wrapped into a ragged row they read as a grid and
+    # the digit that picks an option lands somewhere different on every row;
+    # stacked, the labels start on one left edge and the keycaps end on one
+    # right edge — `.pal-row`'s shape, for `.pal-row`'s job.
+    assert re.search(r'\.choices \{[^}]*flex-direction:\s*column', page), \
+        "choices must stack one per line"
+    assert '<span class="chip-label">' in page and re.search(r'\.chip-label \{[^}]*flex:\s*1', page), \
+        "the label takes the row so the badge and keycap ride one right edge"
     assert 'id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm<kbd>c</kbd>' in page, \
         "confirm is a margin verb carrying the key that performs it"
     # ...and that key is really bound, so the cap is not a claim.
