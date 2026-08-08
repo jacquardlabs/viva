@@ -180,6 +180,18 @@ def test_validate_review_input_accepts_valid():
                 "mode": "review", "pass": {"kind": kind, "posture": posture},
                 "sections": [{"id": "s1", "title": "Goals", "content": "b"}],
             })
+    # `summary` — the agent's one-liner under the card title. Optional; a
+    # string when present, and an empty one is legal (a section the agent
+    # deliberately left undescribed carries no key, but "" is not malformed).
+    schema.validate_review_input({
+        "mode": "diff",
+        "sections": [
+            {"id": "s1", "title": "server.py hunk 1", "content": "```diff\n@@\n```",
+             "summary": "guards the finish path against an unapproved round"},
+            {"id": "s2", "title": "server.py hunk 2", "content": "x", "summary": ""},
+            {"id": "s3", "title": "server.py hunk 3", "content": "y"},
+        ],
+    })
     print("  ok  test_validate_review_input_accepts_valid")
 
 
@@ -212,6 +224,17 @@ def test_validate_review_input_rejects_bad():
         {"sections": [], "pass": {"kind": None}},
         {"sections": [], "pass": {"kind": "line", "posture": "brutal"}},
         {"sections": [], "pass": {"kind": "line", "posture": None}},
+        # `summary` reaches a render site under the card title, so a present
+        # non-string must fail on write rather than print as `null` or
+        # `[object Object]` in the one place the reviewer navigates by.
+        {"sections": [{"id": "s1", "title": "T", "content": "c", "summary": None}]},
+        {"sections": [{"id": "s1", "title": "T", "content": "c", "summary": 12}]},
+        {"sections": [{"id": "s1", "title": "T", "content": "c",
+                       "summary": ["a", "b"]}]},
+        # The gate is per-section, not "the first section" — a bad value on a
+        # later one must fail too.
+        {"sections": [{"id": "s1", "title": "T", "content": "c", "summary": "fine"},
+                      {"id": "s2", "title": "U", "content": "d", "summary": 0}]},
     ):
         try:
             schema.validate_review_input(bad)

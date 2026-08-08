@@ -395,6 +395,50 @@ def test_annotations_dropped_when_content_changed() -> None:
     assert "annotations" not in alpha, "stale annotations must not carry to changed content"
 
 
+def test_summary_carries_forward_and_never_outlives_its_content() -> None:
+    """A section's one-line summary rides the same rule its annotations do
+    (#188), and the drop side is the load-bearing half.
+
+    Alpha is byte-identical, so its summary survives. Beta is rewritten, so it
+    arrives with a `diff` and NO summary — those two are the same event, which
+    is what makes "re-summarize any section carrying a `diff`" a rule the agent
+    can actually apply by looking at the round file. Gamma never had one and
+    must not gain a key.
+    """
+    alpha = "## Alpha\n\nalpha body\n\n"
+    gamma = "## Gamma\n\ngamma body\n"
+    prior_input = {
+        "mode": "review", "doc_file": "doc.md", "round": 1, "approved_ids": [],
+        "sections": [
+            {"id": "s1", "title": "Alpha", "content": alpha,
+             "summary": "states the invariant the rest of the doc leans on"},
+            {"id": "s2", "title": "Beta", "content": "## Beta\n\nold body\n\n",
+             "summary": "the old body's description"},
+            {"id": "s3", "title": "Gamma", "content": gamma},
+        ],
+    }
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            {"id": "s1", "verdict": "changes", "note": "fix"},
+            {"id": "s2", "verdict": "changes", "note": "rewrite"},
+            {"id": "s3", "verdict": "changes", "note": "fix"},
+        ],
+    }
+    data = _run_round2(alpha + "## Beta\n\nnew body\n\n" + gamma,
+                       prior_input, prior_verdicts)
+    by_title = {s["title"]: s for s in data["sections"]}
+    assert by_title["Alpha"].get("summary") == \
+        "states the invariant the rest of the doc leans on", \
+        "an unchanged section must keep its summary"
+    assert "summary" not in by_title["Beta"], \
+        "a rewritten section's summary is stale — it must drop, not carry"
+    assert by_title["Beta"].get("diff"), \
+        "precondition: the rewritten section is the one carrying a diff"
+    assert "summary" not in by_title["Gamma"], \
+        "a section that never had a summary must not gain the key"
+
+
 def test_diff_computed_for_changed_section() -> None:
     # A section rewritten between rounds (same title, changed content) gets an
     # inline diff against its prior-round text so the reviewer sees the delta.
@@ -964,6 +1008,7 @@ def main() -> None:
         test_no_annotations_key_when_absent,
         test_annotations_carried_forward_when_unchanged,
         test_annotations_dropped_when_content_changed,
+        test_summary_carries_forward_and_never_outlives_its_content,
         test_diff_computed_for_changed_section,
         test_diff_keeps_dash_prefixed_content_line,
         test_no_diff_for_unchanged_carried_section,

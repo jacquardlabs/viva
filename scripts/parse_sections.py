@@ -298,6 +298,32 @@ def _load_approved(
     ]
 
 
+def _carry_identical(
+    prior_in: dict | None, new_sections: list[dict], field: str
+) -> None:
+    """Copy one prior-round section field onto byte-identical new sections.
+
+    The shared mechanism behind `_carry_annotations` and `_carry_summaries`:
+    key on (normalized title, content) so a value only survives when the
+    section it describes did not move and did not change. Keying on the title
+    alone would carry onto a rewrite. A section with no prior match gains no
+    key at all — output stays byte-identical to a run where nothing carried.
+    """
+    if prior_in is None:
+        return
+    prior: dict[tuple[str, str], object] = {
+        (schema.section_key(s["title"]), s.get("content", "")): s[field]
+        for s in prior_in.get("sections", [])
+        if s.get(field)
+    }
+    if not prior:
+        return
+    for s in new_sections:
+        key = (schema.section_key(s["title"]), s.get("content", ""))
+        if key in prior:
+            s[field] = prior[key]
+
+
 def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
     """Carry prior annotations onto byte-identical new sections, in place.
 
@@ -308,19 +334,18 @@ def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
     annotations gain no `annotations` key — output stays byte-identical to a
     no-annotation run.
     """
-    if prior_in is None:
-        return
-    prior_annots: dict[tuple[str, str], list] = {
-        (schema.section_key(s["title"]), s.get("content", "")): s["annotations"]
-        for s in prior_in.get("sections", [])
-        if s.get("annotations")
-    }
-    if not prior_annots:
-        return
-    for s in new_sections:
-        key = (schema.section_key(s["title"]), s.get("content", ""))
-        if key in prior_annots:
-            s["annotations"] = prior_annots[key]
+    _carry_identical(prior_in, new_sections, "annotations")
+
+
+def _carry_summaries(prior_in: dict | None, new_sections: list[dict]) -> None:
+    """Carry prior one-line summaries onto byte-identical new sections, in place.
+
+    Same rule as the annotation carry, for the same reason: a summary describes
+    the content, so a rewritten section's summary is stale and drops rather
+    than lying under the new title. The drop is what re-summarizing keys on —
+    every section this round carrying a `diff` also carries no `summary` (#188).
+    """
+    _carry_identical(prior_in, new_sections, "summary")
 
 
 def _line_diff(prior: str, current: str) -> list[dict]:
@@ -438,6 +463,7 @@ def main() -> None:
     prior_in, prior_v = _load_prior(args.prior_input, args.prior_verdicts)
     approved_ids = _load_approved(prior_in, prior_v, sections)
     _carry_annotations(prior_in, sections)
+    _carry_summaries(prior_in, sections)
     _compute_diffs(prior_in, sections)
     _attach_open_notes(args.open_notes, sections)
 

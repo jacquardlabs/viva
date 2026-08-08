@@ -746,6 +746,23 @@ body {
   line-height: 1.4;
 }
 
+/* The summary, in the HEAD. Scoped override of the base `.section-summary`
+   below, which is sized for the doc print's open prose column; here the point
+   is the COLLAPSED list — 41 `server.py hunk N` heads with no way to tell the
+   segmented rule from the anchor walker (#188). One line, always: the head is
+   an index entry, so a long summary ellipsizes rather than growing the row.
+   `.card-title-wrap` already carries `min-width: 0`, which is what lets the
+   truncation take effect inside the flex head. */
+.card-title-wrap .section-summary {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text3);
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .note-inline {
   font-size: 11px;
   color: var(--text3);
@@ -938,6 +955,9 @@ body {
   background: none;
 }
 
+/* The agent's one-line description of a section, under its title. This is the
+   doc-print size, sitting in the open prose column under the `<h2>`; the
+   accordion head overrides it above (`.card-title-wrap .section-summary`). */
 .section-summary {
   font-size: 13px;
   line-height: 1.65;
@@ -3423,6 +3443,7 @@ function buildReviewCard(section) {
       <span class="dot dot-idle" id="rdot-${section.id}"></span>
       <span class="card-title-wrap">
         <span class="card-title">${esc(section.title)}</span>
+        ${section.summary ? `<span class="section-summary">${esc(section.summary)}</span>` : ''}
         <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
       </span>
       ${section.diff ? `<span class="rev-tri" title="${revTriTooltip(REVIEW_DATA.round, section)}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
@@ -3986,6 +4007,7 @@ function buildDocSection(section, index) {
 
   sec.innerHTML = docHeadRowHTML(id, `
         <h2 class="doc-head" id="rhead-${id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(section.title)}</h2>
+        ${section.summary ? `<div class="section-summary">${esc(section.summary)}</div>` : ''}
         <div id="rseg-${id}"></div>
         ${diffStripHTML(id, section.diff)}`) + `
     <div class="section-content" id="rcontent-${id}"></div>

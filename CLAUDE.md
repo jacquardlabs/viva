@@ -101,11 +101,23 @@ bad value was written. `split_on`/`doc_type` must be strings; `pass` is checked
 three ways (an object, a `kind` in `PASS_KINDS`, and — if present — a `posture`
 in `PASS_POSTURES`), because it is the one field that moves the completion gate.
 
+A section's **`summary`** is presence-gated on the same rule (optional key,
+present non-string is a hard failure) but is otherwise the opposite case: it is
+per-section rather than per-round, and `server.py` *renders* it — under the card
+title in both builders, `buildReviewCard`'s accordion head and `buildDocSection`'s
+print. Nothing mechanical writes it; the agent does, between parsing and arming
+(`viva-review` B1a), which is why no producer and no `parse_*` flag exists for
+it. Loud validation matters more here than for a passthrough: a `null` would
+print as `null` under the title.
+
 **Carry rules differ per field, deliberately.** `split_on` and `doc_type` are
 session identity: `loop.py rearm` carries them round to round *and* `cmd_start`'s
 resume branch carries them across sessions. `pass` is a per-round decision —
 `rearm` carries it, a resume does **not**, because inheriting a finished
-session's `final` pass would add a conjunct nobody asked for.
+session's `final` pass would add a conjunct nobody asked for. `summary` carries
+only onto a **byte-identical** section (`parse_sections._carry_identical`, the
+mechanism the annotation carry shares, and `parse_diff._carry_summaries`) —
+content that changed gets a stale description, so it drops and is rewritten.
 
 **Validate at the boundary** — on parse write and server read — never
 at the point of use. A field that a reader forgets silently drops a feature; the

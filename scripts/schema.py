@@ -200,6 +200,15 @@ class ReviewSection(TypedDict, total=False):
     id: str                       # required — stable id (s1, s2, …)
     title: str                    # required — heading text
     content: str                  # required — verbatim markdown
+    # optional — one line describing what this section IS, written by the agent
+    # and rendered under the card title so a collapsed list reads as a table of
+    # contents. Never derived from `title`, and never folded INTO it: branch B
+    # parses `title` as `{filepath} hunk N` to find the file to edit (#188).
+    # No producer writes it — a producer's flag is a note ABOUT a section, this
+    # is a description OF one. Carried round to round only onto a section whose
+    # content is byte-identical; a rewritten section's summary is stale and
+    # drops, exactly as its annotations do.
+    summary: str
     annotations: List[Annotation]  # optional — advisory badges
     diff: dict                    # optional — round-to-round change
     # optional — carried-forward threads, `parse_sections._attach_open_notes`'s
@@ -330,6 +339,15 @@ def validate_review_input(data: dict) -> None:
                 raise ValueError(
                     f"review-input.sections[{i}] missing required string {field!r}"
                 )
+        # Presence-gated like the round-level three above: the key is optional,
+        # but a present non-string is a hard failure. It reaches a render site
+        # rather than a flag, so a `null` or a stray object would print as
+        # "null"/"[object Object]" under the card title — a silent wrong answer
+        # in the one place the reviewer looks to navigate 52 hunks.
+        if "summary" in s and not isinstance(s["summary"], str):
+            raise ValueError(
+                f"review-input.sections[{i}].summary must be a string"
+            )
 
 
 def validate_verdicts(data: dict) -> None:

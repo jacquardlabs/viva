@@ -150,6 +150,33 @@ def _carry_forward(
     return approved_ids
 
 
+def _carry_summaries(sections: list[dict], prior_input: dict | None) -> None:
+    """Carry each prior hunk's one-line summary onto its unchanged twin, in place.
+
+    A summary is written by the agent between parsing and arming (#188); this
+    keeps a round-1 summary from having to be rewritten every round. Keyed on
+    (normalized title, content) — byte-identical content is what makes it the
+    same hunk, and it is also the re-summarize rule: a hunk whose lines moved
+    arrives with no summary, so the next pass writes it a fresh one instead of
+    describing the previous edit. Hunk *numbering* alone is not identity — a
+    hunk added above shifts every later `hunk N` title, and content equality is
+    what refuses to carry a summary across that shift.
+    """
+    if not prior_input:
+        return
+    prior = {
+        (section_key(s.get("title", "")), s.get("content", "")): s["summary"]
+        for s in prior_input.get("sections", [])
+        if s.get("summary")
+    }
+    if not prior:
+        return
+    for s in sections:
+        key = (section_key(s["title"]), s["content"])
+        if key in prior:
+            s["summary"] = prior[key]
+
+
 def _atomic_write(path: str, text: str) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +221,7 @@ def main() -> int:
             return 1
 
     approved_ids = _carry_forward(sections, prior_input, prior_verdicts)
+    _carry_summaries(sections, prior_input)
 
     data: dict = {
         "mode": "diff",

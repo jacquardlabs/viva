@@ -283,14 +283,68 @@ DOC_FILE="<the label review_target.py printed>"
 
 python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
   --output .viva/review-input-r1.json --round 1 --doc-file "$DOC_FILE" \
-&& {
-  python3 "$VIVA_DIR/server.py" --mode diff \
-    --input .viva/review-input-r1.json --output .viva/review-r1.json &
-  for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
-}
+  || { echo "viva-review: parse failed"; exit 1; }
+```
+
+Now **B1a**, then launch:
+
+```bash
+python3 "$VIVA_DIR/server.py" --mode diff \
+  --input .viva/review-input-r1.json --output .viva/review-r1.json &
+for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
 [ -f .viva/server.url ] || { echo "viva-review: launch failed"; exit 1; }
 BASE=$(cat .viva/server.url)
 ```
+
+**B1a. Summarize the hunks** (before the launch, and before every re-arm)
+
+`parse_diff.py` titles every hunk `{filepath} hunk N`, so a 41-hunk file
+collapses to `server.py hunk 1 … hunk 41` — an index with no entries in it.
+Write a one-line `summary` per section and the tab renders it under each title.
+
+**Only above 10 sections.** Below that the collapsed list is already navigable
+and the summaries are not worth the tokens. `parse_diff.py` prints nothing on
+success, so count them off the round file:
+
+```bash
+python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['sections']))" \
+  .viva/review-input-r{N}.json
+```
+
+`Read` the round file — the one place branch B pays for its output deliberately,
+because the hunks are what you are about to review anyway — then write the map
+back. Ids you omit keep whatever they carried:
+
+```bash
+python3 - .viva/review-input-r{N}.json <<'PY'
+import json, sys
+SUMMARIES = {
+    "s1": "guards the finish path against an unapproved round",
+    "s2": "walks the anchor back to the nearest heading",
+}
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    data = json.load(f)
+for s in data["sections"]:
+    if s["id"] in SUMMARIES:
+        s["summary"] = SUMMARIES[s["id"]]
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+PY
+```
+
+What the change *does*, in one clause — not the hunk header's enclosing symbol,
+which names where the change sits and not what it is. Lowercase, no trailing
+period, no filename (the title already carries it).
+
+**It must land before the server reads the round.** The server loads its round
+once and replaces it only from `POST /next-round`, so a summary written into the
+file under a live round is one nobody sees. Round 1: before the launch above.
+Round N+1: between `parse_diff.py` and the `curl` in B4 — `-d @file` posts the
+file as it stands.
+
+`parse_diff.py` carries a summary forward onto any hunk whose content is
+byte-identical, so each round only needs the hunks that actually changed.
 
 **B2. Wait for verdicts** (every round)
 
@@ -339,9 +393,15 @@ fi
 python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
   --output .viva/review-input-r{N+1}.json --round {N+1} --doc-file "$DOC_FILE" \
   --prior-input .viva/review-input-r{N}.json \
-  --prior-verdicts .viva/review-r{N}.json \
-&& curl -s -X POST "$BASE/next-round?output=.viva/review-r{N+1}.json" \
-     -H "Content-Type: application/json" -d @.viva/review-input-r{N+1}.json
+  --prior-verdicts .viva/review-r{N}.json
+```
+
+Re-run **B1a** for the hunks that changed — a carried summary describes content
+that is byte-identical, so only the rewritten hunks need a new one. Then ship it:
+
+```bash
+curl -s -X POST "$BASE/next-round?output=.viva/review-r{N+1}.json" \
+  -H "Content-Type: application/json" -d @.viva/review-input-r{N+1}.json
 ```
 
 The browser updates in place — no new tab. Back to B2.

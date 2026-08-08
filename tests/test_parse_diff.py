@@ -271,6 +271,74 @@ def test_carry_forward_round_3_preserves_round_1_approvals():
         print("test_carry_forward_round_3_preserves_round_1_approvals: OK")
 
 
+def test_summary_carries_only_onto_an_unchanged_hunk():
+    """The agent writes a hunk's one-line summary between parsing and arming
+    (#188), so round 2 must not make it re-write the ones that did not move —
+    and must not keep the one that did.
+
+    Both directions in one run: TWO_HUNK_DIFF's second hunk is edited between
+    rounds, the first is not. Byte-identical content is what makes it the same
+    hunk, so s1 keeps its summary and s2 arrives with no `summary` key at all —
+    absent, not stale, because a description of the previous edit under the new
+    lines is worse than no description.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        patch = tmp / "diff.patch"
+        r1_input = tmp / "r1-input.json"
+        r1_verdicts = tmp / "r1-verdicts.json"
+        r2_input = tmp / "r2-input.json"
+
+        patch.write_text(TWO_HUNK_DIFF, encoding="utf-8")
+        subprocess.run(
+            [PYTHON, SCRIPT, str(patch), "--output", str(r1_input), "--round", "1"],
+            check=True, capture_output=True,
+        )
+
+        # The agent's pass over round 1, exactly as SKILL.md B1a writes it.
+        r1 = json.loads(r1_input.read_text())
+        r1["sections"][0]["summary"] = "renames the first context guard"
+        r1["sections"][1]["summary"] = "drops the removed branch"
+        r1_input.write_text(json.dumps(r1))
+
+        r1_verdicts.write_text(json.dumps({
+            "round": 1,
+            "sections": [
+                {"id": "s1", "verdict": "approved"},
+                {"id": "s2", "verdict": "changes", "comments": [{"note": "redo"}]},
+            ],
+        }))
+
+        # The agent revises the second hunk; the first is untouched.
+        patch.write_text(TWO_HUNK_DIFF.replace("+added", "+revised"), encoding="utf-8")
+
+        result = subprocess.run(
+            [PYTHON, SCRIPT, str(patch), "--output", str(r2_input), "--round", "2",
+             "--prior-input", str(r1_input), "--prior-verdicts", str(r1_verdicts)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        r2 = {s["id"]: s for s in json.loads(r2_input.read_text())["sections"]}
+        assert r2["s1"].get("summary") == "renames the first context guard", (
+            f"an unchanged hunk must keep its summary; got {r2['s1'].get('summary')!r}"
+        )
+        assert "summary" not in r2["s2"], (
+            "a changed hunk must arrive with NO summary — a stale one describes "
+            f"the previous edit; got {r2['s2'].get('summary')!r}"
+        )
+        print("test_summary_carries_only_onto_an_unchanged_hunk: OK")
+
+
+def test_no_summary_key_when_the_agent_wrote_none():
+    """A round nobody summarized stays byte-identical to what it was before
+    this field existed — no empty `summary` key on any section."""
+    rc, data, _ = _run(TWO_FILE_DIFF)
+    assert rc == 0
+    for s in data["sections"]:
+        assert "summary" not in s, f"{s['id']} gained an unasked-for summary key"
+    print("test_no_summary_key_when_the_agent_wrote_none: OK")
+
+
 def main() -> None:
     test_single_hunk()
     test_two_hunks_same_file()
@@ -282,6 +350,8 @@ def main() -> None:
     test_carry_forward_identical_content()
     test_carry_forward_changed_content_requires_review()
     test_carry_forward_round_3_preserves_round_1_approvals()
+    test_summary_carries_only_onto_an_unchanged_hunk()
+    test_no_summary_key_when_the_agent_wrote_none()
     print("\nAll parse_diff tests passed.")
 
 
