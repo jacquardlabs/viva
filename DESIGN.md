@@ -321,10 +321,20 @@ except the margin manufactures the repeat. The filter is inert in the accordion
 (nothing there matches those classes inside `.section-content`), so one walk
 serves both surfaces.
 
-**The round diff** gets a full-width `.row.wide.row-diff` of its own, directly
-under the head row, **shipped collapsed**. It is the widest object on the page
-and what a round-2 run found stacked at full width between the reader and the
-text; collapsed-above is the one place it fits without becoming the page.
+**The round diff** sits in the **head row's prose cell**, under the segmented
+rule, **shipped collapsed** — one mono line. It is what a round-2 run found
+stacked at full width between the reader and the text, and collapsed-above is
+the one place it fits without becoming the page. It also fills the space the
+spec table opens beside the heading (88px of dead prose column, measured in a
+browser, before it moved there). Expanded, it stays at the reading measure
+rather than breaking out: a prose diff wraps, and a diff wide enough to need
+its own row was the problem.
+
+**Gutter chips clamp at three lines**, with the flag's kind and a check's
+`result` in the `title`. 70px is a glance; printing the result in the column
+ran one fixture chip to six lines of 9px type, which is a paragraph in the
+corner of the eye. `checks N/M` in the spec table is the readout that actually
+tracks whether a `checks` round can close.
 
 ### Segmented rule (#186, unreleased)
 

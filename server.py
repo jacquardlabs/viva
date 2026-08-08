@@ -1194,6 +1194,13 @@ body {
   text-align: right;
   color: var(--soft);
   overflow-wrap: anywhere;
+  /* Three lines is the ceiling. Past that a gutter flag stops being something
+     you take in beside the paragraph and becomes a second column of prose;
+     the full text stays one hover away in the title. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 .lchip-info  { color: var(--machine); }
 .lchip-warn  { color: var(--fact); }
@@ -1327,7 +1334,7 @@ body {
   color: var(--soft);
   padding-bottom: 3px;
 }
-.spec td { border: 1px solid var(--rule); padding: 3px 7px; }
+.spec td { border: 1px solid var(--rule); padding: 2px 7px; }
 .spec td:first-child { color: var(--soft); width: 62%; }
 .spec .spec-open td:last-child { color: var(--acc); font-weight: 600; }
 
@@ -1359,12 +1366,14 @@ body {
 .fence-del .fence-g { color: #d1242f; }
 .fence-add .fence-g { color: #1a7f37; }
 
-/* The round-to-round diff is the widest object on the page, so it gets a
-   full-width row of its own rather than a 253px margin cell — but it ships
-   collapsed, because "what changed since last round" is not what the reader
-   opened the document to read. The margin holds the control; the row holds
-   the diff. */
-.doc .diff-block { border-radius: 0; border-color: var(--rule); margin-bottom: 0; }
+/* The round-to-round diff, collapsed, in the head row's prose cell — where it
+   costs one mono line and fills the space the spec table opens beside the
+   heading (measured at 88px of dead prose column before it moved here). It
+   ships collapsed because "what changed since last round" is not what the
+   reader opened the document to read, and it expands at the reading measure
+   rather than at full width: a prose diff wraps, and a diff wide enough to
+   need its own row was the thing standing between the reader and the text. */
+.doc .diff-block { border-radius: 0; border-color: var(--rule); margin: 4px 0 0; }
 .doc .diff-toggle { border-bottom-color: var(--rule); }
 
 /* ─── Command palette (⌘K) ────────────────────────────────────
@@ -3386,13 +3395,17 @@ const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
 
 function gutterChipHTML(a) {
   const sev = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
-  // A check flag's `result` is the answer the round is waiting on — printed
-  // under the flag it answers, so an armed `checks` round shows at a glance
-  // which of its flags are still open.
-  const result = a.result ? '<span class="lchip-result">&rarr; ' + esc(a.result) + '</span>' : '';
-  return '<span class="lchip lchip-' + sev + '" title="' + esc(a.kind || 'note') + '">'
+  // The chip is the message and nothing else, clamped to three lines. A 70px
+  // column is a glance: measured against the fixture, printing a check flag's
+  // `result` under it ran one chip to six lines of 9px type, which is a
+  // paragraph in the corner of the eye, not a flag. The kind and the answer
+  // ride in the title, and `checks N/M` in the spec table is the readout that
+  // actually tracks whether a `checks` round can close.
+  const full = [a.kind || 'note', a.message || '', a.result ? '→ ' + a.result : '']
+    .filter(Boolean).join(' · ');
+  return '<span class="lchip lchip-' + sev + '" title="' + esc(full) + '">'
     + '<span aria-hidden="true">' + FLAG_GLYPH[sev] + '</span> ' + esc(a.message || '')
-    + result + '</span>';
+    + '</span>';
 }
 
 /* ─── Rows ───────────────────────────────────────────────────
@@ -3672,6 +3685,7 @@ function buildDocSection(section, index) {
       <div class="rp">
         <h2 class="doc-head" id="rhead-${id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(section.title)}</h2>
         <div id="rseg-${id}"></div>
+        ${diffStripHTML(id, section.diff)}
       </div>
       <div class="rm" id="rspec-${id}">
         <div class="rm-spec" id="rspecbody-${id}"></div>
@@ -3682,7 +3696,6 @@ function buildDocSection(section, index) {
         </div>
       </div>
     </div>
-    ${section.diff ? `<div class="row wide row-diff" id="rdiffrow-${id}"><div class="rp">${diffStripHTML(id, section.diff)}</div></div>` : ''}
     <div class="section-content" id="rcontent-${id}"></div>
     <div class="comment-popover" id="rpop-${id}" style="display:none"></div>`;
 

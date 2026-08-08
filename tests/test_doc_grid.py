@@ -116,9 +116,14 @@ def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
     above the paragraph all of it was about. Threads and flags now sit BESIDE
     their anchor, and the diff — the widest object on the page — ships
     collapsed above it, never expanded."""
-    # The round diff gets a full-width row of its own, shipped collapsed.
-    assert "class=\"row wide row-diff\" id=\"rdiffrow-${id}\"" in page, \
-        "the round diff needs its own full-width row"
+    # The round diff lives in the head row's prose cell, collapsed — one mono
+    # line, filling the space the spec table opens beside the heading (88px of
+    # dead prose column, measured in a browser, before it moved there).
+    assert "${diffStripHTML(id, section.diff)}" in page, \
+        "the round diff belongs in the head row, above the prose and inside the measure"
+    assert page.index('id="rseg-${id}"') < page.index("${diffStripHTML(id, section.diff)}") \
+        < page.index('<div class="rm" id="rspec-${id}">'), \
+        "the diff must follow the segmented rule and stay in the head row's prose cell"
     assert "sec.querySelector('#rdiff-' + id).classList.add('collapsed');" in page, \
         "the round diff must ship collapsed — it is not what the reader opened the document to read"
     # Threads and this round's notes are placed against their anchor's row.
@@ -130,6 +135,13 @@ def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
     # invitation is printed once at the foot of the whole document.
     assert '<div class="doc-hint" id="doc-hint"' in page, \
         "the select-to-comment hint must be one document-level line"
+    # A gutter chip is a glance: the message, clamped to three lines, with the
+    # kind and a check flag's answer in the title. Printing the `result` in the
+    # column ran one fixture chip to six lines of 9px type.
+    assert re.search(r'\.lchip\s*\{[^}]*-webkit-line-clamp:\s*3', page), \
+        "a gutter chip must clamp — 70px is a glance, not a second column of prose"
+    assert "'<span class=\"lchip lchip-' + sev + '\" title=\"' + esc(full) + '\">'" in page, \
+        "the kind and the check's answer belong in the title, not the column"
     print("test_nothing_sits_between_the_reader_and_the_prose: OK")
 
 
