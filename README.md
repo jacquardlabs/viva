@@ -242,6 +242,4 @@ CI runs this loop across Python 3.8–3.13 on every push and pull request. New f
 
 ## License
 
-MIT, as declared in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json).
-
-> TODO: no `LICENSE` file exists at the repo root. Add one so the declared license is enforceable and shows up on GitHub's license detector.
+MIT — see [`LICENSE`](LICENSE).
