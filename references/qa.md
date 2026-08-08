@@ -54,6 +54,12 @@ this field.
 If an answer carries an `attachments` array, `Read` each listed image path before
 incorporating that answer — the image is context for how you use the answer.
 
+**A note alone is an answer.** A question with no `choices` can only be answered
+in free text, so its entry comes back with `choice: ""` and a populated `note`.
+Any non-empty response — a chip, a note, or both — counts as answered, and every
+answered question appears in `answers.json`. Do not treat an empty `choice` as an
+unanswered question; read `note` before deciding a question was skipped.
+
 `submitted_early: true` means the human hit *skip rest & submit*. The unanswered
 questions are exactly the decisions a caller would otherwise fill by guessing;
 decide what your flow does about that rather than reading past it.

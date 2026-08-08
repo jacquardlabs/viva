@@ -5179,12 +5179,12 @@ function qaPaletteCommands() {
       cmds.push({ label: 'Answer ' + n + ' — ' + c, key: String(i + 1),
                   run: () => pickQAChoice(live.id, c) });
     });
-    if (qState.answers[live.id] && qState.answers[live.id].choice) {
+    if (qaAnswered(live.id)) {
       cmds.push({ label: 'Confirm question ' + n, key: 'c', run: () => advanceQA(live.id) });
     }
     cmds.push({ label: 'Skip question ' + n + ' for now', key: '⇥', run: () => advanceQA(live.id) });
   }
-  const next = QA_DATA.questions.find(q => !(qState.answers[q.id] || {}).choice
+  const next = QA_DATA.questions.find(q => !qaAnswered(q.id)
                                         && q.id !== qState.active);
   if (next) cmds.push({ label: 'Jump to next unanswered', key: 'j',
                         run: () => activateQACard(next.id) });
@@ -5391,6 +5391,12 @@ function buildQACard(q, index) {
   qta.addEventListener('input', e => {
     if (!qState.answers[q.id]) qState.answers[q.id] = {};
     qState.answers[q.id].note = e.target.value;
+    // A typed note IS an answer (#121), so it has to move the same indicators a
+    // chip does. Without this the state held the text while the page kept
+    // reporting the question unanswered — the counter, the dot and the confirm
+    // button only ever refreshed on a chip click.
+    syncQACard(q.id);
+    updateQAStats();
   });
   qta.addEventListener('click', e => e.stopPropagation());
 
@@ -5407,6 +5413,27 @@ function buildQACard(q, index) {
   );
 
   return card;
+}
+
+/* The ONE definition of "this question has an answer" (#121).
+
+   A free-text-only question can never set `choice` — there is no chip to
+   click — so gating on `choice` alone made a typed note invisible to the
+   progress stat, the dot, the auto-advance, the dispatch button, and, worst,
+   the submit filter, which dropped the answer entirely rather than marking it
+   unanswered. The reviewer's typed text never reached `answers.json`.
+
+   That is `/viva-write`'s normal case, not its edge case: the interview asks
+   the residual decisions the attachments could not answer, and those are
+   exactly the ones with no fixed answer set to offer.
+
+   Every reader routes through here rather than repeating the test, so the six
+   places that ask the question can never disagree about it — the same rule the
+   `choices` normalization above follows, for the same reason. */
+function qaAnswered(id) {
+  const a = qState.answers[id];
+  if (!a) return false;
+  return Boolean(a.choice || (a.note && a.note.trim()));
 }
 
 // One place a choice is picked, so the chip, the digit key and the palette
@@ -5444,13 +5471,13 @@ function toggleQACard(id) {
 
 function advanceQA(id) {
   setCardExpanded(el('qacard-' + id), false);
-  if (qState.answers[id]?.choice) el('qacard-' + id)?.classList.add('is-approved');
+  if (qaAnswered(id)) el('qacard-' + id)?.classList.add('is-approved');
   qState.active = null;
   syncQADot(id);
 
   const qs  = QA_DATA.questions;
   const idx = qs.findIndex(q => q.id === id);
-  const next= qs.slice(idx + 1).find(q => !qState.answers[q.id]?.choice);
+  const next= qs.slice(idx + 1).find(q => !qaAnswered(q.id));
   if (next) setTimeout(() => activateQACard(next.id), 80);
 
   updateQAStats();
@@ -5473,22 +5500,22 @@ function syncQACard(id) {
   // while there is not — the same rule review's approve follows, and the same
   // two classes, so one button reads the same way on both surfaces.
   const btn = el('qconfirm-' + id);
-  btn.className = 'nt-btn ' + (choice ? 'is-pri' : 'is-quiet');
+  btn.className = 'nt-btn ' + (qaAnswered(id) ? 'is-pri' : 'is-quiet');
 
   syncQADot(id);
 }
 
 function syncQADot(id) {
-  const choice   = qState.answers[id]?.choice;
+  const answered = qaAnswered(id);
   const isActive = qState.active === id;
   const dot = el('qdot-' + id);
   if (!dot) return;
-  dot.className = 'dot ' + (choice ? 'dot-approved' : isActive ? 'dot-active' : 'dot-idle');
+  dot.className = 'dot ' + (answered ? 'dot-approved' : isActive ? 'dot-active' : 'dot-idle');
 }
 
 function updateQAStats() {
   const qs       = QA_DATA.questions;
-  const answered = qs.filter(q => qState.answers[q.id]?.choice).length;
+  const answered = qs.filter(q => qaAnswered(q.id)).length;
   const total    = qs.length;
   const remaining= total - answered;
 
@@ -5646,7 +5673,7 @@ function submitQA(early) {
   // the choice filter below — warn before discarding them.
   if (!early) {
     const orphaned = QA_DATA.questions.filter(
-      q => qState.answers[q.id]?.images?.length && !qState.answers[q.id]?.choice
+      q => qState.answers[q.id]?.images?.length && !qaAnswered(q.id)
     );
     if (orphaned.length &&
         !confirm(orphaned.length + ' question(s) have an attached image but no selected choice — their images will be dropped. Continue?')) {
@@ -5657,10 +5684,10 @@ function submitQA(early) {
   }
   const result = {
     answers: QA_DATA.questions
-      .filter(q => qState.answers[q.id]?.choice)
+      .filter(q => qaAnswered(q.id))
       .map(q => {
         const a = qState.answers[q.id];
-        return { id: q.id, choice: a.choice, note: a.note || '',
+        return { id: q.id, choice: a.choice || '', note: a.note || '',
                  ...(a.images && a.images.length && { images: a.images }) };
       }),
     submitted_early: early
