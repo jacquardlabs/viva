@@ -89,16 +89,20 @@ def assert_catalog_ground(text: str) -> None:
     # this same owner rather than forked into a second contract.
     assert re.search(
         r'\.doc \.row\s*\{[^}]*grid-template-columns:\s*var\(--gutter-w\)'
-        r'\s+minmax\(0,\s*72ch\)\s+var\(--margin-w\)', text), \
-        "the doc row must be `check gutter | 72ch prose | margin`"
-    # The prose TRACK is the measure, so the text fills its column rather than
-    # stopping short inside it, and the margin absorbs the shell's spare width.
-    # Capping the margin instead left the leftover in the prose track, where it
-    # printed as a dead band between the text and its own marginalia.
-    assert re.search(r'--margin-w:\s*minmax\(253px,\s*1fr\);', text), \
-        "the margin must absorb the spare width — .shell's own rule since #185"
+        r'\s+minmax\(0,\s*1fr\)\s+var\(--margin-w\)', text), \
+        "the doc row must be `check gutter | prose | margin`"
+    # The margin is CAPPED and the PAGE holds the measure. Letting the margin
+    # absorb the shell's spare width put it at 515px against 540px of prose —
+    # commentary taking as much of the page as the document it annotates. The
+    # composite runs ~61:39 and it is right; the margin is secondary.
+    assert re.search(r'--margin-w:\s*minmax\(253px,\s*328px\);', text), \
+        "the margin must stay capped so the prose dominates the page"
+    assert re.search(r'\.mode-doc \.shell, \.mode-doc \.bottom-inner\s*\{\s*max-width:\s*1054px', text), \
+        "the review page must be as wide as its three columns and no wider"
+    # No `ch` anywhere in the template: it resolves against each row's own
+    # font-size, which put the head row's track ~99px wider than a prose row's.
     assert not re.search(r'\.doc \.rp\s*\{\s*max-width', text), \
-        "the measure belongs to the track now; a cell cap would re-open the band"
+        "the page holds the measure now; a cell cap would re-open the dead band"
     # `ch` on a track resolves against the ROW's font-size, so one size for the
     # whole print is what keeps the head row's track the same width as a prose
     # row's — without it the spec table sat ~99px right of every note below it.

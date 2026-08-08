@@ -239,29 +239,45 @@ annotates rather than beside the section.
 | Track | Holds | Width |
 |-------|-------|-------|
 | gutter (`.rg`) | producer check flags (`.lchip`), right-aligned | `--gutter-w: 98px` (70px + alley) |
-| prose (`.rp`) | one markdown block | `minmax(0, 72ch)` — the track **is** the measure |
-| margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 1fr)` |
+| prose (`.rp`) | one markdown block | `minmax(0, 1fr)` — takes whatever the other two do not |
+| margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 328px)` |
 
-**The prose track is the measure and the margin absorbs the rest.** Text fills
-its column instead of stopping short inside it, the margin starts where the
-text ends, and every row's gutter and margin sit at one x — flush with the bar
-and the slip above them. Getting this wrong produced, in order:
+**The margin is capped and the PAGE holds the measure.**
+`.mode-doc .shell` caps the review print at **1054px** — as wide as its three
+columns and no wider. The 1240px shell is right for a single column of cards;
+for `gutter | prose | margin` it is ~190px too wide, and that surplus has to
+land somewhere. Capped this way the prose runs **~88 characters** at 542px, the
+margin holds its 300, the split is **62:38**, and nothing is left over.
+
+**Widen the page to widen the TEXT.** With the margin fixed, the prose track is
+what grows — which is the behavior the ratio failure taught.
+
+Four ways this went wrong first, all of them visible only in a browser:
 
 - **Three different right edges.** `ch` resolves against the **row's own
   font-size**, so a `72ch` track was ~99px wider on the head row (inheriting
   the section's size) than on a prose row (inside `.section-content`'s 13.5px),
   and the spec table sat that far right of every note below it. `.doc-section`
-  fixes one size for the whole print.
+  fixes one size for the print; no `ch` appears in the template at all now.
 - **A `.wide` row walking out of the column.** Three capped tracks cannot fill
   a wider container; the leftover piled up after the last one and a wide row —
   whose prose took `1fr` — reclaimed it, moving its margin ~200px.
-- **A dead band inside the prose track.** Capping the margin at the composite's
-  300px left the leftover nowhere to go but the prose track, where the text
-  stopped at its measure and the column kept going. `.shell`'s rule has said
-  where it belongs since #185: *"the extra width goes to the margin
-  conversation, never to wider text."* The margin runs ~490px at a 1240px
-  shell — past the 225–300px the composite drew, and the composite has the band
-  to show for it. What benefits is a thread carrying exchanges and a reply box.
+- **A dead band inside the prose track.** With the margin capped and the page
+  not, the leftover had nowhere to go but the prose track: the text stopped at
+  its measure and the column kept going.
+- **A margin as wide as the document.** Fixing that band by letting the margin
+  absorb the surplus (`minmax(253px, 1fr)`) put it at 515px against 540px of
+  prose — 51:49, commentary taking as much of the page as the thing it
+  annotates. Capping the *page* is what solves both without trading one for the
+  other. Note this reverses #185's `.shell` rule ("the extra width goes to the
+  margin conversation"): that rule was written for the old card layout, where
+  the margin was the only other thing on the row. With three columns, surplus
+  width belongs to neither — the page just stops.
+
+**A measure is `ch`, a line is characters, and they are not the same number.**
+`ch` is the width of the digit zero, which is wider than the average lowercase
+letter, so a `72ch` column fits ~88 real characters of English prose. Measure
+the wrap point, not the `ch` count, before concluding a column is narrow.
 
 **Code breaks out where the room is actually spare.**
 `.doc .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4 }` — a code or table
@@ -464,12 +480,15 @@ differently is one bar too many. `palette ⌘K` is stated here rather than burie
 in the legend at the foot of the page: a palette nobody knows about is a palette
 nobody uses.
 
-**Footer**: one consequential stamp, `approve — dispatch`, named for what it
-does to the document rather than for the HTTP verb behind it; `blocked · N
-unreviewed, M open` beside it with the `⌘⏎` keycap; `convergence N → M`; and a
-`round trip N ms` that is a **measurement** — `timedFetch` times the page's own
-`/input` request, and the line stays hidden until one has been observed. Nothing
-in the footer is a number copied off a mock.
+**Footer**: four things, like the composite's, because at the doc page's width
+seven wrapped the stamp onto a second line. Everything it keeps is about
+**dispatching** — `blocked · N unreviewed` (or `N open` with the `⌘⏎` keycap
+once nothing is unreviewed), `convergence N → M`, `round trip N ms`, and the one
+consequential stamp `approve — dispatch`, named for what it does to the document
+rather than for the HTTP verb behind it. `approved N/M` and the item counts live
+in the bar and are not repeated here. The round trip is a **measurement** —
+`timedFetch` times the page's own `/input` request, and the line stays hidden
+until one has been observed. Nothing in the footer is a number copied off a mock.
 
 `convergence` compares open items when the round was **armed** against open
 items **now** — the question a multi-round review actually asks. The baseline

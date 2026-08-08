@@ -251,6 +251,18 @@ body {
    scroll. Widening the container (instead of escaping it) is what keeps
    .card-body-inner's overflow:hidden accordion animation untouched — see
    the Rejected Approach note in the diff-first-surface design doc. */
+/* ─── Doc-mode page width ─────────────────────────────────────
+   The review print is as wide as its three columns and no wider. The 1240px
+   shell is right for a single column of cards; for `gutter | prose | margin`
+   it is 190px too wide, and that surplus has to land somewhere — as a dead
+   band beside the text, or as a margin that grows until it rivals the document
+   (both of which it did). Capping the page is what lets the prose hold ~88
+   characters AND the margin hold its 300, with nothing over.
+
+   Widen this number to widen the TEXT: the margin is capped, so the prose
+   track is what grows. */
+.mode-doc .shell, .mode-doc .bottom-inner { max-width: 1054px; }
+
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
 .mode-diff #paper { max-width: min(95vw, 1600px); }
 .mode-diff .section-content { max-height: none; overflow-y: visible; }
@@ -1114,29 +1126,34 @@ body {
    exactly zero. */
 .doc {
   --gutter-w: 98px;                    /* 70px chip column + the 28px alley */
-  /* The margin ABSORBS the shell's spare width rather than capping at the
-     composite's 300px. Capped, the leftover had nowhere to go but the prose
-     track, where it printed as a dead band between the text and its own
-     marginalia — the text stopped at its measure and the column kept going.
-     `.shell`'s rule has said this since #185: "the extra width goes to the
-     margin conversation, never to wider text." A thread carrying exchanges
-     and a reply box is what benefits. */
-  --margin-w: minmax(253px, 1fr);
+  /* The margin is CAPPED at the composite's 300px (+ the 28px alley). Letting
+     it absorb the shell's spare width instead put it at 515px against 540px of
+     prose — a 51:49 split, where the commentary took as much of the page as the
+     document it annotates. The composite runs about 61:39, and it is right:
+     the margin is secondary and has to read that way.
+
+     The leftover does not become a dead band, because the page itself is capped
+     to its three columns (`.mode-doc .shell`). One consequence worth stating:
+     with the margin fixed, every pixel of extra width from here goes to the
+     TEXT, not to the notes. */
+  --margin-w: minmax(253px, 328px);
   /* .cards is the flex column the sections sit in; its gap is the space
      between entries, so the sections carry no margin of their own. */
   gap: 22px;
 }
 .doc.no-gutter { --gutter-w: 0px; }
 .doc.no-margin { --margin-w: 0px; }
-/* The prose TRACK is the measure, so the text fills its column instead of
-   stopping short inside it. `ch` on a track resolves against the row's own
-   font-size, which is why `.doc-section` fixes one size for the whole print —
-   without that the head row (inheriting the section's size) got a track ~99px
-   wider than a prose row inside `.section-content`, and the spec table sat
-   that far right of every note below it. */
+/* The prose track takes whatever the gutter and the margin do not, and the
+   PAGE is what holds the measure (`.mode-doc .shell` below) — so the text
+   always fills its column, the margin always ends flush, and no `ch` value
+   appears in the template. That last part matters: `ch` on a track resolves
+   against the row's own font-size, and a `72ch` track was ~99px wider on the
+   head row (inheriting the section's size) than on a prose row inside
+   `.section-content`, which put the spec table that far right of every note
+   below it. `.doc-section` fixes one size for the print regardless. */
 .doc .row {
   display: grid;
-  grid-template-columns: var(--gutter-w) minmax(0, 72ch) var(--margin-w);
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w);
   align-items: start;
 }
 /* Code and tables are not prose and do not hold the prose measure — the
@@ -2994,6 +3011,9 @@ function initReview() {
   // share one page and one set of builders without a runtime branch in CSS.
   const asDoc = REVIEW_DATA.mode === 'review';
   container.classList.toggle('doc', asDoc);
+  // Stamped on <body> like `mode-diff`, because the page width it sets has to
+  // reach the shell and the bottom bar, which are outside #review-cards.
+  document.body.classList.toggle('mode-doc', asDoc);
   el('doc-hint').style.display = asDoc ? '' : 'none';
   // The composite's bar has no progress track: the footer's segmented rule is
   // the document's progress, in state rather than in percent, and two bars
@@ -4968,11 +4988,16 @@ function updateReviewStats() {
       : (remaining > 0 ? `submit all (${remaining} remaining)` : 'submit all');
   }
   if (doc) {
-    // The stamp's own keycap sits beside what is blocking it, so the way past
-    // the block and the reason for it are read together.
+    // The composite's footer states four things; this one was stating seven,
+    // and at the doc page's width that wrapped the stamp onto a second line.
+    // The bar above already carries `approved N/M` and the item counts, so the
+    // footer keeps only what is about DISPATCHING: what blocks it, whether the
+    // round is converging, and what the last round trip cost.
+    el('stat-approved').style.display = 'none';
+    el('stat-feedback').style.display = 'none';
     const cap = ' <kbd>&#8984;&#9166;</kbd>';
     el('stat-pending').innerHTML = remaining > 0
-      ? `blocked &middot; ${remaining} unreviewed, ${openItems} open`
+      ? `blocked &middot; ${remaining} unreviewed`
       : ((openItems ? `${openItems} open` : 'ready') + cap);
   }
 
