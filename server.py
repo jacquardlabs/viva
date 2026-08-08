@@ -456,7 +456,6 @@ body {
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-  box-shadow: 0 0 10px rgba(92,200,255,0.5), 0 0 2px rgba(92,200,255,0.8);
 }
 
 .progress-label {
@@ -537,13 +536,21 @@ body {
 }
 .theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
 
+/* A section is a run of the print, not a box on it. The card kept a 1px
+   border and a filled panel from the era when it was a drawing pinned to a
+   sheet; on a catalog page that framing is what made four sections read as
+   four objects instead of one document. What separates sections now is a
+   hairline above and the heading's own weight — the same thing that separates
+   entries in a printed catalog. */
 .card {
   position: relative;
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  transition: border-color 0.2s, opacity 0.35s, box-shadow 0.2s;
+  border: none;
+  border-top: 1px solid var(--rule);
+  background: none;
+  transition: opacity 0.35s;
   animation: fadeUp 0.4s ease both;
 }
+.card:first-child { border-top: none; }
 
 /* The active card's `+` registration marks — which pinned it to the drafting
    table like a sheet — are gone with the rest of the blueprint chrome. The
@@ -622,14 +629,10 @@ body {
 }
 .carried-body { padding: 0 14px 14px; }
 
-/* The live card takes a 2px ink edge on its left — the catalog's own way of
-   marking the row you are working — instead of a full-perimeter ring and a
-   dark drop shadow, which read as a sheet lifted off a table. */
-.card.is-active {
-  border-color: var(--rule);
-  border-left: 2px solid var(--ink);
-  box-shadow: none;
-}
+/* The live section is marked where the reader's eye already is — at the
+   heading — not by outlining the whole run. */
+.card.is-active { box-shadow: none; }
+.card.is-active .card-head { border-left: 2px solid var(--ink); margin-left: -2px; }
 
 /* ─── Card head ──────────────────────────────────────────── */
 .card-head {
@@ -649,10 +652,16 @@ body {
   padding: 11px 14px;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s;
-  min-height: 48px;
+  transition: color 0.12s;
+  min-height: 0;
+  padding: 14px 14px 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
 }
-.card-head:hover { background: var(--bg3); }
+/* No fill on hover — a filled band would rebuild the panel the flattening
+   just removed. The title takes the accent instead. */
+.card-head:hover { background: none; color: var(--acc); }
 
 /* dot */
 .dot {
@@ -661,11 +670,13 @@ body {
   flex-shrink: 0;
   transition: background 0.25s, box-shadow 0.25s;
 }
-.dot-idle     { background: var(--text3); }
-.dot-active   { background: var(--accent); box-shadow: 0 0 7px rgba(92,200,255,0.55); }
-.dot-approved { background: var(--teal);   box-shadow: 0 0 7px rgba(77,255,195,0.5); }
-.dot-changes  { background: var(--orange); box-shadow: 0 0 5px rgba(255,140,66,0.4); }
-.dot-info     { background: var(--violet); box-shadow: 0 0 5px rgba(167,139,250,0.4); }
+.dot-idle     { background: var(--faint); }
+.dot-active   { background: var(--acc); box-shadow: none; }
+/* Flat dots. The glows were the drafting board's cyan linework lit from
+   behind; on paper a status dot is printed, not lit. */
+.dot-approved { background: var(--machine); box-shadow: none; }
+.dot-changes  { background: var(--acc);     box-shadow: none; }
+.dot-info     { background: var(--fact);    box-shadow: none; }
 /* Revision triangle — drafting's "this region changed at this rev" flag, keyed
    to the titleblock REV and the revision log. */
 .rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
@@ -939,14 +950,25 @@ body {
 .section-content em { color: var(--text2); }
 
 /* In-document headings: title-block lettering for majors, mono overline for minors */
+/* Sentence case, not uppercase. The old rule shouted every heading in 14px
+   caps with tracking — a drafting label applied to prose. A catalog sets a
+   heading in the same face as its body, one step up in weight. */
 .section-content h1, .section-content h2 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
   margin: 18px 0 8px;
 }
+
+/* The section's own title is already printed by the card head directly above,
+   so the leading heading in the rendered markdown is a duplicate — it read as
+   the same words twice, once in sentence case and once shouted. Hide the
+   first heading of a section's content and let the head carry it. */
+.section-content > h1:first-child,
+.section-content > h2:first-child,
+.section-content > h3:first-child { display: none; }
 .section-content h3 {
   font-size: 13px;
   font-weight: 600;
@@ -1583,13 +1605,12 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   transition: all 0.2s;
 }
 .btn-submit.ready {
-  background: var(--accent);
-  color: var(--bg);
-  box-shadow: 0 0 20px rgba(92,200,255,0.25);
+  background: var(--acc);
+  color: var(--paper);
 }
 .btn-submit.ready:hover {
-  box-shadow: 0 0 32px rgba(92,200,255,0.4);
-  transform: translateY(-1px);
+  background: var(--ink);
+  transform: none;
 }
 .btn-submit.disabled {
   background: var(--border2);
@@ -1806,7 +1827,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 9px rgba(92,200,255,0.55);
   animation: viva-pulse 1.6s ease-in-out infinite;
   margin-bottom: 1.5rem;
 }
