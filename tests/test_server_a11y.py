@@ -14,6 +14,7 @@ bounded #paper sheet (edge border, inner rule, aria-hidden coordinate/corner
 decoration) over a flat --table ground, and the 24px grid + fixed .sheet-frame
 are gone at every layer.
 """
+import re
 import sys
 from pathlib import Path
 
@@ -208,6 +209,12 @@ def test_prefs_overlay_is_dialog_mirrors_recap():
     assert ('<div class="prefs-overlay" id="prefs-overlay" role="dialog" '
             'aria-modal="true" aria-labelledby="prefs-title" style="display:none">') in HTML
     assert '<button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">' in HTML
+    # A dialog closes on Escape and the control says so with a keycap — but a
+    # 9px cap is not a click target. The padding is on the BUTTON, not the cap,
+    # so the hit area clears 24px (measured 48x24) while the cap keeps the size
+    # every other keycap on the page has.
+    assert re.search(r'\.recap-close, \.prefs-close \{[^}]*padding:\s*6px 8px', HTML), \
+        "a dialog's close control must be a real click target, not a bare keycap"
     assert "function openPrefsPanel(triggerEl, focusPrefId)" in HTML
     assert "function closePrefsPanel()" in HTML
     assert "setBackgroundInert(true)" in HTML and "setBackgroundInert(false)" in HTML

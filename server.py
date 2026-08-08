@@ -2238,9 +2238,13 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 /* A dialog closes on Escape, so the control says so rather than drawing a
    glyph the reader has to learn. Same keycap the palette and the margin verbs
    wear — one keyboard layer, printed wherever it applies. */
+/* 9px of keycap is not a click target. The padding goes on the BUTTON, not
+   on the cap, so the cap keeps the size every other keycap on the page has
+   while the hit area clears 24px. */
 .recap-close, .prefs-close {
   border: none; background: none; cursor: pointer;
-  padding: 0; line-height: 1;
+  padding: 6px 8px; line-height: 1;
+  display: flex; align-items: center;
 }
 .recap-close:hover kbd, .prefs-close:hover kbd { border-color: var(--ink); color: var(--ink); }
 .recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
@@ -4063,16 +4067,21 @@ function placeDocThreads(id) {
       }
     }
     const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
-    const rm = docCell(row || docHeadRow(id), 'rm');
-    let host = rm.querySelector(':scope > .rm-threads');
-    if (!host) {
-      host = document.createElement('div');
-      host.className = 'rm-threads';
+    // The same guard `placeDocFlags` and `docNoteHost` carry, and for the same
+    // reason: an unanchored thread falls back to the head row, and a surface
+    // that has no head row has nowhere to put it.
+    const host = row || docHeadRow(id);
+    if (!host) return;
+    const rm = docCell(host, 'rm');
+    let threadHost = rm.querySelector(':scope > .rm-threads');
+    if (!threadHost) {
+      threadHost = document.createElement('div');
+      threadHost.className = 'rm-threads';
       // Threads precede this round's fresh notes: a carried thread is older
       // business than a comment made a minute ago.
-      rm.insertBefore(host, rm.querySelector(':scope > .rm-notes'));
+      rm.insertBefore(threadHost, rm.querySelector(':scope > .rm-notes'));
     }
-    if (node.parentElement !== host) host.appendChild(node);
+    if (node.parentElement !== threadHost) threadHost.appendChild(node);
   });
 }
 
@@ -4344,12 +4353,20 @@ function _ensureRendered(id) {
   // plaintext sentinel) and fall through to renderMarkdown unchanged.
   const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
   const rendered = isDiffHunk ? renderDiffHunk(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
+  /* A CARRIED card is the one thing that renders section content without
+     wearing the grammar. It is a read-only reveal of a hunk already signed
+     off: nothing to annotate, no notes to place, no verbs — and, crucially,
+     no `.row-head`, because buildCarriedCard never builds one. Running the
+     pipeline over it grids a body nobody can comment on, and an unanchored
+     carried thread takes `placeDocThreads` down `docCell(null, 'rm')`. */
+  const card = el('rcard-' + id);
+  const carried = !!(card && card.classList.contains('is-carried'));
   if (!rendered) {
     // marked/DOMPurify haven't landed: the content is raw text, not blocks.
     // The doc print still grids it — one row — so a CDN-down boot reads as a
     // document with its margin rather than as one undifferentiated slab. The
     // retry re-renders in place once the scripts arrive.
-    layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id);
+    if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }
     return;
   }
   // A d2h-pending card rendered successfully as fenced markdown but is
@@ -4359,6 +4376,7 @@ function _ensureRendered(id) {
   // late-loading-dependency lesson as the marked/DOMPurify retry, and the
   // hljs race the gate-audit pass caught).
   if (!contentEl.classList.contains('d2h-pending')) _pendingMarkdown.delete(id);
+  if (carried) return;
   // The doc grid distributes the freshly rendered blocks into rows before
   // anything is placed beside them — a note cannot find its paragraph until
   // the paragraph is a row.

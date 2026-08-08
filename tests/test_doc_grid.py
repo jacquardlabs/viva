@@ -169,6 +169,21 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
     # reads as neither version of anything.
     assert "mark.closest('pre, .d2h-code-line, .d2h-code-side-line')" in page, \
         "a rendered diff line is a code well too"
+    # A CARRIED card is the one thing that renders section content WITHOUT
+    # wearing the grammar: a read-only reveal of a hunk already signed off,
+    # with nothing to annotate and — because buildCarriedCard never builds one
+    # — no `.row-head` for an unanchored thread to fall back to. Dropping the
+    # old mode guard from `_ensureRendered` sent that thread straight through
+    # `docCell(null, 'rm')`; reproduced in a browser as `TypeError: Cannot
+    # read properties of null (reading 'querySelector')` on the reveal.
+    assert "const carried = !!(card && card.classList.contains('is-carried'));" in page, \
+        "the reveal must be recognised before anything is placed into it"
+    assert "if (carried) return;" in page, \
+        "the row pipeline must skip a carried reveal"
+    assert "if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }" in page, \
+        "...on the md-raw fallback path too"
+    assert "const host = row || docHeadRow(id);" in page and "if (!host) return;" in page, \
+        "placeDocThreads must carry the same missing-host guard as its siblings"
     print("test_diff_keeps_the_accordion_and_loses_its_chrome: OK")
 
 
@@ -343,7 +358,7 @@ def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
     assert ".sort((a, b) => a.row - b.row || a.seq - b.seq);" in page, \
         "notes must order by the row their anchor lands in"
     # A thread owns a reply textarea, so it is placed once and never rebuilt.
-    assert "if (node.parentElement !== host) host.appendChild(node);" in page, \
+    assert "if (node.parentElement !== threadHost) threadHost.appendChild(node);" in page, \
         "a thread already in the right cell must be left alone — moving it blurs its reply box"
     assert "sec.querySelectorAll('.rm-notes .nt').forEach(n => n.remove());" in page, \
         "only the dynamic note hosts may be rebuilt on sync"
