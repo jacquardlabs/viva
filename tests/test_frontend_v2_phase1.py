@@ -553,15 +553,19 @@ def test_page_ships_between_rounds_card(page: str) -> None:
     assert ("'REV ' + String(betweenRounds.round).padStart(2, '0') "
             "+ ' submitted — the agent is revising'") in page, \
         "page missing the between-rounds heading template"
-    # The verbatim row template: type slot, section title, untruncated note.
-    assert "'<div class=\"pr-row pr-' + esc(r.type) + '\">'" in page, \
-        "request row missing its type-classed container"
-    assert "'<span class=\"pr-type\">' + esc(r.type) + '</span>'" in page, \
-        "request row missing its type column"
-    assert "'<span class=\"pr-title\">' + esc(r.sectionTitle) + '</span>'" in page, \
-        "request row missing its section-title column"
-    assert "'<span class=\"pr-note\">' + esc(r.note) + '</span>'" in page, \
-        "request row missing its verbatim note column"
+    # The verbatim row template: type slot, section title, untruncated note —
+    # in the MARGIN's note grammar, because that is what these objects are:
+    # the notes the reviewer wrote a moment ago, echoed back. A second row
+    # vocabulary for the same thing is what `.pr-*` was.
+    assert "'<div class=\"nt' + (r.type === 'info' ? ' nt-fact' : '') + '\">'" in page, \
+        "a request row must be a note, inked by whose business it is"
+    assert "'<div class=\"nh\">' + esc(r.type)" in page, \
+        "request note missing its type header"
+    assert "'<span class=\"pn\">&middot; ' + esc(r.sectionTitle) + '</span></div>'" in page, \
+        "request note missing its section title"
+    assert "'<div class=\"nt-body\">' + esc(r.note) + '</div>'" in page, \
+        "request note missing its verbatim note body"
+    assert ".pr-row" not in page, "the second row grammar must be deleted, not hidden"
     # Zero rows fall back to the minimal processing line.
     assert "heading.textContent = 'Claude is revising…';" in page, \
         "renderProcessingView missing its minimal-line fallback"

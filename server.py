@@ -1386,7 +1386,7 @@ body {
 
 /* Keycaps sit on the control they name rather than being hover-revealed —
    the palette is a directory of this same layer, never a second one. */
-.doc kbd, .pal kbd, .pal-hint kbd {
+.doc kbd, .pal kbd, .pal-hint kbd, .recap-panel kbd, .prefs-panel kbd {
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 9px;
   border: 1px solid var(--rule);
@@ -2021,8 +2021,8 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 1px 5px;
-  margin-left: 6px;
-  border-radius: 3px;
+  margin: 0 6px;
+  border-radius: 0;
   background: var(--teal-bg);
   color: var(--teal);
   vertical-align: middle;
@@ -2211,11 +2211,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   padding: 24px;
   background: var(--scrim);
 }
+/* The palette's materials, since the palette is what a catalog overlay looks
+   like here: paper rather than the recessed panel `--bg` gave it, a square 1px
+   ink border, and the same lift off the scrim. */
 .recap-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border2);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
 }
 .recap-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -2230,13 +2235,14 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   text-transform: uppercase;
   color: var(--text2);
 }
-.recap-close {
+/* A dialog closes on Escape, so the control says so rather than drawing a
+   glyph the reader has to learn. Same keycap the palette and the margin verbs
+   wear — one keyboard layer, printed wherever it applies. */
+.recap-close, .prefs-close {
   border: none; background: none; cursor: pointer;
-  color: var(--text3);
-  font-size: 16px; line-height: 1;
-  padding: 2px 6px;
+  padding: 0; line-height: 1;
 }
-.recap-close:hover { color: var(--text); }
+.recap-close:hover kbd, .prefs-close:hover kbd { border-color: var(--ink); color: var(--ink); }
 .recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
 .recap-row {
   display: grid;
@@ -2252,8 +2258,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   cursor: pointer;
 }
 .recap-row:first-child { border-top: none; }
-.recap-row:hover { background: var(--bg3); }
-.recap-row:hover .recap-row-title { color: var(--accent); }
+/* Catalog yellow marks what the pointer is on, the way `.pal-row.is-on`
+   does — the ground's one selection ink, rather than a second gray band. */
+.recap-row:hover { background: var(--touch); }
 .recap-id {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -2299,8 +2306,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .prefs-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border2);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
 }
 .prefs-head {
   display: flex; flex-direction: column; gap: 8px;
@@ -2321,13 +2330,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
 }
 .prefs-help strong { color: var(--text2); font-weight: 600; }
-.prefs-close {
-  border: none; background: none; cursor: pointer;
-  color: var(--text3);
-  font-size: 16px; line-height: 1;
-  padding: 2px 6px;
-}
-.prefs-close:hover { color: var(--text); }
 /* The panel's *only* aria-live region — one line, updated on mute.
    #prefs-list deliberately carries none: a live-labeled list would announce
    every row's text on open, not just the one status change after a mute. */
@@ -2354,7 +2356,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 .pref-status-standing  { color: var(--teal);  background: var(--teal-bg); }
 .pref-status-candidate { color: var(--text2); background: var(--bg3); }
@@ -2368,21 +2370,23 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   margin-top: 4px;
   overflow-wrap: break-word;
 }
+/* A verb in a list of items is a verb in the margin's grammar — `.nt-btn`,
+   squared and bordered, rather than a bare word that reads as a label. */
 .pref-mute-btn {
   margin-left: auto;
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text3);
-  background: none;
-  border: 0;
-  padding: 2px 0;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--soft);
   cursor: pointer;
 }
-.pref-mute-btn:hover { color: var(--orange); }
-.pref-mute-btn:disabled { opacity: 0.5; cursor: default; }
+.pref-mute-btn:hover { border-color: var(--ink); color: var(--ink); }
+.pref-mute-btn:disabled { opacity: 0.5; cursor: default; border-color: var(--rule); color: var(--soft); }
 .pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
 .pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
 
@@ -2398,54 +2402,32 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   50%      { opacity: 0.25; }
 }
 
+/* The interlude is the same PAGE, waiting — not a splash screen with the
+   document taken away. It keeps the page's left edge and its measure, and the
+   reviewer's just-submitted requests print as what they are: the notes they
+   wrote a moment ago, in the note grammar the margin wrote them in. That is
+   also why `.pr-*` is gone — a second row grammar for the same objects. */
 .processing-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8rem 2rem;
+  padding: 3.5rem 0 8rem;
   color: var(--text2);
 }
 .processing-dot {
-  width: 10px; height: 10px;
+  width: 8px; height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--acc);
   animation: viva-pulse 1.6s ease-in-out infinite;
-  margin-bottom: 1.5rem;
+  margin-bottom: 14px;
 }
 .processing-text {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 1rem;
-  letter-spacing: 0.02em;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
 }
-.processing-requests {
-  width: min(520px, 100%);
-  margin-top: 2rem;
-  border: 1px solid var(--border2);
-  background: var(--bg2);
-  text-align: left;
-}
-.pr-row {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-}
-.pr-row:first-child { border-top: none; }
-.pr-type {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-.pr-changes .pr-type { color: var(--orange); }
-.pr-info    .pr-type { color: var(--violet); }
-.pr-suggestion .pr-type { color: var(--accent); }
-.pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
-.pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+.processing-requests { max-width: 460px; }
 
 .complete-inner {
   display: flex;
@@ -2462,7 +2444,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--teal);
   padding: 14px 30px 12px;
   position: relative;
-  background: rgba(77,255,195,0.04);
+  /* The machine's own token, not the neon mint this was drawn in before the
+     catalog palette landed — the only hardcoded rgba left on this view. */
+  background: var(--teal-bg);
 }
 .stamp-rule::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--teal); opacity: 0.55; }
 .stamp-word { font-family: 'Fragment Mono', monospace; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.16em; }
@@ -2700,7 +2684,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   <div class="recap-panel">
     <div class="recap-head">
       <span class="recap-title" id="recap-title">Recap &middot; REV <span id="recap-round"></span></span>
-      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap">&times;</button>
+      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap"><kbd>esc</kbd></button>
     </div>
     <div class="recap-grid" id="recap-grid"></div>
     <div class="recap-actions">
@@ -2719,7 +2703,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <div class="prefs-head">
       <div style="display: flex; align-items: center; justify-content: space-between;">
         <span class="prefs-title" id="prefs-title">Learned Preferences</span>
-        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
+        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences"><kbd>esc</kbd></button>
       </div>
       <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, applied at rewrite &mdash; still yours to approve &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
     </div>
@@ -5989,11 +5973,15 @@ function renderProcessingView() {
     return;
   }
   heading.textContent = 'REV ' + String(betweenRounds.round).padStart(2, '0') + ' submitted — the agent is revising';
+  // The same note the reviewer wrote in the margin a moment ago, in the same
+  // grammar — `info` is an open fact and takes the fact ink, everything else
+  // is the reviewer's judgment and takes theirs. A second row vocabulary for
+  // the same objects is what `.pr-*` was.
   list.innerHTML = rows.map(r =>
-    '<div class="pr-row pr-' + esc(r.type) + '">'
-    + '<span class="pr-type">' + esc(r.type) + '</span>'
-    + '<span class="pr-title">' + esc(r.sectionTitle) + '</span>'
-    + '<span class="pr-note">' + esc(r.note) + '</span>'
+    '<div class="nt' + (r.type === 'info' ? ' nt-fact' : '') + '">'
+    + '<div class="nh">' + esc(r.type)
+    +   '<span class="pn">&middot; ' + esc(r.sectionTitle) + '</span></div>'
+    + '<div class="nt-body">' + esc(r.note) + '</div>'
     + '</div>').join('');
   list.style.display = '';
 }
