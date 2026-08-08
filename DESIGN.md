@@ -260,8 +260,14 @@ annotates rather than beside the section.
 `.mode-doc .shell` caps the review print at **1054px** — as wide as its three
 columns and no wider. The 1240px shell is right for a single column of cards;
 for `gutter | prose | margin` it is ~190px too wide, and that surplus has to
-land somewhere. Capped this way the prose runs **~88 characters** at 542px, the
-margin holds its 300, the split is **62:38**, and nothing is left over.
+land somewhere.
+
+Measured at that cap (1440px viewport, both side columns in use): gutter 34px,
+prose **606px**, margin 328px, split **65:35** — and a full line of English
+prose carries **102 real characters**. That is past the comfortable measure and
+worth a decision: 102 is longer than the ~88 `.section-content`'s own `72ch`
+cap admits, and the two knobs are the page cap and the margin's own width.
+Nothing is left over either way — the surplus does not exist to reclaim.
 
 **Widen the page to widen the TEXT.** With the margin fixed, the prose track is
 what grows — which is the behavior the ratio failure taught.
