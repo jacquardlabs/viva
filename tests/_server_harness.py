@@ -89,21 +89,28 @@ def assert_catalog_ground(text: str) -> None:
     # this same owner rather than forked into a second contract.
     assert re.search(
         r'\.doc \.row\s*\{[^}]*grid-template-columns:\s*var\(--gutter-w\)'
-        r'\s+minmax\(0,\s*1fr\)\s+var\(--margin-w\)', text), \
-        "the doc row must be `check gutter | prose | margin`"
-    # The measure lives on the CELL, never on the track. A `72ch` track
-    # resolves `ch` against each row's own font-size — which differs between
-    # the head row and a prose row — and three fixed tracks cannot fill a wider
-    # container, so the leftover piled at the right and a `.wide` row reclaimed
-    # it. Both bugs put the margin cell at a different x on different rows.
-    assert re.search(r'\.doc \.rp\s*\{\s*max-width:\s*72ch;\s*\}', text), \
-        "the 72ch measure must cap the prose CELL, not the grid track"
-    assert re.search(r'\.doc \.row\.wide \.rp\s*\{\s*max-width:\s*none;\s*\}', text), \
-        "a wide row must lift the cell's cap and leave the track alone"
-    assert not re.search(r'\.doc \.row\.wide\s*\{[^}]*grid-template-columns', text), \
-        "a wide row must not restate the template — that is what moved the margin"
+        r'\s+minmax\(0,\s*72ch\)\s+var\(--margin-w\)', text), \
+        "the doc row must be `check gutter | 72ch prose | margin`"
+    # The prose TRACK is the measure, so the text fills its column rather than
+    # stopping short inside it, and the margin absorbs the shell's spare width.
+    # Capping the margin instead left the leftover in the prose track, where it
+    # printed as a dead band between the text and its own marginalia.
+    assert re.search(r'--margin-w:\s*minmax\(253px,\s*1fr\);', text), \
+        "the margin must absorb the spare width — .shell's own rule since #185"
+    assert not re.search(r'\.doc \.rp\s*\{\s*max-width', text), \
+        "the measure belongs to the track now; a cell cap would re-open the band"
+    # `ch` on a track resolves against the ROW's font-size, so one size for the
+    # whole print is what keeps the head row's track the same width as a prose
+    # row's — without it the spec table sat ~99px right of every note below it.
     assert re.search(r'\.doc-section\s*\{\s*font-size:\s*13\.5px', text), \
         "one type size for the print, so `ch` means one thing in every row"
+    # Code takes the margin's room only where that room is actually going
+    # spare. `:has()` reads the row itself, so no JS has to remember.
+    assert re.search(
+        r'\.doc \.row\.wide:not\(:has\(> \.rm\)\) \.rp\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
+        "a code row with no margin cell must break out across it"
+    assert not re.search(r'\.doc \.row\.wide\s*\{[^}]*grid-template-columns', text), \
+        "a wide row must not restate the template — that is what moved the margin"
     # The wasted-space rule: both side columns collapse to zero width.
     assert re.search(r'\.doc\.no-gutter\s*\{\s*--gutter-w:\s*0px;\s*\}', text), \
         "the gutter column must collapse to 0 when nothing uses it"

@@ -1114,39 +1114,40 @@ body {
    exactly zero. */
 .doc {
   --gutter-w: 98px;                    /* 70px chip column + the 28px alley */
-  --margin-w: minmax(253px, 328px);    /* 225–300px column + the same alley */
+  /* The margin ABSORBS the shell's spare width rather than capping at the
+     composite's 300px. Capped, the leftover had nowhere to go but the prose
+     track, where it printed as a dead band between the text and its own
+     marginalia — the text stopped at its measure and the column kept going.
+     `.shell`'s rule has said this since #185: "the extra width goes to the
+     margin conversation, never to wider text." A thread carrying exchanges
+     and a reply box is what benefits. */
+  --margin-w: minmax(253px, 1fr);
   /* .cards is the flex column the sections sit in; its gap is the space
      between entries, so the sections carry no margin of their own. */
   gap: 22px;
 }
 .doc.no-gutter { --gutter-w: 0px; }
 .doc.no-margin { --margin-w: 0px; }
-/* The middle track is `1fr`, NOT `72ch`, and the measure lives on the cell.
-   Two reasons, both of which showed up as a ragged right edge:
-
-   1. `ch` resolves against the ROW's own font-size, and the head row inherits
-      the section's while a prose row inherits `.section-content`'s 13.5px — so
-      a `72ch` track was ~99px wider on the head row and the spec table sat
-      that much right of every note below it.
-   2. Three fixed tracks cannot fill a wider container, so the leftover piled
-      up at the right and a `.wide` row — whose prose DOES take `1fr` —
-      reclaimed it, landing its margin cell ~200px right of every other one.
-
-   With `1fr` the three tracks always fill the row, so the gutter and the
-   margin sit at the same x on every row of the document, and the prose column
-   is bounded by `.rp`'s own max-width — which is what a measure is (see
-   `.section-content`: "max-width is a MEASURE, not a container width"). */
+/* The prose TRACK is the measure, so the text fills its column instead of
+   stopping short inside it. `ch` on a track resolves against the row's own
+   font-size, which is why `.doc-section` fixes one size for the whole print —
+   without that the head row (inheriting the section's size) got a track ~99px
+   wider than a prose row inside `.section-content`, and the spec table sat
+   that far right of every note below it. */
 .doc .row {
   display: grid;
-  grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w);
+  grid-template-columns: var(--gutter-w) minmax(0, 72ch) var(--margin-w);
   align-items: start;
 }
-.doc .rp { max-width: 72ch; }
-/* Code and tables are not prose and do not take the prose measure — the
+/* Code and tables are not prose and do not hold the prose measure — the
    catalog's break-out rule, at row scale instead of `.section-content > pre`.
-   Only the CELL's cap lifts; the track is unchanged, so the margin does not
-   move. */
-.doc .row.wide .rp { max-width: none; }
+   They take the margin's room ONLY on a row that has no margin cell, which is
+   the room actually going spare; a row annotating its own code keeps three
+   columns and the code well scrolls sideways in its own container, exactly as
+   `.section-content > pre` always did. `:has()` reads the row's own contents,
+   so nothing in JS has to remember to set a class when a note is added or
+   removed. */
+.doc .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4; }
 /* Explicit column placement, so a row that omits an empty side cell still
    prints its prose in the middle track instead of sliding left. */
 .doc .rg { grid-column: 1; padding-right: 28px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 3px; }
