@@ -98,7 +98,7 @@ open; anything a section of the grammar has no material for. Do **not** ask what
 an attachment already states.
 
 ```bash
-[ -f .viva/server.url ] && { echo "viva-write: a prior session may still be running (.viva/server.url exists). Finish or abandon it, or delete the file if you are certain the server is stopped."; exit 1; }
+[ -f .viva/server.url ] && { echo "viva-write: a session may be open at $(cat .viva/server.url 2>/dev/null) — check that tab first. Finish or abandon it there; delete .viva/server.url only if nothing is answering."; exit 1; }
 
 mkdir -p .viva
 rm -f .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json .viva/answers.json

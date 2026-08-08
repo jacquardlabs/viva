@@ -816,6 +816,38 @@ def check_start_refuses_over_a_live_session() -> None:
     print("  ok  check_start_refuses_over_a_live_session")
 
 
+def check_undriven_guards_point_at_the_live_tab() -> None:
+    """#174 fixed the collision message in `loop.py`, which drives exactly one
+    of the three flows that own this guard. `/viva-write`'s pre-hand-off clear
+    and `/viva-review`'s branch B carry their own bash on purpose (CLAUDE.md;
+    #179 empties them), so the driver's fix cannot reach them — and
+    `/viva-write` is the *likeliest* collision of the three, since its own
+    interview qa server writes the file it is about to stat.
+
+    They cannot probe without growing the bash #179 exists to shrink, so they
+    do the half that needs no round-trip: name the URL, and make deleting the
+    file conditional on nothing answering there. What is pinned is that no copy
+    reverts to advising `rm` first."""
+    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        # `&&` is the collision guard (file present = refuse). The `||` form is
+        # the post-launch check that the server wrote its URL at all — inverse
+        # test, different message, not this one's business.
+        guards = [ln for ln in skill_md.read_text().splitlines()
+                  if ln.lstrip().startswith("[ -f .viva/server.url ] &&")]
+        assert guards, "no server.url guard found in " + skill_md.name
+        for ln in guards:
+            where = "{}/{}".format(skill_md.parent.name, skill_md.name)
+            assert "cat .viva/server.url" in ln, \
+                where + ": the collision must name the open tab's URL, not just " \
+                "the file's existence: " + ln
+            assert "may still be running (.viva/server.url exists)" not in ln, \
+                where + ": reverted to the pre-#174 message: " + ln
+            assert "only if nothing is answering" in ln, \
+                where + ": deleting a live session's server.url orphans the " \
+                "server, so the advice must be conditional: " + ln
+    print("  ok  check_undriven_guards_point_at_the_live_tab")
+
+
 def check_start_resume_carries_prior_approvals() -> None:
     """`start`'s resume branch: a doc already carrying a sign-off ledger, with
     the prior round still on disk. The copy-out must happen before the clear
@@ -1052,6 +1084,7 @@ def main() -> None:
     check_skill_carries_the_decline_rule()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
+    check_undriven_guards_point_at_the_live_tab()
     check_start_resume_carries_prior_approvals()
     check_start_opens_the_producer_seam()
     check_wait_refuses_a_parsed_but_unarmed_round()

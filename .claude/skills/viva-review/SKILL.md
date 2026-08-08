@@ -139,8 +139,9 @@ carrying a `## Revision History` gets the prior session's approvals carried
 forward so the human re-reviews only what changed; or a stop after parsing when
 the preferences store holds a standing preference. It **refuses** when
 `.viva/server.url` exists — a prior session may still be running with the
-reviewer's tab open. Report that; delete the file only if you are certain no
-server is running (e.g. after a crash).
+reviewer's tab open. It probes before advising, so the refusal already names
+which case it is: a live session names the tab's URL, and only a URL nothing
+answers on is told to delete the file. Report whichever it printed verbatim.
 
 Pass `--split-on '<REGEX>'` for a task-card plan document: a heading is a split
 point iff its title matches (`re.search`, at any depth), replacing the
@@ -269,7 +270,7 @@ edits working-tree files, so if you intend to revise rather than only sign off,
 **B1. Capture** (round 1)
 
 ```bash
-[ -f .viva/server.url ] && { echo "viva-review: a prior session may still be running (.viva/server.url exists)"; exit 1; }
+[ -f .viva/server.url ] && { echo "viva-review: a session may be open at $(cat .viva/server.url 2>/dev/null) — check that tab first. Finish or abandon it there; delete .viva/server.url only if nothing is answering."; exit 1; }
 
 mkdir -p .viva
 rm -f .viva/server.url .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json
