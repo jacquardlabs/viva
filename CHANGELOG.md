@@ -2,6 +2,93 @@
 
 <!-- version list -->
 
+## v1.24.0 (2026-08-08)
+
+### Bug Fixes
+
+- **design**: Activation costs no layout — the page stops moving under the cursor
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: Anchoring reads the prose, not the margin's echo of it
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: Cap the margin and the page — the document takes the room
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: One choice per line ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: One right edge — the measure caps the cell, not the track
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The check gutter becomes a glyph rail; the words go where they fit
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The compose box holds the margin open
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The overlays take the composite's materials
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The text fills its column — the margin absorbs the spare width
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: Tighten the head row and the check gutter, from a browser pass
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **diff**: A carried reveal is not a surface that wears the margin
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **diff**: A rendered diff is not held to the prose reading measure
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **diff**: Unified — a pane is not the window
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+### Documentation
+
+- The measure, measured ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- True up the design system and cut a dead integration
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+### Features
+
+- **design**: Close the five gaps against the composite
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The doc + margin grammar on every surface
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The doc + margin restructure replaces the accordion
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The interview joins the catalog
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+- **design**: The margin is the grammar — the diff wears it too
+  ([#187](https://github.com/jacquardlabs/viva/pull/187),
+  [`ed42bdd`](https://github.com/jacquardlabs/viva/commit/ed42bddfcff4f0a7f3153888a245495389e2454f))
+
+
 ## v1.23.0 (2026-08-08)
 
 ### Bug Fixes
