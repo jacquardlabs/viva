@@ -108,6 +108,11 @@ HTML = r"""<!DOCTYPE html>
      belongs to nobody, so it is a filled neutral rather than a hue, and it
      is the one bar color that carries no meaning beyond "done". */
   --settled:   #e3e4e2;
+  /* The edge under an anchored span. Transparent on the white ground, where
+     the yellow fill is already the mark; a real edge on charcoal, where
+     `--touch` is a 22% wash and a wash alone is a ~5% luminance lift — not
+     enough to read as "the reviewer touched this text". */
+  --touch-edge: transparent;
 
   /* Component aliases. Component styles keep using these names, so the
      catalog palette lands without rewriting every rule; the four party inks
@@ -162,6 +167,7 @@ HTML = r"""<!DOCTYPE html>
     --machine: #4fc2a5;
     --fact:    #d19a3f;
     --settled: #3a3e41;
+    --touch-edge: #ffec8f;
 
     --bg3:     #232629;
     --scrim:   rgba(10,11,12,0.72);
@@ -188,6 +194,7 @@ HTML = r"""<!DOCTYPE html>
   --machine: #4fc2a5;
   --fact:    #d19a3f;
   --settled: #3a3e41;
+  --touch-edge: #ffec8f;
 
   --bg3:     #232629;
   --scrim:   rgba(10,11,12,0.72);
@@ -1278,7 +1285,11 @@ body {
    span wears catalog yellow and nothing else does — per the ink discipline,
    `--touch` is the reviewer's touch ON THE TEXT — so the pin, not the
    highlight, is what carries whose note it is. */
-.doc mark[class^="cmt-hl-"] { background: var(--touch); border-bottom: none; color: inherit; }
+.doc mark[class^="cmt-hl-"] {
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+}
 .pin {
   display: inline-block;
   min-width: 14px;
@@ -3357,6 +3368,12 @@ function docFlagSplit(section) {
   const gutter = [], margin = [];
   (section.annotations || []).forEach(a => {
     if (!a) return;
+    // A confidence annotation is the agent's self-report about the whole
+    // section, not a flag on a passage — it drives the triage sort, and its
+    // readout is the spec table. Letting it into the gutter would hold 98px
+    // open on every self-annotated document for sort metadata, which is
+    // exactly what the wasted-space rule is about.
+    if (a.kind === 'confidence') return;
     const anchorId = a.anchor != null ? String(a.anchor) : '';
     const m = a.kind === 'preference' ? PREF_ID_RE.exec(a.message || '') : null;
     const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
@@ -3576,11 +3593,17 @@ function specHTML(section) {
   const s = sectionSpec(section);
   const row = (label, value, open) =>
     '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
+  // The agent's own confidence is a spec line, not a gutter flag: it is about
+  // the section, and it is what the triage sort orders on.
+  const conf = confidenceAnnot(section);
   const rows = row('comments open', s.comments, s.comments > 0)
     + row('suggestions open', s.suggestions, s.suggestions > 0)
     + row('author kept as-is', s.declined, false)
     + (s.checks ? row('checks', s.checksDone + '/' + s.checks
-        + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '');
+        + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
+    + (conf ? row('agent confidence',
+        [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
+        conf.level === 'low') : '');
   return '<table class="spec"><caption>' + esc(section.title) + ' &mdash; state</caption>'
     + '<tbody>' + rows + '</tbody></table>';
 }
@@ -3767,6 +3790,15 @@ function placeDocThreads(id) {
       holder.innerHTML = openThreadItemHTML(t);
       node = holder.firstElementChild;
       wireOpenThread(id, node);
+      // A rebuild (the late-CDN retry replaces the container's innerHTML,
+      // threads included) must not lose a reply the reviewer already typed —
+      // the text lives in rState, so put it back in the box.
+      const pending = ((rState.verdicts[id] || {}).comments || [])
+        .find(c => c.cid === t.cid && c.reply && c.note);
+      if (pending) {
+        const field = node.querySelector('.thread-reply-field');
+        if (field) field.value = pending.note;
+      }
     }
     const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
     const rm = docCell(row || docHeadRow(id), 'rm');
@@ -3936,7 +3968,14 @@ function _ensureRendered(id) {
   // plaintext sentinel) and fall through to renderMarkdown unchanged.
   const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
   const rendered = isDiffHunk ? renderDiffHunk(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
-  if (!rendered) return;
+  if (!rendered) {
+    // marked/DOMPurify haven't landed: the content is raw text, not blocks.
+    // The doc print still grids it — one row — so a CDN-down boot reads as a
+    // document with its margin rather than as one undifferentiated slab. The
+    // retry re-renders in place once the scripts arrive.
+    if (isDocMode()) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }
+    return;
+  }
   // A d2h-pending card rendered successfully as fenced markdown but is
   // waiting for diff2html to load — keep its source so the diff2html-script
   // load listener below can re-render it properly. Deleting it here would
@@ -4165,6 +4204,11 @@ document.addEventListener('mouseup', () => {
     const start = toElement(sel.anchorNode);
     const content = start && start.closest ? start.closest('.section-content') : null;
     if (!content) return;
+    // In the doc grid the margin and the check gutter are descendants of the
+    // section container, so `.section-content` alone no longer means "in the
+    // document" — a drag across your own prior note would open a popover
+    // anchored to text that is not in the doc. The prose cell is the document.
+    if (isDocMode() && !(start.closest('.rp'))) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
     // diff2html's side-by-side mode renders old/new as two adjacent panes.
@@ -4216,6 +4260,15 @@ function closestD2hPane(node) {
 function occurrenceInRendered(root, range, text) {
   const scope = closestD2hPane(range.startContainer) || root;
   if (!scope.contains || !scope.contains(range.startContainer)) return 0;
+  // The doc grid puts the margin INSIDE the section container, and a margin
+  // note echoes the wording it annotates (.nt-quote, .open-thread-quote). A
+  // Range over the container counts those echoes, inflating the ordinal so
+  // offsetInSource addresses a different span than the reviewer picked — the
+  // #95 bug, except the margin manufactures the repeat. Count the prose only.
+  if (scope === root) {
+    const counted = proseOccurrenceBefore(root, range, text);
+    if (counted !== null) return counted;
+  }
   const all = document.createRange();
   all.selectNodeContents(scope);
   const pre = document.createRange();
@@ -4223,6 +4276,41 @@ function occurrenceInRendered(root, range, text) {
   try { pre.setEnd(range.startContainer, range.startOffset); }
   catch (e) { return 0; }
   return countStartsBefore(all.toString(), text, pre.toString().length);
+}
+
+/* ─── Prose-only text walking ─────────────────────────────────
+   One filter, used by everything that must address the DOCUMENT rather than
+   what is written about it: the margin, the check gutter, and an open
+   compose popover are all descendants of the section container in the doc
+   grid, and none of them is the text under review. In the accordion nothing
+   matches these classes inside `.section-content`, so the filter is inert
+   there and both surfaces run the same walk. */
+function proseWalker(root) {
+  return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      for (let p = node.parentElement; p && p !== root; p = p.parentElement) {
+        const c = p.classList;
+        if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')))
+          return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+}
+
+// 0-based ordinal of the selected occurrence counted over prose text only, or
+// null when the selection starts somewhere the walk cannot place (an element
+// boundary rather than inside a text node) — the caller then falls back to the
+// Range count rather than guessing.
+function proseOccurrenceBefore(root, range, text) {
+  if (!text) return 0;
+  const walk = proseWalker(root);
+  let hay = '', pre = null, node;
+  while ((node = walk.nextNode())) {
+    if (node === range.startContainer) pre = hay.length + Math.max(0, range.startOffset);
+    hay += node.nodeValue;
+  }
+  return pre === null ? null : countStartsBefore(hay, text, pre);
 }
 
 // Occurrences of `needle` in `hay` that start before index `limit`. Steps by 1
@@ -4390,7 +4478,9 @@ function renderHighlights(id) {
 // doc print can hang that note's pin off it without walking the tree twice.
 function wrapNth(root, needle, cls, n) {
   if (!needle) return null;
-  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  // Prose only: a margin note echoes the wording it annotates, so an
+  // unfiltered walk could count — and mark — inside the commentary.
+  const walk = proseWalker(root);
   let node, seen = 0;
   while ((node = walk.nextNode())) {
     let i = node.nodeValue.indexOf(needle);

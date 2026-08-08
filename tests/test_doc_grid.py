@@ -239,14 +239,62 @@ def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
     print("test_margin_notes_and_pins_are_numbered_together: OK")
 
 
+def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
+    """Cap: the margin lives INSIDE `#rcontent-<id>` now, and every margin note
+    echoes the wording it annotates (`.nt-quote`, `.open-thread-quote`). Three
+    paths would otherwise count or mark that echo as if it were the document:
+
+      * `occurrenceInRendered` counts over the container to pick which
+        occurrence the reviewer selected — an echo inflates the ordinal, and
+        `offsetInSource` then addresses a different span in the markdown, or
+        none. That is the #95 bug, except the margin manufactures the repeat:
+        comment on a phrase in the first paragraph, then on the same phrase in
+        the third, and the second capture counts the first note's quote too.
+      * `wrapNth` walks the container to place the mark, so it could highlight
+        inside the commentary.
+      * the mouseup handler's `.section-content` test used to mean "inside the
+        document" because the popover was a sibling; now a drag across your own
+        prior note would open a popover anchored to text that is not in the doc.
+
+    One filter (`proseWalker`) answers all three. It is inert in the accordion —
+    nothing there matches those classes inside `.section-content` — so both
+    surfaces run the same walk rather than branching."""
+    assert "function proseWalker(root)" in page, "page missing the prose-only walker"
+    assert ("if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover'))" in page), \
+        "the walker must reject the margin, the gutter, and an open compose popover"
+    # Capture: the ordinal is counted over prose.
+    assert "function proseOccurrenceBefore(root, range, text)" in page
+    assert "const counted = proseOccurrenceBefore(root, range, text);" in page, \
+        "occurrenceInRendered must count prose only before falling back"
+    assert "if (counted !== null) return counted;" in page, \
+        "an unplaceable selection must fall back to the Range count, never guess"
+    # Placement: the mark walks the same filter.
+    fn = page.index("function wrapNth(root, needle, cls, n)")
+    assert "const walk = proseWalker(root);" in page[fn:fn + 500], \
+        "wrapNth must walk prose only"
+    # Creation: a drag outside the prose cell is not a comment on the document.
+    assert "if (isDocMode() && !(start.closest('.rp'))) return;" in page, \
+        "a selection outside the prose cell must not open a comment popover"
+    print("test_anchoring_reads_the_document_not_the_commentary: OK")
+
+
 def test_anchored_span_wears_the_reviewers_touch(page: str) -> None:
     """Cap: the ink discipline, applied to the restructure. `--touch` is the
     reviewer's touch ON THE TEXT and nothing else, so in the doc print an
     anchored span is catalog yellow and the PIN — not the highlight — carries
     whose note it is and what kind. Red and green stay confined to the
     suggestion fence, where diff semantics already own them."""
-    assert re.search(r'\.doc mark\[class\^="cmt-hl-"\]\s*\{\s*background:\s*var\(--touch\)', page), \
-        "an anchored span in the doc print must wear catalog yellow"
+    assert re.search(r'\.doc mark\[class\^="cmt-hl-"\]\s*\{\s*background:\s*var\(--touch\);\s*'
+                     r'border-bottom:\s*1\.5px solid var\(--touch-edge\)', page), \
+        "an anchored span must wear catalog yellow plus the theme's edge"
+    # --touch on charcoal is a 22% wash — about a 5% luminance lift, and the
+    # composite has no dark rendering to check it against (its `.cf` block
+    # hardcodes the white ground). The edge is what keeps the mark readable
+    # there; in light the fill is already the mark, so it stays transparent.
+    assert page.count('--touch-edge:') == 3, \
+        "--touch-edge must be defined once per theme block"
+    assert '--touch-edge: transparent;' in page and page.count('--touch-edge: #ffec8f;') == 2, \
+        "the edge is transparent on the white ground and real on charcoal"
     assert re.search(r'\.pin-you\s*\{\s*background:\s*var\(--acc\)', page), \
         "the reviewer's pin takes their own party ink"
     assert re.search(r'\.pin-author\s*\{[^}]*border:\s*1\.5px solid var\(--soft\)', page), \
@@ -304,6 +352,7 @@ def main() -> None:
             test_every_section_keeps_a_focusable_control(page)
             test_segmented_rule_states_its_counts(page)
             test_margin_notes_and_pins_are_numbered_together(page)
+            test_anchoring_reads_the_document_not_the_commentary(page)
             test_anchored_span_wears_the_reviewers_touch(page)
             test_settled_token_defined_once_per_theme_block(page)
             test_round2_wire_shape_unchanged(base)

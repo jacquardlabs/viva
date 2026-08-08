@@ -291,17 +291,35 @@ the number and writes **both** ends in one pass — the pin in the text and the
 note in the margin can never disagree about which span is note 3. The pin is a
 button and jumps to its own note.
 
-**Ink.** An anchored span in the doc print wears `var(--touch)` and nothing
-else, per the ink discipline ("the reviewer's touch ON THE TEXT"); the **pin**,
-not the highlight, carries whose note it is — `.pin-you` (`--acc`),
-`.pin-fact` (`--fact`), `.pin-author` (outlined `--soft`, a declined thread).
+**Ink.** An anchored span in the doc print wears `var(--touch)` plus a 1.5px
+`var(--touch-edge)`, per the ink discipline ("the reviewer's touch ON THE
+TEXT"); the **pin**, not the highlight, carries whose note it is — `.pin-you`
+(`--acc`), `.pin-fact` (`--fact`), `.pin-author` (outlined `--soft`, a declined
+thread). `--touch-edge` is `transparent` on the white ground, where the yellow
+fill is already the mark, and `#ffec8f` on charcoal, where `--touch` is a 22%
+wash worth about a 5% luminance lift. The composite settles nothing here: its
+specimen hardcodes the white ground and has no dark rendering at all.
 
 **Flags.** `docFlagSplit` sends plain severity and check flags to the 70px
 gutter as `.lchip` glyphs (`✓` info, `△` warn, `✗` error; a check flag's
 `result` prints under it), and any flag carrying an **interactive jump** — a
 contradiction's cross-section link, a preference's badge-to-entry link — to the
 margin through `annotStripHTML`, which keeps that wiring. 70px is a glance, not
-a control.
+a control. A `kind: "confidence"` annotation goes to neither: it is the agent's
+self-report about the whole section, it drives the triage sort, and its readout
+is a spec-table row — letting it into the gutter would hold 98px open on every
+self-annotated document for sort metadata.
+
+**Anchoring reads the prose, never the commentary.** The margin and the gutter
+are descendants of `#rcontent-<id>`, and every margin note echoes the wording it
+annotates. `proseWalker` is the single filter that rejects `.rm`, `.rg`, and an
+open `.comment-popover`; `occurrenceInRendered` counts through it,
+`wrapNth` marks through it, and the `mouseup` handler additionally requires
+`start.closest('.rp')`. Without it a note's echo inflates the stored ordinal and
+`offsetInSource` addresses a different span in the markdown — the #95 failure,
+except the margin manufactures the repeat. The filter is inert in the accordion
+(nothing there matches those classes inside `.section-content`), so one walk
+serves both surfaces.
 
 **The round diff** gets a full-width `.row.wide.row-diff` of its own, directly
 under the head row, **shipped collapsed**. It is the widest object on the page
