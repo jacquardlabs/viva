@@ -108,9 +108,11 @@ def test_selection_reads_the_ordinal_from_the_rendered_content():
     # getRangeAt(0), not anchorNode/focusNode: a backwards drag reports its
     # endpoints reversed, which would count the prefix past the selection.
     assert "!sel.rangeCount" in HTML, "the handler must bail when there is no range to read"
-    # The prefix count is scoped to the diff pane the selection began in — the
-    # facing side-by-side pane repeats the same lines.
-    assert "const scope = closestD2hPane(range.startContainer) || root;" in HTML
+    # One scope, the section's own content. The prefix count used to be scoped
+    # to the diff pane the selection began in, because side-by-side's facing
+    # pane repeated every line; unified renders one column and there is no
+    # facing pane to scope out.
+    assert "if (!root.contains || !root.contains(range.startContainer)) return 0;" in HTML
     print("  ok  test_selection_reads_the_ordinal_from_the_rendered_content")
 
 

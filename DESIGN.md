@@ -663,8 +663,19 @@ always on screen; a code line scrolls, and one measured at x=1052 inside a
 445px-wide pane is nowhere the reviewer will ever see it. The unit a diff note
 pairs with is the line. For the same reason a carried **suggestion** on a diff
 line takes the margin's −/+ fence rather than an inline strike: `n.inCode`
-counts `.d2h-code-line` / `.d2h-code-side-line` as code wells, because a
-`del`/`ins` pair spliced into a `+` line reads as neither version of anything.
+counts `.d2h-code-line` as a code well, because a `del`/`ins` pair spliced
+into a `+` line reads as neither version of anything.
+
+**A spanning anchor is re-inserted where it came from.** `wrapSpanning` falls
+back to `extractContents` when the needle straddles hljs token spans — and
+extraction can remove the very nodes the range's start boundary points into,
+collapsing the range up to their parent. A plain re-insert then lands the mark
+as a *sibling* of the container the text came out of: measured on a diff line
+as an emptied 506px `.d2h-code-line-ctn` followed by the text 506px to its
+right. It compounds, because `markAndPin`'s teardown flattens a mark into
+whatever parent it currently has. An empty text-node placeholder, inserted
+before the extraction and outside the extracted range, survives to say where
+the mark belongs.
 
 A card has three states:
 - **Idle** — closed, `dot-idle`, no `is-active` class.
@@ -914,8 +925,18 @@ render time (never stored — `section.content` stays byte-for-byte verbatim
 for anchors and carry-forward), and renders with `diffStyle: 'word'`
 (intra-line word-level emphasis), `matching: 'words'`, no file list,
 `colorScheme: 'auto'` (follows `prefers-color-scheme`, like the rest of
-viva), and `outputFormat` picked by viewport: side-by-side at ≥900px,
-line-by-line below. **Pipeline order is load-bearing:** `Diff2Html.html`
+viva), and `outputFormat: 'line-by-line'` — **unified, always**.
+
+Side-by-side splits the hunk into two panes, and a pane is not the window.
+Measured at a 1440px viewport: shell 1368 → hunk 892 → each pane 445, which is
+**53 visible characters** against the 962px a 104-character line needs. Both
+panes scroll, independently, so the reviewer drags twice to read one change.
+The same 892px unified shows **107 characters**, and a 100-column line fits
+whole. The rule this replaced measured `window.innerWidth`, which is the wrong
+quantity: the glyph rail and the margin take their share before the code gets
+any, so a wide window says nothing about whether a pane can hold a line. What
+changed *within* a line survives the format — `diffStyle: 'word'` marks it
+either way. **Pipeline order is load-bearing:** `Diff2Html.html`
 produces a string, `DOMPurify.sanitize` runs on the string, and only the
 sanitized result touches the DOM — the same sanitize-before-assign order
 as `renderMarkdown` (materializing first would let insertion-time payloads
@@ -940,9 +961,12 @@ only d2h's per-hunk `+N/−M` stats remain); a scoped td reset (the generic
 diff row); `user-select: none` on line numbers; `position: relative` +
 `border-radius: 6px` on `.d2h-file-wrapper` (the containing-block fix that
 keeps d2h's absolutely-positioned line numbers clipped inside the collapse
-accordion, plus the documented diff-surface radius); and a cross-pane
-selection guard that degrades a selection spanning both side-by-side panes
-to an unanchored whole-section note.
+accordion, plus the documented diff-surface radius).
+
+The cross-pane selection guard is gone with the panes. It degraded a selection
+spanning both side-by-side panes to an unanchored note, because DOM-order text
+across two panes is not a contiguous substring of the raw hunk; a unified hunk
+is one column in source order, so every selection inside it already is.
 
 ## Diff-first layout (mode-diff)
 

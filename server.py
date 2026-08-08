@@ -912,8 +912,7 @@ body {
    - 6px radius matches .diff-block, the incumbent documented diff-surface
      radius, replacing d2h's own undocumented 3px. */
 .section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
-.section-content .d2h-code-linenumber,
-.section-content .d2h-code-side-linenumber { user-select: none; }
+.section-content .d2h-code-linenumber { user-select: none; }
 .section-content .d2h-file-wrapper { position: relative; border-radius: 6px; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
@@ -2833,7 +2832,7 @@ function sectionTitleFor(id) {
   return reviewSectionTitles().get(id) || '';
 }
 
-/* Render one git hunk via diff2html: side-by-side above 900px viewport,
+/* Render one git hunk via diff2html: unified (line-by-line),
    line-by-line below, word-level intra-line diffs. Pure view transform —
    section.content stays the verbatim fence the /viva-diff skill
    (anchor-based edit relocation) and round-to-round carry-forward
@@ -2873,7 +2872,19 @@ function renderDiffHunk(target, raw, title) {
       colorScheme: 'auto',
       matching: 'words',
       diffStyle: 'word',
-      outputFormat: window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line',
+      // UNIFIED, always. Side-by-side splits the hunk into two panes, and a
+      // pane is not the window: at a 1440px viewport the shell is 1368, the
+      // hunk 892, and each pane 445 — 53 visible characters, against 962
+      // needed for a 104-character line. BOTH panes scroll, independently,
+      // and the reviewer drags twice to read one change. The same 892px
+      // unified shows 107 characters, so a 100-column line fits whole.
+      //
+      // The old rule measured `window.innerWidth`, which is the wrong
+      // quantity: the glyph rail and the margin take their share before the
+      // code gets any, so a wide window says nothing about whether a pane can
+      // hold a line. What changed *within* a line survives the format —
+      // `diffStyle: 'word'` marks it either way.
+      outputFormat: 'line-by-line',
     });
     target.innerHTML = DOMPurify.sanitize(rawHtml);
   } catch (e) {
@@ -2882,8 +2893,8 @@ function renderDiffHunk(target, raw, title) {
   target.classList.remove('d2h-pending');
   // Line numbers are visual chrome: unselectable via CSS (anchor hygiene),
   // and hidden from screen readers here — they'd otherwise announce before
-  // every code line, twice per row in side-by-side.
-  target.querySelectorAll('.d2h-code-linenumber, .d2h-code-side-linenumber')
+  // every code line.
+  target.querySelectorAll('.d2h-code-linenumber')
     .forEach(n => n.setAttribute('aria-hidden', 'true'));
   // Slim UI wrapper constructed with an undefined diff wraps the existing
   // (sanitized) DOM; hljs is the page's own instance, passed in because the
@@ -4168,7 +4179,7 @@ function markAndPin(id, ordered) {
     // `<pre>` — and everything the strike rule says about code says it twice
     // about a diff: a `del`/`ins` pair spliced into a `+` line reads as
     // neither version of anything. The −/+ fence in the margin carries it.
-    n.inCode = !!(mark.closest && mark.closest('pre, .d2h-code-line, .d2h-code-side-line'));
+    n.inCode = !!(mark.closest && mark.closest('pre, .d2h-code-line'));
     const repl = noteReplacement(n);
     let tail = mark;
     /* A suggestion is SHOWN APPLIED, in the prose: the wording it replaces
@@ -4206,11 +4217,10 @@ function markAndPin(id, ordered) {
     // On a diff line the pin leads the line rather than trailing the anchor —
     // see `.pin-line`. The mark still shows WHICH span; the pin shows WHICH
     // NOTE, and only one of the two has to survive a horizontal scroll.
-    // Both d2h modes: `.d2h-code-line` is line-by-line's row, and
-    // `.d2h-code-side-line` side-by-side's. The LINE, never the inner
-    // `.d2h-code-line-ctn` — that span only exists on some line kinds, and a
-    // rule that holds for three lines in four is worse than none.
-    const line = tail.closest && tail.closest('.d2h-code-line, .d2h-code-side-line');
+    // The LINE (`.d2h-code-line`), never the inner `.d2h-code-line-ctn` —
+    // that span only exists on some line kinds, and a rule that holds for
+    // three lines in four is worse than none.
+    const line = tail.closest && tail.closest('.d2h-code-line');
     if (line) { pin.classList.add('pin-line'); line.prepend(pin); }
     else tail.after(pin);
   });
@@ -4608,14 +4618,6 @@ document.addEventListener('mouseup', () => {
     if (!start.closest('.rp') || start.closest('.sug-ins')) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
-    // diff2html's side-by-side mode renders old/new as two adjacent panes.
-    // A drag crossing panes (or starting/ending outside them) yields
-    // DOM-order text that is not a contiguous substring of the raw hunk —
-    // anchoring a comment to it would silently defeat offsetInSource and
-    // the /viva-diff skill's grep fallback, so it degrades to an unanchored
-    // whole-section note. Same guard the hand-rolled table carried.
-    const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
-    if (crossesPanes) { openCommentPopover(m[1], {}); return; }
     // Which occurrence of a repeated phrase the reviewer picked exists only in
     // the rendered content — that is where the selection lives. Read the
     // ordinal there, resolve the SAME ordinal against the markdown source
@@ -4633,13 +4635,11 @@ function toElement(node) {
   return node && node.nodeType === 3 ? node.parentElement : node;
 }
 
-// Closest diff2html side-by-side pane ancestor of a selection endpoint, or
-// null outside one (line-by-line mode, review-mode content) — there the
-// comparison is null !== null, a no-op, preserving the anchored path.
-function closestD2hPane(node) {
-  const elem = toElement(node);
-  return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
-}
+/* The cross-pane selection guard is gone with the panes. Side-by-side put
+   old and new in two adjacent scroll boxes, so a drag across them yielded
+   DOM-order text that was not a contiguous substring of the raw hunk, and the
+   guard degraded it to an unanchored note. A unified hunk is one column in
+   source order: every selection inside it is already contiguous. */
 
 /* ─── Anchor resolution: rendered occurrence → source offset (#95) ─────
    The reviewer selects in rendered HTML; the anchor must address the markdown
@@ -4650,26 +4650,22 @@ function closestD2hPane(node) {
    re-render; the offset is the half the source edit uses. */
 
 // 0-based ordinal of the selected occurrence of `text`: how many occurrences
-// *begin* before the selection starts, counted over the rendered text. In
-// diff2html's side-by-side output the count is scoped to the pane the
-// selection began in — the facing pane repeats the same lines and is not part
-// of the reviewer's reading order.
+// *begin* before the selection starts, counted over the rendered text. One
+// scope, the section's own content — side-by-side's facing pane, which
+// repeated every line and had to be scoped out of the count, no longer exists.
 function occurrenceInRendered(root, range, text) {
-  const scope = closestD2hPane(range.startContainer) || root;
-  if (!scope.contains || !scope.contains(range.startContainer)) return 0;
+  if (!root.contains || !root.contains(range.startContainer)) return 0;
   // The doc grid puts the margin INSIDE the section container, and a margin
   // note echoes the wording it annotates (.nt-quote, .open-thread-quote). A
   // Range over the container counts those echoes, inflating the ordinal so
   // offsetInSource addresses a different span than the reviewer picked — the
   // #95 bug, except the margin manufactures the repeat. Count the prose only.
-  if (scope === root) {
-    const counted = proseOccurrenceBefore(root, range, text);
-    if (counted !== null) return counted;
-  }
+  const counted = proseOccurrenceBefore(root, range, text);
+  if (counted !== null) return counted;
   const all = document.createRange();
-  all.selectNodeContents(scope);
+  all.selectNodeContents(root);
   const pre = document.createRange();
-  pre.selectNodeContents(scope);
+  pre.selectNodeContents(root);
   try { pre.setEnd(range.startContainer, range.startOffset); }
   catch (e) { return 0; }
   return countStartsBefore(all.toString(), text, pre.toString().length);
@@ -4933,10 +4929,26 @@ function wrapSpanning(root, needle, cls, n) {
   mark.className = cls;
   try { range.surroundContents(mark); }
   catch (e) {
-    // Partially-selected elements: extract (which splits them, each half
-    // keeping its own class) and re-insert under the mark.
-    try { mark.appendChild(range.extractContents()); range.insertNode(mark); }
-    catch (e2) { return null; }
+    /* Partially-selected elements: extract (which splits them, each half
+       keeping its own class) and re-insert under the mark.
+
+       A PLACEHOLDER holds the spot. `extractContents` can remove the very
+       nodes the range's start boundary points into, which collapses the range
+       up to their parent — so a plain `range.insertNode(mark)` afterwards
+       lands the mark as a SIBLING of the container the text came out of.
+       Measured on a diff line: an emptied 506px `.d2h-code-line-ctn`
+       followed by the text 506px to its right, a gap the width of the line.
+       And it compounds — `markAndPin`'s teardown flattens a mark into
+       whatever parent it currently has, so once the text is a sibling it
+       stays one for the rest of the session. The slot is outside the
+       extracted range, so it survives to say where the mark belongs. */
+    try {
+      const slot = document.createTextNode('');
+      range.insertNode(slot);
+      range.setStartAfter(slot);
+      mark.appendChild(range.extractContents());
+      slot.parentNode.replaceChild(mark, slot);
+    } catch (e2) { return null; }
   }
   return mark;
 }

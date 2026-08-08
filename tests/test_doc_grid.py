@@ -160,15 +160,25 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
     # A pin on a code line LEADS the line and sticks: prose wraps, a diff line
     # scrolls, and a pin set after its anchor was measured at x=1052 inside a
     # 445px pane — nowhere the reviewer will ever see it.
-    assert "tail.closest('.d2h-code-line, .d2h-code-side-line')" in page, \
+    assert "tail.closest('.d2h-code-line')" in page, \
         "a diff pin must attach to the line, not to the character offset"
     assert re.search(r'\.pin-line\s*\{[^}]*position:\s*sticky', page), \
         "a diff pin must survive a horizontal scroll of its own pane"
     # ...and a carried suggestion on a diff line takes the margin's fence, for
     # the same reason a code block does: a del/ins pair spliced into a `+` line
     # reads as neither version of anything.
-    assert "mark.closest('pre, .d2h-code-line, .d2h-code-side-line')" in page, \
+    assert "mark.closest('pre, .d2h-code-line')" in page, \
         "a rendered diff line is a code well too"
+    # An anchor that straddles hljs token spans is re-inserted where it came
+    # FROM. `extractContents` can remove the nodes the range's start boundary
+    # points into, collapsing the range up to their parent — measured on a diff
+    # line as an emptied 506px `.d2h-code-line-ctn` followed by the text 506px
+    # to its right. It compounds: `markAndPin`'s teardown flattens a mark into
+    # whatever parent it currently has, so once the text is a sibling of the
+    # code container it stays one for the rest of the session.
+    assert "const slot = document.createTextNode('');" in page and \
+        "slot.parentNode.replaceChild(mark, slot);" in page, \
+        "a spanning mark must be re-inserted where its content came from"
     # A CARRIED card is the one thing that renders section content WITHOUT
     # wearing the grammar: a read-only reveal of a hunk already signed off,
     # with nothing to annotate and — because buildCarriedCard never builds one
@@ -494,7 +504,7 @@ def test_an_anchor_that_crosses_elements_still_marks(page: str) -> None:
     assert "return wrapSpanning(root, needle, cls, n);" in page, \
         "wrapNth must fall through to it, never lead with it"
     assert "range.surroundContents(mark);" in page
-    assert "mark.appendChild(range.extractContents()); range.insertNode(mark);" in page, \
+    assert "mark.appendChild(range.extractContents());" in page, \
         "a partially-selected element must still resolve, not silently drop the mark"
     print("test_an_anchor_that_crosses_elements_still_marks: OK")
 
