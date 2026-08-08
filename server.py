@@ -2450,6 +2450,51 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
 .pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
 
+/* ─── Dead-session overlay (#174) ──────────────────────────
+   The tab outliving its server used to be a fully interactive page whose
+   every submit POSTed into a socket that was gone. Same materials as the two
+   dialogs above — scrim, paper, square border, one lift — but this is the one
+   modal with no close control and no Escape: dismissing it hands the reviewer
+   back the dead tab. Orange, because "the connection dropped" is the weight
+   the connection-lost banner already carried here.
+   z-index clears the palette's 1200 (the skip link's 2000 is inside the inert
+   set, so it can't surface through this). */
+.dead-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+.dead-panel {
+  width: min(520px, 92vw);
+  padding: 22px 24px;
+  background: var(--paper);
+  border: 1px solid var(--orange);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+}
+.dead-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin: 0 0 10px;
+}
+.dead-body { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text); }
+.dead-resume { margin: 14px 0 0; font-size: 12px; color: var(--text2); }
+/* `user-select: all` — the whole command in one click, since retyping it is
+   the only way back into this review. */
+.dead-resume code {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg3);
+  padding: 2px 6px;
+  user-select: all;
+}
+
 /* ─── Processing / Complete states ──────────────────────── */
 /* Between-rounds card — the round is in the agent's hands. A pulsing dot
    (alive, not busy — the spinner is gone) over the reviewer's own
@@ -2769,6 +2814,23 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     </div>
     <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
     <div class="prefs-list" id="prefs-list"></div>
+  </div>
+</div>
+
+<!-- Dead-session overlay (#174) — the SSE connection dropping is the honest
+     signal that the server behind this tab is gone (see es.onerror). Ships
+     hidden; showDeadSession() reveals it and only es.onopen — a connection
+     that actually came back — takes it down again. `alertdialog`, not
+     `dialog`: it interrupts rather than offering a choice, and it carries no
+     close control because there is nothing on the other side of it. The
+     resume line ships hidden too: only a review-mode payload names a target
+     `/viva-review` would take. -->
+<div class="dead-overlay" id="dead-overlay" role="alertdialog" aria-modal="true"
+     aria-labelledby="dead-title" aria-describedby="dead-body" style="display:none">
+  <div class="dead-panel" id="dead-panel" tabindex="-1">
+    <h2 class="dead-title" id="dead-title">Session ended</h2>
+    <p class="dead-body" id="dead-body">This tab lost its review server. Nothing submitted from here can reach it &mdash; resume from the terminal.</p>
+    <p class="dead-resume" id="dead-resume" style="display:none">resume: <code id="dead-cmd"></code></p>
   </div>
 </div>
 
@@ -5700,6 +5762,10 @@ function snapshotBetweenRounds() {
 // the round is genuinely in flight and the SSE 'processing'/'round' events
 // drive the next view.
 function sendSubmit(result) {
+  // The one choke point every submit passes through, review and qa alike.
+  // The server behind this tab is gone (#174); a POST here fails into the
+  // same silent nothing the dead-session overlay exists to end.
+  if (deadSessionIsOpen()) return;
   fetch('/submit', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -6072,20 +6138,63 @@ function clearProcessingTimer() {
   if (b) b.remove();
 }
 
-// Mirrors es.onerror's own banner mechanism (position: fixed banner
-// prepended to document.body, tokenized colors) so a human who already
-// recognizes "banner at the top of the tab = something needs my attention"
-// recognizes this one on sight. At most one banner at a time: skipped if
-// the connection has actually dropped in the interim (#sse-error-banner
-// already present) — the harder, more specific signal wins.
+// A position: fixed banner prepended to document.body, tokenized colors, so a
+// human reads "banner at the top of the tab = something needs my attention".
+// Skipped outright if the connection has actually dropped in the interim: the
+// dead-session overlay is the harder, more specific signal, and it is a
+// full-screen scrim this banner's z-index would float above and contradict.
 function showStillWaitingBanner() {
   processingTimer = null;
-  if (el('sse-error-banner')) return;
+  if (deadSessionIsOpen()) return;
   const b = document.createElement('div');
   b.id = 'processing-wait-banner';
   b.className = 'error-banner banner-info';
   b.textContent = 'Still waiting — check the terminal.';
   document.body.prepend(b);
+}
+
+/* ─── Dead session (#174) ───────────────────────────────────
+   A banner was the wrong shape for this. The tab kept every control live,
+   so a reviewer could work a whole round into a page whose submit POSTs into
+   a socket that is gone. Three layers block it, each covering what the
+   others cannot: `inert` takes the pointer and Tab out of the background,
+   the document keydown listener (which `inert` never reaches) swallows the
+   shortcut layer, and sendSubmit refuses outright.
+
+   Not dismissible by the reviewer — every dismissal returns them to the dead
+   tab this exists to stop them working in. es.onopen is the one thing that
+   takes it down, because a connection that came back means the session was
+   never dead: a lid-close blip must not lock a reviewer out of a live server
+   and lose the round's in-memory verdicts. */
+function deadSessionIsOpen() { return el('dead-overlay').style.display !== 'none'; }
+
+function showDeadSession() {
+  if (deadSessionIsOpen()) return;
+  // Close the other modals FIRST: they sit outside setBackgroundInert's
+  // subtree, and both restore focus into the background on close — after
+  // this overlay takes focus, that would pull it straight back out.
+  closeRecap();
+  closePrefsPanel();
+  closePalette();
+  // The one command this tab can honestly name. `doc_file` is a real target
+  // only in review mode — parse_diff.py writes review_target.py's LABEL there
+  // ("PR #187", "working tree"), and a qa payload has no doc at all — so
+  // those two get the generic line rather than a command that would not run.
+  const doc = REVIEW_DATA && REVIEW_DATA.mode === 'review' && REVIEW_DATA.doc_file;
+  el('dead-cmd').textContent = doc ? '/viva-review ' + doc : '';
+  el('dead-resume').style.display = doc ? '' : 'none';
+  el('dead-overlay').style.display = '';
+  setBackgroundInert(true);
+  el('dead-panel').focus();
+}
+
+function hideDeadSession() {
+  if (!deadSessionIsOpen()) return;
+  const overlay = el('dead-overlay');
+  const hadFocus = overlay.contains(document.activeElement);
+  overlay.style.display = 'none';
+  setBackgroundInert(false);   // clear inert BEFORE restoring focus, same order as closeRecap
+  if (hadFocus) el('btn-submit').focus();
 }
 
 // Renders #processing-view for its two variants: the between-rounds card
@@ -6207,17 +6316,17 @@ function connectSSE() {
   es.onerror = () => {
     // The connection actually dropping is the harder, more specific signal —
     // it supersedes any still-waiting banner already shown rather than the
-    // two stacking on top of each other at the same position: fixed; top: 0.
+    // two stacking, one over a full-screen scrim.
     const waiting = el('processing-wait-banner');
     if (waiting) waiting.remove();
-    if (!el('sse-error-banner')) {
-      const b = document.createElement('div');
-      b.id = 'sse-error-banner';
-      b.className = 'error-banner';
-      b.textContent = 'Connection lost — check the terminal.';
-      document.body.prepend(b);
-    }
+    showDeadSession();
   };
+
+  // EventSource retries on its own, and onerror fires on every attempt — so
+  // "dropped" and "gone" look identical from here. This is the only thing
+  // that tells them apart after the fact: a reconnect that succeeded means
+  // the server outlived the drop, and the tab is live again.
+  es.onopen = () => { hideDeadSession(); };
 }
 
 /* ─── Command palette wiring ────────────────────────────── */
@@ -6230,6 +6339,12 @@ el('pal-overlay').addEventListener('mousedown', e => {
 
 /* ─── Keyboard shortcuts ────────────────────────────────── */
 document.addEventListener('keydown', e => {
+  // Nothing on this page can reach the server any more (#174), Escape
+  // included — the dead-session overlay is the one modal that does not close.
+  // `inert` blocks the pointer and Tab but never this document-level
+  // listener, so without a blanket swallow a/c/i and ⌘+Enter would keep
+  // mutating verdict state behind a full-screen scrim.
+  if (deadSessionIsOpen()) return;
   // ⌘K opens the palette from anywhere, including from inside a textarea —
   // it is the one global verb, and a reviewer mid-reply is exactly who wants
   // "jump to next open thread" without reaching for the mouse. This sits

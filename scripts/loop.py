@@ -45,6 +45,10 @@ _POLL_TRIES = 100        # × _POLL_INTERVAL ≈ 10s, for a server coming up or 
 _POLL_INTERVAL = 0.1
 _WAIT_INTERVAL = 0.3     # verdict poll — human review time, not computation
 _HTTP_TIMEOUT = 10
+# `start`'s pre-flight probe only asks "is anyone home", and the answer comes
+# off loopback or not at all. Ten seconds of it would stall every start behind
+# a `server.url` whose process is long gone.
+_PREFLIGHT_TIMEOUT = 2
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -125,15 +129,32 @@ def post(base: str, path: str, payload: dict, what: str, recovery: str = "") -> 
     _request(req, what, recovery)
 
 
-def probe_round(base: str) -> Optional[int]:
-    """The round the server is actually serving, or None if it is not answering.
-    File existence proves neither liveness nor armed-ness: SIGKILL, SIGHUP, and
-    an OOM kill all skip the `finally` that unlinks `server.url`."""
+def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> Optional[dict]:
+    """The payload the server at `base` is serving, or None if nothing is
+    answering there. File existence proves neither liveness nor armed-ness:
+    SIGKILL, SIGHUP, and an OOM kill all skip the `finally` that unlinks
+    `server.url`.
+
+    This is the liveness question — is anyone home — and it is deliberately
+    separate from `probe_round` below, which asks what round they are serving.
+    A live *qa* server answers `/input` with an interview payload that has no
+    `round` key at all (the `/viva-write` seam, CLAUDE.md), so "no round" and
+    "no server" are different answers and only this one may be read as dead."""
     try:
-        with urllib.request.urlopen(base + "/input", timeout=_HTTP_TIMEOUT) as resp:
-            return json.loads(resp.read()).get("round")
+        with urllib.request.urlopen(base + "/input", timeout=timeout) as resp:
+            payload = json.loads(resp.read())
     except (urllib.error.URLError, OSError, ValueError):
         return None
+    # A non-dict body is a server answering something that is not ours; it is
+    # alive, but no caller may `.get()` it.
+    return payload if isinstance(payload, dict) else {}
+
+
+def probe_round(base: str) -> Optional[int]:
+    """The round the server is actually serving, or None if it is not answering
+    — or is answering with no round (a qa payload)."""
+    payload = probe_input(base)
+    return payload.get("round") if payload is not None else None
 
 
 def standing_preferences(viva: Path) -> list:
@@ -217,9 +238,22 @@ def cmd_start(args) -> int:
     # orphaning a running server with the reviewer's tab still attached. The
     # dependency is file-local — the clear is thirty lines down, not in prose.
     if (viva / "server.url").exists():
-        die(f"a prior session may still be running ({viva}/server.url exists). "
-            f"Finish or abandon it, or delete the file if you are certain the "
-            f"server is stopped.")
+        # Two cases wearing one file, and they take opposite recoveries — so
+        # ask the server rather than guessing from the stat. Live: the human
+        # already has the tab, and telling them to delete the file that points
+        # at it is how a running review (or the interview server `/viva-write`
+        # leaves behind) gets orphaned. Not answering: the `finally` that
+        # unlinks this never ran, and deleting it is exactly right.
+        base = server_url(viva)
+        if base and probe_input(base, timeout=_PREFLIGHT_TIMEOUT) is not None:
+            die(f"a session is already open at {base} — that tab is the live "
+                f"review. Finish it there, or `loop.py abandon`, before "
+                f"starting another.")
+        # `server_url` is None for an empty file, which is still a collision.
+        where = f" ({base})" if base else ""
+        die(f"{viva}/server.url exists but nothing is answering{where} — a "
+            f"prior session was killed without cleaning up. Delete the file, "
+            f"then re-run.")
 
     viva.mkdir(parents=True, exist_ok=True)
 
