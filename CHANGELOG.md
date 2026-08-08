@@ -2,6 +2,43 @@
 
 <!-- version list -->
 
+## v2.0.0 (2026-08-08)
+
+### Bug Fixes
+
+- **qa**: A question with no `choices` no longer takes down the interview
+  ([#190](https://github.com/jacquardlabs/viva/pull/190),
+  [`31aa3b6`](https://github.com/jacquardlabs/viva/commit/31aa3b6aeb43fcf790925c5e7ed056219e084c7c))
+
+### Documentation
+
+- **readme**: Rebuild around the two commands, with screenshots of the shipped UI
+  ([#190](https://github.com/jacquardlabs/viva/pull/190),
+  [`31aa3b6`](https://github.com/jacquardlabs/viva/commit/31aa3b6aeb43fcf790925c5e7ed056219e084c7c))
+
+### Features
+
+- **intake**: /viva-write doc-first intake, and two commands split by intent
+  ([#190](https://github.com/jacquardlabs/viva/pull/190),
+  [`31aa3b6`](https://github.com/jacquardlabs/viva/commit/31aa3b6aeb43fcf790925c5e7ed056219e084c7c))
+
+- **intake**: /viva-write — doc-first intake from a type and attached context
+  ([#190](https://github.com/jacquardlabs/viva/pull/190),
+  [`31aa3b6`](https://github.com/jacquardlabs/viva/commit/31aa3b6aeb43fcf790925c5e7ed056219e084c7c))
+
+### Refactoring
+
+- **skills**: Two commands split by intent — /viva-write and /viva-review
+  ([#190](https://github.com/jacquardlabs/viva/pull/190),
+  [`31aa3b6`](https://github.com/jacquardlabs/viva/commit/31aa3b6aeb43fcf790925c5e7ed056219e084c7c))
+
+### Breaking Changes
+
+- **skills**: `/viva`, `/viva-qa`, and `/viva-diff` are gone. The surface was named by mechanism, so
+  a reviewer had to learn viva's internals to find the checkpoint they wanted. It is named by intent
+  now — am I making a thing, or judging one.
+
+
 ## v1.24.0 (2026-08-08)
 
 ### Bug Fixes
