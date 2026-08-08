@@ -266,7 +266,7 @@ parses with `parse_sections.py` and launches `--mode review`, and a diff needs
 edits working-tree files, so if you intend to revise rather than only sign off,
 `gh pr checkout <n>` first and say so before starting.
 
-**B1. Capture and launch** (round 1)
+**B1. Capture** (round 1)
 
 ```bash
 [ -f .viva/server.url ] && { echo "viva-review: a prior session may still be running (.viva/server.url exists)"; exit 1; }
@@ -284,16 +284,6 @@ DOC_FILE="<the label review_target.py printed>"
 python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
   --output .viva/review-input-r1.json --round 1 --doc-file "$DOC_FILE" \
   || { echo "viva-review: parse failed"; exit 1; }
-```
-
-Now **B1a**, then launch:
-
-```bash
-python3 "$VIVA_DIR/server.py" --mode diff \
-  --input .viva/review-input-r1.json --output .viva/review-r1.json &
-for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
-[ -f .viva/server.url ] || { echo "viva-review: launch failed"; exit 1; }
-BASE=$(cat .viva/server.url)
 ```
 
 **B1a. Summarize the hunks** (before the launch, and before every re-arm)
@@ -339,12 +329,22 @@ period, no filename (the title already carries it).
 
 **It must land before the server reads the round.** The server loads its round
 once and replaces it only from `POST /next-round`, so a summary written into the
-file under a live round is one nobody sees. Round 1: before the launch above.
-Round N+1: between `parse_diff.py` and the `curl` in B4 — `-d @file` posts the
-file as it stands.
+file under a live round is one nobody sees. Round 1: before B1b below. Round
+N+1: between `parse_diff.py` and the `curl` in B4 — `-d @file` posts the file as
+it stands.
 
 `parse_diff.py` carries a summary forward onto any hunk whose content is
 byte-identical, so each round only needs the hunks that actually changed.
+
+**B1b. Launch** (round 1)
+
+```bash
+python3 "$VIVA_DIR/server.py" --mode diff \
+  --input .viva/review-input-r1.json --output .viva/review-r1.json &
+for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
+[ -f .viva/server.url ] || { echo "viva-review: launch failed"; exit 1; }
+BASE=$(cat .viva/server.url)
+```
 
 **B2. Wait for verdicts** (every round)
 

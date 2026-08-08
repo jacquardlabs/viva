@@ -16,6 +16,7 @@ one classification. Two properties carry that:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -266,6 +267,30 @@ def test_branch_b_routes_info_away_from_threads_it_does_not_have():
     print("  ok  test_branch_b_routes_info_away_from_threads_it_does_not_have")
 
 
+def test_branch_b_writes_summaries_before_it_launches_the_server():
+    """#188. Branch B drives itself, so an agent runs its bash blocks in the
+    order the page prints them. The server loads its round once and replaces it
+    only from `POST /next-round`, so a launch that precedes the summary write
+    serves the summary-less round for all of round 1 — 52 hunks titled
+    `server.py hunk N`, the exact complaint #188 was filed about, with no error
+    on any surface.
+
+    Asserted on block order rather than on the prose that states the rule twice:
+    a correct instruction under a mis-placed fence still boots the wrong round.
+    """
+    blocks = re.findall(r"```bash\n(.*?)```", _branch_b(), re.S)
+    write = [i for i, b in enumerate(blocks) if 's["summary"]' in b]
+    launch = [i for i, b in enumerate(blocks) if "--mode diff" in b]
+    assert write, "branch B has no bash block that writes a section summary"
+    assert launch, "branch B has no bash block that launches `--mode diff`"
+    assert write[0] < launch[0], (
+        "branch B prints its `--mode diff` launch (block %d) before the summary "
+        "write (block %d) — an agent running the blocks in order arms a round "
+        "the summaries never reach" % (launch[0], write[0])
+    )
+    print("  ok  test_branch_b_writes_summaries_before_it_launches_the_server")
+
+
 def main() -> None:
     test_markdown_path_is_a_doc()
     test_pr_forms_all_reach_gh_pr_diff()
@@ -281,7 +306,8 @@ def main() -> None:
     test_branch_b_runs_the_capture_this_script_prints()
     test_branch_b_uses_the_parser_and_mode_the_driver_lacks()
     test_branch_b_routes_info_away_from_threads_it_does_not_have()
-    print("OK (14 tests)")
+    test_branch_b_writes_summaries_before_it_launches_the_server()
+    print("OK (15 tests)")
 
 
 if __name__ == "__main__":
