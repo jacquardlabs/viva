@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.0.1 (2026-08-08)
+
+### Bug Fixes
+
+- **qa**: A typed note is an answer — free-text responses were silently dropped
+  ([#192](https://github.com/jacquardlabs/viva/pull/192),
+  [`b08f428`](https://github.com/jacquardlabs/viva/commit/b08f428faf2c110bafc426b1a9d697d8e592be83))
+
+
 ## v2.0.0 (2026-08-08)
 
 ### Bug Fixes
