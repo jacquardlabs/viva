@@ -3764,7 +3764,11 @@ function placeDocFlags(id) {
   });
   if (split.margin.length) {
     const host = docNoteHost(id, null);
-    if (host) {
+    // Idempotent like its siblings: initReview calls _ensureRendered in the
+    // eager loop and again through activateReviewCard, and on the md-raw path
+    // neither call deletes from _pendingMarkdown — without this the strip
+    // would stack twice for the length of a CDN outage.
+    if (host && !host.querySelector(':scope > .annot-strip')) {
       host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
       host.querySelectorAll('.annot-jump').forEach(btn => {
         btn.addEventListener('click', e => {
@@ -3909,8 +3913,16 @@ function updateDocColumns() {
   const doc = el('review-cards');
   if (!doc || !doc.classList.contains('doc')) return;
   doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lchip'));
-  doc.classList.toggle('no-margin',
-    !doc.querySelector('.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread'));
+  // An OPEN compose popover holds the margin as surely as a saved note does.
+  // Without it, the first anchored comment on a bare document — the exact
+  // document the collapse rule exists for — mounts its textarea into a 0px
+  // track. (The head row is immune: `.doc.no-margin .row-head .rm` reflows
+  // under the heading, which is why the `+ note` path never showed this.)
+  // `.is-open` rather than a style-attribute match: the serialized inline
+  // style is the browser's business, not a selector's.
+  const live = '.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread,'
+             + ' .rm .comment-popover.is-open';
+  doc.classList.toggle('no-margin', !doc.querySelector(live));
 }
 
 // Open/close a card, keeping the header button's aria-expanded in sync.
@@ -4389,6 +4401,10 @@ function openCommentPopover(id, { anchor } = {}) {
     if (host && pop.parentElement !== host) host.appendChild(pop);
   }
   pop.style.display = '';
+  pop.classList.add('is-open');
+  // Opening the box is what makes the margin non-empty; closing it (saved or
+  // cancelled) is what may let the column collapse again.
+  if (isDocMode()) updateDocColumns();
 
   const ta        = pop.querySelector('.cmt-pop-note');
   const strip     = pop.querySelector('.thumb-strip');
@@ -4445,7 +4461,8 @@ function openCommentPopover(id, { anchor } = {}) {
 
 function closeCommentPopover(id) {
   const pop = el('rpop-' + id);
-  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; }
+  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; pop.classList.remove('is-open'); }
+  if (isDocMode()) updateDocColumns();
 }
 
 // Re-wrap each comment's anchored span in the rendered content with a typed mark.

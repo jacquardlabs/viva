@@ -142,9 +142,10 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
     assert "function updateDocColumns()" in page, "page missing the collapse rule"
     assert "doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lchip'));" in page, \
         "the gutter must collapse when no row carries a check chip"
-    assert ("doc.classList.toggle('no-margin',\n"
-            "    !doc.querySelector('.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread'));") in page, \
-        "the margin must collapse when the document carries no notes"
+    assert "doc.classList.toggle('no-margin', !doc.querySelector(live));" in page, \
+        "the margin must collapse when the document carries nothing for it"
+    assert "'.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread,'" in page, \
+        "saved notes, margin flags, and carried threads all hold the margin"
     # With the margin gone the head row drops to two tracks and the section's
     # own controls print under its heading — pure CSS, so a collapse can never
     # move a focused control between hosts.
@@ -153,6 +154,18 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         "a collapsed margin must drop the head row to two tracks"
     assert re.search(r'\.doc\.no-margin \.row-head \.rm\s*\{[^}]*grid-column:\s*2', page), \
         "the head row's controls must reflow under the heading, not disappear"
+    # An OPEN compose popover holds the margin as surely as a saved note does.
+    # Without this the FIRST anchored comment on a bare document — precisely
+    # the document the collapse rule exists for — mounts its textarea into a
+    # 0px track. The head row is immune (it reflows under the heading), which
+    # is why the `+ note` path hides the failure and only the select-to-comment
+    # path on a clean round 1 hits it.
+    assert ".rm .comment-popover.is-open" in page, \
+        "an open compose popover must count as margin content"
+    assert "pop.classList.add('is-open');" in page and "pop.classList.remove('is-open')" in page, \
+        "the popover's open state must be a class, not a serialized style attribute"
+    assert page.count("if (isDocMode()) updateDocColumns();") >= 2, \
+        "both opening and closing the popover must recompute the collapse"
     print("test_both_columns_collapse_when_the_document_has_nothing_for_them: OK")
 
 
