@@ -109,6 +109,67 @@ def test_choiceless_question_serves_and_answers():
     print("  ok  test_choiceless_question_serves_and_answers")
 
 
+def test_a_typed_note_is_an_answer():
+    """#121, the other half of #120. A free-text-only question can never set
+    `choice` — there is no chip — so gating on `choice` alone made a typed note
+    invisible to the progress stat, the dot, the auto-advance, the dispatch
+    button, and the submit filter, which DROPPED the answer rather than marking
+    it unanswered. The reviewer's text never reached `answers.json`.
+
+    One predicate, every reader through it — the same boundary discipline the
+    `choices` normalization above follows."""
+    html = server.HTML
+    fn = re.search(r"function qaAnswered\(id\)\s*\{(.*?)\n\}", html, re.S)
+    assert fn, "qaAnswered() must exist as the single definition of `answered`"
+    body = fn.group(1)
+    assert "a.choice" in body and "a.note" in body, body
+    assert ".trim()" in body, "a whitespace-only note is not an answer"
+    print("  ok  test_a_typed_note_is_an_answer")
+
+
+def test_every_answered_gate_routes_through_the_predicate():
+    """The six readers that ask "is this answered". Set-equality on what is
+    LEFT dereferencing `.choice` directly, so a gate that regresses to the old
+    test — or a new one written the old way — fails here."""
+    html = server.HTML
+    assert html.count("qaAnswered(") >= 9, (
+        "expected the predicate at its definition plus 8 call sites; found %d"
+        % html.count("qaAnswered(")
+    )
+    # What may still touch `.choice` directly, and why. Anything else is a gate
+    # that should have been routed through qaAnswered().
+    direct = [ln.strip() for ln in html.split("\n")
+              if re.search(r"\.choice\b", ln)
+              and "choices" not in ln and "choice-chip" not in ln
+              and "dataset.choice" not in ln]
+    assert len(direct) == 4, "unexpected direct `.choice` use:\n" + "\n".join(direct)
+    joined = " ".join(direct)
+    assert "return Boolean(a.choice" in joined, "the predicate itself"
+    assert "a.choice = a.choice === choice" in joined, "pickQAChoice toggling"
+    assert "const choice = qState.answers[id]?.choice || null" in joined, \
+        "syncQACard reads the chosen chip to select it and label the badge — " \
+        "that is genuinely about `choice`, not about being answered"
+    assert "choice: a.choice || ''" in joined, \
+        "the submitted payload sends '' rather than null for a note-only answer"
+    print("  ok  test_every_answered_gate_routes_through_the_predicate")
+
+
+def test_typing_a_note_refreshes_the_indicators():
+    """The second half of the defect. The predicate alone is not enough: the
+    note's `input` handler stored the text and refreshed nothing, so the page
+    kept reporting the question unanswered while the state held the answer.
+    Only a chip click ever triggered a sync."""
+    html = server.HTML
+    start = html.index("qta.addEventListener('input'")
+    handler = html[start:html.index("});", start)]
+    assert "syncQACard(q.id)" in handler and "updateQAStats()" in handler, (
+        "the note input handler must refresh the dot, the confirm button and "
+        "the progress stat — a typed answer moves the same indicators a chip "
+        "does:\n" + handler
+    )
+    print("  ok  test_typing_a_note_refreshes_the_indicators")
+
+
 def test_the_contract_still_calls_choices_optional():
     """The prose the fix restores. If this line ever goes, the guard above is
     enforcing a rule nothing promises."""
@@ -122,8 +183,11 @@ def main() -> None:
     test_boot_normalizes_choices_to_a_list()
     test_the_set_of_choices_readers_has_not_grown()
     test_choiceless_question_serves_and_answers()
+    test_a_typed_note_is_an_answer()
+    test_every_answered_gate_routes_through_the_predicate()
+    test_typing_a_note_refreshes_the_indicators()
     test_the_contract_still_calls_choices_optional()
-    print("OK (4 tests)")
+    print("OK (7 tests)")
 
 
 if __name__ == "__main__":
