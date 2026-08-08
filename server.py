@@ -58,93 +58,144 @@ HTML = r"""<!DOCTYPE html>
 <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"></script>
 <script defer id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"></script>
+<script>
+/* Theme, applied before first paint. This runs synchronously in <head> —
+   ahead of the stylesheet and every deferred CDN script — because reading the
+   stored choice after the body renders means painting the OS theme first and
+   flipping to the reader's, which is the flash the toggle exists to avoid.
+   Deliberately dependency-free and inside a try: localStorage throws in a
+   private-mode iframe, and a theme preference is never worth a broken page. */
+(function () {
+  try {
+    var t = localStorage.getItem('viva-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { /* no storage — follow the system, which is the default */ }
+})();
+</script>
 <style>
 /* ─── Tokens ─────────────────────────────────────────────── */
-/* Blueprint: drafting-table blue, cyan linework, red-pencil markup.
-   --teal/--orange/--violet are the verdict slots: approve / red-pencil / rfi */
+/* Catalog: a parts-catalog page — white ground, compact type, every state
+   visible and tabular. Light is the primary theme (the ground the design was
+   drawn on); dark is the override below.
+
+   INK DISCIPLINE — four parties, one hue each, never shared:
+     --touch   catalog yellow  the reviewer's touch ON THE TEXT, and nothing
+                               else: anchored spans, applied replacement
+                               wording, palette selection. Never a label,
+                               never a border, never syntax.
+     --acc     cobalt          the reviewer's party: their comments, their
+                               suggestions, open judgment, every interactive
+                               control.
+     --machine teal            the machine's party: passed checks, approved.
+     --fact    amber           machine-flagged open facts — a claim missing a
+                               source, an unanswered check.
+   Red and green appear in exactly one place, the suggestion fence, where diff
+   semantics already own them. They are not tokens; see the fence block. */
 :root {
-  --bg:        #0a1727;
-  --bg2:       #0f1f33;
-  --bg3:       #152840;
-  --table:     #060e1a;
-  --border:    #1d324e;
-  --border2:   #2a4768;
-  --text:      #d8e7f5;
-  --text2:     #7f9cba;
-  --text3:     #48648a;
-  --accent:    #5cc8ff;
-  --accent-dim:rgba(92,200,255,0.08);
-  --scrim:     rgba(6,14,26,0.72);
-  --teal:      #43e0a8;
-  --teal-bg:   rgba(67,224,168,0.06);
-  --orange:    #ff5a36;
-  --orange-bg: rgba(255,90,54,0.08);
-  --violet:    #ffc857;
-  --violet-bg: rgba(255,200,87,0.08);
+  --paper:     #ffffff;   /* the page */
+  --sunk:      #f8f8f7;   /* recessed wells: code, inputs, table heads */
+  --ink:       #1d1f21;   /* rules, headings, the dispatch stamp */
+  --ink2:      #2c2e30;   /* body copy */
+  --soft:      #6b6e71;   /* labels, secondary */
+  --faint:     #b0b1ae;   /* settled, disabled */
+  --rule:      #d9dad8;   /* hairline */
+  --touch:     #ffec8f;
+  --acc:       #2946c4;
+  --acc-dim:   rgba(41,70,196,0.08);
+  --machine:   #0c7f6b;
+  --fact:      #a06a12;
+
+  /* Component aliases. Component styles keep using these names, so the
+     catalog palette lands without rewriting every rule; the four party inks
+     above are the source of truth for anything new. */
+  --bg:        var(--sunk);
+  --bg2:       var(--paper);
+  --bg3:       #f0f0ee;
+  --table:     var(--paper);
+  --border:    var(--rule);
+  --border2:   var(--ink);
+  --text:      var(--ink2);
+  --text2:     var(--soft);
+  --text3:     var(--faint);
+  --accent:    var(--acc);
+  --accent-dim:var(--acc-dim);
+  --scrim:     rgba(29,31,33,0.28);
+  --teal:      var(--machine);
+  --teal-bg:   rgba(12,127,107,0.07);
+  --orange:    var(--acc);          /* `changes` is reviewer judgment */
+  --orange-bg: var(--acc-dim);
+  --violet:    var(--fact);         /* `info` is an open fact */
+  --violet-bg: rgba(160,106,18,0.08);
 }
 
-/* ─── Light mode ─────────────────────────────────────────── */
-/* Light mode: blueline print — blue ink on white vellum */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg:        #f3f6fa;
-    --bg2:       #e9eef5;
-    --bg3:       #dde5ef;
-    --table:     #e2e8f1;
-    --border:    #cdd9e8;
-    --border2:   #a8bdd4;
-    --text:      #13293f;
-    --text2:     #446080;
-    --text3:     #8aa0b8;
-    --accent:    #1271b8;
-    --accent-dim:rgba(18,113,184,0.08);
-    --scrim:     rgba(19,41,63,0.32);   /* blue-ink wash over white vellum, not midnight */
-    --teal:      #0c8a63;
-    --teal-bg:   rgba(12,138,99,0.07);
-    --orange:    #cf3f1d;
-    --orange-bg: rgba(207,63,29,0.07);
-    --violet:    #9a6b00;
-    --violet-bg: rgba(154,107,0,0.08);
+/* ─── Dark ───────────────────────────────────────────────── */
+/* The catalog page after hours: same ink discipline, inverted ground. Each
+   party ink is lifted for contrast on charcoal rather than reused — yellow
+   at full strength on dark is a highlighter, not a touch.
+
+   The dark palette is written twice, and that duplication is deliberate:
+     1. under `prefers-color-scheme: dark` for readers who never touch the
+        toggle, scoped `:not([data-theme="light"])` so an explicit light
+        choice wins over the OS;
+     2. under `[data-theme="dark"]` for readers who picked dark on a
+        light-mode machine.
+   CSS has no way to name a palette and apply it from two selectors without a
+   preprocessor, so instead of a comment asking the next editor to keep them
+   in sync, `test_theme_toggle.py` parses both blocks and fails if a single
+   value drifts. The invariant is enforced, not requested. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:   #16181a;
+    --sunk:    #1c1e21;
+    --ink:     #e6e7e8;
+    --ink2:    #d5d7d8;
+    --soft:    #9a9ea1;
+    --faint:   #5f6265;
+    --rule:    #2f3235;
+    --touch:   rgba(255,236,143,0.22);
+    --acc:     #8fa6f5;
+    --acc-dim: rgba(143,166,245,0.12);
+    --machine: #4fc2a5;
+    --fact:    #d19a3f;
+
+    --bg3:     #232629;
+    --scrim:   rgba(10,11,12,0.72);
+    --teal-bg: rgba(79,194,165,0.10);
+    --violet-bg: rgba(209,154,63,0.12);
   }
-
-  .progress-fill {
-    box-shadow: 0 0 6px rgba(18,113,184,0.35), 0 0 2px rgba(18,113,184,0.6);
-  }
-
-  .dot-approved { box-shadow: 0 0 5px rgba(12,138,99,0.4); }
-  .dot-active   { box-shadow: 0 0 5px rgba(18,113,184,0.4); }
-  .dot-changes  { box-shadow: none; }
-  .dot-info     { box-shadow: none; }
-
-  .titleblock { background: #fff; }
-  .ledger { background: #fff; }
-
-  .section-content { background: #fff; }
-  .section-content::-webkit-scrollbar-thumb { border-color: #fff; }
-  .section-content pre { background: var(--bg); }
-  .section-content code { background: var(--bg2); }
-
-  .note-field { background: var(--bg); }
-
-  .bottom-bar {
-    background: rgba(243,246,250,0.92);
-    border-top-color: var(--border);
-  }
-
-  .btn-submit.ready {
-    background: var(--accent);
-    color: #fff;
-    box-shadow: 0 0 16px rgba(18,113,184,0.2);
-  }
-  .btn-submit.ready:hover {
-    box-shadow: 0 0 24px rgba(18,113,184,0.3);
-  }
-
-  .card { background: #fff; }
-  .card-body { background: var(--bg); }
-  .card-head:hover { background: var(--bg2); }
-  .card.is-active { box-shadow: 0 0 0 1px var(--border2), 0 4px 20px rgba(0,0,0,0.08); }
 }
+
+/* Dark, chosen explicitly. Same values as the media block above — kept in
+   sync by test_theme_toggle.py, not by hope. `[data-theme]` on <html> beats
+   the media query's bare `:root` on specificity in both directions, which is
+   what lets the toggle override the OS rather than merely agree with it. */
+:root[data-theme="dark"] {
+  --paper:   #16181a;
+  --sunk:    #1c1e21;
+  --ink:     #e6e7e8;
+  --ink2:    #d5d7d8;
+  --soft:    #9a9ea1;
+  --faint:   #5f6265;
+  --rule:    #2f3235;
+  --touch:   rgba(255,236,143,0.22);
+  --acc:     #8fa6f5;
+  --acc-dim: rgba(143,166,245,0.12);
+  --machine: #4fc2a5;
+  --fact:    #d19a3f;
+
+  --bg3:     #232629;
+  --scrim:   rgba(10,11,12,0.72);
+  --teal-bg: rgba(79,194,165,0.10);
+  --violet-bg: rgba(209,154,63,0.12);
+}
+
+/* `color-scheme` follows the choice so the browser's own chrome — form
+   controls, scrollbars, the canvas behind an unpainted area — matches the
+   page instead of flashing the opposite ground. */
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
 
 /* ─── Reset ──────────────────────────────────────────────── */
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
@@ -155,19 +206,27 @@ textarea { font-family:inherit; }
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  /* the flat drafting table the sheet sits on — no background grid */
-  background: var(--table);
+  /* Catalog type: a compact grotesque for everything a human reads, a mono
+     for everything the machine says. No display face — a catalog page earns
+     its character from density and rules, not from a headline font. */
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  background: var(--paper);
   color: var(--text);
   min-height: 100vh;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ─── Shell ──────────────────────────────────────────────── */
+/* The shell is fluid; the PROSE is what holds a measure. A fixed 700px
+   container made every long section a scrolling exercise while the window's
+   spare width sat empty — past ~76 characters longer lines hurt reading, so
+   the extra width goes to the margin conversation (.card-margin), never to
+   wider text. .section-content carries the measure cap itself. */
 .shell {
-  max-width: 700px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 40px 20px 140px;
+  padding: 32px clamp(16px, 3vw, 44px) 140px;
 }
 
 /* ─── Diff-first layout (mode-diff) ──────────────────────────
@@ -189,44 +248,68 @@ body {
   animation: fadeUp 0.4s ease both;
 }
 
-/* ─── Title block — the drafting-sheet header ───────────── */
+/* ─── Status bar — the catalog header ────────────────────
+   Was a drafting title block: four bordered cells stacking an 8px uppercase
+   label over a value, captioned DRAWING / REV / TITLE / SIGNED. That is the
+   corner of an engineering drawing, and it survived the ground change as the
+   loudest remaining piece of the old metaphor.
+
+   A catalog states its facts on one line and gets out of the way: filename,
+   round, progress, reading left to right in one weight, closed by the same
+   2px ink rule that closes the page at the bottom bar. The cell markup is
+   unchanged — the same ids are filled by the same code — but the cells are
+   now inline runs, and each label sits BEFORE its value rather than above it,
+   so the bar costs one line instead of four stacked boxes. */
 .titleblock {
   display: flex;
-  border: 1px solid var(--border2);
-  background: var(--bg2);
-  margin-bottom: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  background: none;
+  padding-bottom: 8px;
+  margin-bottom: 18px;
 }
-/* Short data cells (rev, signed) hold their width; long cells (drawing,
-   title) get tb-flex and truncate. overflow:hidden keeps nowrap labels
-   from spilling into the next cell when space is tight. */
-.tb-cell { padding: 10px 14px; border-right: 1px solid var(--border2); min-width: 0; flex: 0 0 auto; overflow: hidden; }
-.tb-cell:last-child { border-right: none; }
-.tb-flex { flex: 1 1 0; }
-.tb-wide { flex: 2 1 0; }
+.tb-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+/* The filename takes the room; the last cell (progress) is pushed to the far
+   end, where a catalog puts its count. */
+.tb-flex { flex: 0 1 auto; }
+.tb-wide { flex: 0 1 auto; }
+.tb-cell:last-child { margin-left: auto; }
 .tb-label {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 8px;
-  letter-spacing: 0.16em;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 4px;
+  color: var(--soft);
+  margin-bottom: 0;
   white-space: nowrap;
 }
 .tb-val {
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tb-val em { font-style: italic; color: var(--text2); }
+.tb-val em { font-style: normal; color: var(--soft); font-weight: 400; }
 .tb-val.mono {
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 12px;
-  color: var(--accent);
-  padding-top: 2px;
+  color: var(--ink);
+  padding-top: 0;
 }
 
 /* ─── Revision ledger ────────────────────────────────────── */
@@ -373,7 +456,6 @@ body {
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-  box-shadow: 0 0 10px rgba(92,200,255,0.5), 0 0 2px rgba(92,200,255,0.8);
 }
 
 .progress-label {
@@ -435,46 +517,53 @@ body {
 }
 .prefs-toggle:hover { color: var(--text); border-color: var(--text3); }
 
+/* Theme toggle — sits beside the prefs toggle and wears the same control
+   grammar, square per the catalog's shape rule. It states the current mode in
+   words rather than showing a sun or a moon, because a glyph makes the reader
+   guess which state it names: the one it is in, or the one it switches to. */
+.theme-toggle {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--soft);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  margin-left: auto;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
+
+/* A section is a run of the print, not a box on it. The card kept a 1px
+   border and a filled panel from the era when it was a drawing pinned to a
+   sheet; on a catalog page that framing is what made four sections read as
+   four objects instead of one document. What separates sections now is a
+   hairline above and the heading's own weight — the same thing that separates
+   entries in a printed catalog. */
 .card {
   position: relative;
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  transition: border-color 0.2s, opacity 0.35s, box-shadow 0.2s;
+  border: none;
+  border-top: 1px solid var(--rule);
+  background: none;
+  transition: opacity 0.35s;
   animation: fadeUp 0.4s ease both;
 }
+.card:first-child { border-top: none; }
 
-/* registration marks pin the active sheet to the table */
-.card::before, .card::after {
-  content: '+';
-  position: absolute;
-  font-family: 'Fragment Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--accent);
-  opacity: 0;
-  transition: opacity 0.2s;
-  pointer-events: none;
-}
-.card::before { top: -7px; left: -6px; }
-.card::after  { bottom: -7px; right: -6px; }
+/* The active card's `+` registration marks — which pinned it to the drafting
+   table like a sheet — are gone with the rest of the blueprint chrome. The
+   active card is marked by its edge and elevation below, not by hanging
+   drafting glyphs outside its corners. */
 
-/* The drawing sheet: the document is a bounded sheet on the flat table —
-   edge border, inner rule, corner registration marks, edge coordinate
-   letters/numbers. Content-bounded (#paper wraps main.shell and grows with
-   it), not a fixed viewport frame; the decoration hangs just outside the
-   edge and hides where the sheet meets the viewport. */
-#paper { position: relative; max-width: 700px; margin: 32px auto 96px; background: var(--bg); border: 1px solid var(--border2); }
-#paper::before { content: ''; position: absolute; inset: 7px; border: 1px solid var(--border); pointer-events: none; }
-.paper-marks { position: absolute; inset: 0; pointer-events: none; }
-.pmark { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 13px; line-height: 1; color: var(--accent); opacity: 0.7; }
-.pm-tl { top: -7px; left: -7px; } .pm-tr { top: -7px; right: -7px; }
-.pm-bl { bottom: -7px; left: -7px; } .pm-br { bottom: -7px; right: -7px; }
-.pcoord { position: absolute; font-family: 'Fragment Mono', monospace; font-size: 10px; line-height: 1; letter-spacing: 0.08em; color: var(--text3); }
-.pc-n { top: -16px; transform: translateX(-50%); }
-.pc-w { left: -16px; transform: translateY(-50%); }
-.pc-e { right: -16px; transform: translateY(-50%); }
-@media (max-width: 740px) { .paper-marks { display: none; } }
-.card.is-active::before, .card.is-active::after { opacity: 1; }
+/* The catalog has no sheet. #paper survives as the page's content wrapper —
+   the element every layout rule and test already hangs off — but its
+   drawing-sheet dress is gone: no edge border, no 7px inner rule, no corner
+   registration marks, no A/B/C/D edge coordinates (markup deleted, not
+   hidden). Those said "this is a drafting sheet resting on a table"; the
+   ground now says "this is a catalog page," which needs no frame to be read. */
+#paper { position: relative; max-width: 1240px; margin: 0 auto; background: var(--paper); }
 
 /* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
    in buildReviewCard/buildQACard — it scales to any doc length and, being an
@@ -540,10 +629,10 @@ body {
 }
 .carried-body { padding: 0 14px 14px; }
 
-.card.is-active {
-  border-color: var(--border2);
-  box-shadow: 0 0 0 1px var(--border2), 0 4px 24px rgba(0,0,0,0.4);
-}
+/* The live section is marked where the reader's eye already is — at the
+   heading — not by outlining the whole run. */
+.card.is-active { box-shadow: none; }
+.card.is-active .card-head { border-left: 2px solid var(--ink); margin-left: -2px; }
 
 /* ─── Card head ──────────────────────────────────────────── */
 .card-head {
@@ -563,10 +652,16 @@ body {
   padding: 11px 14px;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s;
-  min-height: 48px;
+  transition: color 0.12s;
+  min-height: 0;
+  padding: 14px 14px 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
 }
-.card-head:hover { background: var(--bg3); }
+/* No fill on hover — a filled band would rebuild the panel the flattening
+   just removed. The title takes the accent instead. */
+.card-head:hover { background: none; color: var(--acc); }
 
 /* dot */
 .dot {
@@ -575,11 +670,13 @@ body {
   flex-shrink: 0;
   transition: background 0.25s, box-shadow 0.25s;
 }
-.dot-idle     { background: var(--text3); }
-.dot-active   { background: var(--accent); box-shadow: 0 0 7px rgba(92,200,255,0.55); }
-.dot-approved { background: var(--teal);   box-shadow: 0 0 7px rgba(77,255,195,0.5); }
-.dot-changes  { background: var(--orange); box-shadow: 0 0 5px rgba(255,140,66,0.4); }
-.dot-info     { background: var(--violet); box-shadow: 0 0 5px rgba(167,139,250,0.4); }
+.dot-idle     { background: var(--faint); }
+.dot-active   { background: var(--acc); box-shadow: none; }
+/* Flat dots. The glows were the drafting board's cyan linework lit from
+   behind; on paper a status dot is printed, not lit. */
+.dot-approved { background: var(--machine); box-shadow: none; }
+.dot-changes  { background: var(--acc);     box-shadow: none; }
+.dot-info     { background: var(--fact);    box-shadow: none; }
 /* Revision triangle — drafting's "this region changed at this rev" flag, keyed
    to the titleblock REV and the revision log. */
 .rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
@@ -797,11 +894,20 @@ body {
 }
 
 /* The document itself — a quiet page surface inside the card chrome */
+/* The prose column. `max-width` is a MEASURE, not a container width: the card
+   may be as wide as the window allows, but a line of text stops at ~72
+   characters because that is where reading breaks down. Wide content (code,
+   tables) escapes it via .section-content > pre below.
+
+   No nested scroll. The old `max-height: 60vh; overflow-y: auto` put a second
+   scrollbar inside every long section — the reader scrolled a viewport to
+   reach content that was already on screen, and the page scrollbar lied about
+   how much was left. The section prints in full; the page is the only scroll. */
 .section-content {
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
   font-size: 13.5px;
-  font-weight: 300;
-  line-height: 1.7;
+  font-weight: 400;
+  line-height: 1.62;
   color: var(--text);
   padding: 6px 2px 12px;
   border: none;
@@ -809,8 +915,18 @@ body {
   border-radius: 0;
   margin-bottom: 14px;
   overflow-wrap: break-word;
-  max-height: 60vh;
-  overflow-y: auto;
+  max-width: 72ch;
+}
+
+/* Code and tables are not prose and do not take the prose measure — they take
+   the room, and scroll sideways in their own container so the page body never
+   does. This is the catalog's break-out rule. */
+.section-content > pre,
+.section-content > table,
+.section-content > .table-wrap {
+  max-width: none;
+  width: 100%;
+  overflow-x: auto;
 }
 .section-content::-webkit-scrollbar { width: 10px; }
 .section-content::-webkit-scrollbar-thumb {
@@ -834,14 +950,25 @@ body {
 .section-content em { color: var(--text2); }
 
 /* In-document headings: title-block lettering for majors, mono overline for minors */
+/* Sentence case, not uppercase. The old rule shouted every heading in 14px
+   caps with tracking — a drafting label applied to prose. A catalog sets a
+   heading in the same face as its body, one step up in weight. */
 .section-content h1, .section-content h2 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
   margin: 18px 0 8px;
 }
+
+/* The section's own title is already printed by the card head directly above,
+   so the leading heading in the rendered markdown is a duplicate — it read as
+   the same words twice, once in sentence case and once shouted. Hide the
+   first heading of a section's content and let the head carry it. */
+.section-content > h1:first-child,
+.section-content > h2:first-child,
+.section-content > h3:first-child { display: none; }
 .section-content h3 {
   font-size: 13px;
   font-weight: 600;
@@ -861,24 +988,28 @@ body {
 .section-content h3:first-child, .section-content h4:first-child { margin-top: 2px; }
 
 /* Code and diagrams: cyan linework on the print */
+/* The code well. Solid rule, not the old dashed one — a dash was a blueprint
+   gesture, and a catalog boxes its specifications. The block no longer paints
+   itself accent-blue either: that flattened every token to one hue and left
+   the syntax theme with nothing to say. */
 .section-content pre {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 11px;
-  line-height: 1.7;
-  background: var(--bg);
-  border: 1px dashed var(--border2);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
   padding: 12px 14px;
   overflow-x: auto;
   margin: 0 0 12px;
-  color: var(--accent);
+  color: var(--ink2);
 }
 .section-content code {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 11px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
   padding: 1px 5px;
-  color: var(--accent);
+  color: var(--ink2);
 }
 .section-content pre code { background: none; border: none; padding: 0; color: inherit; }
 
@@ -933,43 +1064,43 @@ body {
 .transmittal-row, .recap-row,
 .progress-track, .progress-fill { border-radius: 0; }
 
-/* ─── Reticle: drafting crop-mark corners ─────────────────────
-   Selectable controls (verdict actions, Q&A chips + buttons) wear
-   corner ticks in place of a full border. --c colors the ticks;
-   each state just reassigns it and the gradient recolors itself.
-   Registering --c lets the recolor animate; without support it snaps. */
+/* ─── Control edges ───────────────────────────────────────────
+   Selectable controls (verdict actions, Q&A chips + buttons) used to wear
+   drafting crop-ticks — four corner arms painted as eight gradients, with no
+   edge between them. A catalog draws the whole rule: these are full 1px
+   borders now, square, on the page's own ground.
+
+   The --c state machine survives the change untouched. Every state rule below
+   still just reassigns --c, so `.sel-approve`, `.sel-changes`, hover, and the
+   comment-chip states all recolor exactly as before — the property now feeds
+   a border instead of a gradient stack. Registering --c keeps the recolor
+   animatable; without @property support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
 .action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel {
-  --tick: 7px;          /* corner arm length */
-  --tw: 1.5px;          /* tick thickness    */
-  --c: var(--border2);
-  border: var(--tw) solid transparent;   /* hold box size; edge stays invisible */
-  background:
-    linear-gradient(var(--c) 0 0) 0 0,       linear-gradient(var(--c) 0 0) 0 0,
-    linear-gradient(var(--c) 0 0) 100% 0,    linear-gradient(var(--c) 0 0) 100% 0,
-    linear-gradient(var(--c) 0 0) 0 100%,    linear-gradient(var(--c) 0 0) 0 100%,
-    linear-gradient(var(--c) 0 0) 100% 100%, linear-gradient(var(--c) 0 0) 100% 100%;
-  background-repeat: no-repeat;
-  background-size: var(--tick) var(--tw), var(--tw) var(--tick);
-  transition: --c 0.12s, color 0.12s;
+  --c: var(--rule);
+  border: 1px solid var(--c);
+  background: var(--paper);
+  transition: --c 0.12s, color 0.12s, background 0.12s;
 }
 
 /* ─── Action buttons (verdict row) ───────────────────────── */
 .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 
+/* Controls speak in the machine's face — mono — because a button is an
+   instruction, not prose. */
 .action-btn {
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
   padding: 6px 14px;
-  color: var(--text2);
+  color: var(--soft);
   display: flex; align-items: center; gap: 5px;
 }
-.action-btn:hover       { --c: var(--text3);  color: var(--text);   }
-.action-btn.sel-approve { --c: var(--teal);   color: var(--teal);   }
-.action-btn.sel-changes { --c: var(--orange); color: var(--orange); }
-.action-btn.sel-info    { --c: var(--violet); color: var(--violet); }
+.action-btn:hover       { --c: var(--ink);     color: var(--ink);     }
+.action-btn.sel-approve { --c: var(--machine); color: var(--machine); }
+.action-btn.sel-changes { --c: var(--acc);     color: var(--acc);     }
+.action-btn.sel-info    { --c: var(--fact);    color: var(--fact);    }
 
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
@@ -1106,7 +1237,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
 /* The replacement field only exists while the suggestion chip is on; it reuses
    `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
-.cmt-pop-repl { margin-top: 6px; }
 /* Popover save / cancel — reticle buttons like the verdict row; save reads
    affirmative (teal), cancel stays muted. */
 .cmt-save, .cmt-cancel {
@@ -1372,6 +1502,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .recap-row:focus-visible, .recap-close:focus-visible,
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
+.theme-toggle:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1419,14 +1550,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   position: fixed;
   bottom: 0; left: 0; right: 0;
   z-index: 100;
-  padding: 14px 20px;
-  background: rgba(10,23,39,0.9);
-  backdrop-filter: blur(16px) saturate(180%);
-  border-top: 1px solid var(--border);
+  padding: 12px 20px;
+  /* Opaque, not frosted: a catalog footer states the count, it does not
+     blur the page behind it. The 2px ink rule is the same one that closes
+     the header — the page is bracketed top and bottom. */
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
 }
 
 .bottom-inner {
-  max-width: 700px;
+  max-width: 1240px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -1472,13 +1605,12 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   transition: all 0.2s;
 }
 .btn-submit.ready {
-  background: var(--accent);
-  color: var(--bg);
-  box-shadow: 0 0 20px rgba(92,200,255,0.25);
+  background: var(--acc);
+  color: var(--paper);
 }
 .btn-submit.ready:hover {
-  box-shadow: 0 0 32px rgba(92,200,255,0.4);
-  transform: translateY(-1px);
+  background: var(--ink);
+  transform: none;
 }
 .btn-submit.disabled {
   background: var(--border2);
@@ -1695,7 +1827,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 9px rgba(92,200,255,0.55);
   animation: viva-pulse 1.6s ease-in-out infinite;
   margin-bottom: 1.5rem;
 }
@@ -1779,9 +1910,59 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
   margin-top: 1.75rem;
 }
-/* ─── highlight.js diff overrides — map to viva's verdict palette ─── */
-.hljs-addition { background: var(--teal-bg);   color: var(--teal);   }
-.hljs-deletion  { background: var(--orange-bg); color: var(--orange); }
+/* ─── Syntax highlighting ──────────────────────────────────────────
+   highlight.js has been loaded and applied to language-tagged blocks since
+   diff mode shipped, but no theme ever came with it — every token rendered
+   at body color, so `hljs.highlightElement` was doing invisible work. This
+   is that theme, written inside the ink discipline rather than lifted from
+   a highlight.js preset, because a stock theme would spend the reviewer's
+   own colors on syntax.
+
+   The rules the palette obeys:
+     - NO catalog yellow. Yellow means the reviewer touched that text; a
+       string literal is not a reviewer's mark.
+     - NO red or green. Those belong to the suggestion fence alone.
+     - Comments recede (they are the least of what the code says), keywords
+       carry ink weight rather than hue, and the two hues that do appear are
+       the machine's own teal and amber — code is the machine's voice.
+   The result is close to monochrome on purpose: on a catalog page the code
+   is a specification, and a specification is not a rainbow. */
+.hljs                { color: var(--ink2); }
+.hljs-comment,
+.hljs-quote          { color: var(--faint); font-style: italic; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in       { color: var(--ink); font-weight: 600; }
+.hljs-string,
+.hljs-regexp,
+.hljs-addition:not(.hljs-diff) { color: var(--machine); }
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet         { color: var(--fact); }
+.hljs-title,
+.hljs-name,
+.hljs-section,
+.hljs-title.function_ { color: var(--ink); font-weight: 600; }
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params         { color: var(--ink2); }
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-meta           { color: var(--soft); }
+.hljs-emphasis       { font-style: italic; }
+.hljs-strong         { font-weight: 700; }
+.hljs-link           { text-decoration: underline; }
+
+/* Inside a rendered git diff, hljs's addition/deletion classes mark whole
+   lines. This is the one place red and green are correct — the fence and the
+   diff are the same object, and every reviewer already reads them. */
+.d2h-wrapper .hljs-addition,
+pre .hljs-addition { background: rgba(26,127,55,0.12);  color: inherit; }
+.d2h-wrapper .hljs-deletion,
+pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
 </style>
 </head>
 <body>
@@ -1790,7 +1971,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 <div id="paper">
 
-<div class="paper-marks" aria-hidden="true"><span class="pmark pm-tl">+</span><span class="pmark pm-tr">+</span><span class="pmark pm-bl">+</span><span class="pmark pm-br">+</span><span class="pcoord pc-n" style="left:12.5%">1</span><span class="pcoord pc-n" style="left:37.5%">2</span><span class="pcoord pc-n" style="left:62.5%">3</span><span class="pcoord pc-n" style="left:87.5%">4</span><span class="pcoord pc-w" style="top:12.5%">A</span><span class="pcoord pc-w" style="top:37.5%">B</span><span class="pcoord pc-w" style="top:62.5%">C</span><span class="pcoord pc-w" style="top:87.5%">D</span><span class="pcoord pc-e" style="top:12.5%">A</span><span class="pcoord pc-e" style="top:37.5%">B</span><span class="pcoord pc-e" style="top:62.5%">C</span><span class="pcoord pc-e" style="top:87.5%">D</span></div>
 
 <main class="shell" id="main-content" tabindex="-1">
 
@@ -1798,10 +1978,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   <div id="review-view" style="display:none">
     <div class="header">
       <div class="titleblock">
-        <div class="tb-cell tb-flex tb-wide"><div class="tb-label">drawing</div><div class="tb-val mono" id="doc-path"></div></div>
-        <div class="tb-cell"><div class="tb-label">rev</div><div class="tb-val mono" id="round-badge"></div></div>
-        <div class="tb-cell tb-flex"><div class="tb-label">title</div><div class="tb-val" id="doc-title"></div></div>
-        <div class="tb-cell"><div class="tb-label">signed</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="doc-path"></div></div>
+        <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
+        <div class="tb-cell"><div class="tb-label">approved</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
       </div>
       <div class="progress-track">
         <div class="progress-fill" id="r-progress" style="width:0%"></div>
@@ -1897,6 +2077,8 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
       <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
+      <button type="button" class="theme-toggle" id="theme-toggle"
+              title="Cycle theme: follow system, light, dark">theme: system</button>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -3045,7 +3227,6 @@ function openCommentPopover(id, { anchor } = {}) {
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
-    + (canSuggest ? '<textarea class="note-field cmt-pop-repl" style="display:none" placeholder="Replacement wording — applied verbatim"></textarea>' : '')
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
     + '<input type="file" accept="image/*" multiple style="display:none">'
@@ -3054,35 +3235,52 @@ function openCommentPopover(id, { anchor } = {}) {
   pop.style.display = '';
 
   const ta        = pop.querySelector('.cmt-pop-note');
-  const repl      = pop.querySelector('.cmt-pop-repl');
   const strip     = pop.querySelector('.thumb-strip');
   const attachBtn = pop.querySelector('.attach-btn');
   const fileInput = pop.querySelector('input[type="file"]');
   wireCapture(() => captureState, ta, strip, attachBtn, fileInput, el('rcard-' + id));
 
+  /* One field, whose JOB changes with the type — not a second field that
+     appears beneath the first. Picking `suggest wording` used to reveal a
+     `.cmt-pop-repl` textarea below the note, which asked the reviewer to fill
+     two boxes to say one thing and made the popover taller than the card it
+     annotates. The type chips choose what the box means:
+
+       changes / info  → the box is the note
+       suggestion      → the box is the replacement wording, applied verbatim
+
+     Anything already typed carries across the switch, because a described
+     change ("cut the second clause") is usually a draft of the wording that
+     replaces it. A suggestion's rationale is optional by schema
+     (`_comment_fragment`: the wording alone is a full ledger row), so nothing
+     is lost by not asking for one here. */
+  const PLACEHOLDERS = {
+    changes:    'Describe the change or question…',
+    info:       'Describe the change or question…',
+    suggestion: 'Replacement wording — applied verbatim',
+  };
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
-    if (repl) {
-      const on = pop.dataset.type === 'suggestion';
-      repl.style.display = on ? '' : 'none';
-      if (on) repl.focus();
-    }
+    ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
+    ta.focus();
   });
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
-    const note = ta.value.trim();
-    // A suggestion ships on its wording, not its note: the replacement is the
-    // payload the author applies, and the note is optional rationale. Every
-    // other type still needs a note — there is nothing else in it.
+    const text = ta.value.trim();
+    // A suggestion ships on its wording: the same box the other types use for
+    // a note carries the replacement the author applies verbatim.
     const isSuggestion = pop.dataset.type === 'suggestion';
-    const replacement = (isSuggestion && repl) ? repl.value.trim() : '';
-    if (isSuggestion && !replacement) {
-      repl.placeholder = 'a suggestion needs replacement wording'; repl.focus(); return;
+    if (!text) {
+      ta.placeholder = isSuggestion ? 'a suggestion needs replacement wording'
+                                    : 'a comment needs a note';
+      ta.focus();
+      return;
     }
-    if (!isSuggestion && !note) { ta.placeholder = 'a comment needs a note'; return; }
-    addComment(id, { type: pop.dataset.type, note, anchor: anchor || undefined,
-                     replacement: replacement || undefined,
+    addComment(id, { type: pop.dataset.type,
+                     note: isSuggestion ? '' : text,
+                     anchor: anchor || undefined,
+                     replacement: isSuggestion ? text : undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
   };
@@ -3805,6 +4003,49 @@ function closePrefsPanel() {
   setBackgroundInert(false);   // clear inert BEFORE restoring focus, same order as closeRecap
   if (hadFocus) (_prefsTriggerEl || el('prefs-toggle')).focus();
 }
+
+/* ─── Theme toggle ──────────────────────────────────────────
+   Three states, cycled in this order: system → light → dark → system.
+   "system" is the absence of the attribute, not a third value — the page
+   falls back to the `prefers-color-scheme` media query, so a reader who never
+   touches this control is unaffected and a reader who wants to hand control
+   back can reach that state without clearing storage by hand.
+
+   The pre-paint script in <head> is what applies a stored choice; this only
+   changes it. Both write the same key, and both treat any other value as
+   "system", so a corrupted entry degrades to following the OS. */
+const THEME_CYCLE = [null, 'light', 'dark'];
+
+function currentTheme() {
+  const t = document.documentElement.dataset.theme;
+  return (t === 'light' || t === 'dark') ? t : null;
+}
+
+function paintThemeToggle() {
+  const t = currentTheme();
+  const btn = el('theme-toggle');
+  btn.textContent = 'theme: ' + (t || 'system');
+  /* The label states which theme is ON, so the accessible name has to say
+     what the button DOES — otherwise a screen reader hears "theme: dark" and
+     cannot tell whether that is the state or the action. */
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(t) + 1) % THEME_CYCLE.length];
+  btn.setAttribute('aria-label',
+    'Theme: ' + (t || 'following system') + '. Activate to switch to ' + (next || 'follow system') + '.');
+}
+
+function cycleTheme() {
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(currentTheme()) + 1) % THEME_CYCLE.length];
+  if (next) document.documentElement.dataset.theme = next;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (next) localStorage.setItem('viva-theme', next);
+    else localStorage.removeItem('viva-theme');
+  } catch (e) { /* no storage: the choice holds for this tab only */ }
+  paintThemeToggle();
+}
+
+el('theme-toggle').addEventListener('click', cycleTheme);
+paintThemeToggle();
 
 el('prefs-toggle').addEventListener('click', () => openPrefsPanel(el('prefs-toggle')));
 el('prefs-close').addEventListener('click', closePrefsPanel);

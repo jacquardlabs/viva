@@ -90,18 +90,26 @@ def test_page_ships_the_suggestion_affordances() -> None:
     with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
         page = get_text(base, "/")
 
-    # The chip, the replacement field (on `.note-field`, so it inherits the
-    # square-corners rule DESIGN.md declares authoritative), and the typed
-    # highlight.
+    # The chip, the shared note field, and the typed highlight.
+    #
+    # There is deliberately no second textarea. `suggest wording` used to
+    # reveal a `.cmt-pop-repl` box beneath the note, asking the reviewer to
+    # fill two fields to say one thing; the type chips now change what the
+    # single `.note-field` MEANS, and its placeholder says which.
     for needle in (
         'class="cmt-chip cmt-chip-suggestion" data-type="suggestion">suggest wording',
-        'class="note-field cmt-pop-repl"',
+        'class="note-field cmt-pop-note"',
+        "suggestion: 'Replacement wording — applied verbatim'",
         "mark.cmt-hl-suggestion",
         ".cmt-chip-suggestion.is-on",
         ".v-suggestion .cmt-type",
         ".cmt-repl",
     ):
         assert needle in page, f"page missing: {needle}"
+    assert 'class="note-field cmt-pop-repl"' not in page, \
+        "the second replacement textarea must be gone — one field, retyped by the chips"
+    assert "note: isSuggestion ? '' : text" in page, \
+        "a suggestion's text must be saved as the replacement, not as the note"
 
     # Derivation: a suggestion is a directive, so it lands with `changes`, and a
     # section holding one cannot be approved.

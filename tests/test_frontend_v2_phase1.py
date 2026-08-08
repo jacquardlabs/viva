@@ -51,7 +51,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _server_harness import (  # noqa: E402
-    assert_grid_gone, assert_sheet_ground, get, get_text, launch_server, post)
+    assert_catalog_ground, assert_grid_gone, assert_ink_discipline, get, get_text, launch_server, post)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -102,13 +102,15 @@ REVIEW_INPUT_R2 = {
 }
 
 
-def test_page_ships_sheet_ground(page: str) -> None:
-    """The served page frames the review in the bounded #paper sheet on the
-    flat --table ground. Shares the needle set (and the diff-mode widening
-    check) with test_server_a11y via assert_sheet_ground — one owner for the
-    sheet-chrome contract, checked here against the wire-served page."""
-    assert_sheet_ground(page)
-    print("test_page_ships_sheet_ground: OK")
+def test_page_ships_catalog_ground(page: str) -> None:
+    """The served page ships the catalog ground: light as the primary theme,
+    the four party inks, #paper as a bare wrapper, and the 72ch reading
+    measure with no nested scroll. Shares the needle set (and the diff-mode
+    widening check) with test_server_a11y via assert_catalog_ground — one
+    owner for the ground contract, checked here against the wire-served page."""
+    assert_catalog_ground(page)
+    assert_ink_discipline(page)
+    print("test_page_ships_catalog_ground: OK")
 
 
 def test_grid_gone_at_every_layer(page: str) -> None:
@@ -558,11 +560,22 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
     'round' handler consumes it, and qa submits never snapshot — while the
     snapshot stays in-memory only (a tab reload during revision re-boots
     into the prior round, exactly as before)."""
-    # In-memory only: declared null, and no web-storage API in the page.
+    # In-memory only: declared null, and never handed to web storage.
+    #
+    # This used to ban `localStorage` from the whole page, which proved the
+    # point when the page had no storage at all. The theme toggle introduced a
+    # legitimate use, so the check moved from "no storage exists" to "storage
+    # holds nothing but the theme" — a stricter guarantee, since it now pins
+    # which keys may exist rather than trusting that none do.
     assert 'let betweenRounds = null;' in page, \
         "page missing the betweenRounds snapshot declaration"
-    assert 'localStorage' not in page and 'sessionStorage' not in page, \
-        "the snapshot must never persist across a reload"
+    assert 'sessionStorage' not in page, "the snapshot must not reach sessionStorage"
+    keys = set(re.findall(r"(?:local|session)Storage\.\w+\(\s*'([^']+)'", page))
+    assert keys <= {'viva-theme'}, \
+        f"the snapshot must never persist across a reload — unexpected storage keys: {sorted(keys - {'viva-theme'})}"
+    for call in re.findall(r'(?:local|session)Storage\.\w+\([^)]*\)', page):
+        assert 'betweenRounds' not in call, \
+            f"the between-rounds snapshot must stay in memory: {call}"
     # The snapshot is taken inside submitReview, before the POST — the POST is
     # the sendSubmit(result) call at the tail (the fetch itself lives in the
     # shared sendSubmit helper).
@@ -601,23 +614,33 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
 
 
 def test_design_md_matches_shipped_surface() -> None:
-    """Cap: DESIGN.md documents the shipped phase-1 surface. Every value it
-    states for the sheet ground is a literal the served HTML also carries
-    (--table hexes, the 7px inner rule, the diff-mode widening), the four new
-    surfaces (transmittal slip with its attribution rule, recap gate,
-    between-rounds state, carried approvals) each have their row grammar /
-    gate strings documented, and the retired constructs — grid paper, the
-    fixed .sheet-frame, the spinner — leave zero references behind."""
+    """Cap: DESIGN.md documents the shipped surface. Every value it states for
+    the catalog ground is a literal the served HTML also carries (the party-ink
+    hexes, the 72ch measure, the diff-mode widening), the four phase-1 surfaces
+    (transmittal slip with its attribution rule, recap gate, between-rounds
+    state, carried approvals) each have their row grammar / gate strings
+    documented, and the retired constructs — grid paper, the fixed
+    .sheet-frame, the spinner, and now the whole blueprint sheet — leave zero
+    references behind."""
     design = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
     html = (ROOT / "server.py").read_text(encoding="utf-8")
 
-    # Sheet ground — each documented value must also be shipped verbatim.
-    for literal in ("#060e1a", "#e2e8f1", "inset: 7px", "min(95vw, 1600px)"):
-        assert literal in design, f"DESIGN.md missing sheet-ground value {literal!r}"
+    # Catalog ground — each documented value must also be shipped verbatim.
+    for literal in ("#ffffff", "#ffec8f", "#2946c4", "#0c7f6b", "#a06a12",
+                    "72ch", "min(95vw, 1600px)"):
+        assert literal in design, f"DESIGN.md missing catalog-ground value {literal!r}"
         assert literal in html, f"DESIGN.md documents {literal!r} but server.py no longer ships it"
-    assert "`--table`" in design, "DESIGN.md missing the --table token"
-    assert "#paper" in design, "DESIGN.md missing the #paper sheet"
-    assert "edge coordinate" in design, "DESIGN.md missing the edge coordinates"
+    assert "`--touch`" in design, "DESIGN.md missing the reviewer's-touch token"
+    assert "#paper" in design, "DESIGN.md missing the #paper wrapper"
+    assert "Ink discipline" in design, "DESIGN.md missing the ink-discipline rule"
+
+    # The blueprint sheet is retired in the code. DESIGN.md may still NAME it —
+    # recording what was superseded is the doc's job — but must not ship it: the
+    # literals themselves are gone from server.py, and the doc says so.
+    for gone in ("inset: 7px", "pcoord", "paper-marks"):
+        assert gone not in html, f"server.py still ships retired sheet chrome: {gone!r}"
+    assert "Superseded" in design, \
+        "DESIGN.md must record the superseded blueprint metaphor, not silently drop it"
 
     # Transmittal slip — row grammar plus the attribution rule's two labels.
     assert "revised to your note" in design, "DESIGN.md missing the attributed revised row"
@@ -673,7 +696,7 @@ def main() -> None:
     with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
         page = get_text(base, "/")
         data = get(base, "/input")
-        test_page_ships_sheet_ground(page)
+        test_page_ships_catalog_ground(page)
         test_grid_gone_at_every_layer(page)
         test_round1_zero_carried_markers(page, data)
         test_round1_zero_transmittal_markers(page, data)
