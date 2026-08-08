@@ -55,7 +55,7 @@ def main():
         # Page ships the thread renderer and settle action.
         page = get_text(base, "/")
         for needle in ("openNotesHTML", "open-thread", "settleOpenNotes",
-                       "section.open_notes", "renderCommentList",
+                       "section.open_notes", "renderDocMargin",
                        # A declined thread renders its grounds and says so in
                        # the head; it keeps the settle button and reply box,
                        # since accepting or insisting is the reviewer's move.

@@ -104,6 +104,15 @@ HTML = r"""<!DOCTYPE html>
   --acc-dim:   rgba(41,70,196,0.08);
   --machine:   #0c7f6b;
   --fact:      #a06a12;
+  /* The closed mass in a segmented rule. Not a fifth party ink — settled
+     belongs to nobody, so it is a filled neutral rather than a hue, and it
+     is the one bar color that carries no meaning beyond "done". */
+  --settled:   #e3e4e2;
+  /* The edge under an anchored span. Transparent on the white ground, where
+     the yellow fill is already the mark; a real edge on charcoal, where
+     `--touch` is a 22% wash and a wash alone is a ~5% luminance lift — not
+     enough to read as "the reviewer touched this text". */
+  --touch-edge: transparent;
 
   /* Component aliases. Component styles keep using these names, so the
      catalog palette lands without rewriting every rule; the four party inks
@@ -157,6 +166,8 @@ HTML = r"""<!DOCTYPE html>
     --acc-dim: rgba(143,166,245,0.12);
     --machine: #4fc2a5;
     --fact:    #d19a3f;
+    --settled: #3a3e41;
+    --touch-edge: #ffec8f;
 
     --bg3:     #232629;
     --scrim:   rgba(10,11,12,0.72);
@@ -182,6 +193,8 @@ HTML = r"""<!DOCTYPE html>
   --acc-dim: rgba(143,166,245,0.12);
   --machine: #4fc2a5;
   --fact:    #d19a3f;
+  --settled: #3a3e41;
+  --touch-edge: #ffec8f;
 
   --bg3:     #232629;
   --scrim:   rgba(10,11,12,0.72);
@@ -238,9 +251,28 @@ body {
    scroll. Widening the container (instead of escaping it) is what keeps
    .card-body-inner's overflow:hidden accordion animation untouched — see
    the Rejected Approach note in the diff-first-surface design doc. */
+/* ─── Doc-mode page width ─────────────────────────────────────
+   The review print is as wide as its three columns and no wider. The 1240px
+   shell is right for a single column of cards; for `gutter | prose | margin`
+   it is 190px too wide, and that surplus has to land somewhere — as a dead
+   band beside the text, or as a margin that grows until it rivals the document
+   (both of which it did). Capping the page is what lets the prose hold ~88
+   characters AND the margin hold its 300, with nothing over.
+
+   Widen this number to widen the TEXT: the margin is capped, so the prose
+   track is what grows. */
+.mode-doc .shell, .mode-doc .bottom-inner,
+.mode-qa  .shell, .mode-qa  .bottom-inner { max-width: 1054px; }
+
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
 .mode-diff #paper { max-width: min(95vw, 1600px); }
-.mode-diff .section-content { max-height: none; overflow-y: visible; }
+/* …and it drops the PROSE MEASURE, because a diff-mode section holds no prose.
+   Every section here is a hunk. Left capped at 72ch, `.section-content` held a
+   rendered diff to a reading measure: on a 1282px card the d2h wrapper came
+   out 540px and each side-by-side pane 267px, clipping every line mid-word
+   while 746px of the card sat empty. The break-out rule above could not save
+   it — that rule lifts the child's cap, and the container was the constraint. */
+.mode-diff .section-content { max-height: none; overflow-y: visible; max-width: none; }
 
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
@@ -398,7 +430,24 @@ body {
   margin-bottom: 14px;
   animation: fadeUp 0.4s ease both;
 }
-.transmittal-head { padding: 8px 14px 0; }
+/* A disclosure button, dressed as the label it already was — the slip ships
+   collapsed so the print is what a reader meets first. */
+.transmittal-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.transmittal-head:hover .transmittal-title { color: var(--acc); }
+.transmittal-chevron { font-size: 10px; color: var(--text3); transition: transform 0.2s; }
+.transmittal-head[aria-expanded="false"] .transmittal-chevron { transform: rotate(-90deg); }
 .transmittal-title {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -863,8 +912,7 @@ body {
    - 6px radius matches .diff-block, the incumbent documented diff-surface
      radius, replacing d2h's own undocumented 3px. */
 .section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
-.section-content .d2h-code-linenumber,
-.section-content .d2h-code-side-linenumber { user-select: none; }
+.section-content .d2h-code-linenumber { user-select: none; }
 .section-content .d2h-file-wrapper { position: relative; border-radius: 6px; }
 
 /* ─── Card body (smooth height animation) ────────────────── */
@@ -880,10 +928,14 @@ body {
   overflow: hidden;
 }
 
+/* The body is the page continuing under the head, not a panel opening beneath
+   it: no fill, no second rule (the head's own hairline already separates the
+   entries), and the left edge lines up with the title above it so the row grid
+   starts where the reader's eye already is. */
 .card-body {
-  padding: 14px 16px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
+  padding: 4px 14px 22px;
+  border-top: none;
+  background: none;
 }
 
 .section-summary {
@@ -920,7 +972,13 @@ body {
 
 /* Code and tables are not prose and do not take the prose measure — they take
    the room, and scroll sideways in their own container so the page body never
-   does. This is the catalog's break-out rule. */
+   does. This is the catalog's break-out rule.
+
+   It only lifts the CHILD's cap. A child cannot be wider than its parent, so
+   this rule does nothing on its own while `.section-content` is still capped
+   at 72ch — something has to unbind the container too. In review mode that is
+   `.doc .section-content` (the row grid owns the measure); in diff mode it is
+   `.mode-diff .section-content` below. */
 .section-content > pre,
 .section-content > table,
 .section-content > .table-wrap {
@@ -1058,9 +1116,588 @@ body {
 .section-content hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .section-content img { max-width: 100%; }
 
+/* ─── The document grid — doc + margin (issue #186) ───────────
+   #185 shipped the catalog's MATERIALS on the old accordion. This is its
+   STRUCTURE: rows of `check gutter | prose | margin`, in document order.
+   The reader reads the document; the commentary sits beside the passage it
+   annotates instead of stacking on top of it.
+
+   TWO CLASSES, TWO IDEAS. `.doc` is the GRAMMAR and is stamped on every
+   card container that renders sections — review, diff and Q&A alike, because
+   nothing about a hunk or a question resists a margin. `.print` is
+   CONTINUOUS PRINT — every section open at once — and is review's alone: 52
+   hunks printed together is a worse surface than one at a time, and a
+   question at a time is the point of an interview. Anything keyed on
+   `.doc-section` is already print-only by class.
+
+   THE WASTED-SPACE RULE. The composite reserves 70px of gutter and 300px
+   of margin on every row; production must not. Both side columns are
+   variables and both go to 0 when the DOCUMENT has nothing to put in
+   them. The decision is per-document, not per-row or per-section, and
+   that is the one judgment call in this layout: a per-row decision jogs
+   the prose column sideways between paragraphs, a per-section one jogs it
+   between sections, and a column of text that moves as you read it is
+   worse than the space it saves. The 28px alley rides inside each side
+   cell's own padding rather than in `column-gap`, because a gap is drawn
+   between zero-width tracks too — this way a collapsed column costs
+   exactly zero. */
+.doc {
+  /* A GLYPH RAIL, not a text column. 70px of 9px mono could not hold a real
+     flag — `✓ §4 defines "cold start"` clamped to `✓ §4 defines "cold`, which
+     is worse than not showing it, and right-aligned ragged 9px type is barely
+     readable even when it does fit. What the gutter is actually for is
+     LOCALITY: knowing this paragraph carries a machine flag, and of what
+     severity, without the text interrupting the reading. A colored glyph says
+     that in 14px; the words go where there is room to read them. */
+  --gutter-w: 34px;                    /* 14px glyph + the 20px alley */
+  /* The margin is CAPPED at the composite's 300px (+ the 28px alley). Letting
+     it absorb the shell's spare width instead put it at 515px against 540px of
+     prose — a 51:49 split, where the commentary took as much of the page as the
+     document it annotates. The composite runs about 61:39, and it is right:
+     the margin is secondary and has to read that way.
+
+     The leftover does not become a dead band, because the page itself is capped
+     to its three columns (`.mode-doc .shell`). One consequence worth stating:
+     with the margin fixed, every pixel of extra width from here goes to the
+     TEXT, not to the notes. */
+  --margin-w: minmax(253px, 328px);
+}
+/* .cards is the flex column the sections sit in; in the continuous print its
+   gap is the space between entries, so the sections carry no margin of their
+   own. The accordion keeps its own hairline-and-6px separation — a run of
+   collapsed heads is a list, and 22px between list items is a gap, not a
+   rhythm. */
+.doc.print { gap: 22px; }
+.doc.no-gutter { --gutter-w: 0px; }
+.doc.no-margin { --margin-w: 0px; }
+/* The prose track takes whatever the gutter and the margin do not, and the
+   PAGE is what holds the measure (`.mode-doc .shell` below) — so the text
+   always fills its column, the margin always ends flush, and no `ch` value
+   appears in the template. That last part matters: `ch` on a track resolves
+   against the row's own font-size, and a `72ch` track was ~99px wider on the
+   head row (inheriting the section's size) than on a prose row inside
+   `.section-content`, which put the spec table that far right of every note
+   below it. `.doc-section` fixes one size for the print regardless. */
+.doc .row {
+  display: grid;
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w);
+  align-items: start;
+}
+/* Code and tables are not prose and do not hold the prose measure — the
+   catalog's break-out rule, at row scale instead of `.section-content > pre`.
+   They take the margin's room ONLY on a row that has no margin cell, which is
+   the room actually going spare; a row annotating its own code keeps three
+   columns and the code well scrolls sideways in its own container, exactly as
+   `.section-content > pre` always did. `:has()` reads the row's own contents,
+   so nothing in JS has to remember to set a class when a note is added or
+   removed.
+
+   THE PRINT ONLY. There, a wide block is one row among a dozen and borrowing
+   the empty column beside it costs the reader nothing. In the accordion the
+   wide row IS the section — a hunk — and `:has()` would make the first
+   comment on it a 328px re-layout of the very lines being commented on,
+   under the cursor. Whether a hunk is inset is the per-document decision
+   `--margin-w` already makes, made once for all of them. */
+.doc.print .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4; }
+/* Explicit column placement, so a row that omits an empty side cell still
+   prints its prose in the middle track instead of sliding left. */
+.doc .rg { grid-column: 1; padding-right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 2px; }
+.doc .rp { grid-column: 2; min-width: 0; }
+.doc .rm { grid-column: 3; padding-left: 28px; min-width: 0; }
+/* One type size for the whole print, so `ch` means the same thing in every
+   row — the heading and the machine's own faces set their own size on top. */
+.doc-section { font-size: 13.5px; }
+/* With the margin collapsed there is nowhere beside the heading to hang the
+   section's own controls, so the head row drops to two tracks and its margin
+   cell prints under the heading instead. Pure CSS: the cluster is built once
+   and never moved between hosts, so a collapse/expand can't blur focus.
+
+   `1fr`, not the `72ch` this shipped with — the last `ch` in a grid template,
+   and the one invariant #5 was written against. It resolved against the row's
+   own font-size, so the head row came out narrower than every prose row below
+   it on a collapsed document, and in the accordion (where no `.doc-section`
+   fixes one size for the print) it would have resolved differently again. The
+   head row now measures exactly what the rows under it measure. */
+.doc.no-margin .row-head { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+.doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+.doc.no-margin .row-head .rm .spec { max-width: 340px; }
+/* Below the composite's own breakpoint the third column has no room to be a
+   margin; notes fall under the passage they annotate and the gutter narrows
+   to a glyph rail. */
+@media (max-width: 920px) {
+  .doc .row, .doc .row.wide, .doc.no-margin .row-head { grid-template-columns: 30px minmax(0, 1fr); }
+  .doc .rg { padding-right: 8px; }
+  .doc .rm, .doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+}
+
+.doc-section { position: relative; animation: fadeUp 0.4s ease both; }
+/* Continuous print: nothing collapses, so a settled section dims in place.
+   Its prose stays on the page and stays readable — that is the whole point
+   of printing the document rather than one section of it. */
+.doc-section.is-approved .rp { opacity: 0.5; }
+.doc-section.is-approved .doc-head { color: var(--faint); }
+.doc-section.is-approved:hover .rp { opacity: 0.85; transition: opacity 0.2s; }
+
+/* The section heading carries its catalog number, the way a parts catalog
+   numbers its entries — `9 · One human, N threads`. */
+.doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+  scroll-margin-top: 16px;
+}
+.doc-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+/* The live section is marked where the reader's eye already is — at the
+   heading — the same rule the accordion's active card used. */
+.doc-section.is-active .doc-head { border-left: 2px solid var(--ink); margin-left: -10px; padding-left: 8px; }
+
+/* ─── Segmented rule ──────────────────────────────────────────
+   State × party under an open heading, in honest counts: blue open
+   judgment, amber open facts, the settled remainder. The order is FIXED
+   (judgment → facts → settled) and that fixed order is the colorblind-safe
+   second encoding — position says which is which when hue does not. The
+   raw counts ride in the aria-label, so the honest-proportions claim is
+   auditable rather than asserted.
+
+   Drawn only where something is open. A settled section keeps the thin
+   hairline: a state bar on a section with nothing open is decoration. */
+.seg { display: flex; height: 4px; margin: 0 0 10px; }
+.seg i { display: block; height: 4px; min-width: 2px; }
+.seg-judgment { background: var(--acc); }
+.seg-fact     { background: var(--fact); }
+.seg-settled  { background: var(--settled); }
+.rule-s { border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 10px; }
+
+/* ─── Check gutter ────────────────────────────────────────────
+   Producer flags print beside the paragraph they concern, right-aligned
+   against the prose column, in the machine's own face. A flag that carries
+   an interactive jump (a contradiction's cross-section link, a learned
+   preference's badge) does not fit in 70px and is not a glance — those
+   route to the margin as notes instead. */
+/* The rail: one glyph per flag, at a size you can actually see, colored by
+   whose news it is. Decorative to a screen reader — the readable line is in
+   the margin (.mflag) and reading both would be the same flag twice. */
+.lflag {
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: default;
+}
+.lflag-info  { color: var(--machine); }
+.lflag-warn  { color: var(--fact); }
+.lflag-error { color: var(--acc); }
+
+/* The words, in the margin of the same row — the machine's line, not a note
+   in the conversation, so it takes no border and no actions: a producer flag
+   is advisory and there is nothing here to answer. Inked by severity and led
+   by the same glyph as the rail, so the pairing reads left to right. */
+.mflag {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--soft);
+  overflow-wrap: anywhere;
+}
+.mflag .g { flex-shrink: 0; }
+.mflag-info  .g { color: var(--machine); }
+.mflag-warn  .g { color: var(--fact); }
+.mflag-error .g { color: var(--acc); }
+.mflag-warn, .mflag-error { color: var(--text2); }
+.mflag .r { display: block; color: var(--machine); }
+
+/* ─── Margin notes ────────────────────────────────────────────
+   One note per thread or comment, numbered, sitting beside its own anchor.
+   The number is the same on both ends: the pin in the text and the note in
+   the margin. */
+.nt {
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 7px 9px 8px;
+}
+.nt.is-settled { opacity: 0.55; }
+.nh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-bottom: 4px;
+}
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--soft);
+}
+.nt-fact  .nh { color: var(--fact); }
+.nt-check .nh { color: var(--machine); }
+/* The author's party, not the reviewer's: a declined thread is the author
+   answering, and it speaks in the neutral ink. */
+.nt-author .nh { color: var(--soft); }
+.nt-author { border-left: 2px solid var(--soft); }
+.nt-body { color: var(--text2); overflow-wrap: anywhere; }
+.nt-quote {
+  display: block;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.nt-acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.nt-btn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.nt-btn:hover { background: var(--bg3); }
+.nt-btn.is-pri { background: var(--ink); color: var(--paper); }
+.nt-btn.is-pri:hover { opacity: 0.85; }
+.nt-btn.is-quiet { border-color: var(--rule); color: var(--soft); }
+.nt-btn.is-quiet:hover { border-color: var(--ink); color: var(--ink); background: none; }
+
+/* Keycaps sit on the control they name rather than being hover-revealed —
+   the palette is a directory of this same layer, never a second one. */
+.doc kbd, .pal kbd, .pal-hint kbd, .recap-panel kbd, .prefs-panel kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 5px;
+  color: var(--soft);
+  background: var(--sunk);
+}
+.nt-btn.is-pri kbd { border-color: var(--soft); background: none; color: var(--paper); }
+.choice-chip kbd { flex-shrink: 0; }
+.choice-chip.selected kbd { border-color: var(--accent); color: var(--accent); }
+
+/* ─── Pins ────────────────────────────────────────────────────
+   The mark in the text that matches the note in the margin. The anchored
+   span wears catalog yellow and nothing else does — per the ink discipline,
+   `--touch` is the reviewer's touch ON THE TEXT — so the pin, not the
+   highlight, is what carries whose note it is. */
+.doc mark[class^="cmt-hl-"] {
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+}
+.pin {
+  display: inline-block;
+  min-width: 14px;
+  height: 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  vertical-align: 3px;
+  margin-left: 2px;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+/* ─── A suggestion, shown applied ────────────────────────────
+   The wording it replaces struck out in the faint ink, the replacement on the
+   same catalog yellow the anchor wears — so the reviewer reads the sentence
+   as it would stand, not a note about it. `del` is still the document (it is
+   what the source says today); `ins` is the reviewer's proposal and is
+   excluded from every text walk, so it can never be counted as prose or
+   commented on. The gap between them is margin, never a text node, for the
+   same reason. */
+.sug-del { color: var(--faint); text-decoration: line-through; }
+.sug-ins {
+  text-decoration: none;
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+  margin-left: 5px;
+}
+.nt-applied {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--soft);
+  font-style: italic;
+}
+
+.pin-you    { background: var(--acc); color: var(--paper); }
+.pin-author { border: 1.5px solid var(--soft); color: var(--soft); background: none; }
+.pin-fact   { background: var(--fact); color: var(--paper); }
+/* A pin on a diff line. Prose WRAPS, so a pin set after its anchor is always
+   on screen; a code line SCROLLS, and a pin appended to one lands at whatever
+   character offset that line happens to be long — measured at x=1052 inside a
+   445px-wide pane whose content is 1687px, i.e. nowhere the reviewer will ever
+   see it. The unit a diff note pairs with is the LINE, so the pin sits at the
+   head of it and stays put under horizontal scroll. Both ends of the pairing
+   stay visible, which is the whole point of numbering them. */
+.pin-line {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  margin: 0 5px 0 0;
+  vertical-align: 1px;
+}
+
+/* ─── Margin spec table ───────────────────────────────────────
+   The transmittal slip's successor at section scale: what is open on this
+   section, stated as a spec rather than described. */
+.spec {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.spec caption {
+  text-align: left;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--soft);
+  padding-bottom: 3px;
+}
+.spec td { border: 1px solid var(--rule); padding: 2px 7px; }
+.spec td:first-child { color: var(--soft); width: 62%; }
+.spec .spec-open td:last-child { color: var(--acc); font-weight: 600; }
+
+/* ─── Suggestion fence ────────────────────────────────────────
+   The one place red and green are correct: the fence and the diff are the
+   same object, and diff semantics already own those two colors. Squared off
+   — the recognizable part is the −/+ grammar, not the radius. */
+.fence {
+  margin-top: 6px;
+  border: 1px solid var(--rule);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.fence-h {
+  background: var(--sunk);
+  border-bottom: 1px solid var(--rule);
+  padding: 3px 8px;
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--soft);
+}
+.fence-ln { display: grid; grid-template-columns: 16px minmax(0, 1fr); }
+.fence-g { text-align: center; user-select: none; }
+.fence-tx { padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fence-del { background: rgba(209,36,47,0.12); }
+.fence-add { background: rgba(26,127,55,0.12); }
+.fence-del .fence-g { color: #d1242f; }
+.fence-add .fence-g { color: #1a7f37; }
+
+/* The round-to-round diff, collapsed, in the head row's prose cell — where it
+   costs one mono line and fills the space the spec table opens beside the
+   heading (measured at 88px of dead prose column before it moved here). It
+   ships collapsed because "what changed since last round" is not what the
+   reader opened the document to read, and it expands at the reading measure
+   rather than at full width: a prose diff wraps, and a diff wide enough to
+   need its own row was the thing standing between the reader and the text. */
+.doc .diff-block { border-radius: 0; border-color: var(--rule); margin: 4px 0 0; }
+.doc .diff-toggle { border-bottom-color: var(--rule); }
+
+/* ─── Command palette (⌘K) ────────────────────────────────────
+   A directory of the keyboard layer, not a second interaction model: every
+   verb it lists is one the page also shows as a keycap or a control. It
+   takes the floor's materials — square, 1px ink border, selection on
+   catalog yellow rather than a tint of the accent. */
+.pal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--scrim);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+.pal {
+  width: min(460px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+  font-size: 13px;
+  overflow: hidden;
+}
+.pal-input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: var(--ink);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12.5px;
+  padding: 9px 12px;
+}
+.pal-input:focus { outline: none; }
+.pal-input::placeholder { color: var(--faint); }
+.pal-list { max-height: 46vh; overflow-y: auto; }
+.pal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.pal-row.is-on { background: var(--touch); }
+.pal-row .k {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+.pal-empty { padding: 10px 12px; font-size: 12px; color: var(--soft); }
+
+/* The section container is the row host, not the measure: the 72ch cap moved
+   to the grid's middle track, and the padding that framed a card body would
+   only push the rows off the alley they share with every other row. */
+.doc .section-content { max-width: none; padding: 0; margin-bottom: 0; }
+/* The break-out rule, at row scale. The `wide` row already gives the middle
+   track the room; this is what lets the block use it. */
+.doc .rp > pre, .doc .rp > table, .doc .rp > .table-wrap {
+  max-width: none;
+  width: 100%;
+  overflow-x: auto;
+}
+.doc .rp > *:last-child { margin-bottom: 0; }
+.doc .row + .row { margin-top: 10px; }
+
+/* A carried thread keeps every affordance it had in the accordion — settle,
+   reply, the type chips — and takes the margin's note dress. One builder,
+   two surfaces (openThreadItemHTML); this is the restyle, not a fork. */
+.doc .open-thread {
+  margin-bottom: 12px;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--acc);
+  border-radius: 0;
+  background: var(--paper);
+}
+.doc .open-thread.is-declined { border-left-color: var(--soft); }
+.doc .open-thread-head { flex-wrap: wrap; gap: 5px; padding: 6px 9px 5px; border-bottom: none; }
+.doc .open-thread-label { color: var(--acc); }
+.doc .open-thread.is-declined .open-thread-label { color: var(--soft); }
+.doc .open-thread-quote { max-width: 100%; white-space: normal; }
+.doc .open-thread-body { padding: 0 9px; }
+.doc .exchange { padding: 5px 0; }
+/* One verb per note, with its keycap; the reply box is what a verb reveals,
+   not something every thread carries open. */
+.open-thread .nt-acts { padding: 2px 9px 9px; margin-top: 0; }
+.thread-reply { padding: 0 9px 9px; margin-top: 0; }
+.settle-btn.is-on { --c: var(--machine); border-color: var(--machine); color: var(--machine); }
+.nt-btn.is-pri.is-on { background: var(--machine); border-color: var(--machine); }
+.open-thread.is-settled .nt-acts .thread-reply-btn { display: none; }
+/* The note number, shared by the margin's two note builders and by the pin
+   that answers it. Empty in the accordion — only the margin numbers notes. */
+.nh-num, .nh .nh-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 700;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.nh-num:empty { display: none; }
+.open-thread-head .pn,
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+.doc .comment-popover { border-radius: 0; margin-top: 0; margin-bottom: 12px; }
+.doc .annot { border-radius: 0; margin-bottom: 12px; flex-direction: column; gap: 3px; }
+/* The whole-document invitation, printed once at the foot of the print
+   instead of once per section — the per-section hint was a line of chrome
+   between every passage and the next. */
+.doc-hint {
+  margin: 22px 0 0;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+
+/* The document's own balance, drawn across the footer that closes the page —
+   same grammar as a section's rule, same fixed order, one document-wide
+   denominator. Unreviewed sections are the bare track it does not fill.
+
+   Heavier than a section's rule (6px against 4px), and its settled segment is
+   INK rather than the section rule's gray: at document scale "done" is the
+   page's closed mass, drawn in the same ink as the 2px rules that bracket the
+   page top and bottom. The gray belongs to one section's remainder. */
+.foot-seg { position: absolute; top: 0; left: 0; right: 0; display: flex; height: 6px; }
+.foot-seg i { display: block; height: 6px; }
+.foot-seg .seg-settled { background: var(--ink); }
+
+/* The way in to the keyboard layer, stated in the bar rather than buried in
+   the legend at the foot of the page — a palette nobody knows about is a
+   palette nobody uses. */
+.pal-hint {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--soft);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.pal-hint:hover { color: var(--ink); }
+.stat-conv b { color: var(--ink); font-weight: 600; }
+.stat-lat { color: var(--faint); }
+.stat-pending kbd, .stats kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 4px;
+  color: var(--soft);
+  background: var(--sunk);
+}
+
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
-.card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
-.section-content, .choice-chip, .qa-btn,
+.card, .note-field, .vbadge, .btn-skip, .btn-submit,
+.section-content, .choice-chip,
 .transmittal-row, .recap-row,
 .progress-track, .progress-fill { border-radius: 0; }
 
@@ -1076,31 +1713,17 @@ body {
    a border instead of a gradient stack. Registering --c keeps the recolor
    animatable; without @property support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.action-btn, .qa-btn, .choice-chip, .attach-btn, .cmt-add-btn, .cmt-chip, .cmt-save, .cmt-cancel {
+.choice-chip, .attach-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --c: var(--rule);
   border: 1px solid var(--c);
   background: var(--paper);
   transition: --c 0.12s, color 0.12s, background 0.12s;
 }
 
-/* ─── Action buttons (verdict row) ───────────────────────── */
-.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-
-/* Controls speak in the machine's face — mono — because a button is an
-   instruction, not prose. */
-.action-btn {
-  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 6px 14px;
-  color: var(--soft);
-  display: flex; align-items: center; gap: 5px;
-}
-.action-btn:hover       { --c: var(--ink);     color: var(--ink);     }
-.action-btn.sel-approve { --c: var(--machine); color: var(--machine); }
-.action-btn.sel-changes { --c: var(--acc);     color: var(--acc);     }
-.action-btn.sel-info    { --c: var(--fact);    color: var(--fact);    }
+/* The per-section action row is gone from every surface. A section's verbs
+   live in its margin (`.nt-acts`, `.nt-btn`) beside the notes they answer —
+   the one place a reviewer is already looking — so `.actions` and
+   `.action-btn` have no host left. */
 
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
@@ -1190,19 +1813,10 @@ body {
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
-/* ─── Multi-comment review ─── */
-.comment-add-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-.cmt-add-hint { font-family: 'Fragment Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text3); margin-right: auto; }
-.cmt-add-btn {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--text2);
-  padding: 5px 10px;
-}
-.cmt-add-btn:hover { --c: var(--text3); color: var(--text); }
+/* ─── Multi-comment review ───
+   The add-a-note row went with the action row: `+ note` is a margin verb now,
+   and the invitation to select a passage is printed once for the whole
+   document (`.doc-hint`) rather than once per section. */
 mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var(--orange); color: inherit; }
 mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
 /* A suggested span is the reviewer's own ink over the author's — the accent
@@ -1360,82 +1974,46 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   max-width: 60%;
 }
 
-/* ─── Comment list (this round's freshly-added comments) ─── */
-.cmt {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 11.5px;
-  border-bottom: 1px solid var(--border);
-}
-.cmt:last-child { border-bottom: none; }
-.cmt-type {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-.v-changes .cmt-type { color: var(--orange); }
-.v-info    .cmt-type { color: var(--violet); }
-.v-suggestion .cmt-type { color: var(--accent); }
-/* The wording a suggestion carries, in both surfaces that show a comment: the
-   new-comment list and a carried thread's exchange. Its own line under the
-   note, accent-inked, arrow-led like `.exchange-a`'s reply. */
+/* The comment list is gone: a comment lives in the margin beside its own
+   anchor now, on every surface, so the stacked `.cmt` rows under a card have
+   no host left. `.cmt-del` survives as a WIRING HOOK only — its old rule
+   (`border: none; font-size: 14px`) sat later in the sheet than `.nt-btn` and
+   quietly stripped the margin's `remove` verb of the box every other verb
+   wears.
+
+   The wording a suggestion carries, in a carried thread's exchange. Its own
+   line under the note, accent-inked, arrow-led like `.exchange-a`'s reply. */
 .cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
 .cmt-repl::before { content: '→ '; }
-/* Anchor quotes can be a whole selected paragraph — ellipsize instead of
-   squeezing the note beside them; the full text stays on the card itself
-   and in the title tooltip. */
-.cmt-quote {
-  font-style: italic;
-  color: var(--text3);
-  font-size: 10.5px;
-  min-width: 0;
-  max-width: 38%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.cmt-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; flex: 1; }
-.cmt-del {
-  margin-left: auto;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--text3);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 0 2px;
-  line-height: 1;
-}
-.cmt-del:hover { color: var(--text); }
 
-/* ─── Divider between card sections ─────────────────────── */
-.sep { height: 1px; background: var(--border); margin: 4px 0; }
+/* ─── Q&A choices (chip style) ────────────────────────────
+   The choices ARE the question's body, so they print in the prose column
+   under its heading — no `Choices` label above them, because a row of
+   pickable chips under a question needs no caption to be read as the answer.
+   Each carries the digit that picks it, the way every other control in this
+   ground carries its own keycap.
 
-/* ─── Q&A choices (chip style) ──────────────────────────── */
-.choices-label {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 7px;
-}
-
-.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+   ONE PER LINE. Wrapped into a ragged row they read as a grid — the eye has
+   to find where each option ends — and the digit that picks an option lands
+   somewhere different on every row. Stacked, the labels start on one left
+   edge and the keycaps end on one right edge, which is exactly the shape
+   `.pal-row` already uses for the same job: a list of things you pick, each
+   with the key that picks it. */
+.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; }
 
 .choice-chip {
   font-size: 12px;
   font-weight: 400;
-  padding: 5px 12px;
+  padding: 6px 12px;
   color: var(--text2);
   cursor: pointer;
   text-align: left;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
+/* The label takes the row; the badge and the keycap ride its right edge. */
+.chip-label { flex: 1; min-width: 0; }
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
 
@@ -1452,26 +2030,36 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 1px 5px;
-  margin-left: 6px;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--teal-bg);
   color: var(--teal);
   vertical-align: middle;
 }
 
-/* QA action buttons */
-.qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
-.qa-btn {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 6px 14px;
-  color: var(--text2);
-  display: flex; align-items: center; gap: 5px;
+/* The Q&A action row is gone with every other action row: confirm and skip
+   are margin verbs in the `.nt-btn` grammar, beside the note they act on.
+
+   ─── The margin's compose block ───────────────────────────
+   The reviewer's optional context on a question, inside the same bordered
+   note the margin gives every other piece of commentary — field and
+   attachments within it, not stacked under it, so an untouched question still
+   reads as one object rather than three. Smaller than the popover's field: a
+   300px margin is not a card body. */
+.nt-compose .note-field {
+  min-height: 58px;
+  margin-top: 3px;
+  font-size: 12px;
+  padding: 6px 8px;
 }
-.qa-btn:hover   { --c: var(--text3); color: var(--text); }
-.qa-btn.confirm { --c: var(--teal);  color: var(--teal); }
+.nt-compose .attach-btn { margin-top: 6px; }
+.nt-compose .thumb-strip { margin-top: 6px; }
+/* With the question restated as the entry's own heading, the disclosure head
+   is an index line — one line, however long the question runs, and quiet once
+   the entry below it is open. Without the second half the same sentence
+   printed twice, a line apart, reads as a duplication rather than as an index
+   pointing at its entry. */
+#qa-cards .card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#qa-cards .card.is-active .card-title { color: var(--soft); font-weight: 400; }
 
 /* ─── Skip link (first Tab stop; hidden until focused) ───── */
 .skip-link {
@@ -1493,16 +2081,18 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .card-head:focus-visible,
-.action-btn:focus-visible, .qa-btn:focus-visible, .choice-chip:focus-visible,
-.attach-btn:focus-visible, .cmt-add-btn:focus-visible, .cmt-chip:focus-visible,
+.choice-chip:focus-visible,
+.attach-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
-.transmittal-row:focus-visible,
+.nt-btn:focus-visible, .pin:focus-visible, .pal-row:focus-visible,
+.thread-reply-btn:focus-visible,
+.transmittal-row:focus-visible, .transmittal-head:focus-visible,
 .recap-row:focus-visible, .recap-close:focus-visible,
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
-.theme-toggle:focus-visible,
+.theme-toggle:focus-visible, .pal-hint:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -1629,11 +2219,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   padding: 24px;
   background: var(--scrim);
 }
+/* The palette's materials, since the palette is what a catalog overlay looks
+   like here: paper rather than the recessed panel `--bg` gave it, a square 1px
+   ink border, and the same lift off the scrim. */
 .recap-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border2);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
 }
 .recap-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -1648,13 +2243,18 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   text-transform: uppercase;
   color: var(--text2);
 }
-.recap-close {
+/* A dialog closes on Escape, so the control says so rather than drawing a
+   glyph the reader has to learn. Same keycap the palette and the margin verbs
+   wear — one keyboard layer, printed wherever it applies. */
+/* 9px of keycap is not a click target. The padding goes on the BUTTON, not
+   on the cap, so the cap keeps the size every other keycap on the page has
+   while the hit area clears 24px. */
+.recap-close, .prefs-close {
   border: none; background: none; cursor: pointer;
-  color: var(--text3);
-  font-size: 16px; line-height: 1;
-  padding: 2px 6px;
+  padding: 6px 8px; line-height: 1;
+  display: flex; align-items: center;
 }
-.recap-close:hover { color: var(--text); }
+.recap-close:hover kbd, .prefs-close:hover kbd { border-color: var(--ink); color: var(--ink); }
 .recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
 .recap-row {
   display: grid;
@@ -1670,8 +2270,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   cursor: pointer;
 }
 .recap-row:first-child { border-top: none; }
-.recap-row:hover { background: var(--bg3); }
-.recap-row:hover .recap-row-title { color: var(--accent); }
+/* Catalog yellow marks what the pointer is on, the way `.pal-row.is-on`
+   does — the ground's one selection ink, rather than a second gray band. */
+.recap-row:hover { background: var(--touch); }
 .recap-id {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -1717,8 +2318,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .prefs-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border2);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
 }
 .prefs-head {
   display: flex; flex-direction: column; gap: 8px;
@@ -1739,13 +2342,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
 }
 .prefs-help strong { color: var(--text2); font-weight: 600; }
-.prefs-close {
-  border: none; background: none; cursor: pointer;
-  color: var(--text3);
-  font-size: 16px; line-height: 1;
-  padding: 2px 6px;
-}
-.prefs-close:hover { color: var(--text); }
 /* The panel's *only* aria-live region — one line, updated on mute.
    #prefs-list deliberately carries none: a live-labeled list would announce
    every row's text on open, not just the one status change after a mute. */
@@ -1772,7 +2368,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 .pref-status-standing  { color: var(--teal);  background: var(--teal-bg); }
 .pref-status-candidate { color: var(--text2); background: var(--bg3); }
@@ -1786,21 +2382,23 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   margin-top: 4px;
   overflow-wrap: break-word;
 }
+/* A verb in a list of items is a verb in the margin's grammar — `.nt-btn`,
+   squared and bordered, rather than a bare word that reads as a label. */
 .pref-mute-btn {
   margin-left: auto;
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text3);
-  background: none;
-  border: 0;
-  padding: 2px 0;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--soft);
   cursor: pointer;
 }
-.pref-mute-btn:hover { color: var(--orange); }
-.pref-mute-btn:disabled { opacity: 0.5; cursor: default; }
+.pref-mute-btn:hover { border-color: var(--ink); color: var(--ink); }
+.pref-mute-btn:disabled { opacity: 0.5; cursor: default; border-color: var(--rule); color: var(--soft); }
 .pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
 .pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
 
@@ -1816,54 +2414,32 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   50%      { opacity: 0.25; }
 }
 
+/* The interlude is the same PAGE, waiting — not a splash screen with the
+   document taken away. It keeps the page's left edge and its measure, and the
+   reviewer's just-submitted requests print as what they are: the notes they
+   wrote a moment ago, in the note grammar the margin wrote them in. That is
+   also why `.pr-*` is gone — a second row grammar for the same objects. */
 .processing-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8rem 2rem;
+  padding: 3.5rem 0 8rem;
   color: var(--text2);
 }
 .processing-dot {
-  width: 10px; height: 10px;
+  width: 8px; height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--acc);
   animation: viva-pulse 1.6s ease-in-out infinite;
-  margin-bottom: 1.5rem;
+  margin-bottom: 14px;
 }
 .processing-text {
-  font-family: 'Bricolage Grotesque', sans-serif;
-  font-size: 1rem;
-  letter-spacing: 0.02em;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
 }
-.processing-requests {
-  width: min(520px, 100%);
-  margin-top: 2rem;
-  border: 1px solid var(--border2);
-  background: var(--bg2);
-  text-align: left;
-}
-.pr-row {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-}
-.pr-row:first-child { border-top: none; }
-.pr-type {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-.pr-changes .pr-type { color: var(--orange); }
-.pr-info    .pr-type { color: var(--violet); }
-.pr-suggestion .pr-type { color: var(--accent); }
-.pr-title { color: var(--text); font-weight: 500; flex-shrink: 0; }
-.pr-note  { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+.processing-requests { max-width: 460px; }
 
 .complete-inner {
   display: flex;
@@ -1880,7 +2456,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--teal);
   padding: 14px 30px 12px;
   position: relative;
-  background: rgba(77,255,195,0.04);
+  /* The machine's own token, not the neon mint this was drawn in before the
+     catalog palette landed — the only hardcoded rgba left on this view. */
+  background: var(--teal-bg);
 }
 .stamp-rule::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--teal); opacity: 0.55; }
 .stamp-word { font-family: 'Fragment Mono', monospace; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.16em; }
@@ -1981,9 +2559,16 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
         <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="doc-path"></div></div>
         <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
         <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
+        <!-- Review-mode cells (#186): the composite's bar states the document's
+             whole condition on one line — checks, items, what is open, and the
+             way in to the keyboard layer. They ship hidden; initReview reveals
+             them and updateReviewStats keeps them current. -->
+        <div class="tb-cell" id="tb-checks" style="display:none"><div class="tb-label">checks</div><div class="tb-val mono" id="r-checks">0/0</div></div>
+        <div class="tb-cell" id="tb-items" style="display:none"><div class="tb-val mono" id="r-items"></div></div>
         <div class="tb-cell"><div class="tb-label">approved</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+        <div class="tb-cell" id="tb-palette" style="display:none"><button type="button" class="pal-hint" id="pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
-      <div class="progress-track">
+      <div class="progress-track" id="r-progress-track">
         <div class="progress-fill" id="r-progress" style="width:0%"></div>
       </div>
     </div>
@@ -2003,22 +2588,28 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
     <div class="cards" id="review-cards"></div>
+    <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
-  <!-- ── Q&A mode ─────────────────────────────────────────── -->
+  <!-- ── Q&A mode ─────────────────────────────────────────────
+       The interview step of /viva-write, and a first-class surface: the same
+       composite bar review carries, stating the round's whole condition on one
+       line. No progress track — the footer's segmented rule is the progress,
+       in state rather than in percent, and two bars saying the same thing
+       differently is one bar too many. -->
   <div id="qa-view" style="display:none">
     <div class="header">
       <div class="titleblock">
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="qa-title"></div></div>
         <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
-        <div class="tb-cell tb-flex"><div class="tb-label">topic</div><div class="tb-val" id="qa-title"></div></div>
-        <div class="tb-cell"><div class="tb-label">count</div><div class="tb-val mono" id="qa-count-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val" id="qa-mode-title">viva <em>interview</em></div></div>
+        <div class="tb-cell"><div class="tb-label">questions</div><div class="tb-val mono" id="qa-count-badge"></div></div>
         <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
-      </div>
-      <div class="progress-track">
-        <div class="progress-fill" id="qa-progress" style="width:0%"></div>
+        <div class="tb-cell"><button type="button" class="pal-hint" id="qa-pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
     </div>
     <div class="cards" id="qa-cards"></div>
+    <div class="doc-hint" id="qa-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Processing / between-rounds state ────────────────── -->
@@ -2056,11 +2647,12 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
-      <dt><kbd>c</kbd></dt><dd>request changes</dd>
+      <dt><kbd>c</kbd></dt><dd>request changes (review) &middot; confirm answer (Q&amp;A)</dd>
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
   </details>
@@ -2069,13 +2661,23 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
 
 </div><!-- /#paper -->
 
-<!-- Bottom bar -->
+<!-- Bottom bar. `position: fixed` is the containing block .foot-seg hangs
+     off; the balance bar prints just inside the 2px ink rule that closes
+     the page. Ships empty and hidden — updateReviewStats fills it in
+     review mode only, since a diff or Q&A round has no document balance. -->
 <div class="bottom-bar" id="bottom-bar-el">
+  <div class="foot-seg" id="foot-seg" style="display:none"></div>
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
+      <!-- Review-mode footer (#186). `convergence` is the question a
+           multi-round review actually asks — is the reviewer closing more than
+           they open — and `round trip` is a real measurement, not a claim:
+           the last same-origin request this page made. -->
+      <span class="stat-conv" id="stat-conv" style="display:none"></span>
+      <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
       <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
       <button type="button" class="theme-toggle" id="theme-toggle"
               title="Cycle theme: follow system, light, dark">theme: system</button>
@@ -2094,7 +2696,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   <div class="recap-panel">
     <div class="recap-head">
       <span class="recap-title" id="recap-title">Recap &middot; REV <span id="recap-round"></span></span>
-      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap">&times;</button>
+      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap"><kbd>esc</kbd></button>
     </div>
     <div class="recap-grid" id="recap-grid"></div>
     <div class="recap-actions">
@@ -2113,12 +2715,24 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <div class="prefs-head">
       <div style="display: flex; align-items: center; justify-content: space-between;">
         <span class="prefs-title" id="prefs-title">Learned Preferences</span>
-        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">&times;</button>
+        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences"><kbd>esc</kbd></button>
       </div>
       <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, applied at rewrite &mdash; still yours to approve &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
     </div>
     <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
     <div class="prefs-list" id="prefs-list"></div>
+  </div>
+</div>
+
+<!-- Command palette (⌘K, issue #186) — E's keyboard layer. A directory of
+     verbs the page already carries as controls and keycaps, never a second
+     interaction model. Ships hidden and empty; openPalette() fills the list
+     from live state each open. -->
+<div class="pal-overlay" id="pal-overlay" style="display:none">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette">
+    <input type="text" class="pal-input" id="pal-input" placeholder="&gt; type a command" autocomplete="off"
+           role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+    <div class="pal-list" id="pal-list" role="listbox" aria-label="Commands"></div>
   </div>
 </div>
 
@@ -2218,7 +2832,7 @@ function sectionTitleFor(id) {
   return reviewSectionTitles().get(id) || '';
 }
 
-/* Render one git hunk via diff2html: side-by-side above 900px viewport,
+/* Render one git hunk via diff2html: unified (line-by-line),
    line-by-line below, word-level intra-line diffs. Pure view transform —
    section.content stays the verbatim fence the /viva-diff skill
    (anchor-based edit relocation) and round-to-round carry-forward
@@ -2258,7 +2872,19 @@ function renderDiffHunk(target, raw, title) {
       colorScheme: 'auto',
       matching: 'words',
       diffStyle: 'word',
-      outputFormat: window.innerWidth >= 900 ? 'side-by-side' : 'line-by-line',
+      // UNIFIED, always. Side-by-side splits the hunk into two panes, and a
+      // pane is not the window: at a 1440px viewport the shell is 1368, the
+      // hunk 892, and each pane 445 — 53 visible characters, against 962
+      // needed for a 104-character line. BOTH panes scroll, independently,
+      // and the reviewer drags twice to read one change. The same 892px
+      // unified shows 107 characters, so a 100-column line fits whole.
+      //
+      // The old rule measured `window.innerWidth`, which is the wrong
+      // quantity: the glyph rail and the margin take their share before the
+      // code gets any, so a wide window says nothing about whether a pane can
+      // hold a line. What changed *within* a line survives the format —
+      // `diffStyle: 'word'` marks it either way.
+      outputFormat: 'line-by-line',
     });
     target.innerHTML = DOMPurify.sanitize(rawHtml);
   } catch (e) {
@@ -2267,8 +2893,8 @@ function renderDiffHunk(target, raw, title) {
   target.classList.remove('d2h-pending');
   // Line numbers are visual chrome: unselectable via CSS (anchor hygiene),
   // and hidden from screen readers here — they'd otherwise announce before
-  // every code line, twice per row in side-by-side.
-  target.querySelectorAll('.d2h-code-linenumber, .d2h-code-side-linenumber')
+  // every code line.
+  target.querySelectorAll('.d2h-code-linenumber')
     .forEach(n => n.setAttribute('aria-hidden', 'true'));
   // Slim UI wrapper constructed with an undefined diff wraps the existing
   // (sanitized) DOM; hljs is the page's own instance, passed in because the
@@ -2358,9 +2984,16 @@ function transmittalHTML(data) {
     flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
     carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
   if (!rows.length) return '';
-  return '<div class="transmittal-head"><span class="transmittal-title">Transmittal &middot; REV '
-    + esc(String(data.round).padStart(2, '0')) + '</span></div>'
-    + '<div class="transmittal-rows">' + rows.join('') + '</div>';
+  // The head is a disclosure. The slip is the round's cover note, not the
+  // round's content — above the print but COLLAPSED, so what a reader meets
+  // first is the document rather than a bordered index of it (issue #186's
+  // reading-order finding applies to the slip as much as to the threads).
+  return '<button type="button" class="transmittal-head" id="transmittal-head" aria-expanded="false"'
+    + ' aria-controls="transmittal-rows"><span class="transmittal-title">Transmittal &middot; REV '
+    + esc(String(data.round).padStart(2, '0')) + ' &middot; ' + rows.length
+    + (rows.length === 1 ? ' change' : ' changes')
+    + '</span><span class="transmittal-chevron" aria-hidden="true">&#9662;</span></button>'
+    + '<div class="transmittal-rows" id="transmittal-rows" hidden>' + rows.join('') + '</div>';
 }
 
 function renderTransmittal() {
@@ -2372,6 +3005,11 @@ function renderTransmittal() {
   panel.style.display = '';
   panel.querySelectorAll('.transmittal-row').forEach(btn => {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
+  });
+  const head = el('transmittal-head'), body = el('transmittal-rows');
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
   });
 }
 
@@ -2394,6 +3032,28 @@ function diffFileHunkCounts(sections) {
 function initReview() {
   _pendingMarkdown.clear();
   const container = el('review-cards');
+  // Both surfaces wear the margin grammar; only review prints continuously.
+  // `.doc` arms every grid rule in the stylesheet, `.print` only the rules
+  // that follow from every section being open at once — so the two share one
+  // page and one set of margin builders without a runtime branch in CSS.
+  const asDoc = isContinuousPrint();
+  container.classList.add('doc');
+  container.classList.toggle('print', asDoc);
+  // Stamped on <body> like `mode-diff`, because the page width it sets has to
+  // reach the shell and the bottom bar, which are outside #review-cards.
+  document.body.classList.toggle('mode-doc', asDoc);
+  el('doc-hint').style.display = '';
+  // The composite's bar has no progress track: the footer's segmented rule is
+  // the document's progress, in state rather than in percent, and two bars
+  // saying the same thing differently is one bar too many.
+  el('r-progress-track').style.display = 'none';
+  // `round 2 · line` — the round and the pass it was armed for, the way the
+  // composite states it. `pass.kind` is boundary-validated against PASS_KINDS,
+  // and a diff round can be armed with one too.
+  if (REVIEW_DATA.pass && REVIEW_DATA.pass.kind) {
+    el('round-badge').textContent =
+      String(REVIEW_DATA.round).padStart(2, '0') + ' · ' + REVIEW_DATA.pass.kind;
+  }
   const priorApprovedSet = new Set(REVIEW_DATA.approved_ids || []);
   // Pre-populate approved state for sections approved in previous rounds
   priorApprovedSet.forEach(id => {
@@ -2421,8 +3081,15 @@ function initReview() {
     // Sections approved in a prior round (round >= 2) collapse to carried
     // cards — a head-only line with the read-only content one reveal away.
     // Round 1 keeps the normal-card path even when a resume pre-approves ids.
-    const isCarried = REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
-    const card = isCarried ? buildCarriedCard(s) : buildReviewCard(s);
+    //
+    // Continuous print retires that collapse in review mode (issue #186): a
+    // settled section DIMS IN PLACE, prose and all, because the point of a
+    // document review is reading the document and a carried section is still
+    // part of it. buildCarriedCard stays the diff-mode path, where a carried
+    // hunk genuinely has nothing to read.
+    const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);
+    const card = asDoc ? buildDocSection(s, i)
+                       : isCarried ? buildCarriedCard(s) : buildReviewCard(s);
     // Carried cards appear instantly (no fade) — only new/changed cards get
     // the staggered fade-in, re-indexed among themselves so the stagger stays
     // tight regardless of how many sections are already carried.
@@ -2437,6 +3104,11 @@ function initReview() {
     // carried cards bake their collapsed state into their own markup.
     if (!isCarried && priorApprovedSet.has(s.id)) syncReviewCard(s.id);
   });
+  // Continuous print renders every section up front — there is nothing to
+  // open, so there is nothing to render lazily. `_pendingMarkdown` and the
+  // late-CDN retry keep working unchanged: `retryOnceScriptsLoad` selects on
+  // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
+  if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
   if (firstPending) activateReviewCard(firstPending.id);
@@ -2600,10 +3272,15 @@ function openNotesHTML(exchanges) {
   }).join('');
 }
 
-function openThreadHTML(section) {
-  const ex = section.open_notes;
-  if (!Array.isArray(ex) || ex.length === 0) return '';
-  return ex.map(t => {
+// One carried thread, as a complete element. Split out of openThreadHTML so
+// the margin (issue #186) can place each thread beside its own anchor instead
+// of stacking the whole run above the prose — both surfaces build from this
+// one function, and the doc grid restyles `.open-thread` into the margin's
+// note grammar rather than forking the markup.
+// The `.nh-num` span ships empty and stays empty in the accordion; only the
+// margin numbers its notes, and it fills this in place (renumberDocNotes) so
+// the reply textarea beside it never gets rebuilt out from under a keystroke.
+function openThreadItemHTML(t) {
     const cid = esc(t.cid || '');
     const exs = t.exchanges || [];
     // The thread's current type carries to a reply (continuing an info thread
@@ -2619,15 +3296,40 @@ function openThreadHTML(section) {
     // always wins. Same settle button, same reply box, different label and
     // prompt; the clamp above already sends an insisting reply as `changes`.
     const declined = t.status === 'declined';
+    /* One verb per note, with its keycap, instead of a permanently-open reply
+       box under two type chips. The old block was ~120px of controls on every
+       carried thread whether or not the reviewer intended to say anything —
+       affordable at the foot of an accordion card, not in a 253px margin
+       beside the paragraph.
+
+       The verbs are viva's actual moves, not new ones. A declined thread is
+       waiting on accept-or-insist, so it leads with `Accept` (settle: the
+       author's decline stands) against `Change anyway` (reply: an insisting
+       reply is binding and always wins). An open thread offers `Reply` and
+       `Settle`. Nothing here is a second confirmation step for a suggestion —
+       making one IS the instruction, and the prose already shows it applied. */
+    const btn = (cls, label, key, attrs) =>
+      '<button type="button" class="nt-btn ' + cls + '"' + (attrs || '') + '>'
+      + label + '<kbd>' + key + '</kbd></button>';
+    const settle = extra => btn('settle-btn ' + extra, declined ? 'Accept' : 'Settle',
+      declined ? 'y' : 's', ' id="rsettle-' + cid + '" data-cid="' + cid + '"');
+    const reply = () => btn('thread-reply-btn', declined ? 'Change anyway' : 'Reply',
+      declined ? 'n' : 'r',
+      ' data-cid="' + cid + '" data-type="' + (declined ? 'changes' : esc(type)) + '"');
     return '<div class="open-thread' + (declined ? ' is-declined' : '')
       + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
-      +   '<span class="open-thread-label">' + (declined ? 'declined' : 'open note')
-      +   '</span>' + quote
-      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
+      +   '<span class="nh-num" id="rnum-' + cid + '" aria-hidden="true"></span>'
+      +   '<span class="open-thread-label">' + (declined ? 'author kept as-is' : 'open note')
+      +   '</span><span class="pn">&middot; ' + cid + '</span>' + quote
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
-      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '">'
+      + '<div class="nt-acts">'
+      +   (declined ? settle('is-pri') + reply() : reply() + settle('is-quiet'))
+      + '</div>'
+      // Ships hidden; a verb reveals it. wireOpenThread un-hides it on build
+      // when a reply is already pending in rState, so a rebuild never loses one.
+      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '" hidden>'
       +   '<div class="thread-reply-chips">'
       +     '<button type="button" class="cmt-chip cmt-chip-changes' + (type === 'changes' ? ' is-on' : '')
       +       '" data-type="changes">request changes</button>'
@@ -2636,11 +3338,11 @@ function openThreadHTML(section) {
       +   '</div>'
       +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
       +     '" placeholder="' + (declined
-            ? 'Settle to accept the decline, or reply to insist — a reply is binding.'
+            ? 'A reply insists, and an insisting reply is binding.'
             : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
       +     '"></textarea>'
-      + '</div>';
-  }).join('');
+      + '</div>'
+      + '</div>';   // close .open-thread — unclosed, two threads nested
 }
 
 /* ─── Confidence triage (issue #12) ───────────────────────────
@@ -2695,6 +3397,19 @@ function setupCardSort() {
   applyCardSort();
 }
 
+/* ─── The accordion, wearing the margin grammar ─────────────────
+   Diff mode's builder. What survives is the ACCORDION — one hunk open at a
+   time, a real disclosure button for a head, the animating body region —
+   because 52 hunks printed at once is a worse surface than one at a time.
+   What does not survive is the accordion's CHROME. The annotation strip, the
+   stacked thread list, the add-a-note row and the action row all sat between
+   the reviewer and the hunk, stacking commentary on top of the thing it is
+   about: the same inversion the print fixed, in a narrower frame. They move
+   to the margin, where they sit beside the lines they concern.
+
+   The hunk is `.d2h-wrapper` — one block, so layoutDocRows gives it a single
+   `wide` row and the notes hang off it. It never breaks out into the margin's
+   track: see the `.doc.print` scope on that rule. */
 function buildReviewCard(section) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -2716,19 +3431,8 @@ function buildReviewCard(section) {
     <div class="card-body-wrap" id="rbody-${section.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          ${annotStripHTML(section.annotations)}
-          ${openThreadHTML(section)}
-          ${diffStripHTML(section.id, section.diff)}
+          ${docHeadRowHTML(section.id, `<div id="rseg-${section.id}"></div>${diffStripHTML(section.id, section.diff)}`, { skip: true })}
           <div class="section-content" id="rcontent-${section.id}"></div>
-          <div class="comment-add-row">
-            <span class="cmt-add-hint">select text above to comment</span>
-            <button type="button" class="cmt-add-btn" id="rcmtnote-${section.id}">+ add note</button>
-          </div>
-          <div class="actions">
-            <button type="button" class="action-btn is-approve" id="rbtn-primary-${section.id}"><span aria-hidden="true">&#10003;</span> approve</button>
-            <button type="button" class="action-btn" id="rbtn-skip-${section.id}" style="margin-left:auto;opacity:0.55"><span aria-hidden="true">&#8595;</span> skip for now</button>
-          </div>
-          <div class="comment-list" id="rclist-${section.id}"></div>
           <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
         </div>
       </div>
@@ -2738,49 +3442,7 @@ function buildReviewCard(section) {
     toggleReviewCard(section.id);
   });
 
-  card.querySelector('#rbtn-primary-' + section.id).addEventListener('click', e => {
-    e.stopPropagation(); approveSection(section.id);
-  });
-  card.querySelector('#rbtn-skip-' + section.id).addEventListener('click', e => {
-    e.stopPropagation(); skipReviewCard(section.id);
-  });
-
-  // Open-note controls (issue #16). Wire each per-cid settle button + reply box.
-  card.querySelectorAll('.settle-btn').forEach(b =>
-    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(section.id, b.dataset.cid); }));
-  card.querySelectorAll('.thread-reply').forEach(wrap => {
-    const cid = wrap.dataset.cid;
-    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
-      e.stopPropagation();
-      wrap.dataset.type = ch.dataset.type;
-      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
-      replyToThread(section.id, cid);   // re-tag any pending reply with the new type
-    }));
-    const field = wrap.querySelector('.thread-reply-field');
-    field.addEventListener('input', () => replyToThread(section.id, cid));
-    field.addEventListener('click', e => e.stopPropagation());
-  });
-
-  const diffToggle = card.querySelector('#rdiff-toggle-' + section.id);
-  if (diffToggle) diffToggle.addEventListener('click', e => {
-    e.stopPropagation();
-    card.querySelector('#rdiff-' + section.id).classList.toggle('collapsed');
-  });
-
-  card.querySelectorAll('.annot-jump').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const prefId = btn.getAttribute('data-pref-id');
-      if (prefId) openPrefsPanel(btn, prefId);
-      else activateReviewCard(btn.getAttribute('data-target'));
-    });
-  });
-
-  card.querySelector('#rcmtnote-' + section.id).addEventListener('click', e => {
-    e.stopPropagation(); openCommentPopover(section.id, {});
-  });
-
-  renderCommentList(section.id);
+  wireDocHeadRow(card, section.id);
   return card;
 }
 
@@ -2855,6 +3517,809 @@ function withdrawApproval(id) {
   renderTransmittal();   // the withdrawn section is no longer "approved & unchanged"
 }
 
+/* ═════════════════════════════════════════════════════════════
+   THE DOCUMENT PRINT — doc + margin (issue #186)
+   ─────────────────────────────────────────────────────────────
+   Review mode's renderer. Sections print open, in document order, as a run
+   of `check gutter | prose | margin` rows; a settled section dims in place
+   instead of collapsing to a clickable row. Commentary sits BESIDE the
+   passage it annotates — the reading-order inversion this story fixes was
+   that a round-2 section put ~700px of threads, diff and slip between the
+   reader and the paragraph all of it was about.
+
+   Diff mode is untouched and keeps the accordion (buildReviewCard): a hunk
+   is not prose, it has no margin to annotate and no measure to hold, and a
+   200-hunk changeset read as one continuous print is a worse surface than
+   one hunk at a time.
+
+   The registry of check kinds is injected from scripts/schema.py rather
+   than restated here — CHECK_KINDS is the flag registry that gates a
+   `checks` round, and a second copy of it in the frontend is exactly the
+   fail-open drift the schema module exists to prevent. ═════════════════ */
+const CHECK_KINDS = __CHECK_KINDS__;
+
+/* ─── The seam: the grammar is not the print ─────────────────
+   The restructure is TWO things, and one class stamped for both is what
+   conflated them.
+
+   THE GRAMMAR — three-column rows, margin notes with numbered pins, the
+   glyph rail, the segmented rule, the spec table, per-note verbs — belongs
+   to anything that renders a section. Nothing about a hunk or a question
+   resists a margin, and the commentary-beside-the-passage inversion this
+   work fixes is not a property of documents.
+
+   CONTINUOUS PRINT — every section open at once, a settled one dimming in
+   place instead of collapsing — is review's alone. 52 hunks printed at once
+   is worse than one at a time, and a question at a time is the point of an
+   interview.
+
+   `.doc` on the card container arms the grammar; `.print` arms the print.
+   Review stamps both, diff and Q&A stamp only the first.
+
+   There is deliberately no `usesMargin()` beside `isContinuousPrint()`. Every
+   place `isDocMode()` used to branch turns out to be reached only from a
+   surface that renders sections — and every such surface wears the margin — so
+   the honest form of "does this surface use the margin grammar" is no
+   condition at all. A predicate that is true at all of its call sites is worse
+   than none: it advertises a surface that does not exist. */
+function isContinuousPrint() { return !!(REVIEW_DATA && REVIEW_DATA.mode === 'review'); }
+
+/* ─── Flags: which column a producer flag belongs in ─────────
+   The 70px gutter is for a glance — a severity glyph and a short message
+   read at the edge of vision while the eye stays on the prose. A flag that
+   carries an interactive jump (a contradiction's cross-section link, a
+   learned preference's badge-to-entry link) is neither short nor a glance,
+   so it routes to the margin and renders through annotStripHTML, keeping
+   the jump wiring those two features already ship. */
+function docFlagSplit(section) {
+  const titles = reviewSectionTitles();
+  const gutter = [], margin = [];
+  (section.annotations || []).forEach(a => {
+    if (!a) return;
+    // A confidence annotation is the agent's self-report about the whole
+    // section, not a flag on a passage — it drives the triage sort, and its
+    // readout is the spec table. Letting it into the gutter would hold 98px
+    // open on every self-annotated document for sort metadata, which is
+    // exactly what the wasted-space rule is about.
+    if (a.kind === 'confidence') return;
+    const anchorId = a.anchor != null ? String(a.anchor) : '';
+    const m = a.kind === 'preference' ? PREF_ID_RE.exec(a.message || '') : null;
+    const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
+    (jumps ? margin : gutter).push(a);
+  });
+  return { gutter, margin };
+}
+
+const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
+
+function flagSeverity(a) {
+  return ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
+}
+
+// The rail glyph: locality and severity, nothing else. aria-hidden, because
+// the margin line below carries the same flag in words.
+function gutterGlyphHTML(a) {
+  const sev = flagSeverity(a);
+  const full = [a.kind || 'note', a.message || '', a.result ? '→ ' + a.result : '']
+    .filter(Boolean).join(' · ');
+  return '<span class="lflag lflag-' + sev + '" title="' + esc(full) + '" aria-hidden="true">'
+    + FLAG_GLYPH[sev] + '</span>';
+}
+
+// The same flag in words, in the margin of its own row — where a 300px column
+// can hold `✓ §4 defines "cold start"` without clamping it to `✓ §4 defines
+// "cold`, which is what 70px of 9px type did to it.
+function marginFlagHTML(a) {
+  const sev = flagSeverity(a);
+  return '<div class="mflag mflag-' + sev + '" title="' + esc(a.kind || 'note') + '">'
+    + '<span class="g" aria-hidden="true">' + FLAG_GLYPH[sev] + '</span>'
+    + '<span>' + esc(a.message || '')
+    + (a.result ? '<span class="r">&rarr; ' + esc(a.result) + '</span>' : '')
+    + '</span></div>';
+}
+
+/* ─── Rows ───────────────────────────────────────────────────
+   The rendered markdown's top-level blocks become the prose column of one
+   row each, so a note can sit beside the paragraph it annotates rather
+   than beside the section. Code and tables take a `wide` row: they are not
+   prose and do not hold the prose measure. */
+function docRow(wide) {
+  const row = document.createElement('div');
+  row.className = 'row' + (wide ? ' wide' : '');
+  const rp = document.createElement('div');
+  rp.className = 'rp';
+  row.appendChild(rp);
+  return row;
+}
+
+function layoutDocRows(id) {
+  const host = el('rcontent-' + id); if (!host) return;
+  if (host.querySelector(':scope > .row')) return;          // already laid out
+  // marked/DOMPurify missing → renderMarkdown wrote raw text, no elements.
+  // One row keeps the raw fallback inside the grid instead of outside it.
+  if (!host.firstElementChild) {
+    if (!host.textContent) return;
+    const row = docRow(false);
+    row.querySelector('.rp').textContent = host.textContent;
+    host.textContent = '';
+    host.appendChild(row);
+    return;
+  }
+  // The head row already prints the section title; markdown's own leading
+  // heading is the same words twice (what `.section-content > h1:first-child`
+  // hid in the accordion, done here because the heading is no longer a
+  // first child of anything once the blocks are distributed).
+  const first = host.firstElementChild;
+  if (first && /^H[1-3]$/.test(first.tagName)) first.remove();
+  Array.from(host.children).forEach(node => {
+    const wide = node.tagName === 'PRE' || node.tagName === 'TABLE'
+              || node.classList.contains('table-wrap') || node.classList.contains('d2h-wrapper');
+    const row = docRow(wide);
+    host.appendChild(row);
+    row.querySelector('.rp').appendChild(node);
+  });
+}
+
+function docRows(id) {
+  const host = el('rcontent-' + id);
+  return host ? Array.from(host.querySelectorAll(':scope > .row')) : [];
+}
+
+function docHeadRow(id) {
+  const sec = el('rcard-' + id);
+  return sec ? sec.querySelector('.row-head') : null;
+}
+
+// The row whose prose holds the given occurrence of `text`. Counts occurrences
+// across rows in document order so a phrase repeated in three paragraphs puts
+// the note beside the paragraph the reviewer actually selected in, the same
+// ordinal renderHighlights marks. Null when nothing matches — an unresolvable
+// anchor is a whole-section note, never a silently misplaced one.
+function rowForAnchor(id, text, occurrence) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  let n = occurrence > 0 ? occurrence : 0;
+  const rows = docRows(id);
+  for (const r of rows) {
+    const hay = (r.querySelector('.rp') || {}).textContent || '';
+    let c = 0, i = hay.indexOf(t);
+    while (i >= 0) { c++; i = hay.indexOf(t, i + 1); }
+    if (c > n) return r;
+    n -= c;
+  }
+  return rows.find(r => (((r.querySelector('.rp') || {}).textContent) || '').includes(t)) || null;
+}
+
+// Side cells are created on demand and never pre-reserved: a row that gains a
+// note grows a margin cell, a row that never has one never carries an empty
+// box. The COLUMN's width is a separate, document-level decision
+// (updateDocColumns) — this is only about the box.
+function docCell(row, cls) {
+  let cell = row.querySelector(':scope > .' + cls);
+  if (!cell) {
+    cell = document.createElement('div');
+    cell.className = cls;
+    if (cls === 'rg') row.insertBefore(cell, row.firstChild);
+    else row.appendChild(cell);
+  }
+  return cell;
+}
+
+function docNoteHost(id, row) {
+  const target = row || docHeadRow(id);
+  if (!target) return null;
+  const rm = docCell(target, 'rm');
+  let host = rm.querySelector(':scope > .rm-notes');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'rm-notes';
+    rm.appendChild(host);
+  }
+  return host;
+}
+
+/* ─── Notes: what the margin holds ───────────────────────────
+   Two sources, deliberately kept apart. A carried THREAD is built once and
+   placed once — it owns a reply textarea, and rebuilding it mid-keystroke
+   would steal focus, which is exactly the invariant the accordion's
+   separate `.comment-list` host protected. This round's COMMENTS are
+   static text and are rebuilt freely on every sync. */
+function docNotes(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const out = threads.map(t => ({
+    kind: 'thread', cid: t.cid, thread: t,
+    comment: cs.find(c => c.cid === t.cid) || null,
+    anchor: t.quote ? { text: t.quote, occurrence: 0 } : null,
+  }));
+  activeComments(id)
+    .filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => out.push({ kind: 'comment', cid: c.cid, comment: c, anchor: c.anchor || null }));
+  return out;
+}
+
+// Notes in reading order: by the row their anchor lands in, then by the order
+// they were made. An unanchored note sorts to -1 — the section head, which is
+// above every row — because a whole-section note is about all of it.
+function docNotesOrdered(section) {
+  const rows = docRows(section.id);
+  return docNotes(section)
+    .map((n, i) => {
+      const r = n.anchor ? rowForAnchor(section.id, n.anchor.text, n.anchor.occurrence) : null;
+      return Object.assign({}, n, { row: r ? rows.indexOf(r) : -1, seq: i });
+    })
+    .sort((a, b) => a.row - b.row || a.seq - b.seq);
+}
+
+function noteTypeOf(n) {
+  if (n.kind === 'thread') {
+    const last = (n.thread.exchanges || []).slice(-1)[0] || {};
+    return last.verdict === 'changes' || last.verdict === 'suggestion' ? last.verdict : 'info';
+  }
+  return n.comment.type === 'changes' || n.comment.type === 'suggestion' ? n.comment.type : 'info';
+}
+
+// The exact wording a note proposes, from either source: this round's
+// suggestion comment, or a carried thread whose last turn was one.
+function noteReplacement(n) {
+  if (n.kind === 'comment') return n.comment.replacement || '';
+  const last = (n.thread.exchanges || []).slice(-1)[0] || {};
+  return last.verdict === 'suggestion' ? (last.replacement || '') : '';
+}
+
+/* D's fence, squared: the reviewer's replacement against the wording it
+   replaces. Red and green live here and nowhere else — the fence and the
+   diff are the same object, and diff semantics already own those colors. */
+function suggestionFenceHTML(c) {
+  const was = (c.anchor || {}).text || '';
+  return '<div class="fence"><div class="fence-h">suggestion &middot; ' + esc(c.cid) + '</div>'
+    + (was ? '<div class="fence-ln fence-del"><span class="fence-g" aria-hidden="true">&minus;</span>'
+           + '<span class="fence-tx">' + esc(was) + '</span></div>' : '')
+    + '<div class="fence-ln fence-add"><span class="fence-g" aria-hidden="true">+</span>'
+    + '<span class="fence-tx">' + esc(c.replacement) + '</span></div></div>';
+}
+
+function commentNoteHTML(n) {
+  const c = n.comment;
+  const word = c.type === 'suggestion' ? 'suggestion' : c.type === 'info' ? 'question' : 'comment';
+  const cls = c.type === 'info' ? ' nt-fact' : '';
+  /* The fence is for a suggestion the prose could not show applied — code, or
+     an anchor that never resolved. When markAndPin DID splice it inline, the
+     note says so rather than printing the same two strings a second time: the
+     applied sentence is upstream, in the text, which is where a reviewer
+     judges wording. */
+  const showsInline = !!(c.replacement && n.placedInline);
+  return '<div class="nt' + cls + '" data-cid="' + esc(c.cid) + '">'
+    + '<div class="nh"><span class="nh-num">' + n.num + '</span> you &mdash; ' + word
+    + '<span class="pn">&middot; ' + esc(c.cid) + '</span></div>'
+    + (c.anchor && c.anchor.text && c.type !== 'suggestion'
+        ? '<span class="nt-quote">' + esc(c.anchor.text) + '</span>' : '')
+    + (c.note ? '<div class="nt-body">' + esc(c.note) + '</div>' : '')
+    + (showsInline ? '<div class="nt-applied">applied above &mdash; struck wording out, '
+                   + 'replacement on yellow</div>' : '')
+    + (c.replacement && !showsInline ? suggestionFenceHTML(c) : '')
+    + '<div class="nt-acts">'
+    +   '<button type="button" class="nt-btn is-quiet cmt-del" data-cid="' + esc(c.cid) + '">remove</button>'
+    + '</div></div>';
+}
+
+/* ─── Spec table ─────────────────────────────────────────────
+   The transmittal slip's successor at section scale, and the margin's
+   answer to "what is open here" — stated as a spec, not described. Drawn
+   for the LIVE section only: a spec table on every section at once is a
+   table of contents, not a state readout. */
+function sectionSpec(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const isSettled = cid => cs.some(c => c.cid === cid && c.settled);
+  let comments = 0, suggestions = 0, declined = 0;
+  threads.forEach(t => {
+    if (isSettled(t.cid)) return;
+    if (t.status === 'declined') { declined++; return; }
+    const last = (t.exchanges || []).slice(-1)[0] || {};
+    if (last.verdict === 'suggestion') suggestions++; else comments++;
+  });
+  activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => { if (c.type === 'suggestion') suggestions++; else comments++; });
+  const checks = (section.annotations || []).filter(a => a && CHECK_KINDS.includes(a.kind));
+  return { comments, suggestions, declined,
+           checks: checks.length, checksDone: checks.filter(a => a.result).length };
+}
+
+function specHTML(section) {
+  const s = sectionSpec(section);
+  // Nothing open and nothing checked: no table. A spec reading all zeros is
+  // not a state readout, and this is also what keeps the head row's height
+  // independent of which section is live — see renderDocSpec.
+  const conf0 = confidenceAnnot(section);
+  if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
+  const row = (label, value, open) =>
+    '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
+  // The agent's own confidence is a spec line, not a gutter flag: it is about
+  // the section, and it is what the triage sort orders on.
+  const conf = confidenceAnnot(section);
+  const rows = row('comments open', s.comments, s.comments > 0)
+    + row('suggestions open', s.suggestions, s.suggestions > 0)
+    + row('author kept as-is', s.declined, false)
+    + (s.checks ? row('checks', s.checksDone + '/' + s.checks
+        + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
+    + (conf ? row('agent confidence',
+        [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
+        conf.level === 'low') : '');
+  return '<table class="spec"><caption>' + esc(section.title) + ' &mdash; state</caption>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+
+/* ─── Segmented rule ─────────────────────────────────────────
+   One denominator, one place. Every open item is either JUDGMENT (the
+   reviewer's call — changes, a suggestion, a decline waiting on accept-or-
+   insist) or an open FACT (a question, an unanswered check, a producer's
+   warn/error flag); everything resolved is SETTLED. The order is fixed and
+   that fixed order is the colorblind-safe second encoding. The raw counts
+   ride out in the aria-label so the honest-proportions claim is auditable
+   rather than asserted. */
+function sectionBalance(section) {
+  const id = section.id;
+  const threads = section.open_notes || [];
+  const cs = (rState.verdicts[id] || {}).comments || [];
+  const isSettled = cid => cs.some(c => c.cid === cid && c.settled);
+  let judgment = 0, facts = 0, settled = 0;
+  threads.forEach(t => {
+    if (isSettled(t.cid)) { settled++; return; }
+    const last = (t.exchanges || []).slice(-1)[0] || {};
+    if (t.status === 'declined' || last.verdict === 'changes' || last.verdict === 'suggestion') judgment++;
+    else facts++;
+  });
+  activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
+    .forEach(c => { if (c.type === 'changes' || c.type === 'suggestion') judgment++; else facts++; });
+  (section.annotations || []).forEach(a => {
+    if (!a) return;
+    if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; else facts++; return; }
+    if (a.severity === 'warn' || a.severity === 'error') facts++;
+  });
+  if (deriveVerdict(id) === 'approved') settled++;
+  return { judgment, facts, settled };
+}
+
+function segHTML(bal) {
+  const total = bal.judgment + bal.facts + bal.settled;
+  if (!total) return '';
+  // Nothing open: the thin settled hairline. A state bar on a settled
+  // section is decoration, and decoration is what this ground removed.
+  if (!bal.judgment && !bal.facts) return '<div class="rule-s"></div>';
+  const pct = n => (n / total * 100).toFixed(2) + '%';
+  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
+  const label = 'open: ' + bal.judgment + ' judgment, ' + bal.facts + ' fact'
+    + (bal.facts === 1 ? '' : 's') + '; ' + bal.settled + ' settled';
+  return '<div class="seg" role="img" aria-label="' + esc(label) + '">'
+    + seg('seg-judgment', bal.judgment) + seg('seg-fact', bal.facts)
+    + seg('seg-settled', bal.settled) + '</div>';
+}
+
+/* ─── The head row, shared by both builders ──────────────────
+   The PROSE cell differs by surface — the print prints the section's heading
+   there, the accordion has already printed it in the disclosure button — so
+   it is passed in. The MARGIN cell does not differ at all, and it is the one
+   that carries the section: the spec table, the note host, and the section's
+   own verbs. One copy, so a verb added to a document review cannot go missing
+   from a diff review.
+
+   `skip` is the accordion's alone. In the print every section is on the page
+   already and skipping to the next one is just reading on; with one hunk open
+   at a time, "not this one, not now" is a real move and it needs a control. */
+function docHeadRowHTML(id, proseHTML, opts) {
+  const skip = !!(opts && opts.skip);
+  return '<div class="row row-head">'
+    + '<div class="rp">' + proseHTML + '</div>'
+    + '<div class="rm" id="rspec-' + id + '">'
+    +   '<div class="rm-spec" id="rspecbody-' + id + '"></div>'
+    +   '<div class="rm-notes"></div>'
+    +   '<div class="nt-acts doc-acts">'
+    +     '<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">'
+    +       '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>'
+    +     '<button type="button" class="nt-btn is-quiet" id="rcmtnote-' + id + '">+ note</button>'
+    +     (skip ? '<button type="button" class="nt-btn is-quiet" id="rbtn-skip-' + id + '">'
+                + '<span aria-hidden="true">&#8595;</span> skip</button>' : '')
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+/* The wiring that goes with it. Approve is the section's own control and it
+   stays reachable by pointer and by Tab: with the action row gone, a section
+   carrying no notes would otherwise hold no focusable element at all, and
+   keyboard access to every section is a hard requirement (test_server_a11y).
+   ⌘K is a second path to the same verb, never the only one. */
+function wireDocHeadRow(root, id) {
+  root.querySelector('#rbtn-primary-' + id).addEventListener('click', e => {
+    e.stopPropagation();
+    if (deriveVerdict(id) === 'approved') docWithdraw(id); else approveSection(id);
+  });
+  root.querySelector('#rcmtnote-' + id).addEventListener('click', e => {
+    e.stopPropagation(); openCommentPopover(id, {});
+  });
+  const skip = root.querySelector('#rbtn-skip-' + id);
+  if (skip) skip.addEventListener('click', e => { e.stopPropagation(); skipReviewCard(id); });
+
+  const diffToggle = root.querySelector('#rdiff-toggle-' + id);
+  if (diffToggle) {
+    // Ships collapsed. "What changed since last round" is not what the reader
+    // opened the document to read, and at full width above the prose it was
+    // the single largest thing between them and the text.
+    root.querySelector('#rdiff-' + id).classList.add('collapsed');
+    diffToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      root.querySelector('#rdiff-' + id).classList.toggle('collapsed');
+    });
+  }
+
+  // A pin is a jump to its own note — the pairing works in both directions.
+  root.addEventListener('click', e => {
+    const pin = e.target.closest ? e.target.closest('.pin') : null;
+    if (!pin) return;
+    e.stopPropagation();
+    const note = root.querySelector('[data-cid="' + pin.dataset.cid + '"]');
+    if (note) {
+      note.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // The note's first verb, not its reply box — the box ships hidden now,
+      // and focusing a hidden field silently drops the focus on the floor.
+      const target = note.querySelector('.nt-btn, textarea:not([hidden])');
+      if (target) target.focus({ preventScroll: true });
+    }
+  });
+}
+
+/* ─── Build ──────────────────────────────────────────────────
+   The section element keeps the `rcard-` id the rest of the app addresses
+   sections by, so activateReviewCard, advanceFrom, the transmittal jumps
+   and the Tab handler all keep working against it unchanged. */
+function buildDocSection(section, index) {
+  const id = section.id;
+  const sec = document.createElement('section');
+  sec.className = 'doc-section';
+  sec.id = 'rcard-' + id;
+  sec.setAttribute('aria-labelledby', 'rhead-' + id);
+
+  _pendingMarkdown.set(id, section.content ?? '');
+
+  sec.innerHTML = docHeadRowHTML(id, `
+        <h2 class="doc-head" id="rhead-${id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(section.title)}</h2>
+        <div id="rseg-${id}"></div>
+        ${diffStripHTML(id, section.diff)}`) + `
+    <div class="section-content" id="rcontent-${id}"></div>
+    <div class="comment-popover" id="rpop-${id}" style="display:none"></div>`;
+
+  // The live section follows the reader: pointing at or tabbing into one
+  // makes it active without yanking the page, which is what the jump paths
+  // (transmittal rows, pins, the palette) deliberately still do. The print's
+  // alone — in the accordion the disclosure button is what makes a section
+  // live, and there is only ever one open.
+  sec.addEventListener('mousedown', () => activateReviewCard(id, { noScroll: true }));
+  sec.addEventListener('focusin',   () => activateReviewCard(id, { noScroll: true }));
+
+  wireDocHeadRow(sec, id);
+  return sec;
+}
+
+// Withdraw, in continuous print. The accordion swapped a collapsed carried
+// card for an open one; here nothing was ever collapsed, so withdrawing is
+// only the verdict going back to pending — the prose stays exactly where the
+// reader was reading it.
+function docWithdraw(id) {
+  if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
+  syncReviewCard(id);
+  updateReviewStats();
+  renderTransmittal();
+}
+
+/* ─── Place: flags, threads, notes, pins ─────────────────────
+   Called once per section after its markdown is laid out into rows, then
+   surgically on every sync. Placement is idempotent — a thread already in
+   the right cell is left alone, because moving a DOM node blurs whatever
+   is focused inside it and a thread owns a reply textarea. */
+function placeDocFlags(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const split = docFlagSplit(section);
+  const byRow = new Map();
+  split.gutter.forEach(a => {
+    const row = a.anchor != null ? rowForAnchor(id, String(a.anchor), 0) : null;
+    const key = row || docHeadRow(id);
+    if (!key) return;
+    if (!byRow.has(key)) byRow.set(key, []);
+    byRow.get(key).push(a);
+  });
+  // Glyph in the rail, words in the margin, both on the row the flag concerns.
+  byRow.forEach((flags, row) => {
+    docCell(row, 'rg').innerHTML = flags.map(gutterGlyphHTML).join('');
+    const rm = docCell(row, 'rm');
+    let host = rm.querySelector(':scope > .rm-flags');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'rm-flags';
+      // Above the threads and this round's notes: the machine's reading of the
+      // paragraph comes before the conversation about it.
+      rm.insertBefore(host, rm.firstChild);
+    }
+    host.innerHTML = flags.map(marginFlagHTML).join('');
+  });
+  if (split.margin.length) {
+    const host = docNoteHost(id, null);
+    // Idempotent like its siblings: initReview calls _ensureRendered in the
+    // eager loop and again through activateReviewCard, and on the md-raw path
+    // neither call deletes from _pendingMarkdown — without this the strip
+    // would stack twice for the length of a CDN outage.
+    if (host && !host.querySelector(':scope > .annot-strip')) {
+      host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
+      host.querySelectorAll('.annot-jump').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const prefId = btn.getAttribute('data-pref-id');
+          if (prefId) openPrefsPanel(btn, prefId);
+          else activateReviewCard(btn.getAttribute('data-target'));
+        });
+      });
+    }
+  }
+}
+
+function placeDocThreads(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const threads = section.open_notes || [];
+  if (!threads.length) return;
+  const sec = el('rcard-' + id); if (!sec) return;
+  threads.forEach(t => {
+    let node = el('rthread-' + t.cid);
+    if (!node) {
+      const holder = document.createElement('div');
+      holder.innerHTML = openThreadItemHTML(t);
+      node = holder.firstElementChild;
+      wireOpenThread(id, node);
+      // A rebuild (the late-CDN retry replaces the container's innerHTML,
+      // threads included) must not lose a reply the reviewer already typed —
+      // the text lives in rState, so put it back in the box.
+      const pending = ((rState.verdicts[id] || {}).comments || [])
+        .find(c => c.cid === t.cid && c.reply && c.note);
+      if (pending) {
+        const field = node.querySelector('.thread-reply-field');
+        if (field) field.value = pending.note;
+      }
+    }
+    const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
+    // The same guard `placeDocFlags` and `docNoteHost` carry, and for the same
+    // reason: an unanchored thread falls back to the head row, and a surface
+    // that has no head row has nowhere to put it.
+    const host = row || docHeadRow(id);
+    if (!host) return;
+    const rm = docCell(host, 'rm');
+    let threadHost = rm.querySelector(':scope > .rm-threads');
+    if (!threadHost) {
+      threadHost = document.createElement('div');
+      threadHost.className = 'rm-threads';
+      // Threads precede this round's fresh notes: a carried thread is older
+      // business than a comment made a minute ago.
+      rm.insertBefore(threadHost, rm.querySelector(':scope > .rm-notes'));
+    }
+    if (node.parentElement !== threadHost) threadHost.appendChild(node);
+  });
+}
+
+// What a reply MEANS, in one place: `info` keeps the discussion going,
+// `changes` turns it into an edit. The chips and the reveal verbs both set it
+// here so they can never disagree about which one is lit.
+function setThreadReplyType(wrap, type) {
+  wrap.dataset.type = type;
+  wrap.querySelectorAll('.cmt-chip').forEach(c =>
+    c.classList.toggle('is-on', c.dataset.type === type));
+}
+
+// The settle button + reply box wiring, lifted out of buildReviewCard so both
+// surfaces bind one thread the same way. `node` is a scope, not one thread:
+// the accordion passes its whole card, the margin passes a single thread.
+function wireOpenThread(id, node) {
+  node.querySelectorAll('.settle-btn').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(id, b.dataset.cid); }));
+  // `Reply` / `Change anyway` reveal the box and set what a reply MEANS:
+  // insisting on a declined thread is an edit request, never a chat turn.
+  node.querySelectorAll('.thread-reply-btn').forEach(b =>
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const wrap = node.querySelector('.thread-reply[data-cid="' + b.dataset.cid + '"]');
+      if (!wrap) return;
+      wrap.hidden = false;
+      setThreadReplyType(wrap, b.dataset.type);
+      const field = wrap.querySelector('.thread-reply-field');
+      if (field) field.focus({ preventScroll: true });
+    }));
+  node.querySelectorAll('.thread-reply').forEach(wrap => {
+    const cid = wrap.dataset.cid;
+    // A reply already in rState (a rebuild, or a resumed round) keeps its box
+    // open — hiding it would hide feedback the reviewer has already given.
+    const pending = ((rState.verdicts[id] || {}).comments || [])
+      .find(c => c.cid === cid && c.reply && c.note);
+    if (pending) {
+      wrap.hidden = false;
+      const f = wrap.querySelector('.thread-reply-field');
+      if (f && !f.value) f.value = pending.note;
+    }
+    wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
+      e.stopPropagation();
+      setThreadReplyType(wrap, ch.dataset.type);
+      replyToThread(id, cid);   // re-tag any pending reply with the new type
+    }));
+    const field = wrap.querySelector('.thread-reply-field');
+    field.addEventListener('input', () => replyToThread(id, cid));
+    field.addEventListener('click', e => e.stopPropagation());
+  });
+}
+
+// Mark every note's anchor and pin it with the note's own number. One pass
+// owns both ends of the pairing, so the number in the text and the number in
+// the margin can never disagree.
+function markAndPin(id, ordered) {
+  const content = el('rcontent-' + id); if (!content) return;
+  content.querySelectorAll('.pin').forEach(p => p.remove());
+  // A `.sug` unwraps back to the wording it replaced — the `del` half IS the
+  // document; the `ins` half is the reviewer's proposal and was never in it.
+  content.querySelectorAll('span.sug').forEach(s => {
+    const was = s.querySelector('del');
+    s.replaceWith(document.createTextNode(was ? was.textContent : ''));
+  });
+  content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>
+    m.replaceWith(document.createTextNode(m.textContent)));
+  content.normalize();
+  ordered.forEach(n => {
+    const a = n.anchor;
+    if (!a || !a.text) return;
+    const type = noteTypeOf(n);
+    const mark = wrapNth(content, a.text, 'cmt-hl-' + type, a.occurrence > 0 ? a.occurrence : 0);
+    if (!mark) return;
+    // A rendered diff line is a code well too — `.d2h-code-line-ctn`, not
+    // `<pre>` — and everything the strike rule says about code says it twice
+    // about a diff: a `del`/`ins` pair spliced into a `+` line reads as
+    // neither version of anything. The −/+ fence in the margin carries it.
+    n.inCode = !!(mark.closest && mark.closest('pre, .d2h-code-line'));
+    const repl = noteReplacement(n);
+    let tail = mark;
+    /* A suggestion is SHOWN APPLIED, in the prose: the wording it replaces
+       struck in gray, the replacement on the same catalog yellow the anchor
+       wears. Without this the reviewer reads a note *about* a sentence and
+       never the sentence — which is the whole difference between a suggestion
+       and a comment, and the composite's own caption for it.
+
+       Not in code. A struck line inside a code well reads as broken syntax,
+       and a replacement spliced mid-expression reads as neither version; the
+       −/+ fence in the margin carries a code suggestion instead, which is the
+       grammar every reviewer already knows. `n.inCode` is what the margin
+       reads to decide. */
+    n.placedInline = !!(repl && !n.inCode);
+    if (n.placedInline) {
+      const sug = document.createElement('span');
+      sug.className = 'sug';
+      const was = document.createElement('del');
+      was.className = 'sug-del';
+      was.textContent = mark.textContent;
+      const now = document.createElement('ins');
+      now.className = 'sug-ins';
+      now.textContent = repl;
+      sug.append(was, now);          // no text between them — the gap is CSS,
+      mark.replaceWith(sug);         // so it can never be counted as prose
+      tail = now;
+    }
+    const declined = n.kind === 'thread' && n.thread.status === 'declined';
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'pin ' + (declined ? 'pin-author' : type === 'info' ? 'pin-fact' : 'pin-you');
+    pin.dataset.cid = n.cid;
+    pin.textContent = String(n.num);
+    pin.setAttribute('aria-label', 'Go to note ' + n.num);
+    // On a diff line the pin leads the line rather than trailing the anchor —
+    // see `.pin-line`. The mark still shows WHICH span; the pin shows WHICH
+    // NOTE, and only one of the two has to survive a horizontal scroll.
+    // The LINE (`.d2h-code-line`), never the inner `.d2h-code-line-ctn` —
+    // that span only exists on some line kinds, and a rule that holds for
+    // three lines in four is worse than none.
+    const line = tail.closest && tail.closest('.d2h-code-line');
+    if (line) { pin.classList.add('pin-line'); line.prepend(pin); }
+    else tail.after(pin);
+  });
+}
+
+function renderDocMargin(id) {
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  const sec = el('rcard-' + id); if (!sec) return;
+  // Only the dynamic hosts are wiped. Thread notes and their reply textareas
+  // are never rebuilt — the accordion protected the same invariant by keeping
+  // threads out of `.comment-list`.
+  sec.querySelectorAll('.rm-notes .nt').forEach(n => n.remove());
+
+  const ordered = docNotesOrdered(section);
+  ordered.forEach((n, i) => { n.num = i + 1; });
+  // Marking runs FIRST. It is what decides whether a suggestion could be shown
+  // applied in the prose (`placedInline`) or has to fall back to the margin's
+  // −/+ fence, and the note is written from that answer.
+  markAndPin(id, ordered);
+  ordered.forEach(n => {
+    if (n.kind === 'thread') {
+      const numEl = el('rnum-' + n.cid);
+      if (numEl) numEl.textContent = String(n.num);
+      const node = el('rthread-' + n.cid);
+      if (!node) return;
+      node.classList.toggle('is-settled', !!(n.comment && n.comment.settled));
+      // A carried suggestion the prose could not show applied — a code
+      // anchor — gets the −/+ fence, once. In prose the inline strike and
+      // replacement upstream already say it, and a fence there would print
+      // the same two strings a second time.
+      const repl = noteReplacement(n);
+      if (repl && n.inCode && !node.querySelector('.fence')) {
+        const body = node.querySelector('.open-thread-body');
+        if (body) body.insertAdjacentHTML('beforeend', suggestionFenceHTML({
+          cid: n.cid, replacement: repl, anchor: n.anchor }));
+      }
+      return;
+    }
+    const host = docNoteHost(id, n.row < 0 ? null : docRows(id)[n.row]);
+    if (host) host.insertAdjacentHTML('beforeend', commentNoteHTML(n));
+  });
+  sec.querySelectorAll('.rm-notes .cmt-del').forEach(b =>
+    b.addEventListener('click', e => { e.stopPropagation(); removeComment(id, b.dataset.cid); }));
+
+  renderDocSeg(id);
+  renderDocSpec(id);
+  updateDocColumns();
+}
+
+function renderDocSeg(id) {
+  const mount = el('rseg-' + id); if (!mount) return;
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  mount.innerHTML = segHTML(sectionBalance(section));
+}
+
+/* Drawn for every section that has something to state, NOT only the live one.
+   Gating it on `rState.active` made activation a layout change: clicking `+
+   note` on a section moved the spec table from one head row to another, so the
+   section jumped 57px up while the button slid 17px out from under the cursor
+   (measured). A reviewer cannot click a control that leaves when they reach
+   for it. The live section is marked at its heading instead — a border and a
+   compensating negative margin, which cost no layout at all. */
+function renderDocSpec(id) {
+  const mount = el('rspecbody-' + id); if (!mount) return;
+  const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
+  mount.innerHTML = specHTML(section);
+}
+
+/* The wasted-space rule, decided once for the whole surface.
+
+   Read off the ROUND, not off the DOM. The continuous print renders every
+   section up front, so there the two agree — but the accordion renders a
+   section's rows only when that section is opened, and a DOM read would
+   therefore see an empty margin until the reviewer reached the first hunk
+   carrying a note, then collapse or open the column mid-review and jog every
+   hunk sideways. That is the per-navigation decision this rule exists to
+   avoid; the whole point is that it is made ONCE, for the whole round.
+
+   `docNotes` already reads rState, so a comment made a moment ago counts the
+   same as a thread that shipped with the round — the property the old DOM
+   read was there for, kept. */
+function updateDocColumns() {
+  const doc = el('review-cards');
+  if (!doc || !doc.classList.contains('doc')) return;
+  const sections = (REVIEW_DATA && REVIEW_DATA.sections) || [];
+  const gutter = sections.some(s => docFlagSplit(s).gutter.length);
+  // An OPEN compose popover holds the margin as surely as a saved note does.
+  // Without it, the first anchored comment on a bare document — the exact
+  // document the collapse rule exists for — mounts its textarea into a 0px
+  // track. (The head row is immune: `.doc.no-margin .row-head .rm` reflows
+  // under the heading, which is why the `+ note` path never showed this.)
+  // `.is-open` rather than a style-attribute match: the serialized inline
+  // style is the browser's business, not a selector's.
+  const margin = sections.some(s => docFlagSplit(s).margin.length || docNotes(s).length)
+    || !!doc.querySelector('.rm .comment-popover.is-open');
+  doc.classList.toggle('no-gutter', !gutter);
+  doc.classList.toggle('no-margin', !margin);
+}
+
 // Open/close a card, keeping the header button's aria-expanded in sync.
 // `is-active` is the single source of truth for "expanded", so every site that
 // flips it routes through here — otherwise aria-expanded desyncs on auto-advance
@@ -2866,7 +4331,11 @@ function setCardExpanded(cardEl, expanded) {
   if (head) head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
-function activateReviewCard(id) {
+// `opts.noScroll` marks a passive activation — the reader pointed at or tabbed
+// into a section in the continuous print and the live section should follow
+// them without the page moving under their hands. Every explicit jump
+// (transmittal row, pin, palette, annotation link) omits it and still scrolls.
+function activateReviewCard(id, opts) {
   // A carried card has no accordion body to activate — reveal its read-only
   // content and scroll to it instead (annotation jumps, all-carried resumes).
   // It never becomes rState.active: active means "under review".
@@ -2876,18 +4345,19 @@ function activateReviewCard(id) {
     target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
+  const prev = rState.active;
   // Deactivate previous
-  if (rState.active && rState.active !== id) {
-    setCardExpanded(el('rcard-' + rState.active), false);
-    syncReviewDot(rState.active);
-    syncNoteInline(rState.active);
+  if (prev && prev !== id) {
+    setCardExpanded(el('rcard-' + prev), false);
+    syncReviewDot(prev);
+    syncNoteInline(prev);
   }
   rState.active = id;
   _ensureRendered(id);
   const card = el('rcard-' + id);
   if (card) {
     setCardExpanded(card, true);
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!(opts && opts.noScroll)) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   syncReviewDot(id);
 }
@@ -2902,7 +4372,22 @@ function _ensureRendered(id) {
   // plaintext sentinel) and fall through to renderMarkdown unchanged.
   const isDiffHunk = REVIEW_DATA && REVIEW_DATA.mode === 'diff' && /^```diff\n/.test(raw);
   const rendered = isDiffHunk ? renderDiffHunk(contentEl, raw, sectionTitleFor(id)) : renderMarkdown(contentEl, raw);
-  if (!rendered) return;
+  /* A CARRIED card is the one thing that renders section content without
+     wearing the grammar. It is a read-only reveal of a hunk already signed
+     off: nothing to annotate, no notes to place, no verbs — and, crucially,
+     no `.row-head`, because buildCarriedCard never builds one. Running the
+     pipeline over it grids a body nobody can comment on, and an unanchored
+     carried thread takes `placeDocThreads` down `docCell(null, 'rm')`. */
+  const card = el('rcard-' + id);
+  const carried = !!(card && card.classList.contains('is-carried'));
+  if (!rendered) {
+    // marked/DOMPurify haven't landed: the content is raw text, not blocks.
+    // The doc print still grids it — one row — so a CDN-down boot reads as a
+    // document with its margin rather than as one undifferentiated slab. The
+    // retry re-renders in place once the scripts arrive.
+    if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }
+    return;
+  }
   // A d2h-pending card rendered successfully as fenced markdown but is
   // waiting for diff2html to load — keep its source so the diff2html-script
   // load listener below can re-render it properly. Deleting it here would
@@ -2910,7 +4395,14 @@ function _ensureRendered(id) {
   // late-loading-dependency lesson as the marked/DOMPurify retry, and the
   // hljs race the gate-audit pass caught).
   if (!contentEl.classList.contains('d2h-pending')) _pendingMarkdown.delete(id);
-  renderHighlights(id);
+  if (carried) return;
+  // The doc grid distributes the freshly rendered blocks into rows before
+  // anything is placed beside them — a note cannot find its paragraph until
+  // the paragraph is a row.
+  layoutDocRows(id);
+  placeDocFlags(id);
+  placeDocThreads(id);
+  renderDocMargin(id);
 }
 
 // One-time-per-script retry for late-loading CDN renderers: a card opened
@@ -3028,6 +4520,11 @@ function syncReviewCard(id) {
   // Primary button
   renderPrimaryButton(id);
 
+  // A verdict is part of the section's balance (an approval is a settled item)
+  // and part of its spec, and neither repaints from the comment path — approve
+  // used to leave the segmented rule showing the state before the stamp.
+  renderDocSeg(id); renderDocSpec(id);
+
   syncNoteInline(id);
 }
 
@@ -3073,22 +4570,29 @@ function removeComment(id, cid) {
   syncCard(id);
 }
 
-// Repaint everything that derives from a card's comments: dot, primary button,
-// highlights (Task 6), thread list (Task 7).
+// Repaint everything that derives from a card's comments: dot, primary
+// button, the margin (marks, pins, notes, spec, rule).
 function syncCard(id) {
   syncReviewDot(id);
   renderPrimaryButton(id);
-  if (typeof renderHighlights === 'function') renderHighlights(id);
-  if (typeof renderCommentList === 'function') renderCommentList(id);
+  // The margin is every surface's comment list now: same job, one column.
+  renderDocMargin(id);
   updateReviewStats();
 }
 
+// One control, one grammar. It wore `.action-btn` in the accordion and
+// `.nt-btn` in the print, which meant reading the class back off the DOM to
+// decide how to relabel it; with the margin on both surfaces there is one
+// button and one rule — approve reads "approve" only while nothing is open,
+// and an approved section offers to withdraw.
 function renderPrimaryButton(id) {
   const btn = el('rbtn-primary-' + id); if (!btn) return;
   const n = activeComments(id).length;
-  btn.className = 'action-btn' + (n ? ' is-changes' : ' is-approve');
-  btn.innerHTML = n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
-                    : '&#10003; approve';
+  const approved = deriveVerdict(id) === 'approved';
+  btn.className = 'nt-btn ' + (approved || n ? 'is-quiet' : 'is-pri');
+  btn.innerHTML = approved ? '&#8634; withdraw approval'
+    : n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
+        : '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd>';
 }
 
 /* ─── Selection → popover comment creation ─────────────────────
@@ -3107,16 +4611,13 @@ document.addEventListener('mouseup', () => {
     const start = toElement(sel.anchorNode);
     const content = start && start.closest ? start.closest('.section-content') : null;
     if (!content) return;
+    // In the doc grid the margin and the check gutter are descendants of the
+    // section container, so `.section-content` alone no longer means "in the
+    // document" — a drag across your own prior note would open a popover
+    // anchored to text that is not in the doc. The prose cell is the document.
+    if (!start.closest('.rp') || start.closest('.sug-ins')) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
-    // diff2html's side-by-side mode renders old/new as two adjacent panes.
-    // A drag crossing panes (or starting/ending outside them) yields
-    // DOM-order text that is not a contiguous substring of the raw hunk —
-    // anchoring a comment to it would silently defeat offsetInSource and
-    // the /viva-diff skill's grep fallback, so it degrades to an unanchored
-    // whole-section note. Same guard the hand-rolled table carried.
-    const crossesPanes = closestD2hPane(sel.anchorNode) !== closestD2hPane(sel.focusNode);
-    if (crossesPanes) { openCommentPopover(m[1], {}); return; }
     // Which occurrence of a repeated phrase the reviewer picked exists only in
     // the rendered content — that is where the selection lives. Read the
     // ordinal there, resolve the SAME ordinal against the markdown source
@@ -3134,13 +4635,11 @@ function toElement(node) {
   return node && node.nodeType === 3 ? node.parentElement : node;
 }
 
-// Closest diff2html side-by-side pane ancestor of a selection endpoint, or
-// null outside one (line-by-line mode, review-mode content) — there the
-// comparison is null !== null, a no-op, preserving the anchored path.
-function closestD2hPane(node) {
-  const elem = toElement(node);
-  return elem && elem.closest ? elem.closest('.d2h-file-side-diff') : null;
-}
+/* The cross-pane selection guard is gone with the panes. Side-by-side put
+   old and new in two adjacent scroll boxes, so a drag across them yielded
+   DOM-order text that was not a contiguous substring of the raw hunk, and the
+   guard degraded it to an unanchored note. A unified hunk is one column in
+   source order: every selection inside it is already contiguous. */
 
 /* ─── Anchor resolution: rendered occurrence → source offset (#95) ─────
    The reviewer selects in rendered HTML; the anchor must address the markdown
@@ -3151,20 +4650,65 @@ function closestD2hPane(node) {
    re-render; the offset is the half the source edit uses. */
 
 // 0-based ordinal of the selected occurrence of `text`: how many occurrences
-// *begin* before the selection starts, counted over the rendered text. In
-// diff2html's side-by-side output the count is scoped to the pane the
-// selection began in — the facing pane repeats the same lines and is not part
-// of the reviewer's reading order.
+// *begin* before the selection starts, counted over the rendered text. One
+// scope, the section's own content — side-by-side's facing pane, which
+// repeated every line and had to be scoped out of the count, no longer exists.
 function occurrenceInRendered(root, range, text) {
-  const scope = closestD2hPane(range.startContainer) || root;
-  if (!scope.contains || !scope.contains(range.startContainer)) return 0;
+  if (!root.contains || !root.contains(range.startContainer)) return 0;
+  // The doc grid puts the margin INSIDE the section container, and a margin
+  // note echoes the wording it annotates (.nt-quote, .open-thread-quote). A
+  // Range over the container counts those echoes, inflating the ordinal so
+  // offsetInSource addresses a different span than the reviewer picked — the
+  // #95 bug, except the margin manufactures the repeat. Count the prose only.
+  const counted = proseOccurrenceBefore(root, range, text);
+  if (counted !== null) return counted;
   const all = document.createRange();
-  all.selectNodeContents(scope);
+  all.selectNodeContents(root);
   const pre = document.createRange();
-  pre.selectNodeContents(scope);
+  pre.selectNodeContents(root);
   try { pre.setEnd(range.startContainer, range.startOffset); }
   catch (e) { return 0; }
   return countStartsBefore(all.toString(), text, pre.toString().length);
+}
+
+/* ─── Prose-only text walking ─────────────────────────────────
+   One filter, used by everything that must address the DOCUMENT rather than
+   what is written about it: the margin, the check gutter, and an open
+   compose popover are all descendants of the section container in the doc
+   grid, and none of them is the text under review. In the accordion nothing
+   matches these classes inside `.section-content`, so the filter is inert
+   there and both surfaces run the same walk. */
+function proseWalker(root) {
+  return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      for (let p = node.parentElement; p && p !== root; p = p.parentElement) {
+        const c = p.classList;
+        // `.sug-ins` is wording the reviewer PROPOSES — it has never been in
+        // the document, so counting it would inflate every later ordinal and
+        // let a comment anchor to text the author never wrote. The `.sug-del`
+        // beside it is the real source text and stays counted.
+        if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')
+                  || c.contains('sug-ins')))
+          return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+}
+
+// 0-based ordinal of the selected occurrence counted over prose text only, or
+// null when the selection starts somewhere the walk cannot place (an element
+// boundary rather than inside a text node) — the caller then falls back to the
+// Range count rather than guessing.
+function proseOccurrenceBefore(root, range, text) {
+  if (!text) return 0;
+  const walk = proseWalker(root);
+  let hay = '', pre = null, node;
+  while ((node = walk.nextNode())) {
+    if (node === range.startContainer) pre = hay.length + Math.max(0, range.startOffset);
+    hay += node.nodeValue;
+  }
+  return pre === null ? null : countStartsBefore(hay, text, pre);
 }
 
 // Occurrences of `needle` in `hay` that start before index `limit`. Steps by 1
@@ -3232,7 +4776,23 @@ function openCommentPopover(id, { anchor } = {}) {
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
+  // The popover composes a MARGIN note, so it opens in the margin beside the
+  // passage being annotated rather than at the foot of the section — the note
+  // lands where the reviewer is already looking, and the prose never shifts to
+  // make room for a compose box. Anchored: beside its own passage. Unanchored
+  // (`+ note`): at the FOOT of the head row's margin, below the controls —
+  // mounting it in `.rm-notes` put it above them and pushed the very button
+  // just clicked down the page. Moved before focus: relocating a node after
+  // focusing inside it blurs the field.
+  const row = anchor ? rowForAnchor(id, anchor.text, anchor.occurrence) : null;
+  const head = docHeadRow(id);
+  const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));
+  if (host && pop.parentElement !== host) host.appendChild(pop);
   pop.style.display = '';
+  pop.classList.add('is-open');
+  // Opening the box is what makes the margin non-empty; closing it (saved or
+  // cancelled) is what may let the column collapse again.
+  updateDocColumns();
 
   const ta        = pop.querySelector('.cmt-pop-note');
   const strip     = pop.querySelector('.thumb-strip');
@@ -3289,20 +4849,16 @@ function openCommentPopover(id, { anchor } = {}) {
 
 function closeCommentPopover(id) {
   const pop = el('rpop-' + id);
-  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; }
+  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; pop.classList.remove('is-open'); }
+  updateDocColumns();
 }
 
-// Re-wrap each comment's anchored span in the rendered content with a typed mark.
-function renderHighlights(id) {
-  const content = el('rcontent-' + id); if (!content) return;
-  content.querySelectorAll('mark.cmt-hl-changes, mark.cmt-hl-info, mark.cmt-hl-suggestion').forEach(m => {
-    m.replaceWith(document.createTextNode(m.textContent));
-  });
-  content.normalize();
-  const cs = (rState.verdicts[id]?.comments || []).filter(c => c.anchor?.text);
-  cs.forEach(c => wrapNth(content, c.anchor.text, 'cmt-hl-' + c.type,
-                          c.anchor.occurrence > 0 ? c.anchor.occurrence : 0));
-}
+/* Marking used to happen twice — `renderHighlights` wrapped the anchors, then
+   `markAndPin` wrapped them again and hung the numbers. Two passes could
+   disagree about which span is note 3, so the margin's pass is now the only
+   one; with the accordion wearing the margin too, the first has no surface
+   left to serve and is gone. `markAndPin` is the single owner of both ends of
+   the pairing. */
 
 // Wrap the `n`th (0-based) text-node occurrence of `needle` in a <mark
 // class=cls>. The ordinal is the anchor's own `occurrence`, so a comment on
@@ -3313,9 +4869,13 @@ function renderHighlights(id) {
 // over the flat text where it *is* present, an earlier straddling occurrence
 // shifts this walk's count and the mark can land one occurrence late. Visual
 // only; the stored offset is unaffected.
+// Returns the <mark> it created (null if the needle never resolved), so the
+// doc print can hang that note's pin off it without walking the tree twice.
 function wrapNth(root, needle, cls, n) {
-  if (!needle) return;
-  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  if (!needle) return null;
+  // Prose only: a margin note echoes the wording it annotates, so an
+  // unfiltered walk could count — and mark — inside the commentary.
+  const walk = proseWalker(root);
   let node, seen = 0;
   while ((node = walk.nextNode())) {
     let i = node.nodeValue.indexOf(needle);
@@ -3327,12 +4887,70 @@ function wrapNth(root, needle, cls, n) {
         mark.className = cls;
         mark.textContent = after.nodeValue;
         after.replaceWith(mark);
-        return;
+        return mark;
       }
+
       seen++;
       i = node.nodeValue.indexOf(needle, i + 1);
     }
   }
+  // Nothing matched inside a single text node. That is the common case for a
+  // CODE anchor: highlight.js splits `time.sleep(0.3)` into six token spans,
+  // so the phrase the reviewer selected lives in no one node and the walk
+  // above silently marks nothing — a suggestion on a line of code drew no
+  // highlight and no pin at all. Same for a prose phrase crossing an inline
+  // `<code>` or `<em>`. Fall through to a Range, which can span elements.
+  return wrapSpanning(root, needle, cls, n);
+}
+
+// Wrap the nth occurrence of `needle` even when it crosses element
+// boundaries. Kept as the FALLBACK rather than the primary: `surroundContents`
+// splits partially-selected elements, and diff mode's marks land inside
+// diff2html's table markup where that is not a trade worth making unless the
+// alternative is no mark at all.
+function wrapSpanning(root, needle, cls, n) {
+  const walk = proseWalker(root);
+  const nodes = [], starts = [];
+  let text = '', node;
+  while ((node = walk.nextNode())) { starts.push(text.length); nodes.push(node); text += node.nodeValue; }
+  if (!nodes.length) return null;
+  const at = nthIndexOf(text, needle, n > 0 ? n : 0);
+  if (at < 0) return null;
+  const locate = pos => {
+    for (let i = nodes.length - 1; i >= 0; i--)
+      if (starts[i] <= pos) return [nodes[i], pos - starts[i]];
+    return [nodes[0], 0];
+  };
+  const [sn, so] = locate(at);
+  const [en, eo] = locate(at + needle.length);
+  const range = document.createRange();
+  try { range.setStart(sn, so); range.setEnd(en, eo); } catch (e) { return null; }
+  const mark = document.createElement('mark');
+  mark.className = cls;
+  try { range.surroundContents(mark); }
+  catch (e) {
+    /* Partially-selected elements: extract (which splits them, each half
+       keeping its own class) and re-insert under the mark.
+
+       A PLACEHOLDER holds the spot. `extractContents` can remove the very
+       nodes the range's start boundary points into, which collapses the range
+       up to their parent — so a plain `range.insertNode(mark)` afterwards
+       lands the mark as a SIBLING of the container the text came out of.
+       Measured on a diff line: an emptied 506px `.d2h-code-line-ctn`
+       followed by the text 506px to its right, a gap the width of the line.
+       And it compounds — `markAndPin`'s teardown flattens a mark into
+       whatever parent it currently has, so once the text is a sibling it
+       stays one for the rest of the session. The slot is outside the
+       extracted range, so it survives to say where the mark belongs. */
+    try {
+      const slot = document.createTextNode('');
+      range.insertNode(slot);
+      range.setStartAfter(slot);
+      mark.appendChild(range.extractContents());
+      slot.parentNode.replaceChild(mark, slot);
+    } catch (e2) { return null; }
+  }
+  return mark;
 }
 
 /* ─── Open notes (issue #16) — settle by cid, recorded as a comment so the
@@ -3369,28 +4987,13 @@ function settleOpenNotes(id, cid) {
   const thread = el('rthread-' + cid);
   const btn = el('rsettle-' + cid);
   if (thread) thread.classList.toggle('is-settled', !!c.settled);
-  if (btn) btn.innerHTML = c.settled ? '&#10003; settled' : '&#10003; settle';
+  // The button's own label stays put — it names the verb (`Settle`, or
+  // `Accept` on a declined thread) and carries a keycap, so rewriting its
+  // innerHTML to report state would delete both. State is the lit class plus
+  // the thread dimming, which is what the reviewer actually reads.
+  if (btn) btn.classList.toggle('is-on', !!c.settled);
   syncCard(id);
 }
-
-// Paint this round's freshly-added comments under the section (edit/delete each).
-function renderCommentList(id) {
-  const host = el('rclist-' + id); if (!host) return;
-  // Replies live in their own thread, not the new-comment list.
-  const cs = activeComments(id).filter(c => !c.reply);
-  host.innerHTML = cs.map(c =>
-      '<div class="cmt v-' + c.type + '" data-cid="' + esc(c.cid) + '">'
-    +   '<span class="cmt-type">' + c.type + '</span>'
-    +   (c.anchor?.text ? '<span class="cmt-quote" title="' + esc(c.anchor.text) + '">' + esc(c.anchor.text) + '</span>' : '')
-    +   '<span class="cmt-note">' + esc(c.note)
-    +     (c.replacement ? '<span class="cmt-repl">' + esc(c.replacement) + '</span>' : '')
-    +   '</span>'
-    +   '<button type="button" class="cmt-del" data-cid="' + esc(c.cid) + '" title="Remove">&times;</button>'
-    + '</div>').join('');
-  host.querySelectorAll('.cmt-del').forEach(b =>
-    b.addEventListener('click', e => { e.stopPropagation(); removeComment(id, b.dataset.cid); }));
-}
-
 
 function syncReviewDot(id) {
   const verdict  = deriveVerdict(id);
@@ -3432,17 +5035,283 @@ function updateReviewStats() {
   el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
 
   const sub = el('btn-submit');
-  if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit all'; }
-  else                                 { sub.className='btn-submit disabled'; sub.textContent=remaining>0?`submit all (${remaining} remaining)`:'submit all'; }
+  // ONE consequential stamp, named for what it does to the document rather
+  // than for the HTTP verb behind it. Blocked, it says what is blocking; the
+  // count comes from the same item arithmetic the bar prints, so the two can
+  // never disagree.
+  const openItems = documentBalance().open;
+  sub.className = remaining === 0 && reviewed > 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  sub.textContent = remaining > 0 ? `approve — dispatch (${remaining} unreviewed)`
+                                  : 'approve — dispatch';
+  // The composite's footer states four things; this one was stating seven, and
+  // at the doc page's width that wrapped the stamp onto a second line. The bar
+  // above already carries `approved N/M` and the item counts, so the footer
+  // keeps only what is about DISPATCHING: what blocks it, whether the round is
+  // converging, and what the last round trip cost.
+  el('stat-approved').style.display = 'none';
+  el('stat-feedback').style.display = 'none';
+  const cap = ' <kbd>&#8984;&#9166;</kbd>';
+  el('stat-pending').innerHTML = remaining > 0
+    ? `blocked &middot; ${remaining} unreviewed`
+    : ((openItems ? `${openItems} open` : 'ready') + cap);
+
+  reviewFootSeg(sections, total);
+  renderDocStatus();
+}
+
+/* ─── The document's condition, in items ──────────────────────
+   The bar and the footer state one quantity between them — how many items
+   this document holds and how many are still open — so the two can never
+   disagree. An ITEM is what sectionBalance already counts: a thread, a
+   comment, a check, a producer flag, and a section's own sign-off. */
+function documentBalance() {
+  let judgment = 0, facts = 0, settled = 0, atStart = 0, checks = 0, checksDone = 0;
+  (REVIEW_DATA.sections || []).forEach(s => {
+    const b = sectionBalance(s);
+    judgment += b.judgment; facts += b.facts; settled += b.settled;
+    // What was open when the round was ARMED: every carried thread arrives
+    // unsettled, every unanswered check and flag arrives open. Nothing here
+    // reads live reviewer state — that is what makes it a baseline to measure
+    // convergence against rather than a second view of the same number.
+    atStart += (s.open_notes || []).length;
+    (s.annotations || []).forEach(a => {
+      if (!a) return;
+      if (CHECK_KINDS.includes(a.kind)) {
+        checks++;
+        if (a.result) checksDone++; else atStart++;
+        return;
+      }
+      if (a.severity === 'warn' || a.severity === 'error') atStart++;
+    });
+  });
+  return { judgment, facts, settled, checks, checksDone, atStart,
+           open: judgment + facts, total: judgment + facts + settled };
+}
+
+// The last same-origin round trip this page actually measured. A real number
+// or nothing — the footer never prints a latency it did not observe.
+let _lastRTT = null;
+
+function timedFetch(url, opts) {
+  const t0 = performance.now();
+  return fetch(url, opts).then(r => {
+    _lastRTT = Math.round(performance.now() - t0);
+    return r;
+  });
+}
+
+// The bar's own cells, plus the footer's convergence and latency.
+function renderDocStatus() {
+  const b = documentBalance();
+  el('r-checks').textContent = b.checksDone + '/' + b.checks
+    + (b.checks && b.checksDone === b.checks ? ' ✓' : '');
+  el('tb-checks').style.display = b.checks ? '' : 'none';
+  el('r-items').innerHTML = b.total + ' item' + (b.total === 1 ? '' : 's')
+    + ' &middot; <b>' + b.open + '</b> open';
+  el('tb-items').style.display = '';
+  el('tb-palette').style.display = '';
+  // Convergence: open items when the round was armed against open items now.
+  // The question a multi-round review actually asks — is the reviewer closing
+  // more than they open — with both ends counted, never estimated.
+  const conv = el('stat-conv');
+  conv.style.display = '';
+  conv.innerHTML = 'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>';
+  const lat = el('stat-lat');
+  if (_lastRTT === null) lat.style.display = 'none';
+  else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
+}
+
+/* The whole round's balance, across the footer that closes the page. Same
+   grammar and same fixed order as a section's rule, one denominator: every
+   section, or every question. What the bar does NOT fill is what nobody has
+   looked at yet — the bare track — which is the one honest way to draw "not
+   yet decided" without inventing a fourth color.
+
+   Counts in, not sections: an interview has no judgment/facts axis (an answer
+   is given or it is not), and asking this function to know that would put a
+   mode branch inside the one thing both footers share. */
+function renderFootSeg(counts, total, label) {
+  const bar = el('foot-seg'); if (!bar) return;
+  if (!total) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const pct = n => (n / total * 100).toFixed(2) + '%';
+  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
+  bar.style.display = '';
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', label);
+  bar.innerHTML = seg('seg-judgment', counts.judgment) + seg('seg-fact', counts.facts)
+                + seg('seg-settled', counts.settled);
+}
+
+// The review page's own tally, in the vocabulary its sections carry.
+function reviewFootSeg(sections, total) {
+  let judgment = 0, facts = 0, settled = 0;
+  sections.forEach(s => {
+    const v = deriveVerdict(s.id);
+    if (v === 'approved') settled++;
+    else if (v === 'changes') judgment++;
+    else if (v === 'info') facts++;
+  });
+  renderFootSeg({ judgment, facts, settled }, total,
+    'document balance: ' + judgment + ' judgment, ' + facts + ' fact'
+    + (facts === 1 ? '' : 's') + ', ' + settled + ' settled of ' + total + ' sections');
+}
+
+/* ═════════════════════════════════════════════════════════════
+   COMMAND PALETTE (⌘K, issue #186)
+   A directory of the keyboard layer, never a second interaction model:
+   every verb listed here is one the page also carries as a control or a
+   keycap. Built from live state on each open, so "approve section 9" names
+   the section actually under the reader. ═══════════════════════════════ */
+function paletteCommands() {
+  return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();
+}
+
+/* The interview's own directory. Every verb here is one the Q&A page also
+   carries as a control or a keycap — the choices by their digits, confirm by
+   `c`, skip by its button — which is the rule the palette exists under: a
+   directory of the keyboard layer, never a second interaction model. */
+function qaPaletteCommands() {
+  const cmds = [];
+  const live = qState.active ? QA_DATA.questions.find(q => q.id === qState.active) : null;
+  if (live) {
+    const n = QA_DATA.questions.indexOf(live) + 1;
+    live.choices.slice(0, 9).forEach((c, i) => {
+      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: String(i + 1),
+                  run: () => pickQAChoice(live.id, c) });
+    });
+    if (qState.answers[live.id] && qState.answers[live.id].choice) {
+      cmds.push({ label: 'Confirm question ' + n, key: 'c', run: () => advanceQA(live.id) });
+    }
+    cmds.push({ label: 'Skip question ' + n + ' for now', key: '⇥', run: () => advanceQA(live.id) });
+  }
+  const next = QA_DATA.questions.find(q => !(qState.answers[q.id] || {}).choice
+                                        && q.id !== qState.active);
+  if (next) cmds.push({ label: 'Jump to next unanswered', key: 'j',
+                        run: () => activateQACard(next.id) });
+  cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
+  return cmds;
+}
+
+function reviewPaletteCommands() {
+  const cmds = [];
+  const live = rState.active ? REVIEW_DATA.sections.find(s => s.id === rState.active) : null;
+  if (live && deriveVerdict(live.id) !== 'approved' && !activeComments(live.id).length) {
+    const n = REVIEW_DATA.sections.indexOf(live) + 1;
+    cmds.push({ label: 'Approve section ' + n + ' — ' + live.title, key: '⏎',
+                run: () => approveSection(live.id) });
+  }
+  const unblocked = REVIEW_DATA.sections.filter(s =>
+    deriveVerdict(s.id) === 'pending' && !activeComments(s.id).length);
+  if (unblocked.length) {
+    cmds.push({ label: 'Approve all unblocked (' + unblocked.length + ')', key: '⇧⏎',
+                run: () => { unblocked.forEach(s => approveSection(s.id)); } });
+  }
+  const openThread = nextOpenThread();
+  if (openThread) cmds.push({ label: 'Jump to next open thread', key: 'j',
+                              run: () => activateReviewCard(openThread) });
+  cmds.push({ label: 'Open revision ledger', key: 'l', run: () => {
+    const p = el('ledger');
+    if (p && p.style.display !== 'none') { p.classList.remove('is-collapsed'); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  } });
+  cmds.push({ label: 'Open recap and submit', key: 'o', run: () => openRecap() });
+  cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
+  return cmds;
+}
+
+// The next section carrying live business, from the live section forward and
+// wrapping — `open` and `declined` are both unresolved; only settled closes.
+function nextOpenThread() {
+  const secs = REVIEW_DATA.sections;
+  const start = Math.max(0, secs.findIndex(s => s.id === rState.active)) + 1;
+  const order = [...secs.slice(start), ...secs.slice(0, start)];
+  const live = s => {
+    const cs = (rState.verdicts[s.id] || {}).comments || [];
+    return (s.open_notes || []).some(t => !cs.some(c => c.cid === t.cid && c.settled))
+        || activeComments(s.id).length > 0;
+  };
+  const hit = order.find(live);
+  return hit ? hit.id : null;
+}
+
+let _palCmds = [];
+let _palIdx = 0;
+
+function paletteIsOpen() { return el('pal-overlay').style.display !== 'none'; }
+
+function openPalette() {
+  if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;
+  el('pal-overlay').style.display = '';
+  el('pal-input').value = '';
+  renderPalette('');
+  el('pal-input').focus();
+}
+
+function closePalette() {
+  el('pal-overlay').style.display = 'none';
+  el('pal-list').innerHTML = '';
+  _palCmds = [];
+}
+
+function renderPalette(query) {
+  const q = String(query || '').trim().toLowerCase();
+  _palCmds = paletteCommands().filter(c => !q || c.label.toLowerCase().includes(q));
+  _palIdx = 0;
+  const list = el('pal-list');
+  if (!_palCmds.length) { list.innerHTML = '<div class="pal-empty">no matching command</div>'; return; }
+  list.innerHTML = _palCmds.map((c, i) =>
+    '<button type="button" class="pal-row' + (i === 0 ? ' is-on' : '') + '" role="option"'
+    + ' aria-selected="' + (i === 0) + '" data-i="' + i + '">'
+    + '<span>' + esc(c.label) + '</span><span class="k">' + esc(c.key) + '</span></button>').join('');
+  list.querySelectorAll('.pal-row').forEach(b =>
+    b.addEventListener('click', () => runPalette(+b.dataset.i)));
+}
+
+function movePalette(delta) {
+  const rows = el('pal-list').querySelectorAll('.pal-row');
+  if (!rows.length) return;
+  _palIdx = (_palIdx + delta + rows.length) % rows.length;
+  rows.forEach((r, i) => {
+    r.classList.toggle('is-on', i === _palIdx);
+    r.setAttribute('aria-selected', String(i === _palIdx));
+  });
+  rows[_palIdx].scrollIntoView({ block: 'nearest' });
+}
+
+function runPalette(i) {
+  const cmd = _palCmds[i];
+  closePalette();
+  if (cmd) cmd.run();
 }
 
 /* ─────────────────────────────────────────────────────────
    Q&A MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
+/* ─── Q&A on the catalog ──────────────────────────────────────
+   A question is not a document section, but it holds one the same way: a
+   thing to read and decide, with the machine's advice and the reviewer's own
+   move beside it rather than stacked on top of it. So Q&A takes the GRAMMAR —
+   `gutter | prose | margin` rows, the note grammar, per-note verbs, the
+   composite's bar and footer — and not the PRINT: one question at a time is
+   the point of an interview, and the accordion is what makes that true.
+
+   The prose column is the question, numbered like a catalog entry, with its
+   choices under it as chips carrying the digit that picks them. The margin is
+   the machine's hint and the reviewer's own note with its attachments. The
+   gutter is empty — a question carries no producer flags — so it collapses
+   for good; the margin never does, because the verbs live there.
+
+   One thing deliberately stays in the prose column: the recommended-choice
+   badge. It is advice ABOUT A CONTROL, and a reviewer should not have to read
+   the margin, look back, and hunt for the chip it meant. */
 function initQA() {
   const container = el('qa-cards');
+  // The grammar, not the print. `no-gutter` is a constant here rather than a
+  // computed collapse: a question has no producer flags to rail, and the
+  // margin always holds this question's verbs, so neither column's state can
+  // change mid-session and updateDocColumns has nothing to decide.
+  container.className = 'cards doc no-gutter';
   QA_DATA.questions.forEach((q, i) => {
-    const card = buildQACard(q);
+    const card = buildQACard(q, i);
     card.style.animationDelay = (0.04 + i * 0.04) + 's';
     container.appendChild(card);
   });
@@ -3452,22 +5321,25 @@ function initQA() {
   updateQAStats();
 }
 
-function buildQACard(q) {
+function buildQACard(q, index) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'qacard-' + q.id;
 
   // recommended_choice is optional (issue #114) — undefined-safe by
   // construction: `c` is always a string, so this is false for every chip
-  // on a question that never sets the field, byte-identical to pre-#114
-  // rendering. Advisory only: the matching chip gets a badge, nothing else
-  // (no pre-selection, no default focus, no restyle as primary).
-  const choicesHtml = q.choices.map(c => {
+  // on a question that never sets the field. Advisory only: the matching chip
+  // gets a badge, nothing else (no pre-selection, no default focus, no
+  // restyle as primary). The digit keycap is the same key the keydown handler
+  // binds, so the keyboard layer is on the control rather than only in the
+  // legend — 1-9, and nothing past the ninth choice.
+  const choicesHtml = q.choices.map((c, i) => {
     const isRecommended = q.recommended_choice !== undefined && c === q.recommended_choice;
     const badge = isRecommended
       ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
       : '';
-    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}</button>`;
+    const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';
+    return `<button class="choice-chip" data-choice="${esc(c)}"><span class="chip-label">${esc(c)}</span>${badge}${cap}</button>`;
   }).join('');
 
   card.innerHTML = `
@@ -3481,16 +5353,26 @@ function buildQACard(q) {
     <div class="card-body-wrap" id="qbody-${q.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          <p class="section-summary">${esc(q.hint || '')}</p>
-          <div class="choices-label">Choices</div>
-          <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
-          <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional) — or paste a screenshot"></textarea>
-          <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
-          <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
-          <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
-          <div class="qa-actions">
-            <button class="qa-btn" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm</button>
-            <button class="qa-btn" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip for now</button>
+          <div class="row row-head">
+            <div class="rp">
+              <h2 class="doc-head" id="qhead-${q.id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</h2>
+              <div class="rule-s"></div>
+              <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
+            </div>
+            <div class="rm">
+              ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
+              <div class="nt nt-compose">
+                <div class="nh">you &mdash; context</div>
+                <textarea class="note-field" id="qnote-${q.id}" placeholder="Optional — or paste a screenshot"></textarea>
+                <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
+                <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
+                <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
+              </div>
+              <div class="nt-acts doc-acts">
+                <button type="button" class="nt-btn is-quiet" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm<kbd>c</kbd></button>
+                <button type="button" class="nt-btn is-quiet" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3502,11 +5384,7 @@ function buildQACard(q) {
     const chip = e.target.closest('.choice-chip');
     if (!chip) return;
     e.stopPropagation();
-    if (!qState.answers[q.id]) qState.answers[q.id] = {};
-    const ch = chip.dataset.choice;
-    qState.answers[q.id].choice = qState.answers[q.id].choice === ch ? null : ch;
-    syncQACard(q.id);
-    updateQAStats();
+    pickQAChoice(q.id, chip.dataset.choice);
   });
 
   const qta = card.querySelector('#qnote-' + q.id);
@@ -3529,6 +5407,15 @@ function buildQACard(q) {
   );
 
   return card;
+}
+
+// One place a choice is picked, so the chip, the digit key and the palette
+// can never disagree about what a second press means — it clears the answer.
+function pickQAChoice(id, choice) {
+  const a = (qState.answers[id] ||= {});
+  a.choice = a.choice === choice ? null : choice;
+  syncQACard(id);
+  updateQAStats();
 }
 
 function activateQACard(id) {
@@ -3582,8 +5469,11 @@ function syncQACard(id) {
   if (choice) { badge.style.display=''; badge.textContent=choice; }
   else badge.style.display = 'none';
 
-  // Confirm button highlight
-  el('qconfirm-' + id).className = 'qa-btn' + (choice ? ' confirm' : '');
+  // The verb's own grammar: primary once there is an answer to confirm, quiet
+  // while there is not — the same rule review's approve follows, and the same
+  // two classes, so one button reads the same way on both surfaces.
+  const btn = el('qconfirm-' + id);
+  btn.className = 'nt-btn ' + (choice ? 'is-pri' : 'is-quiet');
 
   syncQADot(id);
 }
@@ -3602,15 +5492,24 @@ function updateQAStats() {
   const total    = qs.length;
   const remaining= total - answered;
 
-  el('qa-progress').style.width = (answered / total * 100) + '%';
   el('qa-progress-label').textContent = `${answered} / ${total}`;
-  el('stat-approved').textContent = `${answered} answered`;
+  // Same footer as the review page, stating the same kind of thing: what
+  // blocks the dispatch, and the keycap that performs it. An interview has no
+  // judgment/facts axis — an answer is given or it is not — so the balance
+  // rule fills with settled alone and the bare track is what nobody has
+  // answered yet, which is the one honest way to draw "not yet decided".
+  el('stat-approved').style.display = 'none';
   el('stat-feedback').style.display = 'none';
-  el('stat-pending').textContent = remaining > 0 ? `${remaining} remaining` : 'all answered';
+  el('stat-pending').innerHTML = remaining > 0
+    ? `blocked &middot; ${remaining} unanswered`
+    : 'ready <kbd>&#8984;&#9166;</kbd>';
+  renderFootSeg({ judgment: 0, facts: 0, settled: answered }, total,
+                `answers: ${answered} of ${total} questions`);
 
   const sub = el('btn-submit');
-  if (remaining === 0) { sub.className='btn-submit ready';    sub.textContent='done →'; }
-  else                 { sub.className='btn-submit disabled'; sub.textContent=`done (${remaining} remaining)`; }
+  sub.className = remaining === 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  sub.textContent = remaining > 0 ? `answers — dispatch (${remaining} unanswered)`
+                                  : 'answers — dispatch';
 }
 
 /* ─── Image attachments ────────────────────────────────────── */
@@ -4113,11 +6012,15 @@ function renderProcessingView() {
     return;
   }
   heading.textContent = 'REV ' + String(betweenRounds.round).padStart(2, '0') + ' submitted — the agent is revising';
+  // The same note the reviewer wrote in the margin a moment ago, in the same
+  // grammar — `info` is an open fact and takes the fact ink, everything else
+  // is the reviewer's judgment and takes theirs. A second row vocabulary for
+  // the same objects is what `.pr-*` was.
   list.innerHTML = rows.map(r =>
-    '<div class="pr-row pr-' + esc(r.type) + '">'
-    + '<span class="pr-type">' + esc(r.type) + '</span>'
-    + '<span class="pr-title">' + esc(r.sectionTitle) + '</span>'
-    + '<span class="pr-note">' + esc(r.note) + '</span>'
+    '<div class="nt' + (r.type === 'info' ? ' nt-fact' : '') + '">'
+    + '<div class="nh">' + esc(r.type)
+    +   '<span class="pn">&middot; ' + esc(r.sectionTitle) + '</span></div>'
+    + '<div class="nt-body">' + esc(r.note) + '</div>'
     + '</div>').join('');
   list.style.display = '';
 }
@@ -4169,6 +6072,11 @@ function connectSSE() {
     // reconnected mid-transition and missed it) would otherwise leave qa-view
     // visible underneath the review cards.
     el('qa-view').style.display         = 'none';
+    // ...and its page class with it. `mode-diff` happens to out-order
+    // `mode-qa` in the stylesheet today, so a stale class would not clamp a
+    // diff round's 1600px page — but that is source order doing the work, and
+    // source order is not a rule anyone should have to know.
+    document.body.classList.remove('mode-qa');
     el('review-view').style.display     = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
@@ -4220,8 +6128,39 @@ function connectSSE() {
   };
 }
 
+/* ─── Command palette wiring ────────────────────────────── */
+el('pal-input').addEventListener('input', e => renderPalette(e.target.value));
+el('pal-open').addEventListener('click', () => openPalette());
+el('qa-pal-open').addEventListener('click', () => openPalette());
+el('pal-overlay').addEventListener('mousedown', e => {
+  if (e.target === el('pal-overlay')) closePalette();
+});
+
 /* ─── Keyboard shortcuts ────────────────────────────────── */
 document.addEventListener('keydown', e => {
+  // ⌘K opens the palette from anywhere, including from inside a textarea —
+  // it is the one global verb, and a reviewer mid-reply is exactly who wants
+  // "jump to next open thread" without reaching for the mouse. This sits
+  // ahead of the TEXTAREA/INPUT guard for that reason.
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    // Never over another dialog: the prefs panel and the recap gate are both
+    // modal and both own Escape, so stacking a third would leave two things
+    // claiming the same key.
+    if (prefsIsOpen() || (REVIEW_DATA && recapIsOpen())) return;
+    e.preventDefault();
+    if (paletteIsOpen()) closePalette(); else openPalette();
+    return;
+  }
+  // The palette is modal, and its own input is where typing goes — so its
+  // keys are handled before the TEXTAREA guard would return on that input.
+  if (paletteIsOpen()) {
+    if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1);  return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); movePalette(-1); return; }
+    if (e.key === 'Enter')     { e.preventDefault(); runPalette(_palIdx); return; }
+    return;
+  }
+
   const tag = document.activeElement?.tagName;
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
@@ -4278,13 +6217,15 @@ document.addEventListener('keydown', e => {
       const n = parseInt(e.key, 10);
       if (!isNaN(n) && n >= 1 && n <= q.choices.length) {
         e.preventDefault();
-        const choice = q.choices[n - 1];
-        if (!qState.answers[qState.active]) qState.answers[qState.active] = {};
-        qState.answers[qState.active].choice =
-          qState.answers[qState.active].choice === choice ? null : choice;
-        syncQACard(qState.active);
-        updateQAStats();
+        pickQAChoice(qState.active, q.choices[n - 1]);
         return;
+      }
+      // `c` confirms, the way `a` approves a section — the keycap is printed
+      // on the button itself, so the keyboard layer is on the control rather
+      // than only in the legend. Free here: `c` is review's request-changes,
+      // and this whole branch is guarded on `!REVIEW_DATA`.
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); advanceQA(qState.active); return;
       }
     }
     if (e.key === 'Tab') {
@@ -4341,7 +6282,9 @@ function bootReviewMode(data, modeWord, docFallback) {
 // falls back to its plain, non-interactive rendering — the same degrade an
 // unmatched [id] token already gets.
 Promise.all([
-  fetch('/input').then(r => r.json()),
+  // Timed, so the footer's latency line is a measurement of this page's own
+  // round trip rather than a number copied off a mock.
+  timedFetch('/input').then(r => r.json()),
   fetch('/preferences').then(r => r.json()).catch(() => []),
 ])
   .then(([data, prefs]) => {
@@ -4380,10 +6323,13 @@ Promise.all([
       bootReviewMode(data, 'diff', 'diff');
     } else {
       QA_DATA = data;
-      el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
+      el('qa-title').textContent        = data.context || 'Q&A phase';
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
-      el('qa-count-badge').textContent  = `${data.questions.length} questions`;
+      el('qa-count-badge').textContent  = String(data.questions.length);
       setTabTitle(data.context || 'brainstorm');
+      // Same page cap as the review print: a column that holds a measure plus
+      // a margin, and no wider. See `.mode-doc, .mode-qa` in the stylesheet.
+      document.body.classList.add('mode-qa');
       el('qa-view').style.display = '';
       initQA();
       connectSSE();
@@ -4394,7 +6340,14 @@ Promise.all([
   });
 </script>
 </body>
-</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS)
+</html>""".replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
+    # The check-flag registry, injected rather than restated in JS. `CHECK_KINDS`
+    # is what makes a producer's flags gate a `checks` round, and it fails open —
+    # an unregistered kind is simply invisible. A hand-kept second copy in the
+    # frontend would fail open the same silent way, in the surface that draws
+    # `checks N/M`, so the frontend reads the registry itself.
+    "__CHECK_KINDS__", json.dumps(list(schema.CHECK_KINDS))
+)
 
 _HTML_BYTES = HTML.encode()
 

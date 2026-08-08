@@ -85,6 +85,73 @@ def assert_catalog_ground(text: str) -> None:
     assert not re.search(r'\.section-content\s*\{[^}]*max-height:\s*60vh', text), \
         ".section-content must not nest a second scroll context inside the card"
 
+    # ── The doc + margin grid (#186) — the ground's structure, extended into
+    # this same owner rather than forked into a second contract.
+    assert re.search(
+        r'\.doc \.row\s*\{[^}]*grid-template-columns:\s*var\(--gutter-w\)'
+        r'\s+minmax\(0,\s*1fr\)\s+var\(--margin-w\)', text), \
+        "the doc row must be `check gutter | prose | margin`"
+    # The margin is CAPPED and the PAGE holds the measure. Letting the margin
+    # absorb the shell's spare width put it at 515px against 540px of prose —
+    # commentary taking as much of the page as the document it annotates. The
+    # composite runs ~61:39 and it is right; the margin is secondary.
+    assert re.search(r'--margin-w:\s*minmax\(253px,\s*328px\);', text), \
+        "the margin must stay capped so the prose dominates the page"
+    # Both measure-plus-margin pages: the review print and the interview.
+    assert re.search(r'\.mode-doc \.shell, \.mode-doc \.bottom-inner,\s*'
+                     r'\.mode-qa\s+\.shell, \.mode-qa\s+\.bottom-inner\s*\{\s*max-width:\s*1054px',
+                     text), \
+        "a page of prose plus margin must be as wide as its columns and no wider"
+    # No `ch` anywhere in the template: it resolves against each row's own
+    # font-size, which put the head row's track ~99px wider than a prose row's.
+    assert not re.search(r'\.doc \.rp\s*\{\s*max-width', text), \
+        "the page holds the measure now; a cell cap would re-open the dead band"
+    # `ch` on a track resolves against the ROW's font-size, so one size for the
+    # whole print is what keeps the head row's track the same width as a prose
+    # row's — without it the spec table sat ~99px right of every note below it.
+    assert re.search(r'\.doc-section\s*\{\s*font-size:\s*13\.5px', text), \
+        "one type size for the print, so `ch` means one thing in every row"
+    # Code takes the margin's room only where that room is actually going
+    # spare. `:has()` reads the row itself, so no JS has to remember.
+    # ...and only in the continuous PRINT. In the accordion the wide row IS
+    # the section — a hunk — and `:has()` would turn the first comment on it
+    # into a 328px re-layout of the very lines being commented on.
+    assert re.search(
+        r'\.doc\.print \.row\.wide:not\(:has\(> \.rm\)\) \.rp\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
+        "a code row with no margin cell must break out across it, in the print only"
+    assert not re.search(r'\.doc \.row\.wide\s*\{[^}]*grid-template-columns', text), \
+        "a wide row must not restate the template — that is what moved the margin"
+    # The wasted-space rule: both side columns collapse to zero width.
+    assert re.search(r'\.doc\.no-gutter\s*\{\s*--gutter-w:\s*0px;\s*\}', text), \
+        "the gutter column must collapse to 0 when nothing uses it"
+    assert re.search(r'\.doc\.no-margin\s*\{\s*--margin-w:\s*0px;\s*\}', text), \
+        "the margin column must collapse to 0 when nothing uses it"
+    # The 28px alley rides in the side cells, never in column-gap — a gap is
+    # drawn between zero-width tracks too, which would defeat the collapse.
+    assert not re.search(r'\.doc \.row\s*\{[^}]*column-gap', text), \
+        "the row must not use column-gap — a collapsed column would still cost its alley"
+    for cell, edge, alley in (('rg', 'padding-right', 20), ('rm', 'padding-left', 28)):
+        assert re.search(r'\.doc \.' + cell + r'\s*\{[^}]*' + edge + r':\s*' + str(alley) + 'px', text), \
+            f".{cell} must carry its {alley}px alley itself"
+    # The gutter is a glyph RAIL, not a text column. 70px of 9px mono clamped
+    # `✓ §4 defines "cold start"` to `✓ §4 defines "cold`, which is worse than
+    # not showing it; the glyph says WHICH paragraph carries a flag and of what
+    # severity, and the words go to the margin where they can be read.
+    assert re.search(r'--gutter-w:\s*34px;', text), \
+        "the gutter is a 14px glyph plus its alley, not a text column"
+    assert re.search(r'\.lflag\s*\{[^}]*font-size:\s*13px', text), \
+        "the rail glyph must be legible"
+    assert 'aria-hidden="true">\' + FLAG_GLYPH[sev]' in text, \
+        "the rail is decorative — the margin line carries the flag in words"
+    assert 'function marginFlagHTML(a)' in text, \
+        "a producer flag must be readable somewhere"
+    # The segmented rule's fixed order is the colorblind-safe second encoding,
+    # so the three segment inks must each exist and stay distinct.
+    for cls, token in (('seg-judgment', '--acc'), ('seg-fact', '--fact'),
+                       ('seg-settled', '--settled')):
+        assert re.search(r'\.' + cls + r'\s*\{\s*background:\s*var\(' + token + r'\)', text), \
+            f".{cls} must be inked from var({token})"
+
 
 def assert_ink_discipline(text: str) -> None:
     """The syntax theme may not spend the reviewer's ink.

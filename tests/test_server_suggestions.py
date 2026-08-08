@@ -102,8 +102,11 @@ def test_page_ships_the_suggestion_affordances() -> None:
         "suggestion: 'Replacement wording — applied verbatim'",
         "mark.cmt-hl-suggestion",
         ".cmt-chip-suggestion.is-on",
-        ".v-suggestion .cmt-type",
+        # The stacked comment list is gone — a comment lives in its own margin
+        # note now — so `.v-suggestion .cmt-type` went with it. `.cmt-repl`
+        # stays: a carried thread's exchange still prints the wording.
         ".cmt-repl",
+        "function suggestionFenceHTML(c)",
     ):
         assert needle in page, f"page missing: {needle}"
     assert 'class="note-field cmt-pop-repl"' not in page, \
@@ -119,8 +122,11 @@ def test_page_ships_the_suggestion_affordances() -> None:
     assert "filter(c => !c.settled && (c.note || c.replacement))" in page, \
         "activeComments must count a suggestion carrying only its wording"
     # Stale marks: the re-render clears every typed highlight it can create.
-    assert "'mark.cmt-hl-changes, mark.cmt-hl-info, mark.cmt-hl-suggestion'" in page, \
-        "renderHighlights must clear the suggestion mark it creates"
+    # One prefix selector rather than three names — `markAndPin` is now the
+    # only pass that creates them, and it is the only one that has to clear
+    # them, so a fourth type can never be forgotten in the teardown.
+    assert '''content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>''' in page, \
+        "the mark+pin pass must clear every typed highlight it can create"
     # Review-mode only: a diff hunk's suggestion would be a verbatim code edit,
     # which /viva-diff carries no instruction to apply (#166 scopes it out).
     assert "const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';" in page, \

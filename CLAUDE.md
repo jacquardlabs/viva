@@ -27,7 +27,7 @@ only by JSON files under `.viva/`:
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
-4. **`server.py` — the SPA host** (4,872 lines, of which the embedded
+4. **`server.py` — the SPA host** (7,027 lines, of which the embedded
    HTML/CSS/JS constant `HTML` — opened at line 46 — is the overwhelming
    majority; the Python HTTP handler around it is small). The bulk being a
    frontend is intentional — one file, no build step, no npm. Don't "fix" the
