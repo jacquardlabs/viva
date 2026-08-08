@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v1.23.0 (2026-08-08)
+
+### Bug Fixes
+
+- **design**: One field for a suggestion, and the drafting chrome goes
+  ([#185](https://github.com/jacquardlabs/viva/pull/185),
+  [`286c5b0`](https://github.com/jacquardlabs/viva/commit/286c5b0028e7e4720638169ba86efaab1058fc6c))
+
+### Features
+
+- **design**: Sections print as runs, not as boxes
+  ([#185](https://github.com/jacquardlabs/viva/pull/185),
+  [`286c5b0`](https://github.com/jacquardlabs/viva/commit/286c5b0028e7e4720638169ba86efaab1058fc6c))
+
+- **design**: The catalog ground replaces the blueprint sheet
+  ([#185](https://github.com/jacquardlabs/viva/pull/185),
+  [`286c5b0`](https://github.com/jacquardlabs/viva/commit/286c5b0028e7e4720638169ba86efaab1058fc6c))
+
+- **design**: The reader picks the theme, not just the OS
+  ([#185](https://github.com/jacquardlabs/viva/pull/185),
+  [`286c5b0`](https://github.com/jacquardlabs/viva/commit/286c5b0028e7e4720638169ba86efaab1058fc6c))
+
+
 ## v1.22.0 (2026-08-07)
 
 ### Bug Fixes
