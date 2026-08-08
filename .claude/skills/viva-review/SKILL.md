@@ -79,9 +79,13 @@ interpretation, no improving on the reviewer's phrasing, nothing outside the
 anchor. Its `note` is the reviewer's reason, never a second instruction, and no
 standing preference overrides supplied wording. An un-anchored suggestion names
 no span: treat it as a `changes` directive scoped to the card. An **`info`**
-comment is a *question* — answer it in the thread and **do not edit**. A card is
-edited for an `info` thread only once the discussion escalates to a `changes`
-turn.
+comment is a *question* — answer it and **do not edit**. A card is edited for an
+`info` question only once the discussion escalates to a `changes` turn.
+
+**Where you answer an `info` differs by branch, because threads do.** Branch A
+carries open notes across rounds, so the answer goes into the thread (A4's
+`--response`). Branch B has no threads at all — see B3. Answering "in the
+thread" on a hunk writes into something that does not exist.
 
 **Anchors.** `anchor.offset` locates the edit within the card's source and
 `anchor.text` confirms it. The offset already names the occurrence the reviewer
@@ -295,11 +299,22 @@ cat .viva/review-r{N}.json
 Read all verdicts from stdout. The server writes the file atomically — `cat`
 always sees complete JSON. Same ~10 minute timeout as A2.
 
-**B3. Act on verdicts.** The verdict rules above apply unchanged, with the hunk
-as the card. For each section with a `changes` comment: parse the section `title`
-to extract the filepath (`title` = `"{filepath} hunk N"`), then apply the
-targeted edit to `{filepath}` in the working tree, locating the span within the
-hunk at `anchor.offset`. Scope every edit to the hunk named in the title.
+**B3. Act on verdicts.** The verdict rules above apply with the hunk as the card,
+and **one exception: there are no threads here.** `parse_diff.py` takes no
+`--open-notes`, so a diff round carries none, nothing re-presents an exchange,
+and there is no `--response` to record one against.
+
+So answer an **`info`** comment **in the chat conversation with the human**, and
+re-present the hunk unchanged next round. Do not write a response into a thread
+that does not exist, and do not edit the file — an `info` is still a question,
+not a directive. The reviewer's note is not lost either way: it lands in the
+round's verdicts JSON and in the Revisions ledger the tab renders. If they
+escalate to a `changes` turn, act on it then like any other `changes` comment.
+
+For each section with a `changes` comment: parse the section `title` to extract
+the filepath (`title` = `"{filepath} hunk N"`), then apply the targeted edit to
+`{filepath}` in the working tree, locating the span within the hunk at
+`anchor.offset`. Scope every edit to the hunk named in the title.
 
 Every hunk approved → B5. Any `changes`/`info` → B4.
 
