@@ -285,6 +285,38 @@ The margin holds two kinds of note, deliberately built differently:
   (`.rm-notes .nt`), carrying the anchor quote, the note, and — for a
   suggestion — D's `−/+` fence against the wording it replaces.
 
+**A suggestion is shown APPLIED, in the prose.** `markAndPin` splices
+`<del class="sug-del">` (the wording it replaces, struck, `--faint`) beside
+`<ins class="sug-ins">` (the replacement, on `--touch` with the same
+`--touch-edge`), then the pin. Without this the reviewer reads a note *about* a
+sentence and never the sentence — the whole difference between a suggestion and
+a comment. `del` is still the document and stays in every text walk; `ins` is a
+proposal that has never been in it and is rejected by `proseWalker`, so it can
+never inflate an ordinal or be commented on. The gap between them is CSS margin,
+never a text node, for the same reason.
+
+**Not in code.** A struck line inside a code well reads as broken syntax, so a
+suggestion whose anchor lands in a `<pre>` (`n.inCode`) keeps the plain yellow
+mark and the margin carries D's `−/+` fence instead. That is the only place the
+fence appears; where the prose could show the change, printing the same two
+strings again in the margin is duplication.
+
+**Per-note verbs.** One verb per note with its keycap, not a permanently-open
+reply box under two type chips — that block was ~120px of controls on every
+carried thread whether or not the reviewer meant to say anything, affordable at
+the foot of an accordion card and not in a 253px margin.
+
+| Note | Verbs | What they do |
+|------|-------|--------------|
+| open thread | `Reply` `r` · `Settle` `s` | reveal the reply box · close the thread |
+| author kept as-is | `Accept` `y` (primary) · `Change anyway` `n` | the decline stands · reply, and an insisting reply is binding |
+| this round's note | `remove` | delete it |
+
+The reply box ships `hidden` and a verb reveals it; a reply already in `rState`
+re-opens its own box, so a rebuild never hides feedback already given. Settling
+toggles a class rather than rewriting the button's label — the label names the
+verb and carries a keycap, and both would be lost.
+
 **Numbering.** `docNotesOrdered` sorts by the row an anchor resolves into
 (unanchored → the section head), then by creation order. `markAndPin` assigns
 the number and writes **both** ends in one pass — the pin in the text and the
@@ -362,6 +394,39 @@ carries the same grammar over the whole document, denominated in sections:
 `changes` → judgment, `info` → facts, `approved` → settled. What it does not
 fill is what nobody has looked at yet — unreviewed sections are the bare track,
 the one honest way to draw "not yet decided" without a fourth color.
+
+### The bar and the footer (#186, unreleased)
+
+Both state the document's condition, and `documentBalance()` is the single
+arithmetic behind them, so `7 items · 5 open` in the bar can never disagree with
+`blocked · 5 open` below it. An **item** is what `sectionBalance` counts: a
+thread, a comment, a check, a producer flag, and a section's own sign-off.
+
+**Bar** (review mode only, cells ship hidden and `renderDocStatus` reveals
+them): `doc · round NN · pass · checks N/M · N items · M open · approved N/M ·
+palette ⌘K`. No progress track — the footer's segmented rule is the document's
+progress, in state rather than in percent, and two bars saying the same thing
+differently is one bar too many. `palette ⌘K` is stated here rather than buried
+in the legend at the foot of the page: a palette nobody knows about is a palette
+nobody uses.
+
+**Footer**: one consequential stamp, `approve — dispatch`, named for what it
+does to the document rather than for the HTTP verb behind it; `blocked · N
+unreviewed, M open` beside it with the `⌘⏎` keycap; `convergence N → M`; and a
+`round trip N ms` that is a **measurement** — `timedFetch` times the page's own
+`/input` request, and the line stays hidden until one has been observed. Nothing
+in the footer is a number copied off a mock.
+
+`convergence` compares open items when the round was **armed** against open
+items **now** — the question a multi-round review actually asks. The baseline
+reads only round data (carried threads all arrive unsettled, unanswered checks
+and warn/error flags arrive open) and never live reviewer state; that is what
+makes it a baseline rather than a second view of the same number.
+
+The **transmittal slip** ships collapsed — a disclosure whose head states
+`Transmittal · REV NN · N changes`. #186's reading-order finding applies to it
+as much as to the threads: it is the round's cover note, not the round's
+content, and a reader should meet the document first.
 
 ### Command palette (⌘K, #186, unreleased)
 

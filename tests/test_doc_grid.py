@@ -285,8 +285,10 @@ def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
     nothing there matches those classes inside `.section-content` — so both
     surfaces run the same walk rather than branching."""
     assert "function proseWalker(root)" in page, "page missing the prose-only walker"
-    assert ("if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover'))" in page), \
-        "the walker must reject the margin, the gutter, and an open compose popover"
+    assert ("if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')\n"
+            "                  || c.contains('sug-ins')))" in page), \
+        "the walker must reject the margin, the gutter, an open compose popover, " \
+        "and a suggestion's proposed wording"
     # Capture: the ordinal is counted over prose.
     assert "function proseOccurrenceBefore(root, range, text)" in page
     assert "const counted = proseOccurrenceBefore(root, range, text);" in page, \
@@ -298,8 +300,9 @@ def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
     assert "const walk = proseWalker(root);" in page[fn:fn + 500], \
         "wrapNth must walk prose only"
     # Creation: a drag outside the prose cell is not a comment on the document.
-    assert "if (isDocMode() && !(start.closest('.rp'))) return;" in page, \
-        "a selection outside the prose cell must not open a comment popover"
+    assert "if (isDocMode() && (!start.closest('.rp') || start.closest('.sug-ins'))) return;" in page, \
+        "a selection outside the prose cell — or inside proposed wording — " \
+        "must not open a comment popover"
     print("test_anchoring_reads_the_document_not_the_commentary: OK")
 
 
@@ -344,6 +347,126 @@ def test_settled_token_defined_once_per_theme_block(page: str) -> None:
     print("test_settled_token_defined_once_per_theme_block: OK")
 
 
+def test_a_suggestion_is_shown_applied(page: str) -> None:
+    """Cap: a suggestion renders IN THE PROSE — the wording it replaces struck
+    in the faint ink, the replacement on the same catalog yellow the anchor
+    wears. Without it the reviewer reads a note *about* a sentence and never
+    the sentence, which is the whole difference between a suggestion and a
+    comment. Not in code: a struck line inside a code well reads as broken
+    syntax, so a code suggestion falls back to the margin's −/+ fence."""
+    assert "sug.className = 'sug';" in page and "was.className = 'sug-del';" in page \
+        and "now.className = 'sug-ins';" in page, "page missing the inline apply"
+    assert re.search(r'\.sug-del\s*\{[^}]*text-decoration:\s*line-through', page), \
+        "the replaced wording must be struck"
+    assert re.search(r'\.sug-ins\s*\{[^}]*background:\s*var\(--touch\)', page), \
+        "the replacement must wear the reviewer's own catalog yellow"
+    assert "n.placedInline = !!(repl && !n.inCode);" in page, \
+        "code suggestions must not splice into the code well"
+    assert "sug.append(was, now);" in page, \
+        "no text node between del and ins — the gap is CSS, so it is never counted as prose"
+    # Both sources of a replacement reach it: this round's comment and a
+    # carried thread whose last turn was a suggestion.
+    assert "function noteReplacement(n)" in page
+    assert "return last.verdict === 'suggestion' ? (last.replacement || '') : '';" in page
+    # The margin says so rather than printing the same two strings again.
+    assert "applied above &mdash; struck wording out," in page
+    assert "c.replacement && !showsInline ? suggestionFenceHTML(c)" in page, \
+        "the fence is the fallback for what the prose could not show"
+    print("test_a_suggestion_is_shown_applied: OK")
+
+
+def test_an_anchor_that_crosses_elements_still_marks(page: str) -> None:
+    """Cap: a code anchor. highlight.js splits `time.sleep(0.3)` into six token
+    spans, so the phrase the reviewer selected lives in no single text node —
+    wrapNth's walk marked nothing at all, and a suggestion on a line of code
+    drew neither highlight nor pin. The Range fallback spans elements.
+
+    Kept as a FALLBACK, not the primary: surroundContents splits partially
+    selected elements, and diff mode's marks land inside diff2html's table
+    markup where that is not a trade worth making unless the alternative is no
+    mark at all."""
+    assert "function wrapSpanning(root, needle, cls, n)" in page, "page missing the Range fallback"
+    assert "return wrapSpanning(root, needle, cls, n);" in page, \
+        "wrapNth must fall through to it, never lead with it"
+    assert "range.surroundContents(mark);" in page
+    assert "mark.appendChild(range.extractContents()); range.insertNode(mark);" in page, \
+        "a partially-selected element must still resolve, not silently drop the mark"
+    print("test_an_anchor_that_crosses_elements_still_marks: OK")
+
+
+def test_each_note_carries_its_own_verb(page: str) -> None:
+    """Cap: one verb per note, with its keycap, instead of a permanently-open
+    reply box under two type chips — ~120px of controls on every carried
+    thread whether or not the reviewer meant to say anything, which is
+    affordable at the foot of an accordion card and not in a 253px margin.
+
+    The verbs are viva's actual moves. A declined thread is waiting on
+    accept-or-insist, so it leads with `Accept` (settle: the decline stands)
+    against `Change anyway` (reply: an insisting reply is binding)."""
+    assert "declined ? 'Accept' : 'Settle'" in page and "declined ? 'y' : 's'" in page
+    assert "declined ? 'Change anyway' : 'Reply'" in page and "declined ? 'n' : 'r'" in page
+    assert "(declined ? settle('is-pri') + reply() : reply() + settle('is-quiet'))" in page, \
+        "a declined thread must lead with Accept as the primary"
+    # The box is what a verb reveals.
+    assert 'data-type="' + "' + esc(type) + '" + '" hidden>' in page, \
+        "the reply box must ship hidden"
+    assert "wrap.hidden = false;" in page and "setThreadReplyType(wrap, b.dataset.type);" in page
+    # …and it re-opens itself rather than hiding feedback already given.
+    assert ".find(c => c.cid === cid && c.reply && c.note);" in page, \
+        "a reply already in rState must keep its box open across a rebuild"
+    # The verb label survives settling — it names the action and carries a
+    # keycap, so state is a class, not a rewritten innerHTML.
+    assert "if (btn) btn.classList.toggle('is-on', !!c.settled);" in page, \
+        "settling must not overwrite the verb's label"
+    print("test_each_note_carries_its_own_verb: OK")
+
+
+def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
+    """Cap: the bar and the footer answer the same question with the same
+    number. `documentBalance` is the single source — items, open, checks, and
+    the baseline convergence measures against — so `7 items · 5 open` in the
+    bar can never disagree with `blocked · 5 open` below it.
+
+    `convergence` compares open items when the round was ARMED against open
+    items now. Both ends are counted, never estimated: the baseline reads only
+    round data (carried threads, unanswered checks, flags) and never live
+    reviewer state, which is what makes it a baseline."""
+    assert "function documentBalance()" in page, "page missing the one arithmetic"
+    assert "atStart += (s.open_notes || []).length;" in page, \
+        "the baseline counts carried threads, which all arrive unsettled"
+    assert "open: judgment + facts, total: judgment + facts + settled" in page
+    assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
+    # The stamp is named for what it does to the document.
+    assert "sub.textContent = doc ? 'approve — dispatch' : 'submit all';" in page, \
+        "the doc print's footer carries one consequential stamp"
+    # A measured latency, never a claimed one.
+    assert "function timedFetch(url, opts)" in page and "timedFetch('/input')" in page
+    assert "if (_lastRTT === null) lat.style.display = 'none';" in page, \
+        "the footer must never print a latency it did not observe"
+    # The composite has no progress track — the footer's rule is the progress.
+    assert "el('r-progress-track').style.display = asDoc ? 'none' : '';" in page
+    # Document-scale settled is ink, not the section rule's gray.
+    assert re.search(r'\.foot-seg \.seg-settled\s*\{\s*background:\s*var\(--ink\)', page), \
+        "the document's closed mass is drawn in ink"
+    assert re.search(r'\.foot-seg\s*\{[^}]*height:\s*6px', page), \
+        "the footer's rule is heavier than a section's"
+    print("test_bar_and_footer_state_one_arithmetic: OK")
+
+
+def test_the_slip_ships_collapsed(page: str) -> None:
+    """Cap: #186's reading-order finding applies to the slip too. It is the
+    round's cover note, not the round's content — above the print but
+    COLLAPSED, so what a reader meets first is the document rather than a
+    bordered index of it."""
+    assert 'class="transmittal-head" id="transmittal-head" aria-expanded="false"' in page, \
+        "the slip's head must be a disclosure, closed"
+    assert '<div class="transmittal-rows" id="transmittal-rows" hidden>' in page, \
+        "the slip's rows must ship hidden"
+    assert "head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');" in page, \
+        "the disclosure state must stay in sync for screen readers"
+    print("test_the_slip_ships_collapsed: OK")
+
+
 def test_round2_wire_shape_unchanged(base: str) -> None:
     """Hold: no schema change. The restructure is a rendering change over the
     shapes #184 already ships — GET /input serves the same round, the same
@@ -380,6 +503,11 @@ def main() -> None:
             test_anchoring_reads_the_document_not_the_commentary(page)
             test_anchored_span_wears_the_reviewers_touch(page)
             test_settled_token_defined_once_per_theme_block(page)
+            test_a_suggestion_is_shown_applied(page)
+            test_an_anchor_that_crosses_elements_still_marks(page)
+            test_each_note_carries_its_own_verb(page)
+            test_bar_and_footer_state_one_arithmetic(page)
+            test_the_slip_ships_collapsed(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")
 

@@ -411,7 +411,24 @@ body {
   margin-bottom: 14px;
   animation: fadeUp 0.4s ease both;
 }
-.transmittal-head { padding: 8px 14px 0; }
+/* A disclosure button, dressed as the label it already was — the slip ships
+   collapsed so the print is what a reader meets first. */
+.transmittal-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.transmittal-head:hover .transmittal-title { color: var(--acc); }
+.transmittal-chevron { font-size: 10px; color: var(--text3); transition: transform 0.2s; }
+.transmittal-head[aria-expanded="false"] .transmittal-chevron { transform: rotate(-90deg); }
 .transmittal-title {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
@@ -1274,7 +1291,7 @@ body {
 
 /* Keycaps sit on the control they name rather than being hover-revealed —
    the palette is a directory of this same layer, never a second one. */
-.doc kbd, .pal kbd {
+.doc kbd, .pal kbd, .pal-hint kbd {
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 9px;
   border: 1px solid var(--rule);
@@ -1312,6 +1329,29 @@ body {
   border: 0;
   padding: 0;
 }
+/* ─── A suggestion, shown applied ────────────────────────────
+   The wording it replaces struck out in the faint ink, the replacement on the
+   same catalog yellow the anchor wears — so the reviewer reads the sentence
+   as it would stand, not a note about it. `del` is still the document (it is
+   what the source says today); `ins` is the reviewer's proposal and is
+   excluded from every text walk, so it can never be counted as prose or
+   commented on. The gap between them is margin, never a text node, for the
+   same reason. */
+.sug-del { color: var(--faint); text-decoration: line-through; }
+.sug-ins {
+  text-decoration: none;
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+  margin-left: 5px;
+}
+.nt-applied {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--soft);
+  font-style: italic;
+}
+
 .pin-you    { background: var(--acc); color: var(--paper); }
 .pin-author { border: 1.5px solid var(--soft); color: var(--soft); background: none; }
 .pin-fact   { background: var(--fact); color: var(--paper); }
@@ -1467,8 +1507,13 @@ body {
 .doc .open-thread-quote { max-width: 100%; white-space: normal; }
 .doc .open-thread-body { padding: 0 9px; }
 .doc .exchange { padding: 5px 0; }
-.doc .thread-reply { padding: 0 9px 8px; margin-top: 0; }
-.doc .settle-btn { border-radius: 0; }
+/* One verb per note, with its keycap; the reply box is what a verb reveals,
+   not something every thread carries open. */
+.open-thread .nt-acts { padding: 2px 9px 9px; margin-top: 0; }
+.thread-reply { padding: 0 9px 9px; margin-top: 0; }
+.settle-btn.is-on { --c: var(--machine); border-color: var(--machine); color: var(--machine); }
+.nt-btn.is-pri.is-on { background: var(--machine); border-color: var(--machine); }
+.open-thread.is-settled .nt-acts .thread-reply-btn { display: none; }
 /* The note number, shared by the margin's two note builders and by the pin
    that answers it. Empty in the accordion — only the margin numbers notes. */
 .nh-num, .nh .nh-num {
@@ -1503,9 +1548,43 @@ body {
 
 /* The document's own balance, drawn across the footer that closes the page —
    same grammar as a section's rule, same fixed order, one document-wide
-   denominator. Unreviewed sections are the bare track it does not fill. */
-.foot-seg { position: absolute; top: 0; left: 0; right: 0; display: flex; height: 4px; }
-.foot-seg i { display: block; height: 4px; }
+   denominator. Unreviewed sections are the bare track it does not fill.
+
+   Heavier than a section's rule (6px against 4px), and its settled segment is
+   INK rather than the section rule's gray: at document scale "done" is the
+   page's closed mass, drawn in the same ink as the 2px rules that bracket the
+   page top and bottom. The gray belongs to one section's remainder. */
+.foot-seg { position: absolute; top: 0; left: 0; right: 0; display: flex; height: 6px; }
+.foot-seg i { display: block; height: 6px; }
+.foot-seg .seg-settled { background: var(--ink); }
+
+/* The way in to the keyboard layer, stated in the bar rather than buried in
+   the legend at the foot of the page — a palette nobody knows about is a
+   palette nobody uses. */
+.pal-hint {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--soft);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.pal-hint:hover { color: var(--ink); }
+.stat-conv b { color: var(--ink); font-weight: 600; }
+.stat-lat { color: var(--faint); }
+.stat-pending kbd, .stats kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 4px;
+  color: var(--soft);
+  background: var(--sunk);
+}
 
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
 .card, .action-btn, .note-field, .vbadge, .btn-skip, .btn-submit,
@@ -1948,11 +2027,12 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
 .carried-show:focus-visible, .carried-withdraw:focus-visible,
 .nt-btn:focus-visible, .pin:focus-visible, .pal-row:focus-visible,
-.transmittal-row:focus-visible,
+.thread-reply-btn:focus-visible,
+.transmittal-row:focus-visible, .transmittal-head:focus-visible,
 .recap-row:focus-visible, .recap-close:focus-visible,
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
-.theme-toggle:focus-visible,
+.theme-toggle:focus-visible, .pal-hint:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -2431,9 +2511,16 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
         <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="doc-path"></div></div>
         <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
         <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
+        <!-- Review-mode cells (#186): the composite's bar states the document's
+             whole condition on one line — checks, items, what is open, and the
+             way in to the keyboard layer. They ship hidden; initReview reveals
+             them and updateReviewStats keeps them current. -->
+        <div class="tb-cell" id="tb-checks" style="display:none"><div class="tb-label">checks</div><div class="tb-val mono" id="r-checks">0/0</div></div>
+        <div class="tb-cell" id="tb-items" style="display:none"><div class="tb-val mono" id="r-items"></div></div>
         <div class="tb-cell"><div class="tb-label">approved</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+        <div class="tb-cell" id="tb-palette" style="display:none"><button type="button" class="pal-hint" id="pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
-      <div class="progress-track">
+      <div class="progress-track" id="r-progress-track">
         <div class="progress-fill" id="r-progress" style="width:0%"></div>
       </div>
     </div>
@@ -2532,6 +2619,12 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <span class="stat-approved" id="stat-approved"></span>
       <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
+      <!-- Review-mode footer (#186). `convergence` is the question a
+           multi-round review actually asks — is the reviewer closing more than
+           they open — and `round trip` is a real measurement, not a claim:
+           the last same-origin request this page made. -->
+      <span class="stat-conv" id="stat-conv" style="display:none"></span>
+      <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
       <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
       <button type="button" class="theme-toggle" id="theme-toggle"
               title="Cycle theme: follow system, light, dark">theme: system</button>
@@ -2826,9 +2919,16 @@ function transmittalHTML(data) {
     flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
     carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
   if (!rows.length) return '';
-  return '<div class="transmittal-head"><span class="transmittal-title">Transmittal &middot; REV '
-    + esc(String(data.round).padStart(2, '0')) + '</span></div>'
-    + '<div class="transmittal-rows">' + rows.join('') + '</div>';
+  // The head is a disclosure. The slip is the round's cover note, not the
+  // round's content — above the print but COLLAPSED, so what a reader meets
+  // first is the document rather than a bordered index of it (issue #186's
+  // reading-order finding applies to the slip as much as to the threads).
+  return '<button type="button" class="transmittal-head" id="transmittal-head" aria-expanded="false"'
+    + ' aria-controls="transmittal-rows"><span class="transmittal-title">Transmittal &middot; REV '
+    + esc(String(data.round).padStart(2, '0')) + ' &middot; ' + rows.length
+    + (rows.length === 1 ? ' change' : ' changes')
+    + '</span><span class="transmittal-chevron" aria-hidden="true">&#9662;</span></button>'
+    + '<div class="transmittal-rows" id="transmittal-rows" hidden>' + rows.join('') + '</div>';
 }
 
 function renderTransmittal() {
@@ -2840,6 +2940,11 @@ function renderTransmittal() {
   panel.style.display = '';
   panel.querySelectorAll('.transmittal-row').forEach(btn => {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
+  });
+  const head = el('transmittal-head'), body = el('transmittal-rows');
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
   });
 }
 
@@ -2868,6 +2973,16 @@ function initReview() {
   const asDoc = REVIEW_DATA.mode === 'review';
   container.classList.toggle('doc', asDoc);
   el('doc-hint').style.display = asDoc ? '' : 'none';
+  // The composite's bar has no progress track: the footer's segmented rule is
+  // the document's progress, in state rather than in percent, and two bars
+  // saying the same thing differently is one bar too many.
+  el('r-progress-track').style.display = asDoc ? 'none' : '';
+  // `round 2 · line` — the round and the pass it was armed for, the way the
+  // composite states it. `pass.kind` is boundary-validated against PASS_KINDS.
+  if (asDoc && REVIEW_DATA.pass && REVIEW_DATA.pass.kind) {
+    el('round-badge').textContent =
+      String(REVIEW_DATA.round).padStart(2, '0') + ' · ' + REVIEW_DATA.pass.kind;
+  }
   const priorApprovedSet = new Set(REVIEW_DATA.approved_ids || []);
   // Pre-populate approved state for sections approved in previous rounds
   priorApprovedSet.forEach(id => {
@@ -3110,16 +3225,40 @@ function openThreadItemHTML(t) {
     // always wins. Same settle button, same reply box, different label and
     // prompt; the clamp above already sends an insisting reply as `changes`.
     const declined = t.status === 'declined';
+    /* One verb per note, with its keycap, instead of a permanently-open reply
+       box under two type chips. The old block was ~120px of controls on every
+       carried thread whether or not the reviewer intended to say anything —
+       affordable at the foot of an accordion card, not in a 253px margin
+       beside the paragraph.
+
+       The verbs are viva's actual moves, not new ones. A declined thread is
+       waiting on accept-or-insist, so it leads with `Accept` (settle: the
+       author's decline stands) against `Change anyway` (reply: an insisting
+       reply is binding and always wins). An open thread offers `Reply` and
+       `Settle`. Nothing here is a second confirmation step for a suggestion —
+       making one IS the instruction, and the prose already shows it applied. */
+    const btn = (cls, label, key, attrs) =>
+      '<button type="button" class="nt-btn ' + cls + '"' + (attrs || '') + '>'
+      + label + '<kbd>' + key + '</kbd></button>';
+    const settle = extra => btn('settle-btn ' + extra, declined ? 'Accept' : 'Settle',
+      declined ? 'y' : 's', ' id="rsettle-' + cid + '" data-cid="' + cid + '"');
+    const reply = () => btn('thread-reply-btn', declined ? 'Change anyway' : 'Reply',
+      declined ? 'n' : 'r',
+      ' data-cid="' + cid + '" data-type="' + (declined ? 'changes' : esc(type)) + '"');
     return '<div class="open-thread' + (declined ? ' is-declined' : '')
       + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
       +   '<span class="nh-num" id="rnum-' + cid + '" aria-hidden="true"></span>'
-      +   '<span class="open-thread-label">' + (declined ? 'declined' : 'open note')
+      +   '<span class="open-thread-label">' + (declined ? 'author kept as-is' : 'open note')
       +   '</span><span class="pn">&middot; ' + cid + '</span>' + quote
-      +   '<button type="button" class="settle-btn" id="rsettle-' + cid + '" data-cid="' + cid + '"><span aria-hidden="true">&#10003;</span> settle</button>'
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
-      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '">'
+      + '<div class="nt-acts">'
+      +   (declined ? settle('is-pri') + reply() : reply() + settle('is-quiet'))
+      + '</div>'
+      // Ships hidden; a verb reveals it. wireOpenThread un-hides it on build
+      // when a reply is already pending in rState, so a rebuild never loses one.
+      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '" hidden>'
       +   '<div class="thread-reply-chips">'
       +     '<button type="button" class="cmt-chip cmt-chip-changes' + (type === 'changes' ? ' is-on' : '')
       +       '" data-type="changes">request changes</button>'
@@ -3128,7 +3267,7 @@ function openThreadItemHTML(t) {
       +   '</div>'
       +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
       +     '" placeholder="' + (declined
-            ? 'Settle to accept the decline, or reply to insist — a reply is binding.'
+            ? 'A reply insists, and an insisting reply is binding.'
             : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
       +     '"></textarea>'
       + '</div>'
@@ -3550,6 +3689,14 @@ function noteTypeOf(n) {
   return n.comment.type === 'changes' || n.comment.type === 'suggestion' ? n.comment.type : 'info';
 }
 
+// The exact wording a note proposes, from either source: this round's
+// suggestion comment, or a carried thread whose last turn was one.
+function noteReplacement(n) {
+  if (n.kind === 'comment') return n.comment.replacement || '';
+  const last = (n.thread.exchanges || []).slice(-1)[0] || {};
+  return last.verdict === 'suggestion' ? (last.replacement || '') : '';
+}
+
 /* D's fence, squared: the reviewer's replacement against the wording it
    replaces. Red and green live here and nowhere else — the fence and the
    diff are the same object, and diff semantics already own those colors. */
@@ -3566,13 +3713,21 @@ function commentNoteHTML(n) {
   const c = n.comment;
   const word = c.type === 'suggestion' ? 'suggestion' : c.type === 'info' ? 'question' : 'comment';
   const cls = c.type === 'info' ? ' nt-fact' : '';
+  /* The fence is for a suggestion the prose could not show applied — code, or
+     an anchor that never resolved. When markAndPin DID splice it inline, the
+     note says so rather than printing the same two strings a second time: the
+     applied sentence is upstream, in the text, which is where a reviewer
+     judges wording. */
+  const showsInline = !!(c.replacement && n.placedInline);
   return '<div class="nt' + cls + '" data-cid="' + esc(c.cid) + '">'
     + '<div class="nh"><span class="nh-num">' + n.num + '</span> you &mdash; ' + word
     + '<span class="pn">&middot; ' + esc(c.cid) + '</span></div>'
     + (c.anchor && c.anchor.text && c.type !== 'suggestion'
         ? '<span class="nt-quote">' + esc(c.anchor.text) + '</span>' : '')
     + (c.note ? '<div class="nt-body">' + esc(c.note) + '</div>' : '')
-    + (c.replacement ? suggestionFenceHTML(c) : '')
+    + (showsInline ? '<div class="nt-applied">applied above &mdash; struck wording out, '
+                   + 'replacement on yellow</div>' : '')
+    + (c.replacement && !showsInline ? suggestionFenceHTML(c) : '')
     + '<div class="nt-acts">'
     +   '<button type="button" class="nt-btn is-quiet cmt-del" data-cid="' + esc(c.cid) + '">remove</button>'
     + '</div></div>';
@@ -3738,8 +3893,10 @@ function buildDocSection(section, index) {
     const note = sec.querySelector('[data-cid="' + pin.dataset.cid + '"]');
     if (note) {
       note.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      const field = note.querySelector('textarea');
-      if (field) field.focus({ preventScroll: true });
+      // The note's first verb, not its reply box — the box ships hidden now,
+      // and focusing a hidden field silently drops the focus on the floor.
+      const target = note.querySelector('.nt-btn, textarea:not([hidden])');
+      if (target) target.focus({ preventScroll: true });
     }
   });
   return sec;
@@ -3831,19 +3988,48 @@ function placeDocThreads(id) {
   });
 }
 
+// What a reply MEANS, in one place: `info` keeps the discussion going,
+// `changes` turns it into an edit. The chips and the reveal verbs both set it
+// here so they can never disagree about which one is lit.
+function setThreadReplyType(wrap, type) {
+  wrap.dataset.type = type;
+  wrap.querySelectorAll('.cmt-chip').forEach(c =>
+    c.classList.toggle('is-on', c.dataset.type === type));
+}
+
 // The settle button + reply box wiring, lifted out of buildReviewCard so both
 // surfaces bind one thread the same way. `node` is a scope, not one thread:
 // the accordion passes its whole card, the margin passes a single thread.
 function wireOpenThread(id, node) {
   node.querySelectorAll('.settle-btn').forEach(b =>
     b.addEventListener('click', e => { e.stopPropagation(); settleOpenNotes(id, b.dataset.cid); }));
+  // `Reply` / `Change anyway` reveal the box and set what a reply MEANS:
+  // insisting on a declined thread is an edit request, never a chat turn.
+  node.querySelectorAll('.thread-reply-btn').forEach(b =>
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const wrap = node.querySelector('.thread-reply[data-cid="' + b.dataset.cid + '"]');
+      if (!wrap) return;
+      wrap.hidden = false;
+      setThreadReplyType(wrap, b.dataset.type);
+      const field = wrap.querySelector('.thread-reply-field');
+      if (field) field.focus({ preventScroll: true });
+    }));
   node.querySelectorAll('.thread-reply').forEach(wrap => {
     const cid = wrap.dataset.cid;
+    // A reply already in rState (a rebuild, or a resumed round) keeps its box
+    // open — hiding it would hide feedback the reviewer has already given.
+    const pending = ((rState.verdicts[id] || {}).comments || [])
+      .find(c => c.cid === cid && c.reply && c.note);
+    if (pending) {
+      wrap.hidden = false;
+      const f = wrap.querySelector('.thread-reply-field');
+      if (f && !f.value) f.value = pending.note;
+    }
     wrap.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', e => {
       e.stopPropagation();
-      wrap.dataset.type = ch.dataset.type;
-      wrap.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
-      replyToThread(id, cid);
+      setThreadReplyType(wrap, ch.dataset.type);
+      replyToThread(id, cid);   // re-tag any pending reply with the new type
     }));
     const field = wrap.querySelector('.thread-reply-field');
     field.addEventListener('input', () => replyToThread(id, cid));
@@ -3857,6 +4043,12 @@ function wireOpenThread(id, node) {
 function markAndPin(id, ordered) {
   const content = el('rcontent-' + id); if (!content) return;
   content.querySelectorAll('.pin').forEach(p => p.remove());
+  // A `.sug` unwraps back to the wording it replaced — the `del` half IS the
+  // document; the `ins` half is the reviewer's proposal and was never in it.
+  content.querySelectorAll('span.sug').forEach(s => {
+    const was = s.querySelector('del');
+    s.replaceWith(document.createTextNode(was ? was.textContent : ''));
+  });
   content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>
     m.replaceWith(document.createTextNode(m.textContent)));
   content.normalize();
@@ -3866,6 +4058,34 @@ function markAndPin(id, ordered) {
     const type = noteTypeOf(n);
     const mark = wrapNth(content, a.text, 'cmt-hl-' + type, a.occurrence > 0 ? a.occurrence : 0);
     if (!mark) return;
+    n.inCode = !!(mark.closest && mark.closest('pre'));
+    const repl = noteReplacement(n);
+    let tail = mark;
+    /* A suggestion is SHOWN APPLIED, in the prose: the wording it replaces
+       struck in gray, the replacement on the same catalog yellow the anchor
+       wears. Without this the reviewer reads a note *about* a sentence and
+       never the sentence — which is the whole difference between a suggestion
+       and a comment, and the composite's own caption for it.
+
+       Not in code. A struck line inside a code well reads as broken syntax,
+       and a replacement spliced mid-expression reads as neither version; the
+       −/+ fence in the margin carries a code suggestion instead, which is the
+       grammar every reviewer already knows. `n.inCode` is what the margin
+       reads to decide. */
+    n.placedInline = !!(repl && !n.inCode);
+    if (n.placedInline) {
+      const sug = document.createElement('span');
+      sug.className = 'sug';
+      const was = document.createElement('del');
+      was.className = 'sug-del';
+      was.textContent = mark.textContent;
+      const now = document.createElement('ins');
+      now.className = 'sug-ins';
+      now.textContent = repl;
+      sug.append(was, now);          // no text between them — the gap is CSS,
+      mark.replaceWith(sug);         // so it can never be counted as prose
+      tail = now;
+    }
     const declined = n.kind === 'thread' && n.thread.status === 'declined';
     const pin = document.createElement('button');
     pin.type = 'button';
@@ -3873,7 +4093,7 @@ function markAndPin(id, ordered) {
     pin.dataset.cid = n.cid;
     pin.textContent = String(n.num);
     pin.setAttribute('aria-label', 'Go to note ' + n.num);
-    mark.after(pin);
+    tail.after(pin);
   });
 }
 
@@ -3886,13 +4106,28 @@ function renderDocMargin(id) {
   sec.querySelectorAll('.rm-notes .nt').forEach(n => n.remove());
 
   const ordered = docNotesOrdered(section);
-  ordered.forEach((n, i) => {
-    n.num = i + 1;
+  ordered.forEach((n, i) => { n.num = i + 1; });
+  // Marking runs FIRST. It is what decides whether a suggestion could be shown
+  // applied in the prose (`placedInline`) or has to fall back to the margin's
+  // −/+ fence, and the note is written from that answer.
+  markAndPin(id, ordered);
+  ordered.forEach(n => {
     if (n.kind === 'thread') {
       const numEl = el('rnum-' + n.cid);
       if (numEl) numEl.textContent = String(n.num);
       const node = el('rthread-' + n.cid);
-      if (node) node.classList.toggle('is-settled', !!(n.comment && n.comment.settled));
+      if (!node) return;
+      node.classList.toggle('is-settled', !!(n.comment && n.comment.settled));
+      // A carried suggestion the prose could not show applied — a code
+      // anchor — gets the −/+ fence, once. In prose the inline strike and
+      // replacement upstream already say it, and a fence there would print
+      // the same two strings a second time.
+      const repl = noteReplacement(n);
+      if (repl && n.inCode && !node.querySelector('.fence')) {
+        const body = node.querySelector('.open-thread-body');
+        if (body) body.insertAdjacentHTML('beforeend', suggestionFenceHTML({
+          cid: n.cid, replacement: repl, anchor: n.anchor }));
+      }
       return;
     }
     const host = docNoteHost(id, n.row < 0 ? null : docRows(id)[n.row]);
@@ -3901,7 +4136,6 @@ function renderDocMargin(id) {
   sec.querySelectorAll('.rm-notes .cmt-del').forEach(b =>
     b.addEventListener('click', e => { e.stopPropagation(); removeComment(id, b.dataset.cid); }));
 
-  markAndPin(id, ordered);
   renderDocSeg(id);
   renderDocSpec(id);
   updateDocColumns();
@@ -4233,7 +4467,7 @@ document.addEventListener('mouseup', () => {
     // section container, so `.section-content` alone no longer means "in the
     // document" — a drag across your own prior note would open a popover
     // anchored to text that is not in the doc. The prose cell is the document.
-    if (isDocMode() && !(start.closest('.rp'))) return;
+    if (isDocMode() && (!start.closest('.rp') || start.closest('.sug-ins'))) return;
     const m = content.id.match(/^rcontent-(.+)$/);
     if (!m) return;
     // diff2html's side-by-side mode renders old/new as two adjacent panes.
@@ -4315,7 +4549,12 @@ function proseWalker(root) {
     acceptNode(node) {
       for (let p = node.parentElement; p && p !== root; p = p.parentElement) {
         const c = p.classList;
-        if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')))
+        // `.sug-ins` is wording the reviewer PROPOSES — it has never been in
+        // the document, so counting it would inflate every later ordinal and
+        // let a comment anchor to text the author never wrote. The `.sug-del`
+        // beside it is the real source text and stays counted.
+        if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')
+                  || c.contains('sug-ins')))
           return NodeFilter.FILTER_REJECT;
       }
       return NodeFilter.FILTER_ACCEPT;
@@ -4524,10 +4763,52 @@ function wrapNth(root, needle, cls, n) {
         after.replaceWith(mark);
         return mark;
       }
+
       seen++;
       i = node.nodeValue.indexOf(needle, i + 1);
     }
   }
+  // Nothing matched inside a single text node. That is the common case for a
+  // CODE anchor: highlight.js splits `time.sleep(0.3)` into six token spans,
+  // so the phrase the reviewer selected lives in no one node and the walk
+  // above silently marks nothing — a suggestion on a line of code drew no
+  // highlight and no pin at all. Same for a prose phrase crossing an inline
+  // `<code>` or `<em>`. Fall through to a Range, which can span elements.
+  return wrapSpanning(root, needle, cls, n);
+}
+
+// Wrap the nth occurrence of `needle` even when it crosses element
+// boundaries. Kept as the FALLBACK rather than the primary: `surroundContents`
+// splits partially-selected elements, and diff mode's marks land inside
+// diff2html's table markup where that is not a trade worth making unless the
+// alternative is no mark at all.
+function wrapSpanning(root, needle, cls, n) {
+  const walk = proseWalker(root);
+  const nodes = [], starts = [];
+  let text = '', node;
+  while ((node = walk.nextNode())) { starts.push(text.length); nodes.push(node); text += node.nodeValue; }
+  if (!nodes.length) return null;
+  const at = nthIndexOf(text, needle, n > 0 ? n : 0);
+  if (at < 0) return null;
+  const locate = pos => {
+    for (let i = nodes.length - 1; i >= 0; i--)
+      if (starts[i] <= pos) return [nodes[i], pos - starts[i]];
+    return [nodes[0], 0];
+  };
+  const [sn, so] = locate(at);
+  const [en, eo] = locate(at + needle.length);
+  const range = document.createRange();
+  try { range.setStart(sn, so); range.setEnd(en, eo); } catch (e) { return null; }
+  const mark = document.createElement('mark');
+  mark.className = cls;
+  try { range.surroundContents(mark); }
+  catch (e) {
+    // Partially-selected elements: extract (which splits them, each half
+    // keeping its own class) and re-insert under the mark.
+    try { mark.appendChild(range.extractContents()); range.insertNode(mark); }
+    catch (e2) { return null; }
+  }
+  return mark;
 }
 
 /* ─── Open notes (issue #16) — settle by cid, recorded as a comment so the
@@ -4564,7 +4845,11 @@ function settleOpenNotes(id, cid) {
   const thread = el('rthread-' + cid);
   const btn = el('rsettle-' + cid);
   if (thread) thread.classList.toggle('is-settled', !!c.settled);
-  if (btn) btn.innerHTML = c.settled ? '&#10003; settled' : '&#10003; settle';
+  // The button's own label stays put — it names the verb (`Settle`, or
+  // `Accept` on a declined thread) and carries a keycap, so rewriting its
+  // innerHTML to report state would delete both. State is the lit class plus
+  // the thread dimming, which is what the reviewer actually reads.
+  if (btn) btn.classList.toggle('is-on', !!c.settled);
   syncCard(id);
 }
 
@@ -4627,10 +4912,95 @@ function updateReviewStats() {
   el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
 
   const sub = el('btn-submit');
-  if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit all'; }
-  else                                 { sub.className='btn-submit disabled'; sub.textContent=remaining>0?`submit all (${remaining} remaining)`:'submit all'; }
+  // The doc print's footer carries ONE consequential stamp, named for what it
+  // does to the document rather than for the HTTP verb behind it. Blocked, it
+  // says what is blocking; the count comes from the same item arithmetic the
+  // bar prints, so the two can never disagree.
+  const doc = isDocMode();
+  const openItems = doc ? documentBalance().open : 0;
+  if (remaining === 0 && reviewed > 0) {
+    sub.className = 'btn-submit ready';
+    sub.textContent = doc ? 'approve — dispatch' : 'submit all';
+  } else {
+    sub.className = 'btn-submit disabled';
+    sub.textContent = doc
+      ? (remaining > 0 ? `approve — dispatch (${remaining} unreviewed)` : 'approve — dispatch')
+      : (remaining > 0 ? `submit all (${remaining} remaining)` : 'submit all');
+  }
+  if (doc) {
+    // The stamp's own keycap sits beside what is blocking it, so the way past
+    // the block and the reason for it are read together.
+    const cap = ' <kbd>&#8984;&#9166;</kbd>';
+    el('stat-pending').innerHTML = remaining > 0
+      ? `blocked &middot; ${remaining} unreviewed, ${openItems} open`
+      : ((openItems ? `${openItems} open` : 'ready') + cap);
+  }
 
   renderFootSeg(sections, total);
+  renderDocStatus();
+}
+
+/* ─── The document's condition, in items ──────────────────────
+   The bar and the footer state one quantity between them — how many items
+   this document holds and how many are still open — so the two can never
+   disagree. An ITEM is what sectionBalance already counts: a thread, a
+   comment, a check, a producer flag, and a section's own sign-off. */
+function documentBalance() {
+  let judgment = 0, facts = 0, settled = 0, atStart = 0, checks = 0, checksDone = 0;
+  (REVIEW_DATA.sections || []).forEach(s => {
+    const b = sectionBalance(s);
+    judgment += b.judgment; facts += b.facts; settled += b.settled;
+    // What was open when the round was ARMED: every carried thread arrives
+    // unsettled, every unanswered check and flag arrives open. Nothing here
+    // reads live reviewer state — that is what makes it a baseline to measure
+    // convergence against rather than a second view of the same number.
+    atStart += (s.open_notes || []).length;
+    (s.annotations || []).forEach(a => {
+      if (!a) return;
+      if (CHECK_KINDS.includes(a.kind)) {
+        checks++;
+        if (a.result) checksDone++; else atStart++;
+        return;
+      }
+      if (a.severity === 'warn' || a.severity === 'error') atStart++;
+    });
+  });
+  return { judgment, facts, settled, checks, checksDone, atStart,
+           open: judgment + facts, total: judgment + facts + settled };
+}
+
+// The last same-origin round trip this page actually measured. A real number
+// or nothing — the footer never prints a latency it did not observe.
+let _lastRTT = null;
+
+function timedFetch(url, opts) {
+  const t0 = performance.now();
+  return fetch(url, opts).then(r => {
+    _lastRTT = Math.round(performance.now() - t0);
+    return r;
+  });
+}
+
+// The review-mode half of the bar, plus the footer's convergence and latency.
+function renderDocStatus() {
+  if (!isDocMode()) return;
+  const b = documentBalance();
+  el('r-checks').textContent = b.checksDone + '/' + b.checks
+    + (b.checks && b.checksDone === b.checks ? ' ✓' : '');
+  el('tb-checks').style.display = b.checks ? '' : 'none';
+  el('r-items').innerHTML = b.total + ' item' + (b.total === 1 ? '' : 's')
+    + ' &middot; <b>' + b.open + '</b> open';
+  el('tb-items').style.display = '';
+  el('tb-palette').style.display = '';
+  // Convergence: open items when the round was armed against open items now.
+  // The question a multi-round review actually asks — is the reviewer closing
+  // more than they open — with both ends counted, never estimated.
+  const conv = el('stat-conv');
+  conv.style.display = '';
+  conv.innerHTML = 'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>';
+  const lat = el('stat-lat');
+  if (_lastRTT === null) lat.style.display = 'none';
+  else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
 }
 
 /* The whole document's balance, across the footer that closes the page. Same
@@ -5540,6 +5910,7 @@ function connectSSE() {
 
 /* ─── Command palette wiring ────────────────────────────── */
 el('pal-input').addEventListener('input', e => renderPalette(e.target.value));
+el('pal-open').addEventListener('click', () => openPalette());
 el('pal-overlay').addEventListener('mousedown', e => {
   if (e.target === el('pal-overlay')) closePalette();
 });
@@ -5688,7 +6059,9 @@ function bootReviewMode(data, modeWord, docFallback) {
 // falls back to its plain, non-interactive rendering — the same degrade an
 // unmatched [id] token already gets.
 Promise.all([
-  fetch('/input').then(r => r.json()),
+  // Timed, so the footer's latency line is a measurement of this page's own
+  // round trip rather than a number copied off a mock.
+  timedFetch('/input').then(r => r.json()),
   fetch('/preferences').then(r => r.json()).catch(() => []),
 ])
   .then(([data, prefs]) => {
