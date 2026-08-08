@@ -58,7 +58,7 @@ def test_chip_badge_css_defined():
 def test_badge_is_advisory_not_selection():
     # The recommended-choice branch must not touch selection/focus state —
     # it only decides whether to append a badge <span>, nothing else.
-    snippet_start = HTML.index("const choicesHtml = q.choices.map(c =>")
+    snippet_start = HTML.index("const choicesHtml = q.choices.map((c, i) =>")
     snippet_end = HTML.index("}).join('');", snippet_start)
     snippet = HTML[snippet_start:snippet_end]
     assert "isRecommended" in snippet
@@ -69,9 +69,13 @@ def test_badge_is_advisory_not_selection():
 
 
 def test_hint_still_renders_alongside_choices():
-    # The recommendation's "why" stays in `hint` (Out of scope in the design
-    # doc) — confirm the hint paragraph is untouched by this story.
-    assert '<p class="section-summary">${esc(q.hint || \'\')}</p>' in HTML
+    # The recommendation's "why" stays in `hint`. It moved to the margin with
+    # the rest of the commentary, as a machine-inked note beside the question
+    # it is about; the badge stayed on its chip, because advice ABOUT A CONTROL
+    # belongs next to the control rather than across the page from it.
+    assert '<div class="nt nt-check"><div class="nh">hint</div>' in HTML, \
+        "the hint must render as a margin note in the machine's ink"
+    assert "${q.hint ? `" in HTML, "a question with no hint must print no note"
     print("  ok  test_hint_still_renders_alongside_choices")
 
 

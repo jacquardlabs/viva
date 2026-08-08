@@ -97,8 +97,11 @@ def assert_catalog_ground(text: str) -> None:
     # composite runs ~61:39 and it is right; the margin is secondary.
     assert re.search(r'--margin-w:\s*minmax\(253px,\s*328px\);', text), \
         "the margin must stay capped so the prose dominates the page"
-    assert re.search(r'\.mode-doc \.shell, \.mode-doc \.bottom-inner\s*\{\s*max-width:\s*1054px', text), \
-        "the review page must be as wide as its three columns and no wider"
+    # Both measure-plus-margin pages: the review print and the interview.
+    assert re.search(r'\.mode-doc \.shell, \.mode-doc \.bottom-inner,\s*'
+                     r'\.mode-qa\s+\.shell, \.mode-qa\s+\.bottom-inner\s*\{\s*max-width:\s*1054px',
+                     text), \
+        "a page of prose plus margin must be as wide as its columns and no wider"
     # No `ch` anywhere in the template: it resolves against each row's own
     # font-size, which put the head row's track ~99px wider than a prose row's.
     assert not re.search(r'\.doc \.rp\s*\{\s*max-width', text), \

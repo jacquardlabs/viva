@@ -261,7 +261,8 @@ body {
 
    Widen this number to widen the TEXT: the margin is capped, so the prose
    track is what grows. */
-.mode-doc .shell, .mode-doc .bottom-inner { max-width: 1054px; }
+.mode-doc .shell, .mode-doc .bottom-inner,
+.mode-qa  .shell, .mode-qa  .bottom-inner { max-width: 1054px; }
 
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
 .mode-diff #paper { max-width: min(95vw, 1600px); }
@@ -1397,6 +1398,8 @@ body {
   background: var(--sunk);
 }
 .nt-btn.is-pri kbd { border-color: var(--soft); background: none; color: var(--paper); }
+.choice-chip kbd { flex-shrink: 0; }
+.choice-chip.selected kbd { border-color: var(--accent); color: var(--accent); }
 
 /* ─── Pins ────────────────────────────────────────────────────
    The mark in the text that matches the note in the margin. The anchored
@@ -1695,7 +1698,7 @@ body {
 
 /* ─── Blueprint geometry: drafting sheets have square corners ── */
 .card, .note-field, .vbadge, .btn-skip, .btn-submit,
-.section-content, .choice-chip, .qa-btn,
+.section-content, .choice-chip,
 .transmittal-row, .recap-row,
 .progress-track, .progress-fill { border-radius: 0; }
 
@@ -1711,7 +1714,7 @@ body {
    a border instead of a gradient stack. Registering --c keeps the recolor
    animatable; without @property support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.qa-btn, .choice-chip, .attach-btn, .cmt-chip, .cmt-save, .cmt-cancel {
+.choice-chip, .attach-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --c: var(--rule);
   border: 1px solid var(--c);
   background: var(--paper);
@@ -1984,18 +1987,13 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
 .cmt-repl::before { content: '→ '; }
 
-/* ─── Q&A choices (chip style) ──────────────────────────── */
-.choices-label {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 7px;
-}
-
-.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+/* ─── Q&A choices (chip style) ────────────────────────────
+   The choices ARE the question's body, so they print in the prose column
+   under its heading — no `Choices` label above them, because a row of
+   pickable chips under a question needs no caption to be read as the answer.
+   Each carries the digit that picks it, the way every other control in this
+   ground carries its own keycap. */
+.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 
 .choice-chip {
   font-size: 12px;
@@ -2004,6 +2002,8 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text2);
   cursor: pointer;
   text-align: left;
+  display: inline-flex;
+  align-items: baseline;
 }
 .choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
 .choice-chip.selected { --c: var(--accent); color: var(--accent); }
@@ -2028,19 +2028,30 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   vertical-align: middle;
 }
 
-/* QA action buttons */
-.qa-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
-.qa-btn {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 6px 14px;
-  color: var(--text2);
-  display: flex; align-items: center; gap: 5px;
+/* The Q&A action row is gone with every other action row: confirm and skip
+   are margin verbs in the `.nt-btn` grammar, beside the note they act on.
+
+   ─── The margin's compose block ───────────────────────────
+   The reviewer's optional context on a question, inside the same bordered
+   note the margin gives every other piece of commentary — field and
+   attachments within it, not stacked under it, so an untouched question still
+   reads as one object rather than three. Smaller than the popover's field: a
+   300px margin is not a card body. */
+.nt-compose .note-field {
+  min-height: 58px;
+  margin-top: 3px;
+  font-size: 12px;
+  padding: 6px 8px;
 }
-.qa-btn:hover   { --c: var(--text3); color: var(--text); }
-.qa-btn.confirm { --c: var(--teal);  color: var(--teal); }
+.nt-compose .attach-btn { margin-top: 6px; }
+.nt-compose .thumb-strip { margin-top: 6px; }
+/* With the question restated as the entry's own heading, the disclosure head
+   is an index line — one line, however long the question runs, and quiet once
+   the entry below it is open. Without the second half the same sentence
+   printed twice, a line apart, reads as a duplication rather than as an index
+   pointing at its entry. */
+#qa-cards .card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#qa-cards .card.is-active .card-title { color: var(--soft); font-weight: 400; }
 
 /* ─── Skip link (first Tab stop; hidden until focused) ───── */
 .skip-link {
@@ -2062,7 +2073,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .card-head:focus-visible,
-.qa-btn:focus-visible, .choice-chip:focus-visible,
+.choice-chip:focus-visible,
 .attach-btn:focus-visible, .cmt-chip:focus-visible,
 .cmt-save:focus-visible, .cmt-cancel:focus-visible,
 .settle-btn:focus-visible, .diff-toggle:focus-visible,
@@ -2584,20 +2595,25 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
-  <!-- ── Q&A mode ─────────────────────────────────────────── -->
+  <!-- ── Q&A mode ─────────────────────────────────────────────
+       The interview step of /viva-write, and a first-class surface: the same
+       composite bar review carries, stating the round's whole condition on one
+       line. No progress track — the footer's segmented rule is the progress,
+       in state rather than in percent, and two bars saying the same thing
+       differently is one bar too many. -->
   <div id="qa-view" style="display:none">
     <div class="header">
       <div class="titleblock">
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="qa-title"></div></div>
         <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
-        <div class="tb-cell tb-flex"><div class="tb-label">topic</div><div class="tb-val" id="qa-title"></div></div>
-        <div class="tb-cell"><div class="tb-label">count</div><div class="tb-val mono" id="qa-count-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val" id="qa-mode-title">viva <em>interview</em></div></div>
+        <div class="tb-cell"><div class="tb-label">questions</div><div class="tb-val mono" id="qa-count-badge"></div></div>
         <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
-      </div>
-      <div class="progress-track">
-        <div class="progress-fill" id="qa-progress" style="width:0%"></div>
+        <div class="tb-cell"><button type="button" class="pal-hint" id="qa-pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
     </div>
     <div class="cards" id="qa-cards"></div>
+    <div class="doc-hint" id="qa-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Processing / between-rounds state ────────────────── -->
@@ -2635,7 +2651,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
-      <dt><kbd>c</kbd></dt><dd>request changes</dd>
+      <dt><kbd>c</kbd></dt><dd>request changes (review) &middot; confirm answer (Q&amp;A)</dd>
       <dt><kbd>i</kbd></dt><dd>need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
@@ -5016,7 +5032,7 @@ function updateReviewStats() {
     ? `blocked &middot; ${remaining} unreviewed`
     : ((openItems ? `${openItems} open` : 'ready') + cap);
 
-  renderFootSeg(sections, total);
+  reviewFootSeg(sections, total);
   renderDocStatus();
 }
 
@@ -5082,14 +5098,29 @@ function renderDocStatus() {
   else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
 }
 
-/* The whole document's balance, across the footer that closes the page. Same
+/* The whole round's balance, across the footer that closes the page. Same
    grammar and same fixed order as a section's rule, one denominator: every
-   section. What the bar does NOT fill is what nobody has looked at yet —
-   unreviewed sections are the bare track, which is the one honest way to
-   draw "not yet decided" without inventing a fourth color. */
-function renderFootSeg(sections, total) {
+   section, or every question. What the bar does NOT fill is what nobody has
+   looked at yet — the bare track — which is the one honest way to draw "not
+   yet decided" without inventing a fourth color.
+
+   Counts in, not sections: an interview has no judgment/facts axis (an answer
+   is given or it is not), and asking this function to know that would put a
+   mode branch inside the one thing both footers share. */
+function renderFootSeg(counts, total, label) {
   const bar = el('foot-seg'); if (!bar) return;
   if (!total) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const pct = n => (n / total * 100).toFixed(2) + '%';
+  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
+  bar.style.display = '';
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', label);
+  bar.innerHTML = seg('seg-judgment', counts.judgment) + seg('seg-fact', counts.facts)
+                + seg('seg-settled', counts.settled);
+}
+
+// The review page's own tally, in the vocabulary its sections carry.
+function reviewFootSeg(sections, total) {
   let judgment = 0, facts = 0, settled = 0;
   sections.forEach(s => {
     const v = deriveVerdict(s.id);
@@ -5097,13 +5128,9 @@ function renderFootSeg(sections, total) {
     else if (v === 'changes') judgment++;
     else if (v === 'info') facts++;
   });
-  const pct = n => (n / total * 100).toFixed(2) + '%';
-  const seg = (cls, n) => n ? '<i class="' + cls + '" style="width:' + pct(n) + '"></i>' : '';
-  bar.style.display = '';
-  bar.setAttribute('role', 'img');
-  bar.setAttribute('aria-label', 'document balance: ' + judgment + ' judgment, ' + facts
-    + ' fact' + (facts === 1 ? '' : 's') + ', ' + settled + ' settled of ' + total + ' sections');
-  bar.innerHTML = seg('seg-judgment', judgment) + seg('seg-fact', facts) + seg('seg-settled', settled);
+  renderFootSeg({ judgment, facts, settled }, total,
+    'document balance: ' + judgment + ' judgment, ' + facts + ' fact'
+    + (facts === 1 ? '' : 's') + ', ' + settled + ' settled of ' + total + ' sections');
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -5113,6 +5140,36 @@ function renderFootSeg(sections, total) {
    keycap. Built from live state on each open, so "approve section 9" names
    the section actually under the reader. ═══════════════════════════════ */
 function paletteCommands() {
+  return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();
+}
+
+/* The interview's own directory. Every verb here is one the Q&A page also
+   carries as a control or a keycap — the choices by their digits, confirm by
+   `c`, skip by its button — which is the rule the palette exists under: a
+   directory of the keyboard layer, never a second interaction model. */
+function qaPaletteCommands() {
+  const cmds = [];
+  const live = qState.active ? QA_DATA.questions.find(q => q.id === qState.active) : null;
+  if (live) {
+    const n = QA_DATA.questions.indexOf(live) + 1;
+    live.choices.slice(0, 9).forEach((c, i) => {
+      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: String(i + 1),
+                  run: () => pickQAChoice(live.id, c) });
+    });
+    if (qState.answers[live.id] && qState.answers[live.id].choice) {
+      cmds.push({ label: 'Confirm question ' + n, key: 'c', run: () => advanceQA(live.id) });
+    }
+    cmds.push({ label: 'Skip question ' + n + ' for now', key: '⇥', run: () => advanceQA(live.id) });
+  }
+  const next = QA_DATA.questions.find(q => !(qState.answers[q.id] || {}).choice
+                                        && q.id !== qState.active);
+  if (next) cmds.push({ label: 'Jump to next unanswered', key: 'j',
+                        run: () => activateQACard(next.id) });
+  cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
+  return cmds;
+}
+
+function reviewPaletteCommands() {
   const cmds = [];
   const live = rState.active ? REVIEW_DATA.sections.find(s => s.id === rState.active) : null;
   if (live && deriveVerdict(live.id) !== 'approved' && !activeComments(live.id).length) {
@@ -5159,7 +5216,7 @@ let _palIdx = 0;
 function paletteIsOpen() { return el('pal-overlay').style.display !== 'none'; }
 
 function openPalette() {
-  if (!REVIEW_DATA || paletteIsOpen()) return;
+  if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;
   el('pal-overlay').style.display = '';
   el('pal-input').value = '';
   renderPalette('');
@@ -5206,10 +5263,32 @@ function runPalette(i) {
 /* ─────────────────────────────────────────────────────────
    Q&A MODE — build once, update surgically
 ───────────────────────────────────────────────────────── */
+/* ─── Q&A on the catalog ──────────────────────────────────────
+   A question is not a document section, but it holds one the same way: a
+   thing to read and decide, with the machine's advice and the reviewer's own
+   move beside it rather than stacked on top of it. So Q&A takes the GRAMMAR —
+   `gutter | prose | margin` rows, the note grammar, per-note verbs, the
+   composite's bar and footer — and not the PRINT: one question at a time is
+   the point of an interview, and the accordion is what makes that true.
+
+   The prose column is the question, numbered like a catalog entry, with its
+   choices under it as chips carrying the digit that picks them. The margin is
+   the machine's hint and the reviewer's own note with its attachments. The
+   gutter is empty — a question carries no producer flags — so it collapses
+   for good; the margin never does, because the verbs live there.
+
+   One thing deliberately stays in the prose column: the recommended-choice
+   badge. It is advice ABOUT A CONTROL, and a reviewer should not have to read
+   the margin, look back, and hunt for the chip it meant. */
 function initQA() {
   const container = el('qa-cards');
+  // The grammar, not the print. `no-gutter` is a constant here rather than a
+  // computed collapse: a question has no producer flags to rail, and the
+  // margin always holds this question's verbs, so neither column's state can
+  // change mid-session and updateDocColumns has nothing to decide.
+  container.className = 'cards doc no-gutter';
   QA_DATA.questions.forEach((q, i) => {
-    const card = buildQACard(q);
+    const card = buildQACard(q, i);
     card.style.animationDelay = (0.04 + i * 0.04) + 's';
     container.appendChild(card);
   });
@@ -5219,22 +5298,25 @@ function initQA() {
   updateQAStats();
 }
 
-function buildQACard(q) {
+function buildQACard(q, index) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'qacard-' + q.id;
 
   // recommended_choice is optional (issue #114) — undefined-safe by
   // construction: `c` is always a string, so this is false for every chip
-  // on a question that never sets the field, byte-identical to pre-#114
-  // rendering. Advisory only: the matching chip gets a badge, nothing else
-  // (no pre-selection, no default focus, no restyle as primary).
-  const choicesHtml = q.choices.map(c => {
+  // on a question that never sets the field. Advisory only: the matching chip
+  // gets a badge, nothing else (no pre-selection, no default focus, no
+  // restyle as primary). The digit keycap is the same key the keydown handler
+  // binds, so the keyboard layer is on the control rather than only in the
+  // legend — 1-9, and nothing past the ninth choice.
+  const choicesHtml = q.choices.map((c, i) => {
     const isRecommended = q.recommended_choice !== undefined && c === q.recommended_choice;
     const badge = isRecommended
       ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
       : '';
-    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}</button>`;
+    const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';
+    return `<button class="choice-chip" data-choice="${esc(c)}">${esc(c)}${badge}${cap}</button>`;
   }).join('');
 
   card.innerHTML = `
@@ -5248,16 +5330,26 @@ function buildQACard(q) {
     <div class="card-body-wrap" id="qbody-${q.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          <p class="section-summary">${esc(q.hint || '')}</p>
-          <div class="choices-label">Choices</div>
-          <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
-          <textarea class="note-field" id="qnote-${q.id}" placeholder="Add context (optional) — or paste a screenshot"></textarea>
-          <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
-          <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
-          <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
-          <div class="qa-actions">
-            <button class="qa-btn" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm</button>
-            <button class="qa-btn" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip for now</button>
+          <div class="row row-head">
+            <div class="rp">
+              <h2 class="doc-head" id="qhead-${q.id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</h2>
+              <div class="rule-s"></div>
+              <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
+            </div>
+            <div class="rm">
+              ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
+              <div class="nt nt-compose">
+                <div class="nh">you &mdash; context</div>
+                <textarea class="note-field" id="qnote-${q.id}" placeholder="Optional — or paste a screenshot"></textarea>
+                <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
+                <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
+                <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
+              </div>
+              <div class="nt-acts doc-acts">
+                <button type="button" class="nt-btn is-quiet" id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm<kbd>c</kbd></button>
+                <button type="button" class="nt-btn is-quiet" id="qskip-${q.id}"><span aria-hidden="true">&#8595;</span> skip</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -5269,11 +5361,7 @@ function buildQACard(q) {
     const chip = e.target.closest('.choice-chip');
     if (!chip) return;
     e.stopPropagation();
-    if (!qState.answers[q.id]) qState.answers[q.id] = {};
-    const ch = chip.dataset.choice;
-    qState.answers[q.id].choice = qState.answers[q.id].choice === ch ? null : ch;
-    syncQACard(q.id);
-    updateQAStats();
+    pickQAChoice(q.id, chip.dataset.choice);
   });
 
   const qta = card.querySelector('#qnote-' + q.id);
@@ -5296,6 +5384,15 @@ function buildQACard(q) {
   );
 
   return card;
+}
+
+// One place a choice is picked, so the chip, the digit key and the palette
+// can never disagree about what a second press means — it clears the answer.
+function pickQAChoice(id, choice) {
+  const a = (qState.answers[id] ||= {});
+  a.choice = a.choice === choice ? null : choice;
+  syncQACard(id);
+  updateQAStats();
 }
 
 function activateQACard(id) {
@@ -5349,8 +5446,11 @@ function syncQACard(id) {
   if (choice) { badge.style.display=''; badge.textContent=choice; }
   else badge.style.display = 'none';
 
-  // Confirm button highlight
-  el('qconfirm-' + id).className = 'qa-btn' + (choice ? ' confirm' : '');
+  // The verb's own grammar: primary once there is an answer to confirm, quiet
+  // while there is not — the same rule review's approve follows, and the same
+  // two classes, so one button reads the same way on both surfaces.
+  const btn = el('qconfirm-' + id);
+  btn.className = 'nt-btn ' + (choice ? 'is-pri' : 'is-quiet');
 
   syncQADot(id);
 }
@@ -5369,15 +5469,24 @@ function updateQAStats() {
   const total    = qs.length;
   const remaining= total - answered;
 
-  el('qa-progress').style.width = (answered / total * 100) + '%';
   el('qa-progress-label').textContent = `${answered} / ${total}`;
-  el('stat-approved').textContent = `${answered} answered`;
+  // Same footer as the review page, stating the same kind of thing: what
+  // blocks the dispatch, and the keycap that performs it. An interview has no
+  // judgment/facts axis — an answer is given or it is not — so the balance
+  // rule fills with settled alone and the bare track is what nobody has
+  // answered yet, which is the one honest way to draw "not yet decided".
+  el('stat-approved').style.display = 'none';
   el('stat-feedback').style.display = 'none';
-  el('stat-pending').textContent = remaining > 0 ? `${remaining} remaining` : 'all answered';
+  el('stat-pending').innerHTML = remaining > 0
+    ? `blocked &middot; ${remaining} unanswered`
+    : 'ready <kbd>&#8984;&#9166;</kbd>';
+  renderFootSeg({ judgment: 0, facts: 0, settled: answered }, total,
+                `answers: ${answered} of ${total} questions`);
 
   const sub = el('btn-submit');
-  if (remaining === 0) { sub.className='btn-submit ready';    sub.textContent='done →'; }
-  else                 { sub.className='btn-submit disabled'; sub.textContent=`done (${remaining} remaining)`; }
+  sub.className = remaining === 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  sub.textContent = remaining > 0 ? `answers — dispatch (${remaining} unanswered)`
+                                  : 'answers — dispatch';
 }
 
 /* ─── Image attachments ────────────────────────────────────── */
@@ -5936,6 +6045,11 @@ function connectSSE() {
     // reconnected mid-transition and missed it) would otherwise leave qa-view
     // visible underneath the review cards.
     el('qa-view').style.display         = 'none';
+    // ...and its page class with it. `mode-diff` happens to out-order
+    // `mode-qa` in the stylesheet today, so a stale class would not clamp a
+    // diff round's 1600px page — but that is source order doing the work, and
+    // source order is not a rule anyone should have to know.
+    document.body.classList.remove('mode-qa');
     el('review-view').style.display     = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
@@ -5990,6 +6104,7 @@ function connectSSE() {
 /* ─── Command palette wiring ────────────────────────────── */
 el('pal-input').addEventListener('input', e => renderPalette(e.target.value));
 el('pal-open').addEventListener('click', () => openPalette());
+el('qa-pal-open').addEventListener('click', () => openPalette());
 el('pal-overlay').addEventListener('mousedown', e => {
   if (e.target === el('pal-overlay')) closePalette();
 });
@@ -6075,13 +6190,15 @@ document.addEventListener('keydown', e => {
       const n = parseInt(e.key, 10);
       if (!isNaN(n) && n >= 1 && n <= q.choices.length) {
         e.preventDefault();
-        const choice = q.choices[n - 1];
-        if (!qState.answers[qState.active]) qState.answers[qState.active] = {};
-        qState.answers[qState.active].choice =
-          qState.answers[qState.active].choice === choice ? null : choice;
-        syncQACard(qState.active);
-        updateQAStats();
+        pickQAChoice(qState.active, q.choices[n - 1]);
         return;
+      }
+      // `c` confirms, the way `a` approves a section — the keycap is printed
+      // on the button itself, so the keyboard layer is on the control rather
+      // than only in the legend. Free here: `c` is review's request-changes,
+      // and this whole branch is guarded on `!REVIEW_DATA`.
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); advanceQA(qState.active); return;
       }
     }
     if (e.key === 'Tab') {
@@ -6179,10 +6296,13 @@ Promise.all([
       bootReviewMode(data, 'diff', 'diff');
     } else {
       QA_DATA = data;
-      el('qa-title').innerHTML          = esc(data.context || 'Q&amp;A phase');
+      el('qa-title').textContent        = data.context || 'Q&A phase';
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
-      el('qa-count-badge').textContent  = `${data.questions.length} questions`;
+      el('qa-count-badge').textContent  = String(data.questions.length);
       setTabTitle(data.context || 'brainstorm');
+      // Same page cap as the review print: a column that holds a measure plus
+      // a margin, and no wider. See `.mode-doc, .mode-qa` in the stylesheet.
+      document.body.classList.add('mode-qa');
       el('qa-view').style.display = '';
       initQA();
       connectSSE();

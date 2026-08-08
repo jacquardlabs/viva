@@ -321,8 +321,13 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
         "the segmented rule must state its raw counts in the aria-label"
     assert "if (!bal.judgment && !bal.facts) return '<div class=\"rule-s\"></div>';" in page, \
         "a section with nothing open takes the thin settled hairline, not a bar"
-    # The footer carries the same grammar for the whole document.
-    assert "function renderFootSeg(sections, total)" in page, "page missing the footer balance"
+    # The footer carries the same grammar for the whole round — counts in, so
+    # the one thing both footers share holds no mode branch. An interview has
+    # no judgment/facts axis: an answer is given or it is not.
+    assert "function renderFootSeg(counts, total, label)" in page, \
+        "page missing the footer balance"
+    assert "function reviewFootSeg(sections, total)" in page, \
+        "the review page's tally speaks its sections' vocabulary"
     assert "'document balance: '" in page
     print("test_segmented_rule_states_its_counts: OK")
 
@@ -588,6 +593,53 @@ def test_the_slip_ships_collapsed(page: str) -> None:
     print("test_the_slip_ships_collapsed: OK")
 
 
+def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
+    """Cap: the interview is a first-class surface on the same ground, and it
+    takes the grammar without the print.
+
+    GRAMMAR — the question numbered like a catalog entry in the prose column
+    with its choices under it, the machine's hint and the reviewer's own note
+    in the margin, verbs in the note grammar with their keycaps, the
+    composite's bar and footer. NOT THE PRINT — one question at a time is the
+    point of an interview, so the accordion stays.
+
+    Both side columns are constants rather than a computed collapse: a
+    question carries no producer flags to rail, and the margin always holds
+    this question's verbs, so neither can change mid-session.
+
+    One thing stays in the prose column on purpose — the recommended-choice
+    badge. It is advice ABOUT A CONTROL, and a reviewer should not read the
+    margin, look back, and hunt for the chip it meant."""
+    assert "container.className = 'cards doc no-gutter';" in page, \
+        "Q&A must wear the grammar and not the print"
+    assert '<h2 class="doc-head" id="qhead-${q.id}">' in page, \
+        "the question is the entry's own heading, numbered"
+    assert '<div class="nt nt-check"><div class="nh">hint</div>' in page, \
+        "the hint is a margin note in the machine's ink"
+    assert 'class="nt nt-compose"' in page, \
+        "the reviewer's context and its attachments live in one margin note"
+    assert '<span class="chip-badge"' in page, \
+        "the recommendation stays beside the control it recommends"
+    assert 'id="qconfirm-${q.id}"><span aria-hidden="true">&#10003;</span> confirm<kbd>c</kbd>' in page, \
+        "confirm is a margin verb carrying the key that performs it"
+    # ...and that key is really bound, so the cap is not a claim.
+    assert "if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {" in page
+    # No progress track: the footer's segmented rule is the progress.
+    assert 'id="qa-progress"' not in page.replace('id="qa-progress-label"', ''), \
+        "the interview's progress is its footer rule, not a second bar"
+    # One place a choice is picked, so the chip, the digit and the palette
+    # cannot disagree about what a second press means.
+    assert "function pickQAChoice(id, choice)" in page
+    assert "pickQAChoice(q.id, chip.dataset.choice);" in page
+    assert "pickQAChoice(qState.active, q.choices[n - 1]);" in page
+    # The palette is a directory of that same layer, on this surface too — it
+    # used to refuse to open at all without REVIEW_DATA.
+    assert "return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();" in page
+    assert "if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;" in page, \
+        "the palette must open on the interview too"
+    print("test_qa_wears_the_grammar_not_the_print: OK")
+
+
 def test_round2_wire_shape_unchanged(base: str) -> None:
     """Hold: no schema change. The restructure is a rendering change over the
     shapes #184 already ships — GET /input serves the same round, the same
@@ -631,6 +683,7 @@ def main() -> None:
             test_bar_and_footer_state_one_arithmetic(page)
             test_activation_costs_no_layout(page)
             test_the_slip_ships_collapsed(page)
+            test_qa_wears_the_grammar_not_the_print(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")
 
