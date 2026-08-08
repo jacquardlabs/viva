@@ -44,7 +44,7 @@ def main() -> None:
     run(viva, doc)
     text = doc.read_text()
     assert text.count("## Revision History") == 1
-    assert "Signed off via viva review — 2 rounds, 2 sections, 2 revised. 2026-06-09" in text
+    assert "Signed off via viva review — 2 rounds, 2 sections, 2 with comments. 2026-06-09" in text
     assert "| 1 | Goals | changes | Use 30s \\| not 60s |" in text
     assert "| 2 | Error Handling | info | DLQ retention? |" in text
 
@@ -65,7 +65,8 @@ def main() -> None:
     ])
     run(viva2, doc2)
     text2 = doc2.read_text()
-    assert "0 revised" in text2
+    assert "0 with comments" in text2
+    assert "revised" not in text2, text2
     assert "| Round |" not in text2
 
     # Fix 1: H3 heading must not be treated as existing ## Revision History
@@ -161,6 +162,34 @@ def main() -> None:
     text7 = doc7.read_text()
     assert "| 1 | Goals | changes | tighten the intro \\u00b7 drop the aside |".replace(
         "\\u00b7", "·") in text7, text7
+    # One commented section, two comments on it: the count is sections, and the
+    # singular form of the row is pinned here.
+    assert ("Signed off via viva review — 1 round, 2 sections, 1 with comments. "
+            "2026-06-09") in text7, text7
+
+    # Rewritten between sessions (#178): a doc signed off, materially rewritten
+    # outside viva, then re-reviewed and approved on sight. `.viva/` was cleared
+    # at `start`, so this session's rounds hold no feedback and the count is 0 —
+    # correct, but "0 revised" claimed the doc had not changed since the row
+    # above it, which is exactly the case where it had. The pin is the absence:
+    # the row may not assert anything about the doc's state.
+    viva8 = tmp / ".viva8"
+    viva8.mkdir()
+    doc8 = tmp / "doc8.md"
+    doc8.write_text(
+        "# Doc8\n\n## Goals\n\nrewritten body\n\n## Error Handling\n\nnew section\n"
+        "\n---\n\n## Revision History\n\n"
+        "Signed off via viva review — 1 round, 1 section, 0 with comments. 2026-06-01\n")
+    write_round(viva8, 1, secs, [
+        {"id": "s1", "verdict": "approved", "note": ""},
+        {"id": "s2", "verdict": "approved", "note": ""},
+    ])
+    run(viva8, doc8)
+    text8 = doc8.read_text()
+    assert text8.count("Signed off via viva review") == 2, text8
+    assert ("Signed off via viva review — 1 round, 2 sections, 0 with comments. "
+            "2026-06-09") in text8, text8
+    assert "revised" not in text8, text8
 
     print("OK")
 

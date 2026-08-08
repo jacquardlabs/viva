@@ -113,11 +113,18 @@ def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
 
 def build_block(entries: list[dict], rounds_total: int,
                 sections_total: int, day: str) -> str:
-    revised = len({e["section_title"] for e in entries})
+    # `with comments`, not `revised` (#178). The count only ever sees this
+    # session's rounds — `.viva/` is cleared at every `loop.py start` — and an
+    # `info` question earns a ledger row with no edit behind it. Naming the
+    # review artifact rather than the doc's state is what stays true when a doc
+    # is rewritten between sign-offs and approved on sight; the table's Verdict
+    # column separates a change from a question.
+    commented = len({e["section_title"] for e in entries})
     lines = [
         f"Signed off via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
-        f"section{'s' if sections_total != 1 else ''}, {revised} revised. {day}"
+        f"section{'s' if sections_total != 1 else ''}, "
+        f"{commented} with comments. {day}"
     ]
     if entries:
         lines += ["", "| Round | Section | Verdict | Note |",
