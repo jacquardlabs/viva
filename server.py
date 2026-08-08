@@ -1121,19 +1121,40 @@ body {
 }
 .doc.no-gutter { --gutter-w: 0px; }
 .doc.no-margin { --margin-w: 0px; }
+/* The middle track is `1fr`, NOT `72ch`, and the measure lives on the cell.
+   Two reasons, both of which showed up as a ragged right edge:
+
+   1. `ch` resolves against the ROW's own font-size, and the head row inherits
+      the section's while a prose row inherits `.section-content`'s 13.5px — so
+      a `72ch` track was ~99px wider on the head row and the spec table sat
+      that much right of every note below it.
+   2. Three fixed tracks cannot fill a wider container, so the leftover piled
+      up at the right and a `.wide` row — whose prose DOES take `1fr` —
+      reclaimed it, landing its margin cell ~200px right of every other one.
+
+   With `1fr` the three tracks always fill the row, so the gutter and the
+   margin sit at the same x on every row of the document, and the prose column
+   is bounded by `.rp`'s own max-width — which is what a measure is (see
+   `.section-content`: "max-width is a MEASURE, not a container width"). */
 .doc .row {
   display: grid;
-  grid-template-columns: var(--gutter-w) minmax(0, 72ch) var(--margin-w);
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w);
   align-items: start;
 }
+.doc .rp { max-width: 72ch; }
 /* Code and tables are not prose and do not take the prose measure — the
-   catalog's break-out rule, at row scale instead of `.section-content > pre`. */
-.doc .row.wide { grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w); }
+   catalog's break-out rule, at row scale instead of `.section-content > pre`.
+   Only the CELL's cap lifts; the track is unchanged, so the margin does not
+   move. */
+.doc .row.wide .rp { max-width: none; }
 /* Explicit column placement, so a row that omits an empty side cell still
    prints its prose in the middle track instead of sliding left. */
 .doc .rg { grid-column: 1; padding-right: 28px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 3px; }
 .doc .rp { grid-column: 2; min-width: 0; }
 .doc .rm { grid-column: 3; padding-left: 28px; min-width: 0; }
+/* One type size for the whole print, so `ch` means the same thing in every
+   row — the heading and the machine's own faces set their own size on top. */
+.doc-section { font-size: 13.5px; }
 /* With the margin collapsed there is nowhere beside the heading to hang the
    section's own controls, so the head row drops to two tracks and its margin
    cell prints under the heading instead. Pure CSS: the cluster is built once

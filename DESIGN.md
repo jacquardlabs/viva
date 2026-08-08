@@ -239,8 +239,26 @@ annotates rather than beside the section.
 | Track | Holds | Width |
 |-------|-------|-------|
 | gutter (`.rg`) | producer check flags (`.lchip`), right-aligned | `--gutter-w: 98px` (70px + alley) |
-| prose (`.rp`) | one markdown block | `minmax(0, 72ch)`; `.row.wide` → `minmax(0, 1fr)` for code and tables |
+| prose (`.rp`) | one markdown block | track `minmax(0, 1fr)`; the **cell** caps at `72ch`, and `.row.wide .rp` lifts that cap for code and tables |
 | margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 328px)` |
+
+**The measure is on the cell, never on the track** — that is what keeps the
+right edge straight, and getting it wrong showed up as three different right
+edges on one page:
+
+- `ch` resolves against the **row's own font-size**. A `72ch` track was ~99px
+  wider on the head row (which inherits the section's size) than on a prose row
+  (inside `.section-content`'s 13.5px), so the spec table sat that much right of
+  every note below it. `.doc-section` now sets one size for the whole print so
+  `ch` means one thing.
+- Three fixed tracks cannot fill a wider container, so the leftover piled up at
+  the right — and a `.wide` row, whose prose *did* take `1fr`, reclaimed it and
+  landed its margin cell ~200px right of every other one.
+
+With `1fr` the tracks always fill the row, so the gutter and the margin sit at
+one x on every row, flush with the bar and the slip above them. The leftover
+lands as slack inside the prose track, to the right of the text — which is what
+a measure in a wide shell looks like.
 
 **The wasted-space rule.** Both side columns collapse to `0px`
 (`.doc.no-gutter` / `.doc.no-margin`), decided **once per document** by
