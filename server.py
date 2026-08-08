@@ -1590,40 +1590,50 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 .btn-group { display: flex; gap: 8px; }
 
+/* The secondary action wears the same hairline as every other control. It
+   used `--border2`, which the catalog aliases to full ink — a secondary
+   button outlined in the page's heaviest rule. */
 .btn-skip {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   padding: 9px 16px;
-  border: 1px solid var(--border2);
-  background: transparent;
-  color: var(--text2);
-  transition: all 0.15s;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--soft);
+  transition: color 0.15s, border-color 0.15s;
 }
-.btn-skip:hover { border-color: var(--text3); color: var(--text); }
+.btn-skip:hover { border-color: var(--ink); color: var(--ink); }
 
+/* The round's one consequential control. Sentence case, not uppercase with
+   tracking: shouting is what the drafting stamp did, and a catalog states
+   its actions. */
 .btn-submit {
-  font-family: 'Fragment Mono', monospace;
-  font-size: 10px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   padding: 9px 20px;
-  border: none;
-  transition: all 0.2s;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s;
 }
 .btn-submit.ready {
   background: var(--acc);
   color: var(--paper);
 }
-.btn-submit.ready:hover {
-  background: var(--ink);
-  transform: none;
-}
+.btn-submit.ready:hover { background: var(--ink); }
+
+/* Blocked must RECEDE. This read `background: var(--border2)`, which the
+   catalog aliases to full ink — so the state that means "you cannot do this
+   yet" rendered as a solid black slab, the loudest object on the page, while
+   the state that means "go" was a quieter cobalt. Inert now: paper ground,
+   hairline edge, faint text. */
 .btn-submit.disabled {
-  background: var(--border2);
-  color: var(--text3);
+  background: var(--paper);
+  border-color: var(--rule);
+  color: var(--faint);
   cursor: not-allowed;
 }
 
@@ -2070,7 +2080,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
-      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit round</dd>
     </dl>
   </details>
 
@@ -2090,8 +2100,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
               title="Cycle theme: follow system, light, dark">theme: system</button>
     </div>
     <div class="btn-group">
-      <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
-      <button class="btn-submit disabled" id="btn-submit">submit all</button>
+      <button class="btn-skip" id="btn-skip">skip rest &amp; submit</button>
+      <button class="btn-submit disabled" id="btn-submit">submit round</button>
     </div>
   </div>
 </div>
@@ -3441,8 +3451,8 @@ function updateReviewStats() {
   el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
 
   const sub = el('btn-submit');
-  if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit all'; }
-  else                                 { sub.className='btn-submit disabled'; sub.textContent=remaining>0?`submit all (${remaining} remaining)`:'submit all'; }
+  if (remaining === 0 && reviewed > 0) { sub.className='btn-submit ready';    sub.textContent='submit round'; }
+  else                                 { sub.className='btn-submit disabled'; sub.textContent='submit round'; }
 }
 
 /* ─────────────────────────────────────────────────────────
