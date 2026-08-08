@@ -228,6 +228,44 @@ def test_branch_b_uses_the_parser_and_mode_the_driver_lacks():
     print("  ok  test_branch_b_uses_the_parser_and_mode_the_driver_lacks")
 
 
+def test_branch_b_routes_info_away_from_threads_it_does_not_have():
+    """#103. `parse_diff.py` takes no `--open-notes`, so a diff round carries no
+    threads — there is nothing to answer into and no `--response` to record one
+    against. The 2.0 merge gave both branches one shared verdict section whose
+    `info` rule said "answer it in the thread", generalizing a doc-mode-only
+    instruction onto hunks; an agent following it answered into a void on every
+    `info` comment in a PR review.
+
+    Pinned against the parser's ACTUAL flags rather than against prose alone, so
+    the day `parse_diff.py` grows open-notes support this fails and someone
+    re-reads the exception instead of leaving it stale in the other direction.
+    """
+    help_text = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "parse_diff.py"), "--help"],
+        capture_output=True, text=True).stdout
+    assert "--open-notes" not in help_text, (
+        "parse_diff.py now takes --open-notes — branch B may have threads after "
+        "all, so re-read its `info` exception:\n" + help_text
+    )
+
+    branch_b = _branch_b()
+    assert "no threads here" in branch_b, \
+        "branch B must state that it carries no threads"
+    assert "chat conversation" in branch_b, \
+        "branch B must name where an `info` is actually answered"
+    assert "answer it in the thread" not in branch_b, (
+        "branch B must not route an `info` into a thread — that is the doc-mode "
+        "instruction this exception exists to override"
+    )
+    # The shared rule must hand off rather than assert one answer route for both.
+    shared = SKILL.read_text()[:SKILL.read_text().index("## A. Doc review")]
+    assert "differs by branch" in shared, (
+        "the shared verdict section must say where an `info` is answered depends "
+        "on the branch, instead of stating one route as universal"
+    )
+    print("  ok  test_branch_b_routes_info_away_from_threads_it_does_not_have")
+
+
 def main() -> None:
     test_markdown_path_is_a_doc()
     test_pr_forms_all_reach_gh_pr_diff()
@@ -242,7 +280,8 @@ def main() -> None:
     test_skill_dispatch_table_covers_every_kind()
     test_branch_b_runs_the_capture_this_script_prints()
     test_branch_b_uses_the_parser_and_mode_the_driver_lacks()
-    print("OK (13 tests)")
+    test_branch_b_routes_info_away_from_threads_it_does_not_have()
+    print("OK (14 tests)")
 
 
 if __name__ == "__main__":
