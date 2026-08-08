@@ -22,8 +22,8 @@ only by JSON files under `.viva/`:
    siblings as subprocesses** rather than importing them, so part 3's
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
-   `drift`, `checklist`, `doc_types`, `headings_present`, `open_notes`,
-   `preferences`, `revision_history`). Each
+   `context_refs`, `drift`, `checklist`, `doc_types`, `headings_present`,
+   `open_notes`, `preferences`, `revision_history`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
@@ -117,6 +117,40 @@ boundary validator is what turns that into a loud failure.
 **New skills in this branch:** `.claude/skills/viva-qa/SKILL.md`
 (`/viva-qa` primitive) and `.claude/skills/viva-diff/SKILL.md` (`/viva-diff`
 skill) follow the same import-only-schema rule.
+
+## `/viva-write` — the intake end of the lifecycle
+
+`/viva` reviews a doc that exists; `/viva-write` produces one and hands it to
+that same review **in the same server process**. The flow is type → attach →
+interview → draft → hand off → rounds → stamp, and it is a skill precisely
+because steps 2 and 4 are model work.
+
+`loop.py` drives everything from the hand-off on (`wait`, `rearm`, `finish`).
+Only `start` is unusable here, for two file-local reasons: `cmd_start` refuses
+when `.viva/server.url` exists — and by then the interview's qa server wrote it —
+and `cmd_arm`'s liveness probe reads `round` off `/input`, which a qa payload has
+no key for. So `/viva-write` performs `cmd_start`'s state clear itself (the same
+five things; `preferences.json` survives), parses round 1 directly, and POSTs
+`/next-round`. Extending the driver over that gap is #179's, not this flow's.
+
+**Two orderings this flow depends on, both enforced rather than documented:**
+
+- **Producers run before the hand-off, never after.** The server loads its round
+  once and replaces it only from `/next-round`, so `loop.py annotate` refuses a
+  round the server already holds. It *passes* before the hand-off because the
+  live qa server's `probe_round` returns `None` — that is the seam, and
+  `tests/test_viva_write_flow.py` asserts both sides of it.
+- **`--pass <bundle.default_pass>` is passed explicitly.** `/viva-write` is
+  `default_pass`'s first consumer — `loop.py start` resolves a bundle and only
+  prints it — so a typed session that drops the flag runs at no depth and looks
+  identical on screen.
+
+`scripts/context_refs.py` is the intake's one new mechanical surface: it
+classifies attachments (issue/pr refs, URLs, files, directories) and bounds what
+a directory expands to, emitting a manifest with every cap-excluded file in
+`dropped[]`. It **never fetches** — an issue entry carries the `gh` argv the
+skill runs — which is what keeps it network-free, keyless, and independently
+testable.
 
 ## Extension seams
 

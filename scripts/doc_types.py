@@ -11,6 +11,15 @@ one name to one bundle and prints it as JSON:
    "sections": ["Problem & persona", ...],
    "checks": ["headings-present"], "default_pass": "architecture"}
 
+`--list` prints the merged namespace instead — every resolvable name with its
+title, which is what an intake menu offers when the caller named no type. It is
+the same `known()` the unknown-name error already reports, so a repo's
+`.viva-types/` bundles appear in the menu without the caller hardcoding names
+that go stale the moment a repo commits its own.
+
+  python3 doc_types.py --list
+  [{"name": "design-doc", "title": "Design doc"}, ...]
+
 Resolution: shipped defaults live in `<plugin>/types/<name>.json`; a repo adds
 or overrides a type by committing `.viva-types/<name>.json`. The two directories
 merge by NAME, and on a collision the repo's file wins WHOLESALE — it replaces
@@ -117,11 +126,33 @@ def resolve(name: str, types_dir: Path, shipped_dir: Path = SHIPPED_DIR) -> dict
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Resolve a viva doc-type bundle")
-    p.add_argument("name", help="Type name, e.g. design-doc")
+    p.add_argument("name", nargs="?", help="Type name, e.g. design-doc")
+    p.add_argument("--list", action="store_true",
+                   help="print every resolvable name with its title (the "
+                        "intake menu) instead of resolving one")
     p.add_argument("--types-dir", default=REPO_TYPES_DIR,
                    help=f"Repo bundle directory whose copies win on a name "
                         f"collision (default: {REPO_TYPES_DIR})")
     args = p.parse_args()
+
+    if args.list:
+        # Resolved, not globbed: a name in the namespace whose bundle will not
+        # load must not sit in the menu as an offer that dies when picked.
+        menu = []
+        for name in known(Path(args.types_dir)):
+            try:
+                bundle = resolve(name, Path(args.types_dir))
+            except ValueError as e:
+                sys.exit(f"doc_types: {e}")
+            menu.append({"name": bundle["name"], "title": bundle["title"]})
+        json.dump(menu, sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+        return
+    # `is None`, not truthiness: an explicitly-passed empty name is a bad NAME
+    # and must reach `resolve` to be refused as one, not be reported as a
+    # missing argument the caller did supply.
+    if args.name is None:
+        sys.exit("doc_types: name is required (or pass --list)")
 
     try:
         bundle = resolve(args.name, Path(args.types_dir))

@@ -326,6 +326,35 @@ whatever round it finishes on, ends the process — the same mechanism
 `SKILL.md`'s own review loop already uses, applied once to the whole
 qa-then-review session rather than to the qa phase alone.
 
+### type-first authoring (`viva-write`, #170)
+
+The hand-off above, with a driver on it. `/viva-write` is the caller the
+`unified-session` entry describes in the abstract: it interviews, drafts, and
+POSTs the round-1 payload to the same process. Everything in that entry applies
+unchanged — the distinct `output` path, the operational-only signal, the absent
+`/complete`.
+
+**This session type adds no wire surface, so the contract version does not
+move** (§1: a new caller sequence is not a bump). What a caller integrating
+against it should know is the *shape of the payload* this particular driver
+hands over, all of it already-contracted optional fields:
+
+- The round-1 `ReviewInput` carries `doc_type` (§3) and a `pass` (§3, v4) taken
+  from the type bundle's `default_pass`. A `checks` bundle therefore hands over
+  a round whose `POST /complete` will `409` until every check flag carries a
+  `result` — with every section approved. That is v4's documented behavior, not
+  a new one, but this is the first caller that reaches it by default rather than
+  by explicit request.
+- The payload is **annotated before it is POSTed**. Producers merge into
+  `review-input-r1.json` while the server still holds the Q&A round; the server
+  reads a round once and replaces it only from `/next-round` (§5), so a merge
+  after the hand-off is one `/complete` never sees. A caller building its own
+  version of this flow has the same one-way door.
+
+The drafting step sits exactly where §6's soft processing-spinner caveat says a
+caller's synthesis sits, and it is the longest such step this repo ships — the
+human is on the spinner from their Q&A submit until the round arrives.
+
 ### `--split-on` task-card splitting (`task-card-split`, #110)
 
 This is a `scripts/parse_sections.py` CLI flag and not a `server.py` flag. It

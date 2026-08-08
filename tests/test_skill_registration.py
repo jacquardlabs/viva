@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / ".claude" / "skills"
-EXPECTED_SKILLS = {"viva", "viva-qa", "viva-diff"}
+EXPECTED_SKILLS = {"viva", "viva-qa", "viva-diff", "viva-write"}
 
 
 def _frontmatter_name(path: Path) -> str | None:
