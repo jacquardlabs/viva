@@ -6,7 +6,7 @@ built client-side in JS (delegated to diff2html), and this repo has no
 JS/browser test harness (stdlib Python only, no npm/node). What's verifiable
 from a subprocess+urllib harness is that:
 
-  1. The diff2html CDN assets and the renderDiffHunk adapter are actually
+  1. The vendored diff2html assets and the renderDiffHunk adapter are actually
      shipped in the served page, gated on diff mode, and the deleted
      hand-rolled renderer is truly gone (not just bypassed).
   2. A diff-mode round still serves each section's `content` as the verbatim
@@ -136,7 +136,7 @@ def test_page_ships_diff_mode_sort_toggle_guard(page: str) -> None:
 def test_page_ships_mode_diff_layout(page: str) -> None:
     """Wiring check only: the diff dispatch branch stamps mode-diff on <body>
     and injects the diff2html stylesheet (mode-specific, so review/QA never
-    pay a render-blocking CDN fetch for it), and the mode-scoped CSS
+    pay a render-blocking fetch for it), and the mode-scoped CSS
     overrides (wide shell/bottom bar, no nested section scroll) ship in the
     served page. Does not measure rendered layout."""
     m = re.search(r"mode === 'diff'\) \{(.*?)\} else", page, re.S)
@@ -146,7 +146,10 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
         "diff branch does not stamp mode-diff on body"
     for needle in (
         "d2hCss.id = 'diff2html-css'",
-        "d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css'",
+        # Local, version-stamped route — never jsdelivr (#144). The pin lives
+        # in server.py's _VENDOR_ASSETS; test_server_vendor_assets.py is what
+        # proves this href actually resolves to a served file.
+        "d2hCss.href = '/vendor/diff2html-3.4.56.min.css'",
         "retryOnceScriptsLoad(['diff2html-css']",
     ):
         assert needle in branch, f"diff branch missing stylesheet injection/retry: {needle}"
@@ -169,8 +172,8 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
     numbers, and the spec's exact config. The hand-rolled renderer stays
     gone."""
     for tag in (
-        'id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"',
-        'id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"',
+        'id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"',
+        'id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"',
     ):
         assert tag in page, f"page missing script tag: {tag}"
     m = re.search(r"function renderDiffHunk\(.*?\n\}", page, re.S)

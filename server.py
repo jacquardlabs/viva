@@ -43,6 +43,35 @@ _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\
 # after _viva_dir lands, mirroring the pattern for _PREFS_SCRIPT_PATH above.
 _PREFS_STORE_PATH: str = ""
 
+# Third-party browser assets, vendored under `assets/vendor/` and served from
+# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from
+# jsdelivr any more, so a review works offline and the supply chain is six
+# pinned files in-tree rather than a range resolved by a CDN at load time.
+#
+# Resolved from this file's own location, never the cwd: the server is launched
+# from whatever repo is under review, and `assets/` sits beside server.py in
+# both the repo and the installed plugin cache — same resolution style as the
+# sys.path insert above.
+#
+# The table maps ROUTE → (filename, content type) by exact match. The filename
+# is always a literal from this table and never derived from the request, which
+# is what closes path traversal: an unlisted route is a 404 before any path is
+# built. Versions are stamped into both the filename and the URL, so the same
+# URL can never serve different bytes — that is what makes the `immutable`
+# cache header on these responses correct across a viva upgrade.
+# The files are read per request, not at startup; see assets/vendor/README.md
+# for the pins, licenses, and the bump procedure.
+_VENDOR_DIR = Path(__file__).resolve().parent / "assets" / "vendor"
+_VENDOR_ASSETS = (
+    ("marked-12.0.2.min.js", "text/javascript; charset=utf-8"),
+    ("purify-3.4.13.min.js", "text/javascript; charset=utf-8"),
+    ("highlight-11.11.1.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-3.4.56.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-ui-slim-3.4.56.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-3.4.56.min.css", "text/css; charset=utf-8"),
+)
+_VENDOR_ROUTES = {"/vendor/" + name: (name, ctype) for name, ctype in _VENDOR_ASSETS}
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,16 +80,15 @@ HTML = r"""<!DOCTYPE html>
 <title>viva</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
-<script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
-<script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"></script>
-<script defer id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"></script>
+<script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
+<script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
+<script defer src="/vendor/highlight-11.11.1.min.js"></script>
+<script defer id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"></script>
+<script defer id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"></script>
 <script>
 /* Theme, applied before first paint. This runs synchronously in <head> —
-   ahead of the stylesheet and every deferred CDN script — because reading the
+   ahead of the stylesheet and every deferred vendor script — because reading the
    stored choice after the body renders means painting the OS theme first and
    flipping to the reader's, which is the flash the toggle exists to avoid.
    Deliberately dependency-free and inside a try: localStorage throws in a
@@ -2814,8 +2842,9 @@ function setTabTitle(...parts) {
 }
 
 /* Render verbatim markdown into el. Falls back to raw monospace text if
-   either CDN dependency hasn't loaded yet (slow network, or offline) — marked
-   for parsing, DOMPurify for sanitizing the result. Both are required before
+   either dependency hasn't loaded yet — the /vendor scripts are `defer`, so
+   the boot below runs ahead of them: marked parses, DOMPurify sanitizes the
+   result. Both are required before
    we'll commit HTML to the DOM; parsing without sanitizing would render
    untrusted markdown's raw HTML unescaped. Returns true on a real markdown
    render, false on the raw fallback — callers use this to decide whether the
@@ -2869,7 +2898,7 @@ function sectionTitleFor(id) {
    enhancement layered on the sanitized DOM via the slim UI wrapper and
    the page's own hljs; when either is missing or throws, the word-level
    ins/del emphasis from diff2html itself still renders.
-   Fallback when the CDN assets (core script, or the mode-injected
+   Fallback when the diff2html assets (core script, or the mode-injected
    stylesheet — gated via link.sheet to avoid an unstyled flash when the
    script is cache-warm but the CSS is not) haven't loaded: the
    fenced-```diff markdown view, tagged d2h-pending so the load listeners
@@ -3126,7 +3155,7 @@ function initReview() {
   });
   // Continuous print renders every section up front — there is nothing to
   // open, so there is nothing to render lazily. `_pendingMarkdown` and the
-  // late-CDN retry keep working unchanged: `retryOnceScriptsLoad` selects on
+  // late-load retry keep working unchanged: `retryOnceScriptsLoad` selects on
   // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
   if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
   // Open first non-approved card
@@ -4071,7 +4100,7 @@ function placeDocFlags(id) {
     // Idempotent like its siblings: initReview calls _ensureRendered in the
     // eager loop and again through activateReviewCard, and on the md-raw path
     // neither call deletes from _pendingMarkdown — without this the strip
-    // would stack twice for the length of a CDN outage.
+    // would stack twice for as long as the raw fallback is on screen.
     if (host && !host.querySelector(':scope > .annot-strip')) {
       host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
       host.querySelectorAll('.annot-jump').forEach(btn => {
@@ -4098,7 +4127,7 @@ function placeDocThreads(id) {
       holder.innerHTML = openThreadItemHTML(t);
       node = holder.firstElementChild;
       wireOpenThread(id, node);
-      // A rebuild (the late-CDN retry replaces the container's innerHTML,
+      // A rebuild (the late-load retry replaces the container's innerHTML,
       // threads included) must not lose a reply the reviewer already typed —
       // the text lives in rState, so put it back in the box.
       const pending = ((rState.verdicts[id] || {}).comments || [])
@@ -4404,7 +4433,7 @@ function _ensureRendered(id) {
   const carried = !!(card && card.classList.contains('is-carried'));
   if (!rendered) {
     // marked/DOMPurify haven't landed: the content is raw text, not blocks.
-    // The doc print still grids it — one row — so a CDN-down boot reads as a
+    // The doc print still grids it — one row — so a renderer-less boot reads as a
     // document with its margin rather than as one undifferentiated slab. The
     // retry re-renders in place once the scripts arrive.
     if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }
@@ -4427,7 +4456,7 @@ function _ensureRendered(id) {
   renderDocMargin(id);
 }
 
-// One-time-per-script retry for late-loading CDN renderers: a card opened
+// One-time-per-script retry for late-loading renderers: a card opened
 // before a renderer's dependencies finished loading rendered a fallback and
 // stayed in _pendingMarkdown (marked/DOMPurify missing → raw text tagged
 // .md-raw, since renderMarkdown requires *both*; diff2html missing → fenced
@@ -6310,10 +6339,10 @@ document.addEventListener('keydown', e => {
 // Runs immediately (not on DOMContentLoaded): this inline script tag sits at
 // the very end of <body>, after every element it references, so the DOM is
 // already parsed by the time it executes. Waiting for DOMContentLoaded would
-// needlessly serialize this loopback /input fetch behind the two `defer`red
-// CDN <script> tags above (marked, DOMPurify) — the HTML spec guarantees
-// `defer` scripts finish before DOMContentLoaded fires, so a slow/unreachable
-// CDN would stall a fetch that has nothing to do with it.
+// needlessly serialize this loopback /input fetch behind the five `defer`red
+// /vendor <script> tags above — the HTML spec guarantees `defer` scripts finish
+// before DOMContentLoaded fires, so ~570KB of renderer bytes would stall a
+// fetch that has nothing to do with them.
 el('btn-skip').disabled   = true;
 el('btn-submit').disabled = true;
 
@@ -6372,17 +6401,18 @@ Promise.all([
       document.body.classList.add('mode-diff');
       // diff2html's stylesheet is mode-specific — injected here rather than
       // shipped as a render-blocking <link> in <head>, so review/QA sessions
-      // never pay a CDN fetch for a diff-rendering stylesheet they can't use.
+      // never pay a fetch for a diff-rendering stylesheet they can't use.
       // (The companion diff2html script tags stay in <head>: they're defer,
       // so they don't block, and the boot-time d2h-pending retry keys off
       // their loads.) renderDiffHunk gates on link.sheet, so a card opened
       // before this stylesheet lands falls back to the fenced view; the
       // retry attached here — where the <link> actually exists — upgrades
-      // it once the CSS arrives.
+      // it once the CSS arrives. Served from this server's own /vendor route;
+      // the version in the path is the pin (assets/vendor/README.md).
       const d2hCss = document.createElement('link');
       d2hCss.id = 'diff2html-css';
       d2hCss.rel = 'stylesheet';
-      d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css';
+      d2hCss.href = '/vendor/diff2html-3.4.56.min.css';
       document.head.appendChild(d2hCss);
       retryOnceScriptsLoad(['diff2html-css'], '.section-content.d2h-pending');
       bootReviewMode(data, 'diff', 'diff');
@@ -6743,6 +6773,25 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", ""):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
+        elif path in _VENDOR_ROUTES:
+            # Exact-match dict lookup, not a filesystem join on request data:
+            # `filename` is a literal from `_VENDOR_ASSETS`, so `/vendor/../…`
+            # (and its percent-encoded spelling, which `urlparse` leaves
+            # undecoded) simply misses the table and 404s below. Read per
+            # request rather than at import — startup stays free of ~570KB of
+            # I/O for assets a session may never open.
+            filename, ctype = _VENDOR_ROUTES[path]
+            try:
+                body = (_VENDOR_DIR / filename).read_bytes()
+            except OSError:
+                # A truncated install: 404 rather than a traceback, so the
+                # page's md-raw/d2h-pending fallbacks take over.
+                self._error(404, "vendor asset missing: " + filename)
+                return
+            # The version is in the path, so these bytes are immutable for this
+            # URL — an upgrade moves the URL rather than changing what it serves.
+            self._send(200, ctype, body,
+                       cache_control="public, max-age=31536000, immutable")
         elif path == "/input":
             # Snapshot both under the lock, then do `_revision_counts`' N-1
             # historical-round disk reads outside it — mirrors /next-round's
@@ -7074,10 +7123,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
-    def _send(self, status: int, content_type: str, body: bytes) -> None:
+    def _send(self, status: int, content_type: str, body: bytes,
+              cache_control: str = "") -> None:
+        """Send one response. `cache_control` is opt-in and defaults to absent:
+        every other endpoint here serves live session state, and only the
+        version-stamped /vendor routes are safe to cache."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
         self.end_headers()
         self.wfile.write(body)
 
