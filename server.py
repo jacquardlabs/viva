@@ -265,7 +265,13 @@ body {
 
 .mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
 .mode-diff #paper { max-width: min(95vw, 1600px); }
-.mode-diff .section-content { max-height: none; overflow-y: visible; }
+/* …and it drops the PROSE MEASURE, because a diff-mode section holds no prose.
+   Every section here is a hunk. Left capped at 72ch, `.section-content` held a
+   rendered diff to a reading measure: on a 1282px card the d2h wrapper came
+   out 540px and each side-by-side pane 267px, clipping every line mid-word
+   while 746px of the card sat empty. The break-out rule above could not save
+   it — that rule lifts the child's cap, and the container was the constraint. */
+.mode-diff .section-content { max-height: none; overflow-y: visible; max-width: none; }
 
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
@@ -962,7 +968,13 @@ body {
 
 /* Code and tables are not prose and do not take the prose measure — they take
    the room, and scroll sideways in their own container so the page body never
-   does. This is the catalog's break-out rule. */
+   does. This is the catalog's break-out rule.
+
+   It only lifts the CHILD's cap. A child cannot be wider than its parent, so
+   this rule does nothing on its own while `.section-content` is still capped
+   at 72ch — something has to unbind the container too. In review mode that is
+   `.doc .section-content` (the row grid owns the measure); in diff mode it is
+   `.mode-diff .section-content` below. */
 .section-content > pre,
 .section-content > table,
 .section-content > .table-wrap {

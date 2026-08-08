@@ -228,6 +228,32 @@ def test_page_ships_d2h_guards(page: str) -> None:
     print("test_page_ships_d2h_guards: OK")
 
 
+def test_a_rendered_diff_is_not_held_to_the_prose_measure(page: str) -> None:
+    """Regression: a diff-mode section holds no prose, so it must not carry the
+    72ch READING measure.
+
+    `.section-content` caps at `max-width: 72ch` because prose past ~76
+    characters hurts to read. Diff mode reuses that container for a rendered
+    git diff, and left capped it clipped one: measured on a 1282px card, the
+    d2h wrapper came out 540px and each side-by-side pane 267px, cutting every
+    line mid-word while 746px of the card sat empty.
+
+    The `.section-content > pre, > table, > .table-wrap` break-out rule does
+    NOT fix this and never could — it lifts the CHILD's cap, and a child cannot
+    be wider than its parent. The container is the constraint, so the container
+    is what has to be unbound. Asserting the container's rule rather than the
+    child's is the whole point of this test: the first fix attempted here added
+    `.d2h-wrapper` to the child list and changed nothing at all."""
+    m = re.search(r'\.mode-diff \.section-content\s*\{([^}]*)\}', page)
+    assert m, "the diff-mode container rule is gone"
+    body = m.group(1)
+    assert 'max-width: none' in body, \
+        "diff mode must drop the prose measure — the container is the constraint"
+    assert 'max-height: none' in body and 'overflow-y: visible' in body, \
+        "diff mode must also keep its no-nested-scroll guarantee"
+    print("test_a_rendered_diff_is_not_held_to_the_prose_measure: OK")
+
+
 def main() -> None:
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
@@ -244,6 +270,7 @@ def main() -> None:
         test_page_ships_mode_diff_layout(page)
         test_page_ships_diff2html_renderer(page)
         test_page_ships_d2h_guards(page)
+        test_a_rendered_diff_is_not_held_to_the_prose_measure(page)
     print("\nAll server diff-render tests passed.")
 
 
