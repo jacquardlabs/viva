@@ -124,9 +124,21 @@ def assert_catalog_ground(text: str) -> None:
     # drawn between zero-width tracks too, which would defeat the collapse.
     assert not re.search(r'\.doc \.row\s*\{[^}]*column-gap', text), \
         "the row must not use column-gap — a collapsed column would still cost its alley"
-    for cell, edge in (('rg', 'padding-right'), ('rm', 'padding-left')):
-        assert re.search(r'\.doc \.' + cell + r'\s*\{[^}]*' + edge + r':\s*28px', text), \
-            f".{cell} must carry the 28px alley itself"
+    for cell, edge, alley in (('rg', 'padding-right', 20), ('rm', 'padding-left', 28)):
+        assert re.search(r'\.doc \.' + cell + r'\s*\{[^}]*' + edge + r':\s*' + str(alley) + 'px', text), \
+            f".{cell} must carry its {alley}px alley itself"
+    # The gutter is a glyph RAIL, not a text column. 70px of 9px mono clamped
+    # `✓ §4 defines "cold start"` to `✓ §4 defines "cold`, which is worse than
+    # not showing it; the glyph says WHICH paragraph carries a flag and of what
+    # severity, and the words go to the margin where they can be read.
+    assert re.search(r'--gutter-w:\s*34px;', text), \
+        "the gutter is a 14px glyph plus its alley, not a text column"
+    assert re.search(r'\.lflag\s*\{[^}]*font-size:\s*13px', text), \
+        "the rail glyph must be legible"
+    assert 'aria-hidden="true">\' + FLAG_GLYPH[sev]' in text, \
+        "the rail is decorative — the margin line carries the flag in words"
+    assert 'function marginFlagHTML(a)' in text, \
+        "a producer flag must be readable somewhere"
     # The segmented rule's fixed order is the colorblind-safe second encoding,
     # so the three segment inks must each exist and stay distinct.
     for cls, token in (('seg-judgment', '--acc'), ('seg-fact', '--fact'),

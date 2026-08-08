@@ -238,7 +238,7 @@ annotates rather than beside the section.
 
 | Track | Holds | Width |
 |-------|-------|-------|
-| gutter (`.rg`) | producer check flags (`.lchip`), right-aligned | `--gutter-w: 98px` (70px + alley) |
+| gutter (`.rg`) | one severity glyph per producer flag (`.lflag`) | `--gutter-w: 34px` (14px glyph + alley) |
 | prose (`.rp`) | one markdown block | `minmax(0, 1fr)` — takes whatever the other two do not |
 | margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 328px)` |
 
@@ -377,15 +377,14 @@ fill is already the mark, and `#ffec8f` on charcoal, where `--touch` is a 22%
 wash worth about a 5% luminance lift. The composite settles nothing here: its
 specimen hardcodes the white ground and has no dark rendering at all.
 
-**Flags.** `docFlagSplit` sends plain severity and check flags to the 70px
-gutter as `.lchip` glyphs (`✓` info, `△` warn, `✗` error; a check flag's
-`result` prints under it), and any flag carrying an **interactive jump** — a
-contradiction's cross-section link, a preference's badge-to-entry link — to the
-margin through `annotStripHTML`, which keeps that wiring. 70px is a glance, not
-a control. A `kind: "confidence"` annotation goes to neither: it is the agent's
-self-report about the whole section, it drives the triage sort, and its readout
-is a spec-table row — letting it into the gutter would hold 98px open on every
-self-annotated document for sort metadata.
+**Flags.** `docFlagSplit` sends plain severity and check flags to the rail +
+margin pair described under *The gutter is a glyph rail* below, and any flag
+carrying an **interactive jump** — a contradiction's cross-section link, a
+preference's badge-to-entry link — to the margin through `annotStripHTML`,
+which keeps that wiring. A glyph is a locator, not a control. A
+`kind: "confidence"` annotation goes to neither: it is the agent's self-report
+about the whole section, it drives the triage sort, and its readout is a
+spec-table row.
 
 **Anchoring reads the prose, never the commentary.** The margin and the gutter
 are descendants of `#rcontent-<id>`, and every margin note echoes the wording it
@@ -407,11 +406,26 @@ browser, before it moved there). Expanded, it stays at the reading measure
 rather than breaking out: a prose diff wraps, and a diff wide enough to need
 its own row was the problem.
 
-**Gutter chips clamp at three lines**, with the flag's kind and a check's
-`result` in the `title`. 70px is a glance; printing the result in the column
-ran one fixture chip to six lines of 9px type, which is a paragraph in the
-corner of the eye. `checks N/M` in the spec table is the readout that actually
-tracks whether a `checks` round can close.
+**The gutter is a glyph rail, not a text column.** A flag renders twice, and
+each half does one job:
+
+| Where | What | Why |
+|-------|------|-----|
+| gutter (`.lflag`) | one 13px severity glyph — `✓` info, `△` warn, `✗` error — `aria-hidden`, full text in `title` | **which paragraph** carries a flag, and how bad, without the words interrupting the reading |
+| margin (`.mflag`) | the message, and a check's `result` under it, inked by severity and led by the same glyph | **what it says**, at a size and width that can hold `✓ §4 defines "cold start"` |
+
+70px of 9px mono held neither: it clamped that flag to `✓ §4 defines "cold`,
+which is worse than not showing it, and right-aligned ragged 9px type is barely
+readable even when it fits. The rail costs 34px instead of 98px, and the 64px
+went to the prose.
+
+`.mflag` takes no border and no actions, unlike `.nt` — a producer flag is
+advisory and there is nothing to answer. It mounts above the threads and this
+round's notes: the machine's reading of a paragraph comes before the
+conversation about it. Screen readers get the margin line only; the rail is
+decorative, so the flag is announced once.
+
+A `kind: "confidence"` annotation appears in neither — see Flags above.
 
 ### Activation costs no layout (#186, unreleased)
 

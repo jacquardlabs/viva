@@ -135,13 +135,16 @@ def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
     # invitation is printed once at the foot of the whole document.
     assert '<div class="doc-hint" id="doc-hint"' in page, \
         "the select-to-comment hint must be one document-level line"
-    # A gutter chip is a glance: the message, clamped to three lines, with the
-    # kind and a check flag's answer in the title. Printing the `result` in the
-    # column ran one fixture chip to six lines of 9px type.
-    assert re.search(r'\.lchip\s*\{[^}]*-webkit-line-clamp:\s*3', page), \
-        "a gutter chip must clamp — 70px is a glance, not a second column of prose"
-    assert "'<span class=\"lchip lchip-' + sev + '\" title=\"' + esc(full) + '\">'" in page, \
-        "the kind and the check's answer belong in the title, not the column"
+    # The gutter is a glyph rail and the words live in the margin of the same
+    # row — glyph for WHERE and how bad, margin for WHAT. A 70px text column at
+    # 9px clamped `✓ §4 defines "cold start"` to `✓ §4 defines "cold`.
+    assert "function gutterGlyphHTML(a)" in page and "function marginFlagHTML(a)" in page, \
+        "a flag must be both locatable and readable"
+    assert "docCell(row, 'rg').innerHTML = flags.map(gutterGlyphHTML).join('');" in page
+    assert "host.innerHTML = flags.map(marginFlagHTML).join('');" in page, \
+        "the flag's words belong in the margin of the row it concerns"
+    assert "rm.insertBefore(host, rm.firstChild);" in page, \
+        "the machine's reading of a paragraph comes before the conversation about it"
     print("test_nothing_sits_between_the_reader_and_the_prose: OK")
 
 
@@ -152,8 +155,8 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
     thread that shipped with the round) and made once per document — a per-row
     or per-section decision jogs the prose column sideways as you read it."""
     assert "function updateDocColumns()" in page, "page missing the collapse rule"
-    assert "doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lchip'));" in page, \
-        "the gutter must collapse when no row carries a check chip"
+    assert "doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lflag'));" in page, \
+        "the gutter must collapse when no row carries a flag"
     assert "doc.classList.toggle('no-margin', !doc.querySelector(live));" in page, \
         "the margin must collapse when the document carries nothing for it"
     assert "'.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread,'" in page, \

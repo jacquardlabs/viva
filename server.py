@@ -1125,7 +1125,14 @@ body {
    between zero-width tracks too — this way a collapsed column costs
    exactly zero. */
 .doc {
-  --gutter-w: 98px;                    /* 70px chip column + the 28px alley */
+  /* A GLYPH RAIL, not a text column. 70px of 9px mono could not hold a real
+     flag — `✓ §4 defines "cold start"` clamped to `✓ §4 defines "cold`, which
+     is worse than not showing it, and right-aligned ragged 9px type is barely
+     readable even when it does fit. What the gutter is actually for is
+     LOCALITY: knowing this paragraph carries a machine flag, and of what
+     severity, without the text interrupting the reading. A colored glyph says
+     that in 14px; the words go where there is room to read them. */
+  --gutter-w: 34px;                    /* 14px glyph + the 20px alley */
   /* The margin is CAPPED at the composite's 300px (+ the 28px alley). Letting
      it absorb the shell's spare width instead put it at 515px against 540px of
      prose — a 51:49 split, where the commentary took as much of the page as the
@@ -1167,7 +1174,7 @@ body {
 .doc .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4; }
 /* Explicit column placement, so a row that omits an empty side cell still
    prints its prose in the middle track instead of sliding left. */
-.doc .rg { grid-column: 1; padding-right: 28px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 3px; }
+.doc .rg { grid-column: 1; padding-right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 2px; }
 .doc .rp { grid-column: 2; min-width: 0; }
 .doc .rm { grid-column: 3; padding-left: 28px; min-width: 0; }
 /* One type size for the whole print, so `ch` means the same thing in every
@@ -1242,25 +1249,39 @@ body {
    an interactive jump (a contradiction's cross-section link, a learned
    preference's badge) does not fit in 70px and is not a glance — those
    route to the margin as notes instead. */
-.lchip {
+/* The rail: one glyph per flag, at a size you can actually see, colored by
+   whose news it is. Decorative to a screen reader — the readable line is in
+   the margin (.mflag) and reading both would be the same flag twice. */
+.lflag {
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: default;
+}
+.lflag-info  { color: var(--machine); }
+.lflag-warn  { color: var(--fact); }
+.lflag-error { color: var(--acc); }
+
+/* The words, in the margin of the same row — the machine's line, not a note
+   in the conversation, so it takes no border and no actions: a producer flag
+   is advisory and there is nothing here to answer. Inked by severity and led
+   by the same glyph as the rail, so the pairing reads left to right. */
+.mflag {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  line-height: 1.4;
-  text-align: right;
+  font-size: 10.5px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
   color: var(--soft);
   overflow-wrap: anywhere;
-  /* Three lines is the ceiling. Past that a gutter flag stops being something
-     you take in beside the paragraph and becomes a second column of prose;
-     the full text stays one hover away in the title. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
 }
-.lchip-info  { color: var(--machine); }
-.lchip-warn  { color: var(--fact); }
-.lchip-error { color: var(--acc); }
+.mflag .g { flex-shrink: 0; }
+.mflag-info  .g { color: var(--machine); }
+.mflag-warn  .g { color: var(--fact); }
+.mflag-error .g { color: var(--acc); }
+.mflag-warn, .mflag-error { color: var(--text2); }
+.mflag .r { display: block; color: var(--machine); }
 
 /* ─── Margin notes ────────────────────────────────────────────
    One note per thread or comment, numbered, sitting beside its own anchor.
@@ -1571,7 +1592,6 @@ body {
   text-transform: none;
   color: var(--faint);
 }
-.lchip-result { display: block; color: var(--machine); }
 .doc .comment-popover { border-radius: 0; margin-top: 0; margin-bottom: 12px; }
 .doc .annot { border-radius: 0; margin-bottom: 12px; flex-direction: column; gap: 3px; }
 /* The whole-document invitation, printed once at the foot of the print
@@ -3574,19 +3594,30 @@ function docFlagSplit(section) {
 
 const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
 
-function gutterChipHTML(a) {
-  const sev = ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
-  // The chip is the message and nothing else, clamped to three lines. A 70px
-  // column is a glance: measured against the fixture, printing a check flag's
-  // `result` under it ran one chip to six lines of 9px type, which is a
-  // paragraph in the corner of the eye, not a flag. The kind and the answer
-  // ride in the title, and `checks N/M` in the spec table is the readout that
-  // actually tracks whether a `checks` round can close.
+function flagSeverity(a) {
+  return ANNOT_SEVERITIES[a.severity] ? a.severity : 'info';
+}
+
+// The rail glyph: locality and severity, nothing else. aria-hidden, because
+// the margin line below carries the same flag in words.
+function gutterGlyphHTML(a) {
+  const sev = flagSeverity(a);
   const full = [a.kind || 'note', a.message || '', a.result ? '→ ' + a.result : '']
     .filter(Boolean).join(' · ');
-  return '<span class="lchip lchip-' + sev + '" title="' + esc(full) + '">'
-    + '<span aria-hidden="true">' + FLAG_GLYPH[sev] + '</span> ' + esc(a.message || '')
-    + '</span>';
+  return '<span class="lflag lflag-' + sev + '" title="' + esc(full) + '" aria-hidden="true">'
+    + FLAG_GLYPH[sev] + '</span>';
+}
+
+// The same flag in words, in the margin of its own row — where a 300px column
+// can hold `✓ §4 defines "cold start"` without clamping it to `✓ §4 defines
+// "cold`, which is what 70px of 9px type did to it.
+function marginFlagHTML(a) {
+  const sev = flagSeverity(a);
+  return '<div class="mflag mflag-' + sev + '" title="' + esc(a.kind || 'note') + '">'
+    + '<span class="g" aria-hidden="true">' + FLAG_GLYPH[sev] + '</span>'
+    + '<span>' + esc(a.message || '')
+    + (a.result ? '<span class="r">&rarr; ' + esc(a.result) + '</span>' : '')
+    + '</span></div>';
 }
 
 /* ─── Rows ───────────────────────────────────────────────────
@@ -3976,8 +4007,19 @@ function placeDocFlags(id) {
     if (!byRow.has(key)) byRow.set(key, []);
     byRow.get(key).push(a);
   });
+  // Glyph in the rail, words in the margin, both on the row the flag concerns.
   byRow.forEach((flags, row) => {
-    docCell(row, 'rg').innerHTML = flags.map(gutterChipHTML).join('');
+    docCell(row, 'rg').innerHTML = flags.map(gutterGlyphHTML).join('');
+    const rm = docCell(row, 'rm');
+    let host = rm.querySelector(':scope > .rm-flags');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'rm-flags';
+      // Above the threads and this round's notes: the machine's reading of the
+      // paragraph comes before the conversation about it.
+      rm.insertBefore(host, rm.firstChild);
+    }
+    host.innerHTML = flags.map(marginFlagHTML).join('');
   });
   if (split.margin.length) {
     const host = docNoteHost(id, null);
@@ -4213,7 +4255,7 @@ function renderDocSpec(id) {
 function updateDocColumns() {
   const doc = el('review-cards');
   if (!doc || !doc.classList.contains('doc')) return;
-  doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lchip'));
+  doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lflag'));
   // An OPEN compose popover holds the margin as surely as a saved note does.
   // Without it, the first anchored comment on a bare document — the exact
   // document the collapse rule exists for — mounts its textarea into a 0px
@@ -4222,7 +4264,7 @@ function updateDocColumns() {
   // `.is-open` rather than a style-attribute match: the serialized inline
   // style is the browser's business, not a selector's.
   const live = '.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread,'
-             + ' .rm .comment-popover.is-open';
+             + ' .rm-flags .mflag, .rm .comment-popover.is-open';
   doc.classList.toggle('no-margin', !doc.querySelector(live));
 }
 
