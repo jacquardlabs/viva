@@ -6322,7 +6322,18 @@ Promise.all([
       retryOnceScriptsLoad(['diff2html-css'], '.section-content.d2h-pending');
       bootReviewMode(data, 'diff', 'diff');
     } else {
+      // `choices` is OPTIONAL on the wire — a question that omits it renders a
+      // free-text field only (references/qa.md). Normalized once, here, where
+      // the payload enters the client: three readers downstream take it as a
+      // list (the chip builder's `.map`, the palette's `.slice`, the digit
+      // handler's `.length`), and an absent field made the FIRST of them throw
+      // during render — taking the whole interview down, not just its card.
+      // Guarding each reader instead would leave the fourth one to rediscover
+      // this (CLAUDE.md: fix data at the boundary, never at the point of use).
       QA_DATA = data;
+      (QA_DATA.questions || []).forEach(q => {
+        if (!Array.isArray(q.choices)) q.choices = [];
+      });
       el('qa-title').textContent        = data.context || 'Q&A phase';
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
       el('qa-count-badge').textContent  = String(data.questions.length);
