@@ -9,9 +9,10 @@ Doc-first intake: a **type** and its **attachments** start the flow. You read th
 attachments, ask only what they could not answer, fill the type's section
 grammar, and hand the draft to the same browser tab for editorial rounds.
 
-`/viva` reviews a doc that already exists. `/viva-write` is the other end of the
-lifecycle — it produces the doc and then hands it to that same review, without a
-second server launch.
+`/viva-review` judges a doc that already exists. `/viva-write` is the other end
+of the lifecycle — it produces the doc and then hands it to that same review,
+without a second server launch. The two split the product by **intent**: am I
+making a thing, or judging one.
 
 ## Invocation
 
@@ -105,9 +106,9 @@ That clear is `loop.py start`'s, matched deliberately: `preferences.json` is the
 one survivor (cross-session, per-clone), and `open-notes.json` **must** go — a
 stale store injects a prior session's threads into this session's round 2.
 
-Write `.viva/qa-input.json` (the `QAInput` shape — see `/viva-qa` for the full
-contract; `choices` and `recommended_choice` are both optional), then launch and
-wait:
+Write `.viva/qa-input.json` (the `QAInput` shape — `references/qa.md` at the
+plugin root is the full contract; `choices` and `recommended_choice` are both
+optional), then launch and wait:
 
 ```bash
 python3 "$VIVA_DIR/server.py" --mode qa \
@@ -270,15 +271,14 @@ session with no recurring critique records nothing.
 
 ## Reference material
 
-`/viva`'s reference files apply unchanged, and `loop.py` prints the absolute path
-of whichever one documents the step you have reached:
+`references/` at the plugin root is shared with `/viva-review`, and `loop.py`
+prints the absolute path of whichever file documents the step you have reached:
 
-- `references/producers.md` — annotations, the producer contract, confidence
-- `references/open-notes.md` — comment threads carried across rounds
-- `references/preferences.md` — recurring critiques learned across sessions
-
-`/viva-qa` documents the `QAInput`/`answers.json` contract this flow's interview
-uses, and the hand-off it opts into.
+- `qa.md` — the `QAInput`/`answers.json` contract step 3 uses, and the hand-off
+  step 5 opts into
+- `producers.md` — annotations, the producer contract, confidence
+- `open-notes.md` — comment threads carried across rounds
+- `preferences.md` — recurring critiques learned across sessions
 
 ## File layout
 

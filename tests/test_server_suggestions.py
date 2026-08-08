@@ -128,7 +128,7 @@ def test_page_ships_the_suggestion_affordances() -> None:
     assert '''content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>''' in page, \
         "the mark+pin pass must clear every typed highlight it can create"
     # Review-mode only: a diff hunk's suggestion would be a verbatim code edit,
-    # which /viva-diff carries no instruction to apply (#166 scopes it out).
+    # which /viva-review branch B carries no instruction to apply (#166 scopes it out).
     assert "const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';" in page, \
         "the suggestion chip must be gated out of diff mode"
     # A reply to a carried suggestion thread continues as `changes`: the reply

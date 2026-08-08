@@ -22,8 +22,8 @@ only by JSON files under `.viva/`:
    siblings as subprocesses** rather than importing them, so part 3's
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
-   `context_refs`, `drift`, `checklist`, `doc_types`, `headings_present`,
-   `open_notes`, `preferences`, `revision_history`). Each
+   `context_refs`, `review_target`, `drift`, `checklist`, `doc_types`,
+   `headings_present`, `open_notes`, `preferences`, `revision_history`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
@@ -114,9 +114,28 @@ boundary validator is what turns that into a loud failure.
 `GET /input` serves the review-input merged with a live `ledger: [...]` key; that
 `ledger` is injected at serve time and is not part of the on-disk file schema.
 
-**New skills in this branch:** `.claude/skills/viva-qa/SKILL.md`
-(`/viva-qa` primitive) and `.claude/skills/viva-diff/SKILL.md` (`/viva-diff`
-skill) follow the same import-only-schema rule.
+## Two skills, split by intent
+
+`.claude/skills/` holds exactly two: **`viva-write`** (make a thing) and
+**`viva-review`** (judge one). The mechanism-named trio — `viva`, `viva-qa`,
+`viva-diff` — is gone. `viva-review` absorbed doc *and* hunk review behind one
+target dispatch (`scripts/review_target.py`), and the Q&A gate became
+`references/qa.md`, a contract any caller can read rather than a skill you must
+know to find. `tests/test_skill_registration.py` pins both the expected set and
+the retired names, because a stale directory alongside the new set registers a
+second skill for the same job.
+
+**`references/` sits at the plugin root**, not inside either skill: both read it
+and `loop.py` prints its paths, so `/viva-write` needing `producers.md` must not
+mean reaching into `/viva-review`'s directory.
+
+**The no-bookkeeping-bash rule is scoped, deliberately.** `loop.py` drives doc
+review only, so only `viva-review`'s **branch A** is held to it. Branch B (hunks
+— `parse_diff.py` and `--mode diff`, neither of which the driver knows) and
+`viva-write`'s pre-hand-off steps carry that bash on purpose.
+`test_server_orchestration.py` enumerates those two rather than exempting by
+wildcard, so a third skill growing its own loop fails; #179 is the issue that
+empties the list.
 
 ## `/viva-write` — the intake end of the lifecycle
 
@@ -150,7 +169,12 @@ classifies attachments (issue/pr refs, URLs, files, directories) and bounds what
 a directory expands to, emitting a manifest with every cap-excluded file in
 `dropped[]`. It **never fetches** — an issue entry carries the `gh` argv the
 skill runs — which is what keeps it network-free, keyless, and independently
-testable.
+testable. `scripts/review_target.py` is its counterpart on the review side, with
+the same no-execution rule: it classifies a target and prints the `capture` argv,
+running no `git` and no `gh` itself. Its precedence is **filesystem first, then
+shape** — a repo holding a file named `187` means that file, not the PR, because
+a target the caller can see in `ls` must never be silently reinterpreted. The
+cost is that a branch named `42` needs `--kind ref`.
 
 ## Extension seams
 

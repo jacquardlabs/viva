@@ -5,7 +5,7 @@ A planning caller interviews the human via `qa` mode, then — instead of
 tearing the server down and launching a second `server.py --mode review` —
 hands the round-1 review payload to the SAME running server via `/next-round`.
 That mechanism (`/next-round` + the `round` SSE broadcast) already exists for
-`/viva-diff`'s in-place round advances; this test proves it also carries a
+`/viva-review` branch B's in-place round advances; this test proves it also carries a
 qa-launched server across the mode boundary: same process, same `server.url`,
 no second launch, and the qa-originated round is distinguishable server-side
 by its own stdout line — not by any new field on the wire payload, since
@@ -158,7 +158,7 @@ def test_handoff_same_server_no_second_launch():
     try:
         base = wait_for_url(qa_out)
 
-        # ── Q&A phase: byte-identical to standalone /viva-qa up to this point ──
+        # ── Q&A phase: byte-identical to a standalone qa gate up to this point ──
         served = get(base, "/input")
         assert served.get("mode") == "qa", served
 
@@ -213,7 +213,7 @@ def test_handoff_same_server_no_second_launch():
             out, _ = proc.communicate(timeout=5)
 
     # ── The hand-off's only signal is operational (stdout), never a wire
-    #    field — see /viva-qa "Hand off to a review session in the
+    #    field — see references/qa.md "Handing off to a review session in the
     #    same tab (#109)". ──
     assert "viva · qa mode ·" in out, out
     assert "viva · hand-off qa → review ·" in out, out

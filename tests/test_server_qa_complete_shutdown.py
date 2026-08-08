@@ -17,7 +17,7 @@ is the check the server performs on its own. Three sessions, two answers:
 Then the shutdown routes — three routes, three scenarios:
 
 - `POST /complete` — the standalone qa-mode finish sequence (#112). Before that
-  fix, `/viva-qa`'s documented finish steps read `.viva/answers.json` and
+  fix, `references/qa.md`'s finish steps read `.viva/answers.json` and
   stopped; nothing ever called `POST /complete`, so the server process (and its
   2-second shutdown timer, which only starts inside that handler) ran forever.
 - `POST /abandon` — the loop driver's abandon route. `loop.py abandon` is a
@@ -230,7 +230,7 @@ def check_complete_shutdown() -> None:
         })
         assert poll_for(out), "answers.json never written"
 
-        # Mirrors /viva-qa's fixed step 4: /complete once
+        # Mirrors references/qa.md's fixed finish step: /complete once
         # answers.json exists (standalone finish, no hand-off).
         # Also the finish guard's shape exemption: this input carries
         # `questions` and no `sections`, and `round_is_complete` returns False

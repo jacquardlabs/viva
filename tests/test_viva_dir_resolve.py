@@ -3,9 +3,9 @@
 
 `tests/test_skill_registration.py` checks the file-layout invariants
 discovery depends on; it never executes the bash resolve block itself.
-This file does — it extracts the two-line pipeline from all four source
-copies (three SKILL.md files plus README.md), asserts they're identical
-(so the four hand-maintained copies can't silently drift), then runs the
+This file does — it extracts the two-line pipeline from all three source
+copies (both SKILL.md files plus README.md), asserts they're identical
+(so the hand-maintained copies can't silently drift), then runs the
 extracted pipeline via a real subprocess against constructed fixture
 directories.
 
@@ -29,9 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 RESOLVE_SOURCES = [
-    ROOT / ".claude" / "skills" / "viva" / "SKILL.md",
-    ROOT / ".claude" / "skills" / "viva-qa" / "SKILL.md",
-    ROOT / ".claude" / "skills" / "viva-diff" / "SKILL.md",
+    ROOT / ".claude" / "skills" / "viva-review" / "SKILL.md",
+    ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md",
     ROOT / "README.md",
 ]
 
@@ -49,15 +48,15 @@ def _extract_resolve_block(path: Path) -> str:
     return m.group(0)
 
 
-def test_all_four_copies_identical():
+def test_all_copies_identical():
     blocks = {path: _extract_resolve_block(path) for path in RESOLVE_SOURCES}
     canonical = blocks[RESOLVE_SOURCES[0]]
     for path, block in blocks.items():
         assert block == canonical, (
             f"{path} resolve block differs from {RESOLVE_SOURCES[0]} — "
-            "the four hand-maintained copies have drifted apart"
+            "the hand-maintained copies have drifted apart"
         )
-    print("  ok  test_all_four_copies_identical")
+    print("  ok  test_all_copies_identical")
 
 
 def _run_resolve(search_root: Path) -> str:
@@ -109,7 +108,7 @@ def test_multiple_versions_picks_newest():
 
 
 def main():
-    test_all_four_copies_identical()
+    test_all_copies_identical()
     test_empty_cache_resolves_to_nothing()
     test_multiple_versions_picks_newest()
     print("OK (3 tests)")

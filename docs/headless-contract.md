@@ -4,8 +4,9 @@
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller — not for the human
-running `/viva` inside Claude Code (see `README.md`) and not for Claude Code
-orchestrating the review loop itself (see `SKILL.md`). It transcribes what
+running `/viva-write` or `/viva-review` inside Claude Code (see `README.md`) and
+not for Claude Code orchestrating those loops itself (see each skill's
+`SKILL.md`). It transcribes what
 `server.py` and `scripts/schema.py` actually do; it does not restate either
 of those documents in different words. Where this doc and either of those
 disagree, this doc's job is to match the code, not the prose elsewhere —
@@ -72,15 +73,15 @@ decided separately, at request time, by the `mode` field inside the JSON
 object `GET /input` serves (`data.mode === 'review' | 'diff'`, else Q&A).
 Nothing in `server.py` enforces that the two agree — a caller that launches
 `--mode qa` but writes `"mode": "review"` into the input JSON gets
-undefined-by-contract behavior. Every existing caller (`SKILL.md`,
-`/viva-qa`, `/viva-diff`) keeps them in sync by convention, not by an
+undefined-by-contract behavior. Every existing caller (`/viva-write`,
+`/viva-review`, `references/qa.md`) keeps them in sync by convention, not by an
 enforced invariant — a new caller needs to keep them in sync too.
 
 ## 3. `.viva/` round-file naming and shapes
 
 The `.viva/` directory and filenames like `review-input-r{N}.json`,
 `review-r{N}.json`, `qa-input.json`, `answers.json` are a **convention** the
-existing skills (`SKILL.md`, `/viva-qa`, `/viva-diff`) follow, not
+existing skills (`/viva-write`, `/viva-review`) follow, not
 something `server.py` enforces — `--input`/`--output` accept any path. What
 *is* enforced is the shape, by `scripts/schema.py`'s validators, called at
 the boundary (on write by the producer, on read by the server):
@@ -218,8 +219,8 @@ reviewer's wording verbatim, tagged `suggested:` — the row's `verdict` is the
 | `GET /input` | yes | Poll-once, not watched. Returns the loaded `--input` JSON merged with the live `ledger` array (§3). Most callers get everything they need from the round files directly and only use this to confirm shape. |
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
 | `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
-| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `SKILL.md`'s own loop and `/viva-qa`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-diff`'s re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
-| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections` and the server was **not** launched `--mode diff`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. A round carrying a `pass` (§3) must satisfy that base **and** the pass's own conjunct — `checks`: every check flag carries a `result`; `final`: no unresolved suggested edit — so a fully approved round can also be refused `409`, with an `error` naming the pass rather than a section count. A round whose `sections` list is **empty** is refused `409 "the round carries no sections to approve"` — reachable, since `validate_review_input` accepts an empty list, and tested before the pass branch so the message never blames a conjunct for it. The recovery is the **next** round: this process loads its round once and replaces it only from `POST /next-round`, so a check answered on disk under the round already served is one this guard never sees. A pass never makes the request succeed where it would otherwise fail. Two exemptions, both by launch shape rather than by payload: a Q&A round carries `questions` and never `sections`, and a `--mode diff` server signs off with `changes` verdicts on record by design (`/viva-diff`'s empty-re-diff finish). The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `/viva-qa` step 4) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. Read `output` from the JSON body (preferred — travels like every other POST field; this is the form `loop.py`'s own `arm` and `references/qa.md`'s hand-off example both use) or the legacy `?output=` query-string param (still honored as a fallback, and still what `/viva-review`'s hunk re-arm step sends — narrowing that to the preferred form is a separate, future cleanup, not part of this contract change). If the payload has `"sections"`, it is validated with `validate_review_input` before being accepted. This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
+| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections` and the server was **not** launched `--mode diff`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. A round carrying a `pass` (§3) must satisfy that base **and** the pass's own conjunct — `checks`: every check flag carries a `result`; `final`: no unresolved suggested edit — so a fully approved round can also be refused `409`, with an `error` naming the pass rather than a section count. A round whose `sections` list is **empty** is refused `409 "the round carries no sections to approve"` — reachable, since `validate_review_input` accepts an empty list, and tested before the pass branch so the message never blames a conjunct for it. The recovery is the **next** round: this process loads its round once and replaces it only from `POST /next-round`, so a check answered on disk under the round already served is one this guard never sees. A pass never makes the request succeed where it would otherwise fail. Two exemptions, both by launch shape rather than by payload: a Q&A round carries `questions` and never `sections`, and a `--mode diff` server signs off with `changes` verdicts on record by design (`/viva-review`'s empty-re-diff finish). The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced) used only for the SSE `"complete"` event's payload. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `references/qa.md`'s finish step) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 | `POST /abandon` | yes | Ends the session **without** finishing it — the route for a caller that decides to drop an unfinished round. Body is ignored. Sets the shutdown event immediately: no 2-second grace, and no SSE `"complete"` event, so the browser tab sees its `/events` stream drop and reports a lost connection rather than a completed review. Carries none of `/complete`'s sign-off meaning and writes no output file. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. |
 
 Every error response, on any endpoint, is `application/json` with body
@@ -290,7 +291,7 @@ duration.
 ### qa → review hand-off (`unified-session`, #109)
 
 This is **not** a third `--mode` value. A caller launches `--mode qa`
-exactly as `/viva-qa` does today, waits for `answers.json`, and — instead
+exactly as `references/qa.md` documents, waits for `answers.json`, and — instead
 of tearing the server down — POSTs an
 ordinary `sections`-shaped `ReviewInput` payload (§3) to the same server's
 still-running `/next-round`. The same browser tab reflows in place from Q&A

@@ -10,7 +10,7 @@ from a subprocess+urllib harness is that:
      shipped in the served page, gated on diff mode, and the deleted
      hand-rolled renderer is truly gone (not just bypassed).
   2. A diff-mode round still serves each section's `content` as the verbatim
-     fenced ```diff block, unchanged — the /viva-diff skill relocates edits by
+     fenced ```diff block, unchanged — /viva-review branch B relocates edits by
      matching `comment.anchor.text` against the source, and round-to-round
      carry-forward compares `content` byte-for-byte (parse_diff.py
      `_carry_forward`). The renderer is a pure view transform; it must never

@@ -14,12 +14,22 @@ The two rules `loop.py` exists to keep are asserted here as well: the round
 number is derived from disk (no subcommand accepts one), and the driver
 cross-imports no sibling but `schema.py` (CLAUDE.md).
 
-The last five checks guard the other half of the same contract — `SKILL.md`
+The last five checks guard the other half of the same contract — the skill prose
 itself. The driver only removes bookkeeping from the agent if the prose stops
 carrying it, so the documented sequence is asserted here beside the executed
-one: no bash block does the driver's job, the rewrite step still applies
-standing preferences, nothing is auto-approved, a suggested edit is applied
-verbatim, and every `references/` file is one `loop.py` prints the path to.
+one: no bash block in the part `loop.py` drives does the driver's job, the
+rewrite step still applies standing preferences, nothing is auto-approved, a
+suggested edit is applied verbatim, and every `references/` file is one some
+reader is handed the path to.
+
+**The bookkeeping rule is scoped, and the scope is the point (#170).** `loop.py`
+drives doc review only, so only `/viva-review`'s branch A is held to it.
+`/viva-review` branch B (hunks — `parse_diff.py` and `--mode diff`, neither of
+which the driver knows) and `/viva-write`'s pre-hand-off steps (`start` cannot
+run against the interview's own live server) carry that bash deliberately. Those
+two are enumerated below rather than exempted by a wildcard, so a THIRD skill
+growing its own loop fails this test — and when #179 extends the driver, the
+enumeration is the list to empty.
 """
 import ast
 import json
@@ -36,8 +46,14 @@ from _server_harness import get, launch_server, poll_for, post  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 PARSE = ROOT / "scripts" / "parse_sections.py"
 LOOP = ROOT / "scripts" / "loop.py"
-SKILL = ROOT / ".claude" / "skills" / "viva" / "SKILL.md"
-REFERENCES = ROOT / ".claude" / "skills" / "viva" / "references"
+SKILLS_DIR = ROOT / ".claude" / "skills"
+SKILL = SKILLS_DIR / "viva-review" / "SKILL.md"       # the driver's own skill
+WRITE_SKILL = SKILLS_DIR / "viva-write" / "SKILL.md"
+REFERENCES = ROOT / "references"
+
+# The one part of the prose `loop.py` actually drives. Branch B is a different
+# parser and a different `--mode`, so the driver has nothing to offer it yet.
+DRIVEN_SECTION = ("## A. Doc review", "## B. Diff review")
 
 BASH_BLOCK_RE = re.compile(r"```bash\n(.*?)```", re.S)
 
@@ -507,16 +523,27 @@ def check_loop_cross_imports_only_schema() -> None:
 
 def _numbered_step(text: str, keyword: str) -> str:
     """Body of the `**N. Title**` step whose title names `keyword`."""
-    parts = re.split(r"^\*\*(\d+\.[^*]*)\*\*", text, flags=re.M)
+    # `A4.` as well as `4.`: the merged review skill numbers its steps within a
+    # branch, so the branch letter is part of the label.
+    parts = re.split(r"^\*\*([A-Z]?\d+\.[^*]*)\*\*", text, flags=re.M)
     for header, body in zip(parts[1::2], parts[2::2]):
         if keyword.lower() in header.lower():
             return header + body
     raise AssertionError("SKILL.md has no numbered step naming %r" % keyword)
 
 
+def _driven_prose() -> str:
+    """The slice of `/viva-review` that `loop.py` drives — the invocation
+    preamble plus branch A, stopping where branch B's own loop begins."""
+    text = SKILL.read_text()
+    start, end = text.index(DRIVEN_SECTION[0]), text.index(DRIVEN_SECTION[1])
+    assert start < end, "branch A must precede branch B in %s" % SKILL
+    return text[:end]
+
+
 def check_skill_carries_no_bookkeeping_bash() -> None:
     """The prose half of the defect: SKILL.md retyped the loop every round."""
-    text = SKILL.read_text()
+    text = _driven_prose()
     blocks = BASH_BLOCK_RE.findall(text)
     assert blocks, "SKILL.md has no bash block at all — the $VIVA_DIR resolve is one"
     for block in blocks:
@@ -526,6 +553,40 @@ def check_skill_carries_no_bookkeeping_bash() -> None:
                 "a SKILL.md bash block %s (matched %r) — loop.py owns that:\n%s"
                 % (label, m.group(0), block))
     print("  ok  check_skill_carries_no_bookkeeping_bash")
+
+
+def check_only_the_two_undriven_flows_carry_their_own_loop() -> None:
+    """The scope of the rule above, asserted as a closed set.
+
+    Two flows drive themselves because `loop.py` cannot reach them yet, and each
+    must say which one it is — an undocumented third skill growing its own loop
+    is the drift this catches. When #179 extends the driver, this check is the
+    list to empty.
+    """
+    undriven = {}
+    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        text = skill_md.read_text()
+        blocks = BASH_BLOCK_RE.findall(text)
+        if skill_md == SKILL:
+            # Only the half the driver does not own may carry it.
+            blocks = BASH_BLOCK_RE.findall(text[text.index(DRIVEN_SECTION[1]):])
+        hits = [label for block in blocks for label, pattern in FORBIDDEN_BASH
+                if pattern.search(block)]
+        if hits:
+            undriven[skill_md] = sorted(set(hits))
+
+    assert set(undriven) == {SKILL, WRITE_SKILL}, (
+        "skills carrying their own loop changed — expected exactly "
+        "%s (branch B) and %s, got %s"
+        % (SKILL.parent.name, WRITE_SKILL.parent.name,
+           sorted(p.parent.name for p in undriven)))
+    # Each must name the reason, so the exemption is a documented constraint
+    # rather than an accident nobody notices.
+    assert "#179" in SKILL.read_text(), (
+        "%s must name the issue that would let the driver take branch B" % SKILL)
+    assert "loop.py start" in WRITE_SKILL.read_text(), (
+        "%s must say which driver subcommand it cannot use, and why" % WRITE_SKILL)
+    print("  ok  check_only_the_two_undriven_flows_carry_their_own_loop")
 
 
 def check_rewrite_step_applies_standing_preferences() -> None:
@@ -585,14 +646,20 @@ def check_skill_applies_suggestions_verbatim() -> None:
     The reviewer typed the replacement instead of describing it, so the one
     thing the agent must not do is rewrite it — an author that "improves" the
     phrasing hands back a diff the reviewer never asked for and cannot trust.
-    The instruction lives in the verdict table, where the agent routes by
-    comment type, and the derivation paragraph beside it has to agree that such
-    a section is not approved.
+    The instruction lives where the agent routes by comment type, and the
+    derivation paragraph beside it has to agree that such a section is not
+    approved.
     """
     text = SKILL.read_text()
     rows = [ln for ln in text.splitlines() if ln.startswith("|")]
-    typed = [ln for ln in rows if "`suggestion`" in ln]
-    assert typed, "SKILL.md's verdict table has no row naming the `suggestion` type"
+    assert any("by its `type`" in ln for ln in rows), (
+        "the verdict table must route a commented card by comment type")
+    # The per-type rules moved out of the table cell into the paragraph beside
+    # it when doc and hunk review merged (#170) — one rule, two card shapes.
+    # The sentence is the contract, not the cell it used to sit in.
+    paragraphs = [" ".join(p.split()) for p in text.split("\n\n")]
+    typed = [p for p in paragraphs if "**`suggestion`**" in p]
+    assert typed, "SKILL.md has no comment-type rule naming the `suggestion` type"
     row = typed[0].lower()
     assert "verbatim" in row, (
         "the suggestion row does not say the wording is applied VERBATIM — "
@@ -633,24 +700,33 @@ def check_references_are_reachable() -> None:
 
     `loop.py` never reads `references/` — the agent does, and it has no
     `$VIVA_DIR` for a skill-relative path. So the driver prints the absolute
-    path in the output line whose next step that file documents. Set equality
-    both ways: a file nothing prints is unreachable, and a printed path with no
-    file behind it makes "reachable" hollow.
+    path in the output line whose next step that file documents.
+
+    Two routes now, not one: the driver's print sites, and a skill naming a file
+    for a step the driver does not reach (`qa.md` documents the interview, which
+    `loop.py` has no subcommand for). Both directions still hold — a file nothing
+    names is unreachable, and a path `loop.py` prints with no file behind it
+    makes "reachable" hollow.
     """
     assert REFERENCES.is_dir(), "%s does not exist" % REFERENCES
     on_disk = {p.name for p in REFERENCES.iterdir() if p.is_file()}
     assert on_disk, "references/ is empty — 'every file is reachable' is vacuous"
     # Either quote style: an f-string delimited by `"` cannot nest `"` before
     # Python 3.12, so the driver's own print sites use single quotes inside.
-    named = set(re.findall(r"""REFERENCES / ["']([^"']+)["']""", LOOP.read_text()))
+    printed = set(re.findall(r"""REFERENCES / ["']([^"']+)["']""", LOOP.read_text()))
+    skill_prose = SKILL.read_text() + WRITE_SKILL.read_text()
+    named = printed | {n for n in on_disk if n in skill_prose}
     assert on_disk == named, (
-        "references/ and the paths loop.py prints disagree — unreachable: %s; "
-        "dangling: %s" % (sorted(on_disk - named), sorted(named - on_disk)))
+        "references/ and the paths loop.py and the skills name disagree — "
+        "unreachable: %s" % sorted(on_disk - named))
+    assert printed <= on_disk, (
+        "loop.py prints a references path with no file behind it: %s"
+        % sorted(printed - on_disk))
 
     # `\b` on both ends: "preferences" carries "references" as a substring, and
     # `$VIVA_DIR/scripts/preferences.py` is a legitimate command.
     interp = re.compile(r"VIVA_DIR[^\n]*\breferences\b")
-    for path in [SKILL, LOOP] + sorted(REFERENCES.iterdir()):
+    for path in [SKILL, WRITE_SKILL, LOOP] + sorted(REFERENCES.iterdir()):
         for i, line in enumerate(path.read_text().splitlines(), 1):
             assert not interp.search(line), (
                 "%s:%d routes a references path through $VIVA_DIR — the agent "
@@ -910,6 +986,7 @@ def main() -> None:
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     check_skill_carries_no_bookkeeping_bash()
+    check_only_the_two_undriven_flows_carry_their_own_loop()
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
     check_skill_applies_suggestions_verbatim()
