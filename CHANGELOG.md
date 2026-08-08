@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.0.2 (2026-08-08)
+
+### Bug Fixes
+
+- **review**: An `info` on a hunk is answered in chat, not in a thread that doesn't exist
+  ([#193](https://github.com/jacquardlabs/viva/pull/193),
+  [`ab74b17`](https://github.com/jacquardlabs/viva/commit/ab74b175d16ae2ac0621c1a1e7b88e4a58589182))
+
+
 ## v2.0.1 (2026-08-08)
 
 ### Bug Fixes
