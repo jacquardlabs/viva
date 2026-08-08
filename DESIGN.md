@@ -397,6 +397,31 @@ ran one fixture chip to six lines of 9px type, which is a paragraph in the
 corner of the eye. `checks N/M` in the spec table is the readout that actually
 tracks whether a `checks` round can close.
 
+### Activation costs no layout (#186, unreleased)
+
+Continuous print puts every control on screen at once, so **anything that
+relayouts when a section goes live moves a control out from under the hand
+reaching for it**. Gating the spec table on `rState.active` did exactly that:
+the table hopped from one head row to another, and clicking `+ note` on a
+section made it jump 57px up while the button slid 17px down — measured.
+
+Two rules keep the page still:
+
+- The spec is drawn for **every section that has something to state**, never
+  only the live one, and a spec with nothing to say renders nothing. A section's
+  head row is therefore the same height whether or not it is live.
+- The live section is marked at its heading — `border-left` with a compensating
+  `margin-left: -10px` — which occupies no space.
+
+An **unanchored** compose box (`+ note`) mounts at the *foot* of the head row's
+margin, below the controls; in `.rm-notes` it opened above them and pushed the
+button just clicked down the page. An anchored one still opens beside its own
+passage, where nothing above it moves either.
+
+`syncReviewCard` repaints the section's segmented rule and spec, because a
+verdict is part of both — an approval is a settled item, and before this the
+rule kept showing the state from before the stamp.
+
 ### Segmented rule (#186, unreleased)
 
 State × party under an open heading, in honest counts. `sectionBalance` owns the

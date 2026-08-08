@@ -453,6 +453,40 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
     print("test_bar_and_footer_state_one_arithmetic: OK")
 
 
+def test_activation_costs_no_layout(page: str) -> None:
+    """Cap: pointing at a section must not move the page. Continuous print puts
+    every control on screen at once, so anything that relayouts on activation
+    moves a control out from under the hand reaching for it — measured at 57px
+    of section jump and 17px of button slide when the spec table was gated on
+    `rState.active` and hopped from one head row to another.
+
+    Two rules keep it still: the spec is drawn for every section that has
+    something to state (never only the live one), and the live section is
+    marked at its heading with a border plus a compensating negative margin,
+    which occupies no space at all."""
+    assert "mount.innerHTML = specHTML(section);" in page, \
+        "the spec must not be gated on which section is live"
+    assert "rState.active === id ? specHTML" not in page, \
+        "the live-only gate is what made activation a layout change"
+    # A spec with nothing to say renders nothing, so a clean section's head row
+    # is short whether or not it is live.
+    assert "if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';" in page, \
+        "an all-zero spec is not a state readout"
+    # The live marker is a border with a compensating negative margin.
+    assert re.search(r'\.doc-section\.is-active \.doc-head\s*\{\s*border-left:\s*2px solid var\(--ink\);'
+                     r'\s*margin-left:\s*-10px;\s*padding-left:\s*8px', page), \
+        "the live marker must occupy no space"
+    # And the unanchored compose box opens BELOW the controls, so the button
+    # just clicked does not move.
+    assert "const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));" in page, \
+        "`+ note` must mount its box at the foot of the margin, under the controls"
+    # A verdict repaints the balance and the spec — approve used to leave the
+    # segmented rule showing the state before the stamp.
+    assert "if (isDocMode()) { renderDocSeg(id); renderDocSpec(id); }" in page, \
+        "a verdict must repaint the section's own rule"
+    print("test_activation_costs_no_layout: OK")
+
+
 def test_the_slip_ships_collapsed(page: str) -> None:
     """Cap: #186's reading-order finding applies to the slip too. It is the
     round's cover note, not the round's content — above the print but
@@ -507,6 +541,7 @@ def main() -> None:
             test_an_anchor_that_crosses_elements_still_marks(page)
             test_each_note_carries_its_own_verb(page)
             test_bar_and_footer_state_one_arithmetic(page)
+            test_activation_costs_no_layout(page)
             test_the_slip_ships_collapsed(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")

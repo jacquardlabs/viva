@@ -3781,6 +3781,11 @@ function sectionSpec(section) {
 
 function specHTML(section) {
   const s = sectionSpec(section);
+  // Nothing open and nothing checked: no table. A spec reading all zeros is
+  // not a state readout, and this is also what keeps the head row's height
+  // independent of which section is live — see renderDocSpec.
+  const conf0 = confidenceAnnot(section);
+  if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
   const row = (label, value, open) =>
     '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
   // The agent's own confidence is a spec line, not a gutter flag: it is about
@@ -4169,10 +4174,17 @@ function renderDocSeg(id) {
   mount.innerHTML = segHTML(sectionBalance(section));
 }
 
+/* Drawn for every section that has something to state, NOT only the live one.
+   Gating it on `rState.active` made activation a layout change: clicking `+
+   note` on a section moved the spec table from one head row to another, so the
+   section jumped 57px up while the button slid 17px out from under the cursor
+   (measured). A reviewer cannot click a control that leaves when they reach
+   for it. The live section is marked at its heading instead — a border and a
+   compensating negative margin, which cost no layout at all. */
 function renderDocSpec(id) {
   const mount = el('rspecbody-' + id); if (!mount) return;
   const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
-  mount.innerHTML = rState.active === id ? specHTML(section) : '';
+  mount.innerHTML = specHTML(section);
 }
 
 /* The wasted-space rule, decided once for the whole print. Read off the DOM
@@ -4233,9 +4245,6 @@ function activateReviewCard(id, opts) {
     setCardExpanded(card, true);
     if (!(opts && opts.noScroll)) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
-  // The spec table is the LIVE section's readout, so both ends of a handover
-  // repaint: the section that lost it and the one that gained it.
-  if (isDocMode() && prev !== id) { renderDocSpec(prev); renderDocSpec(id); }
   syncReviewDot(id);
 }
 
@@ -4390,6 +4399,11 @@ function syncReviewCard(id) {
 
   // Primary button
   renderPrimaryButton(id);
+
+  // A verdict is part of the section's balance (an approval is a settled item)
+  // and part of its spec, and neither repaints from the comment path — approve
+  // used to leave the segmented rule showing the state before the stamp.
+  if (isDocMode()) { renderDocSeg(id); renderDocSpec(id); }
 
   syncNoteInline(id);
 }
@@ -4671,7 +4685,11 @@ function openCommentPopover(id, { anchor } = {}) {
   // relocating a node after focusing inside it blurs the field.
   if (isDocMode()) {
     const row = anchor ? rowForAnchor(id, anchor.text, anchor.occurrence) : null;
-    const host = docNoteHost(id, row);
+    // Anchored: beside its own passage. Unanchored (`+ note`): at the FOOT of
+    // the head row's margin, below the controls — mounting it in `.rm-notes`
+    // put it above them and pushed the very button just clicked down the page.
+    const head = docHeadRow(id);
+    const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));
     if (host && pop.parentElement !== host) host.appendChild(pop);
   }
   pop.style.display = '';
