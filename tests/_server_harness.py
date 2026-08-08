@@ -110,9 +110,12 @@ def assert_catalog_ground(text: str) -> None:
         "one type size for the print, so `ch` means one thing in every row"
     # Code takes the margin's room only where that room is actually going
     # spare. `:has()` reads the row itself, so no JS has to remember.
+    # ...and only in the continuous PRINT. In the accordion the wide row IS
+    # the section — a hunk — and `:has()` would turn the first comment on it
+    # into a 328px re-layout of the very lines being commented on.
     assert re.search(
-        r'\.doc \.row\.wide:not\(:has\(> \.rm\)\) \.rp\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
-        "a code row with no margin cell must break out across it"
+        r'\.doc\.print \.row\.wide:not\(:has\(> \.rm\)\) \.rp\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
+        "a code row with no margin cell must break out across it, in the print only"
     assert not re.search(r'\.doc \.row\.wide\s*\{[^}]*grid-template-columns', text), \
         "a wide row must not restate the template — that is what moved the margin"
     # The wasted-space rule: both side columns collapse to zero width.

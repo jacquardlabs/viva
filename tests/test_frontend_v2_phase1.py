@@ -154,7 +154,7 @@ def test_round2_serves_carried_markup(page: str, data: dict) -> None:
         "page missing the round >= 2 + accordion-only carried gate"
     assert 'isCarried ? buildCarriedCard(s) : buildReviewCard(s)' in page, \
         "initReview must route carried sections to buildCarriedCard"
-    assert "const asDoc = REVIEW_DATA.mode === 'review';" in page, \
+    assert "const asDoc = isContinuousPrint();" in page, \
         "continuous print must be gated on review mode, never applied to diff"
     assert 'function buildCarriedCard(section)' in page, "page missing buildCarriedCard"
     assert "card.className = 'card is-carried';" in page, "carried card missing is-carried"
@@ -300,7 +300,9 @@ def test_round1_zero_carried_markers(page: str, data: dict) -> None:
         "round-1 accordion card head changed"
     assert '<div class="card-body-wrap" id="rbody-${section.id}">' in page, \
         "round-1 accordion card body changed"
-    assert '<button type="button" class="action-btn is-approve" id="rbtn-primary-${section.id}">' in page, \
+    # ...and its verbs, which live in the margin now — the accordion kept its
+    # disclosure and lost its chrome (see test_doc_grid).
+    assert '''<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">''' in page, \
         "round-1 accordion approve action changed"
     print("test_round1_zero_carried_markers: OK")
 

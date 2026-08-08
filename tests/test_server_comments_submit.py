@@ -20,7 +20,7 @@ def main():
         # The page ships the new comment machinery.
         page = get_text(base, "/")
         for needle in ("deriveVerdict", "addComment", "comments",
-                       "openCommentPopover", "renderHighlights", "cmt-hl-changes", "add note"):
+                       "openCommentPopover", "markAndPin", "cmt-hl-changes", "+ note"):
             assert needle in page, f"page missing: {needle}"
 
         # A section with two typed comments → derived verdict "changes"; a

@@ -120,9 +120,16 @@ def test_highlight_follows_the_same_ordinal():
     # by the anchor's own occurrence.
     assert "function wrapFirst(" not in HTML, "wrapFirst must not remain"
     assert "function wrapNth(root, needle, cls, n)" in HTML
-    assert ("cs.forEach(c => wrapNth(content, c.anchor.text, 'cmt-hl-' + c.type,\n"
-            "                          c.anchor.occurrence > 0 ? c.anchor.occurrence : 0));") in HTML, \
-        "renderHighlights must pass the anchor's occurrence through to wrapNth"
+    # One marking pass, not two. `renderHighlights` wrapped the anchors and
+    # `markAndPin` wrapped them again to hang the numbers, and two passes can
+    # disagree about which span is note 3; with the margin on every surface the
+    # first pass has no caller left. The ordinal contract is unchanged — it is
+    # `markAndPin` that carries it through to wrapNth now.
+    assert "function renderHighlights(" not in HTML, \
+        "the second marking pass must not come back"
+    assert ("const mark = wrapNth(content, a.text, 'cmt-hl-' + type, "
+            "a.occurrence > 0 ? a.occurrence : 0);") in HTML, \
+        "markAndPin must pass the anchor's occurrence through to wrapNth"
     print("  ok  test_highlight_follows_the_same_ordinal")
 
 

@@ -112,7 +112,9 @@ def test_decorative_emoji_are_aria_hidden():
 def test_focus_visible_group_and_button_types():
     assert ".card-head:focus-visible" in HTML
     assert ".settle-btn:focus-visible" in HTML and ".diff-toggle:focus-visible" in HTML
-    assert '<button type="button" class="action-btn is-approve"' in HTML
+    # The per-section action row is gone from both surfaces; approve is a
+    # margin verb, and it is still a real <button type="button">.
+    assert '<button type="button" class="nt-btn is-pri" id=' in HTML
     print("  ok  test_focus_visible_group_and_button_types")
 
 

@@ -8,11 +8,15 @@ annotates, and the per-section action row is gone.
 
 What each test group holds:
 
-  * **Mode gate.** The restructure is review-mode only. `buildReviewCard` and
-    every accordion premise stay exactly as they were for diff mode, because a
-    200-hunk changeset read as one continuous print is a worse surface than one
-    hunk at a time. This is the assertion that catches someone "simplifying"
-    the two paths into one.
+  * **The seam.** The restructure is TWO things. `.doc` is the GRAMMAR —
+    three-column rows, margin notes with pins, the glyph rail, the spec table,
+    per-note verbs — and every surface that renders a section wears it.
+    `.print` is CONTINUOUS PRINT — all sections open at once, a settled one
+    dimming in place — and review wears it alone, because a 200-hunk changeset
+    read as one print is a worse surface than one hunk at a time. They shipped
+    conflated behind one class and one `isDocMode()`, which is exactly why the
+    restructure reached review mode only. These are the assertions that catch
+    someone re-fusing them.
   * **Reading order.** Nothing secondary may sit between the reader and the
     prose. The round diff — the widest object on the page, and what a round-2
     run found stacked at full width above the text — ships collapsed.
@@ -79,10 +83,8 @@ def test_review_mode_prints_the_document(page: str, data: dict) -> None:
     front. Continuous print has nothing to open, so there is nothing to render
     lazily — a reader of a document review is reading the document."""
     assert data["mode"] == "review" and data["round"] == 2, data
-    assert "const asDoc = REVIEW_DATA.mode === 'review';" in page, \
-        "the doc print must be gated on review mode"
-    assert "container.classList.toggle('doc', asDoc);" in page, \
-        ".doc is what arms every grid rule — it must be stamped by initReview"
+    assert "const asDoc = isContinuousPrint();" in page, \
+        "the print must be gated on the predicate, not on a re-derived mode test"
     assert "const card = asDoc ? buildDocSection(s, i)" in page, \
         "review mode must build doc sections"
     assert "if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));" in page, \
@@ -91,23 +93,83 @@ def test_review_mode_prints_the_document(page: str, data: dict) -> None:
     print("test_review_mode_prints_the_document: OK")
 
 
-def test_diff_mode_keeps_the_accordion(page: str) -> None:
-    """Hold: the restructure is additive. Every accordion premise diff mode
-    depends on is untouched — the card head is still a real <button> with
-    aria-expanded, the body region still animates, and the carried gate still
-    routes to buildCarriedCard. A hunk is not prose: it has no margin to
-    annotate and no measure to hold."""
+def test_the_grammar_is_not_the_print(page: str) -> None:
+    """Cap: the seam. `.doc` arms the grammar and every card container that
+    renders sections gets it; `.print` arms continuous print and only review
+    does. Anything print-only is keyed on `.doc-section`, which no other
+    surface builds.
+
+    There is deliberately no companion `usesMargin()` predicate: every place
+    `isDocMode()` used to branch is reached only from a surface that renders
+    sections, and all of them wear the margin, so the honest form of that
+    question is no condition at all."""
+    assert ("function isContinuousPrint() { return !!(REVIEW_DATA && "
+            "REVIEW_DATA.mode === 'review'); }") in page, \
+        "the print needs one predicate with one definition"
+    assert "function isDocMode(" not in page, "the conflated predicate must not come back"
+    assert "function usesMargin(" not in page, \
+        "a predicate true at every call site advertises a surface that does not exist"
+    assert "container.classList.add('doc');" in page, \
+        "the grammar is unconditional for a surface that renders sections"
+    assert "container.classList.toggle('print', asDoc);" in page, \
+        "continuous print stays review-only"
+    assert re.search(r'\.doc\.print\s*\{\s*gap:\s*22px;\s*\}', page), \
+        "the print's inter-section rhythm is the print's, not the grammar's"
+    print("test_the_grammar_is_not_the_print: OK")
+
+
+def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
+    """Cap: what survives in diff mode and what does not.
+
+    SURVIVES — the ACCORDION. One hunk open at a time, a real <button> head
+    with aria-expanded, the animating body region, the carried gate. 52 hunks
+    printed at once is a worse surface than one at a time, which is the half of
+    the original scoping call that was right.
+
+    DOES NOT — the accordion's CHROME. The annotation strip, the stacked thread
+    list, the add-a-note row and the action row all stacked commentary on top
+    of the hunk it was about: the same reading-order inversion the print fixed,
+    in a narrower frame. They are margin objects now, on both surfaces, and
+    they are deleted rather than hidden."""
     assert ('<button type="button" class="card-head" aria-expanded="false" '
             'aria-controls="rbody-${section.id}">') in page, \
         "diff mode's accordion head must stay a disclosure button"
     assert '<div class="card-body-wrap" id="rbody-${section.id}">' in page, \
         "diff mode's accordion body region changed"
-    assert '<button type="button" class="action-btn is-approve" id="rbtn-primary-${section.id}">' in page, \
-        "diff mode's action row changed"
     assert 'const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page, \
         "carried cards must stay the accordion's path"
     assert 'isCarried ? buildCarriedCard(s) : buildReviewCard(s)' in page
-    print("test_diff_mode_keeps_the_accordion: OK")
+    for dead in ('class="actions"', 'class="action-btn', 'class="comment-add-row"',
+                 'class="comment-list"', 'function renderCommentList(',
+                 'function openThreadHTML(', 'function renderHighlights('):
+        assert dead not in page, f"accordion chrome must be deleted, not hidden: {dead}"
+    # The open hunk is a row grid with a margin, from the SAME head-row builder
+    # the print uses — one copy, so a verb added to a document review cannot go
+    # missing from a diff review.
+    assert "function docHeadRowHTML(id, proseHTML, opts)" in page, \
+        "both builders must raise the head row from one function"
+    assert "${docHeadRowHTML(section.id, " in page and "{ skip: true })}" in page, \
+        "the accordion's head row must come from the shared builder"
+    # `skip` is the accordion's alone: with one hunk open at a time, "not this
+    # one, not now" is a real move; in the print it is just reading on.
+    assert "const skip = !!(opts && opts.skip);" in page
+    # The hunk never borrows the margin's track. `:has()` there would make the
+    # first comment on a hunk a 328px re-layout of the lines being commented on.
+    assert ".doc.print .row.wide:not(:has(> .rm)) .rp" in page, \
+        "the break-out rule belongs to the print, where a wide row is one of many"
+    # A pin on a code line LEADS the line and sticks: prose wraps, a diff line
+    # scrolls, and a pin set after its anchor was measured at x=1052 inside a
+    # 445px pane — nowhere the reviewer will ever see it.
+    assert "tail.closest('.d2h-code-line, .d2h-code-side-line')" in page, \
+        "a diff pin must attach to the line, not to the character offset"
+    assert re.search(r'\.pin-line\s*\{[^}]*position:\s*sticky', page), \
+        "a diff pin must survive a horizontal scroll of its own pane"
+    # ...and a carried suggestion on a diff line takes the margin's fence, for
+    # the same reason a code block does: a del/ins pair spliced into a `+` line
+    # reads as neither version of anything.
+    assert "mark.closest('pre, .d2h-code-line, .d2h-code-side-line')" in page, \
+        "a rendered diff line is a code well too"
+    print("test_diff_keeps_the_accordion_and_loses_its_chrome: OK")
 
 
 def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
@@ -121,10 +183,11 @@ def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
     # dead prose column, measured in a browser, before it moved there).
     assert "${diffStripHTML(id, section.diff)}" in page, \
         "the round diff belongs in the head row, above the prose and inside the measure"
-    assert page.index('id="rseg-${id}"') < page.index("${diffStripHTML(id, section.diff)}") \
-        < page.index('<div class="rm" id="rspec-${id}">'), \
-        "the diff must follow the segmented rule and stay in the head row's prose cell"
-    assert "sec.querySelector('#rdiff-' + id).classList.add('collapsed');" in page, \
+    assert page.index('<h2 class="doc-head" id="rhead-${id}">') \
+        < page.index('id="rseg-${id}"') \
+        < page.index("${diffStripHTML(id, section.diff)}"), \
+        "the diff must follow the heading and the rule, inside the head row's prose cell"
+    assert "root.querySelector('#rdiff-' + id).classList.add('collapsed');" in page, \
         "the round diff must ship collapsed — it is not what the reader opened the document to read"
     # Threads and this round's notes are placed against their anchor's row.
     assert "function rowForAnchor(id, text, occurrence)" in page, \
@@ -155,18 +218,34 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
     thread that shipped with the round) and made once per document — a per-row
     or per-section decision jogs the prose column sideways as you read it."""
     assert "function updateDocColumns()" in page, "page missing the collapse rule"
-    assert "doc.classList.toggle('no-gutter', !doc.querySelector('.rg .lflag'));" in page, \
-        "the gutter must collapse when no row carries a flag"
-    assert "doc.classList.toggle('no-margin', !doc.querySelector(live));" in page, \
-        "the margin must collapse when the document carries nothing for it"
-    assert "'.rm-notes .nt, .rm-notes .annot, .rm-threads .open-thread,'" in page, \
-        "saved notes, margin flags, and carried threads all hold the margin"
+    # Read off the ROUND, not the DOM. The accordion renders a section's rows
+    # only when that section is opened, so a DOM read would see an empty margin
+    # until the reviewer reached the first hunk carrying a note and then jog
+    # every hunk sideways mid-review — the per-navigation decision this rule
+    # exists to avoid. `docNotes` reads rState, so a comment made a moment ago
+    # still counts, which is the property the DOM read was there for.
+    assert "const gutter = sections.some(s => docFlagSplit(s).gutter.length);" in page, \
+        "the gutter decision must be read off the round"
+    assert ("const margin = sections.some(s => docFlagSplit(s).margin.length "
+            "|| docNotes(s).length)") in page, \
+        "margin flags, carried threads and this round's comments all hold the margin"
+    assert "doc.classList.toggle('no-gutter', !gutter);" in page, \
+        "the gutter must collapse when nothing in the round carries a flag"
+    assert "doc.classList.toggle('no-margin', !margin);" in page, \
+        "the margin must collapse when the round carries nothing for it"
     # With the margin gone the head row drops to two tracks and the section's
     # own controls print under its heading — pure CSS, so a collapse can never
     # move a focused control between hosts.
+    # `1fr`, not the `72ch` this shipped with — the last `ch` in a grid
+    # template, and the one invariant #5 was written against. It resolved
+    # against the row's own font-size, so the head row came out narrower than
+    # every prose row below it, and in the accordion (where no `.doc-section`
+    # fixes one size) it would have resolved differently again.
     assert re.search(r'\.doc\.no-margin \.row-head\s*\{[^}]*grid-template-columns:\s*'
-                     r'var\(--gutter-w\)\s+minmax\(0,\s*72ch\)', page), \
-        "a collapsed margin must drop the head row to two tracks"
+                     r'var\(--gutter-w\)\s+minmax\(0,\s*1fr\)', page), \
+        "a collapsed margin must drop the head row to two tracks, at the rows' own measure"
+    assert "ch)" not in re.search(r'\.doc[^\n]*grid-template-columns[^\n]*', page).group(0), \
+        "no `ch` may appear in a grid template"
     assert re.search(r'\.doc\.no-margin \.row-head \.rm\s*\{[^}]*grid-column:\s*2', page), \
         "the head row's controls must reflow under the heading, not disappear"
     # An OPEN compose popover holds the margin as surely as a saved note does.
@@ -179,7 +258,7 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         "an open compose popover must count as margin content"
     assert "pop.classList.add('is-open');" in page and "pop.classList.remove('is-open')" in page, \
         "the popover's open state must be a class, not a serialized style attribute"
-    assert page.count("if (isDocMode()) updateDocColumns();") >= 2, \
+    assert page.count("  updateDocColumns();") >= 2, \
         "both opening and closing the popover must recompute the collapse"
     print("test_both_columns_collapse_when_the_document_has_nothing_for_them: OK")
 
@@ -204,10 +283,12 @@ def test_every_section_keeps_a_focusable_control(page: str) -> None:
     leaves a section carrying zero notes with zero focusable elements unless
     approve stays. It stays, in the margin, and the palette is a second path to
     the same verb rather than the only one."""
-    assert 'class="nt-btn is-pri" id="rbtn-primary-${id}"' in page, \
-        "every doc section must keep its own approve control"
-    assert 'class="nt-btn is-quiet" id="rcmtnote-${id}"' in page, \
-        "every doc section must keep its own add-note control"
+    assert '<button type="button" class="nt-btn is-pri" id="rbtn-primary-\' + id + \'">' in page, \
+        "every section must keep its own approve control, on every surface"
+    assert '<button type="button" class="nt-btn is-quiet" id="rcmtnote-\' + id + \'">' in page, \
+        "every section must keep its own add-note control"
+    assert "root.querySelector('#rbtn-primary-' + id).addEventListener" in page, \
+        "and it must be wired by the one helper both builders call"
     # The heading is a heading, and the section is labelled by it.
     assert 'sec.setAttribute(\'aria-labelledby\', \'rhead-\' + id);' in page, \
         "a doc section must be labelled by its own heading"
@@ -252,8 +333,8 @@ def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
     which span is note 3. Notes order by the row their anchor lands in, so the
     numbering runs down the page the way the reader reads."""
     assert "function markAndPin(id, ordered)" in page, "page missing the mark+pin pass"
-    assert "if (isDocMode()) return;" in page, \
-        "renderHighlights must yield the doc print's marking to markAndPin"
+    assert "function renderHighlights(" not in page, \
+        "the second marking pass had no surface left to serve and must stay gone"
     assert ".sort((a, b) => a.row - b.row || a.seq - b.seq);" in page, \
         "notes must order by the row their anchor lands in"
     # A thread owns a reply textarea, so it is placed once and never rebuilt.
@@ -261,9 +342,10 @@ def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
         "a thread already in the right cell must be left alone — moving it blurs its reply box"
     assert "sec.querySelectorAll('.rm-notes .nt').forEach(n => n.remove());" in page, \
         "only the dynamic note hosts may be rebuilt on sync"
-    # One builder, two surfaces.
-    assert "function openThreadItemHTML(t)" in page and "ex.map(openThreadItemHTML).join('')" in page, \
-        "the accordion and the margin must build a thread from one function"
+    # One builder, every surface.
+    assert "function openThreadItemHTML(t)" in page, "page missing the thread builder"
+    assert "holder.innerHTML = openThreadItemHTML(t);" in page, \
+        "the margin must raise a thread from the one thread builder"
     print("test_margin_notes_and_pins_are_numbered_together: OK")
 
 
@@ -303,7 +385,7 @@ def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
     assert "const walk = proseWalker(root);" in page[fn:fn + 500], \
         "wrapNth must walk prose only"
     # Creation: a drag outside the prose cell is not a comment on the document.
-    assert "if (isDocMode() && (!start.closest('.rp') || start.closest('.sug-ins'))) return;" in page, \
+    assert "if (!start.closest('.rp') || start.closest('.sug-ins')) return;" in page, \
         "a selection outside the prose cell — or inside proposed wording — " \
         "must not open a comment popover"
     print("test_anchoring_reads_the_document_not_the_commentary: OK")
@@ -439,15 +521,17 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
         "the baseline counts carried threads, which all arrive unsettled"
     assert "open: judgment + facts, total: judgment + facts + settled" in page
     assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
-    # The stamp is named for what it does to the document.
-    assert "sub.textContent = doc ? 'approve — dispatch' : 'submit all';" in page, \
-        "the doc print's footer carries one consequential stamp"
+    # The stamp is named for what it does to the document, on every surface
+    # that dispatches one.
+    assert ("sub.textContent = remaining > 0 ? `approve — dispatch "
+            "(${remaining} unreviewed)`") in page, \
+        "the footer carries one consequential stamp"
     # A measured latency, never a claimed one.
     assert "function timedFetch(url, opts)" in page and "timedFetch('/input')" in page
     assert "if (_lastRTT === null) lat.style.display = 'none';" in page, \
         "the footer must never print a latency it did not observe"
     # The composite has no progress track — the footer's rule is the progress.
-    assert "el('r-progress-track').style.display = asDoc ? 'none' : '';" in page
+    assert "el('r-progress-track').style.display = 'none';" in page
     # Document-scale settled is ink, not the section rule's gray.
     assert re.search(r'\.foot-seg \.seg-settled\s*\{\s*background:\s*var\(--ink\)', page), \
         "the document's closed mass is drawn in ink"
@@ -485,7 +569,7 @@ def test_activation_costs_no_layout(page: str) -> None:
         "`+ note` must mount its box at the foot of the margin, under the controls"
     # A verdict repaints the balance and the spec — approve used to leave the
     # segmented rule showing the state before the stamp.
-    assert "if (isDocMode()) { renderDocSeg(id); renderDocSpec(id); }" in page, \
+    assert "renderDocSeg(id); renderDocSpec(id);" in page, \
         "a verdict must repaint the section's own rule"
     print("test_activation_costs_no_layout: OK")
 
@@ -530,7 +614,8 @@ def main() -> None:
             page = get_text(base)
             data = get(base, "/input")
             test_review_mode_prints_the_document(page, data)
-            test_diff_mode_keeps_the_accordion(page)
+            test_the_grammar_is_not_the_print(page)
+            test_diff_keeps_the_accordion_and_loses_its_chrome(page)
             test_nothing_sits_between_the_reader_and_the_prose(page)
             test_both_columns_collapse_when_the_document_has_nothing_for_them(page)
             test_check_kinds_is_injected_never_restated(page)
