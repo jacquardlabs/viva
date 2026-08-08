@@ -31,10 +31,13 @@ Resolve the plugin once — `$VIVA_DIR` is reused by every later command:
 ```bash
 # Resolve the skill dir from the installed plugin cache — no personal-skill
 # fallback (a leftover ~/.claude/skills/viva would shadow a fresh install).
-VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
-           | xargs -0 -r ls -t 2>/dev/null | head -1)
+# Highest version wins, not newest mtime: two cached versions can carry the same
+# mtime, and `ls -t` then breaks the tie by name — picking 1.24.0 over 2.0.2.
+VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 4 -path "*/jacquardlabs-marketplace/viva/*" -name server.py 2>/dev/null \
+           | awk -F/ '{split($(NF-1), v, "."); printf "%09d%09d%09d\t%s\n", v[1]+0, v[2]+0, v[3]+0, $0}' \
+           | sort -r | head -1 | cut -f2-)
 VIVA_DIR=${VIVA_DIR%/server.py}
-[ -f "$VIVA_DIR/scripts/loop.py" ] || { echo "viva: loop.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
+[ -f "$VIVA_DIR/scripts/loop.py" ] || { echo "viva: loop.py not found — /plugin marketplace add jacquardlabs/marketplace, then /plugin install viva@jacquardlabs-marketplace"; exit 1; }
 ```
 
 **Dispatch on the target, never on your own reading of it:**
