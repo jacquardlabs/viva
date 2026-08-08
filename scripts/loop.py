@@ -36,7 +36,10 @@ import schema  # noqa: E402  — the one permitted sibling import (CLAUDE.md)
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = PLUGIN_ROOT / "scripts"
 SERVER = PLUGIN_ROOT / "server.py"
-REFERENCES = PLUGIN_ROOT / ".claude" / "skills" / "viva" / "references"
+# Shared by both skills and printed by this driver, so they sit at the plugin
+# root rather than inside either one — `/viva-write` needing `producers.md` must
+# not mean reaching into `/viva-review`'s directory.
+REFERENCES = PLUGIN_ROOT / "references"
 
 _POLL_TRIES = 100        # × _POLL_INTERVAL ≈ 10s, for a server coming up or going down
 _POLL_INTERVAL = 0.1

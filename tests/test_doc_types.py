@@ -216,6 +216,42 @@ def test_doc_types_cross_imports_no_sibling() -> None:
     print("  ok  test_doc_types_cross_imports_no_sibling")
 
 
+def test_list_is_the_merged_namespace_with_titles() -> None:
+    """`--list` is the intake menu `/viva-write` offers when the caller named no
+    type (#170). It must be the MERGED namespace — a repo that committed its own
+    bundle has to appear, or the menu silently offers only what shipped."""
+    with tempfile.TemporaryDirectory() as td:
+        types_dir = Path(td) / ".viva-types"
+        write_bundle(types_dir, "handoff", {
+            "name": "handoff", "title": "DS → engineering handoff",
+            "sections": ["Context"], "checks": [], "default_pass": "line"})
+        r = subprocess.run(
+            [sys.executable, str(SCRIPT), "--list", "--types-dir", str(types_dir)],
+            capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    menu = json.loads(r.stdout)
+    by_name = {e["name"]: e["title"] for e in menu}
+    assert EXPECTED_SHIPPED <= set(by_name), by_name
+    assert by_name["handoff"] == "DS → engineering handoff", by_name
+    assert by_name["design-doc"] == "Design doc", by_name
+    assert [e["name"] for e in menu] == sorted(by_name), "the menu must be sorted"
+    print("  ok  test_list_is_the_merged_namespace_with_titles")
+
+
+def test_list_refuses_rather_than_offering_a_broken_bundle() -> None:
+    """The menu resolves every entry instead of globbing names: an offer that
+    dies when picked is worse than a loud failure at the menu."""
+    with tempfile.TemporaryDirectory() as td:
+        types_dir = Path(td) / ".viva-types"
+        write_bundle(types_dir, "broken", "{not json")
+        r = subprocess.run(
+            [sys.executable, str(SCRIPT), "--list", "--types-dir", str(types_dir)],
+            capture_output=True, text=True)
+    assert r.returncode != 0, r.stdout
+    assert "broken" in r.stderr, r.stderr
+    print("  ok  test_list_refuses_rather_than_offering_a_broken_bundle")
+
+
 def test_bundles_live_outside_the_cleared_state_dir() -> None:
     """`.viva/` is wiped at every `loop.py start` and `preferences.json` is its
     one documented survivor (CLAUDE.md), so neither bundle directory may sit
@@ -239,8 +275,10 @@ def main() -> None:
     test_structurally_invalid_bundles_are_refused()
     test_name_must_be_a_bare_token()
     test_doc_types_cross_imports_no_sibling()
+    test_list_is_the_merged_namespace_with_titles()
+    test_list_refuses_rather_than_offering_a_broken_bundle()
     test_bundles_live_outside_the_cleared_state_dir()
-    print("OK (12 tests)")
+    print("OK (14 tests)")
 
 
 if __name__ == "__main__":

@@ -646,7 +646,7 @@ added to this group; the panel's new instances of it made the gap visible.)
 
 **Diff mode's and Q&A's surface.** Review prints the document continuously —
 see The document grid. Everything below governs `buildReviewCard`,
-`buildCarriedCard`, `buildQACard`, and every hunk `/viva-diff` puts on screen.
+`buildCarriedCard`, `buildQACard`, and every hunk `/viva-review` puts on screen.
 
 What survives here is the **accordion**: one entry open at a time, a real
 disclosure `<button>` head with `aria-expanded`, the animating body region. Its
@@ -690,7 +690,7 @@ cards at all — see Carried approvals.
 
 ## Q&A — the interview (#186, unreleased)
 
-`/viva-qa` is the interview step of `/viva-write` (#170), not a leftover, and
+The Q&A gate is the interview step of `/viva-write` (#170), not a leftover, and
 it is designed as a first-class surface: the **grammar** without the **print**.
 One question at a time is the point of an interview, so the accordion stays.
 
@@ -911,7 +911,7 @@ is the ground these gestures sit on; see Layout.)
 
 ## Diff rendering (#99, superseded in-branch by diff2html delegation)
 
-`/viva-diff` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
+`/viva-review` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
 (MIT, `diff2html@3` on jsdelivr — same CDN precedent as marked/DOMPurify/hljs).
 Two bundles: the core (`diff2html.min.js`, the `Diff2Html.html` string API)
 and the slim UI wrapper (`diff2html-ui-slim.min.js`, syntax highlighting
@@ -981,7 +981,7 @@ no `mode-diff` class and are unaffected.
 ## File-header grouping (follow-up to #99, unreleased)
 
 A static divider — `path/to/file.py · N hunks` — above each contiguous run
-of `/viva-diff` hunk-cards sharing a filepath. `.file-group-header`: 9px
+of `/viva-review` hunk-cards sharing a filepath. `.file-group-header`: 9px
 Fragment Mono, uppercase, `--text3` (the label convention's default), a
 quiet landmark, not a heading — reads subordinate to the 13px `.card-title`.
 Static only: no sticky/pinned behavior, no collapse, no live approval count,

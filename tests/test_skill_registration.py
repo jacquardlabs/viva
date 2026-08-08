@@ -16,7 +16,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / ".claude" / "skills"
-EXPECTED_SKILLS = {"viva", "viva-qa", "viva-diff"}
+# Two skills, split by intent: am I making a thing, or judging one (#170). The
+# mechanism-named trio (`viva`, `viva-qa`, `viva-diff`) is gone — `viva-review`
+# absorbed doc and hunk review behind one target dispatch, and the Q&A gate is a
+# reference contract (`references/qa.md`) rather than a skill you must find.
+EXPECTED_SKILLS = {"viva-write", "viva-review"}
+# Names that must NOT come back as directories: a stale copy alongside the new
+# set would register a second skill for the same job, and the older one can win.
+RETIRED_SKILLS = {"viva", "viva-qa", "viva-diff"}
 
 
 def _frontmatter_name(path: Path) -> str | None:
@@ -87,9 +94,36 @@ def test_no_root_skill_md():
     root_skill_md = ROOT / "SKILL.md"
     assert not root_skill_md.exists(), (
         f"{root_skill_md} exists — the manual git-clone install channel "
-        "was dropped; the only SKILL.md lives under .claude/skills/viva/"
+        "was dropped; SKILL.md lives under .claude/skills/<name>/ only"
     )
     print("  ok  test_no_root_skill_md")
+
+
+def test_retired_skills_are_gone():
+    for name in sorted(RETIRED_SKILLS):
+        assert not (SKILLS_DIR / name).exists(), (
+            f"{SKILLS_DIR / name} is back — /{name} was retired into "
+            f"{sorted(EXPECTED_SKILLS)}, and a surviving directory registers a "
+            "second skill for the same job"
+        )
+    print("  ok  test_retired_skills_are_gone")
+
+
+def test_shared_references_live_at_the_plugin_root():
+    """Both skills read them and `loop.py` prints their paths, so they belong to
+    the driver, not to either skill — `/viva-write` needing `producers.md` must
+    not mean reaching into `/viva-review`'s directory."""
+    references = ROOT / "references"
+    expected = {"producers.md", "open-notes.md", "preferences.md", "qa.md"}
+    found = {p.name for p in references.glob("*.md")}
+    assert expected <= found, f"missing shared references: {sorted(expected - found)}"
+    for d in sorted(SKILLS_DIR.iterdir()):
+        if d.is_dir():
+            assert not (d / "references").exists(), (
+                f"{d / 'references'} exists — the shared set moved to "
+                f"{references}; a second copy is drift waiting to happen"
+            )
+    print("  ok  test_shared_references_live_at_the_plugin_root")
 
 
 def main():
@@ -97,7 +131,9 @@ def main():
     test_skill_md_files_are_regular_files()
     test_no_loose_sibling_skill_files()
     test_no_root_skill_md()
-    print("OK (4 tests)")
+    test_retired_skills_are_gone()
+    test_shared_references_live_at_the_plugin_root()
+    print("OK (6 tests)")
 
 
 if __name__ == "__main__":

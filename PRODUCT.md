@@ -13,8 +13,9 @@ until a human has approved the section it lives in.
 
 The product is the set of **human checkpoints across an agent's artifact
 lifecycle** — today the review checkpoint (section-by-section doc review), a
-brainstorm checkpoint (batch Q&A before the doc exists), and a diff checkpoint
-(hunk-by-hunk code review before a commit). Every feature either is one of those
+brainstorm checkpoint (batch Q&A before the doc exists), a diff checkpoint
+(hunk-by-hunk code review before a commit), and an intake checkpoint (the
+residual interview before a doc is drafted). Every feature either is one of those
 checkpoints or makes one cheaper to reach the right decision faster. A new
 feature earns its place by serving a checkpoint; one that fits neither belongs to
 a different product.
@@ -66,12 +67,32 @@ a different product.
 - **Not multi-user or hosted.** No accounts, no shared server, no cloud sync.
   One reviewer, one local tab, one clone. Learned preferences are per-clone, not
   shared.
-- **Not a general document editor.** viva reviews and signs off; it does not
-  author from scratch or provide a free editing surface. A reviewer may supply
-  exact replacement wording for a span they selected — a comment with a payload,
-  applied by the author and recorded in the ledger — but there is no cursor in
-  the document.
+- **Not a general document editor.** viva reviews and signs off; it provides no
+  free editing surface. A reviewer may supply exact replacement wording for a
+  span they selected — a comment with a payload, applied by the author and
+  recorded in the ledger — but there is no cursor in the document.
+- **Not a writing assistant.** `/viva-write` drafts, but only within rails: the
+  type's grammar fixes the sections, the attachments fix the facts, the
+  interview covers the residue, and the human gate decides. The checkpoints are
+  the contribution, not the prose. Craft advice — how to write a good design doc
+  — belongs in a different product; its appearance in a skill file is the tell
+  that this one has drifted.
 - **Not a heavyweight dependency.** stdlib-only server; no runtime packages.
+
+## Surface
+
+Two commands, split by **intent** — am I making a thing, or judging one — rather
+than by mechanism:
+
+- **`/viva-write`** — doc-first intake: a type plus attached context, a residual
+  interview, a draft, and editorial rounds in the same tab.
+- **`/viva-review`** — human sign-off, dispatching on the target: a `.md` path
+  reviews by section, a PR number or git ref by hunk.
+
+The Q&A gate is a documented contract (`references/qa.md`) any caller can drive,
+not a third command. Naming the surface by mechanism — `/viva`, `/viva-qa`,
+`/viva-diff` — made a reviewer learn viva's internals to find the checkpoint they
+wanted.
 
 ## Feature map
 
@@ -93,15 +114,28 @@ opt-in layers that all funnel through the section card:
 - Confidence triage — sourced/inferred · level, with weakest-first sort
 - Learned preferences — recurring critiques learned across sessions
 - Brainstorming Q&A — batch design questions before the spec is written
-- Diff review: hunk-by-hunk review of agent-written code before commit (/viva-diff)
+- Diff review: hunk-by-hunk review of agent-written code before commit, on a PR
+  number, a git ref, or the working tree
+- Doc-type bundles — section grammar, check set, and default pass depth per type
+- Doc-first intake (/viva-write): a type plus attached context (repo paths,
+  issue refs, files, URLs) starts the flow; the interview covers only what the
+  attachments could not answer, and the draft reaches editorial rounds in the
+  same tab without a second server launch
 
 ## Known problems
 
-- **README lags the product.** User-facing README documents only the core loop; several shipped feature clusters (annotations, producers, confidence triage, open notes, learned preferences, diff review) are undocumented there — as is `scripts/loop.py`, now the entry point the skill actually calls.
-- **The loop's prose half.** `scripts/loop.py` now owns the bookkeeping — round
-  numbers, the state clear, liveness, and the finish guard — so SKILL.md carries
-  judgment work only. `viva-qa` and `viva-diff` still drive their own loops as
-  prose; extending the driver to them is unshipped.
+- **README trails the deeper layers.** It now covers both commands, intake, doc
+  types, verdicts, and pass depth, but confidence triage and the producer
+  contract are still documented only in `references/` and `CLAUDE.md`.
+- **The loop's prose half.** `scripts/loop.py` owns the bookkeeping — round
+  numbers, the state clear, liveness, and the finish guard — for **doc review
+  only**. `/viva-review`'s hunk branch drives itself (`parse_diff.py` and
+  `--mode diff` are outside the driver), and `/viva-write` re-states the state
+  clear and the round-1 parse because `loop.py start` cannot run against the
+  interview's own live server. Extending the driver to both is unshipped (#179).
+- **Stamps are prose, not bundle data.** A type bundle carries no `stamp` field,
+  so `/viva-write`'s per-type consequence (commit vs. `gh pr edit`) lives in the
+  skill's table rather than in the type it belongs to.
 
 ## Feature tracker
 
