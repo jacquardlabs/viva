@@ -2647,8 +2647,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
-      <dt><kbd>c</kbd></dt><dd>request changes (review) &middot; confirm answer (Q&amp;A)</dd>
-      <dt><kbd>i</kbd></dt><dd>need info</dd>
+      <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
+      <dt><kbd>i</kbd></dt><dd>comment &mdash; need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
@@ -4478,25 +4478,31 @@ function approveSection(id) {
   updateReviewStats();
 }
 
-function setReviewVerdict(id, verdict) {
-  const prev = rState.verdicts[id]?.verdict;
+/* `c` / `i` — open the composer with that comment type already picked.
 
-  // Toggle off same verdict — clear only the verdict, keeping any attached
-  // images and note text so a mis-click doesn't silently discard them.
-  if (prev === verdict) {
-    if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
-    syncReviewCard(id);
-    updateReviewStats();
+   Neither key writes a verdict of its own. They used to (`setReviewVerdict`,
+   now gone): the card badged `changes` while `submitReview` derived the
+   section from `activeComments`, found none, and submitted `pending` — the
+   reviewer's decision visible on screen and absent from the payload (#156).
+   Routing through the composer keeps `changes`/`info` a DERIVED verdict, so it
+   always arrives carrying the note the revise loop acts on.
+
+   Toggle-off went with `setReviewVerdict`; the composer's own controls replace
+   it. Cancel before saving, or remove the saved comment in the margin — the
+   verdict un-derives either way. */
+function openTypedComment(id, type) {
+  const pop = el('rpop-' + id);
+  // Already composing: switch the type on the open box. Re-opening rewrites
+  // its innerHTML, which would discard a half-typed note and any image
+  // already attached. The chip is the one selection path, so drive the chip.
+  if (pop && pop.classList.contains('is-open')) {
+    const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
+    if (chip) chip.click();
     return;
   }
-
-  if (!rState.verdicts[id]) rState.verdicts[id] = {};
-  rState.verdicts[id].verdict = verdict;
-
-  if (verdict === 'approved') advanceFrom(id);
-
-  syncReviewCard(id);
-  updateReviewStats();
+  // A section that already carries comments gets ANOTHER one, not a re-open of
+  // the last: a section owns a list (#68), and each comment is its own thread.
+  openCommentPopover(id, { type });
 }
 
 function syncReviewCard(id) {
@@ -4751,14 +4757,15 @@ function offsetInSource(id, text, occurrence) {
 }
 
 // A small popover with the type chips + a note field + save/cancel. `anchor`
-// is {text, offset} or null (whole-section note).
+// is {text, offset} or null (whole-section note); `type` pre-picks a chip
+// (the `c` / `i` shortcuts), defaulting to `changes`.
 //
 // The third chip, `suggest wording`, adds a replacement field: the reviewer
 // types the exact wording instead of describing the change, and the author
 // applies it verbatim to the anchored span. Review mode only — a diff hunk's
 // suggestion would be a verbatim code edit, and /viva-diff carries no
 // instruction to apply one (issue #166 scopes that out).
-function openCommentPopover(id, { anchor } = {}) {
+function openCommentPopover(id, { anchor, type } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
   const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';
@@ -4825,6 +4832,13 @@ function openCommentPopover(id, { anchor } = {}) {
     ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
     ta.focus();
   });
+  // Opening with a type is the same act as picking its chip — driven through
+  // the chip so the dataset, the `is-on` mark and the placeholder can never
+  // disagree with each other about what the box means.
+  if (type) {
+    const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
+    if (chip) chip.click();
+  }
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
     const text = ta.value.trim();
@@ -6213,8 +6227,10 @@ document.addEventListener('keydown', e => {
       return;
     }
     if (e.key === 'a' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); approveSection(rState.active); return; }
-    if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
-    if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
+    // Modifier-guarded like 'a' and 'o': bare `c` opens a composer, so an
+    // unguarded branch would swallow ⌘C/Ctrl+C — copy, on a page of prose.
+    if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'changes'); return; }
+    if (e.key === 'i' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'info'); return; }
     if (e.key === 'Tab') {
       // Advance to the next card only while focus is inside the active card;
       // otherwise let Tab navigate natively so the skip-link, bottom-bar
