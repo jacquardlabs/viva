@@ -32,12 +32,15 @@ growing its own loop fails this test — and when #179 extends the driver, the
 enumeration is the list to empty.
 """
 import ast
+import contextlib
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -735,27 +738,114 @@ def check_references_are_reachable() -> None:
     print("  ok  check_references_are_reachable")
 
 
+@contextlib.contextmanager
+def stub_input_server(payload: dict):
+    """A loopback server answering `GET /input` with `payload` — the smallest
+    thing `loop.py`'s liveness probe can find at the other end of a
+    `server.url`. Yields its base URL."""
+    body = json.dumps(payload).encode()
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):                     # noqa: N802 — stdlib's spelling
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):            # keep the test output clean
+            pass
+
+    httpd = HTTPServer(("127.0.0.1", 0), H)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    try:
+        yield "http://127.0.0.1:%d" % httpd.server_address[1]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        t.join(timeout=5)
+
+
 def check_start_refuses_over_a_live_session() -> None:
     """`start` clears the round files and `server.url`. Without the pre-flight
     guard it does that to a *live* session, orphaning a running server with the
     reviewer's tab still attached — unrecoverable, and invisible until someone
-    notices the orphan."""
+    notices the orphan.
+
+    Both branches of the refusal are checked, because they take opposite
+    recoveries (#174). A live server means the human already has the tab and
+    must be pointed at it; only a URL with nothing behind it earns the
+    delete-the-file advice.
+
+    The live fixture serves a **qa** payload deliberately: it has no `round`
+    key, so a guard that reused `probe_round` would read it as dead and tell
+    the human to delete the `server.url` of the very interview server
+    `/viva-write` left running."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
         viva.mkdir()
         doc = td / "d.md"
         doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
-        (viva / "server.url").write_text("http://127.0.0.1:1\n")
 
+        # 1. Nothing answering — port 1 refuses instantly. Stale file: say so,
+        #    and say what to do about it.
+        (viva / "server.url").write_text("http://127.0.0.1:1\n")
         r = loop(viva, td, "start", "--doc", str(doc))
-        assert r.returncode != 0, "start must refuse over a live session's server.url"
-        assert "may still be running" in r.stderr, r.stderr
+        assert r.returncode != 0, "start must refuse over an existing server.url"
+        assert "nothing is answering" in r.stderr, r.stderr
+        assert "Delete the file" in r.stderr, \
+            "the stale branch must keep the delete-the-file recovery"
         assert not (viva / "review-input-r1.json").exists(), \
             "start must not parse a round when it refuses — the refusal is the point"
         assert (viva / "server.url").exists(), \
-            "start must not delete the live session's server.url"
+            "start must not delete the session's server.url"
+
+        # 2. A live server — point at the tab, never at `rm`.
+        with stub_input_server({"mode": "qa", "questions": []}) as base:
+            (viva / "server.url").write_text(base + "\n")
+            r = loop(viva, td, "start", "--doc", str(doc))
+            assert r.returncode != 0, "start must refuse over a live session"
+            assert base in r.stderr, \
+                "a live collision must name the URL of the open tab: " + r.stderr
+            assert "Delete the file" not in r.stderr, \
+                "deleting a live session's server.url orphans the server"
+            assert not (viva / "review-input-r1.json").exists(), r.stderr
+            assert (viva / "server.url").exists()
     print("  ok  check_start_refuses_over_a_live_session")
+
+
+def check_undriven_guards_point_at_the_live_tab() -> None:
+    """#174 fixed the collision message in `loop.py`, which drives exactly one
+    of the three flows that own this guard. `/viva-write`'s pre-hand-off clear
+    and `/viva-review`'s branch B carry their own bash on purpose (CLAUDE.md;
+    #179 empties them), so the driver's fix cannot reach them — and
+    `/viva-write` is the *likeliest* collision of the three, since its own
+    interview qa server writes the file it is about to stat.
+
+    They cannot probe without growing the bash #179 exists to shrink, so they
+    do the half that needs no round-trip: name the URL, and make deleting the
+    file conditional on nothing answering there. What is pinned is that no copy
+    reverts to advising `rm` first."""
+    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        # `&&` is the collision guard (file present = refuse). The `||` form is
+        # the post-launch check that the server wrote its URL at all — inverse
+        # test, different message, not this one's business.
+        guards = [ln for ln in skill_md.read_text().splitlines()
+                  if ln.lstrip().startswith("[ -f .viva/server.url ] &&")]
+        assert guards, "no server.url guard found in " + skill_md.name
+        for ln in guards:
+            where = "{}/{}".format(skill_md.parent.name, skill_md.name)
+            assert "cat .viva/server.url" in ln, \
+                where + ": the collision must name the open tab's URL, not just " \
+                "the file's existence: " + ln
+            assert "may still be running (.viva/server.url exists)" not in ln, \
+                where + ": reverted to the pre-#174 message: " + ln
+            assert "only if nothing is answering" in ln, \
+                where + ": deleting a live session's server.url orphans the " \
+                "server, so the advice must be conditional: " + ln
+    print("  ok  check_undriven_guards_point_at_the_live_tab")
 
 
 def check_start_resume_carries_prior_approvals() -> None:
@@ -994,6 +1084,7 @@ def main() -> None:
     check_skill_carries_the_decline_rule()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
+    check_undriven_guards_point_at_the_live_tab()
     check_start_resume_carries_prior_approvals()
     check_start_opens_the_producer_seam()
     check_wait_refuses_a_parsed_but_unarmed_round()

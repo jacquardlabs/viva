@@ -351,6 +351,36 @@ def test_prefs_data_fetched_once_and_cached_for_round_rebuilds():
     print("  ok  test_prefs_data_fetched_once_and_cached_for_round_rebuilds")
 
 
+def test_dead_session_overlay_is_the_one_modal_that_does_not_close():
+    # #174. The two backdrop dialogs above own Escape and each ship an `esc`
+    # keycap to say so. This third modal deliberately does neither: it is
+    # raised because the server is gone, and every dismissal would hand the
+    # reviewer back a tab whose submits POST into nothing. `alertdialog`
+    # rather than `dialog` — it interrupts rather than offering a choice.
+    # Structural coverage of the block itself lives in
+    # test_server_dead_session.py; what this file owns is that the overlay
+    # is announced and takes focus like a modal, and that adding a third
+    # dialog did not quietly add a third Escape claimant.
+    assert 'role="alertdialog" aria-modal="true"' in HTML
+    assert 'aria-labelledby="dead-title" aria-describedby="dead-body"' in HTML
+    assert 'id="dead-panel" tabindex="-1"' in HTML, \
+        "a dialog with no focusable child must be focusable itself"
+    assert "el('dead-panel').focus();" in HTML
+    # Only the recap and prefs closes carry a keycap; no third one appeared.
+    assert HTML.count("<kbd>esc</kbd>") == 2, \
+        "only the two dismissible dialogs may advertise Escape"
+    # Escape is swallowed, not handled, while the overlay is up: the blanket
+    # return sits ahead of every keydown branch including the two dialogs'
+    # own Escape cases.
+    kd = HTML.index("document.addEventListener('keydown'")
+    swallow = HTML.index("if (deadSessionIsOpen()) return;", kd)
+    prefs_esc = HTML.index(
+        "if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }", kd)
+    assert kd < swallow < prefs_esc, \
+        "the dead-session swallow must precede every Escape handler"
+    print("  ok  test_dead_session_overlay_is_the_one_modal_that_does_not_close")
+
+
 def test_preference_badge_reuses_annot_jump_never_the_raw_id():
     # The badge-to-entry link renders label/id straight from the matched
     # preference object, never the raw regex-captured substring from the
@@ -383,8 +413,9 @@ def main():
     test_muted_row_names_the_unmute_recovery_and_this_round_effect()
     test_mute_button_only_on_standing_rows()
     test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
+    test_dead_session_overlay_is_the_one_modal_that_does_not_close()
     test_preference_badge_reuses_annot_jump_never_the_raw_id()
-    print("OK (22 tests)")
+    print("OK (23 tests)")
 
 
 if __name__ == "__main__":

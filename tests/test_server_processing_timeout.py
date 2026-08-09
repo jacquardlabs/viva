@@ -11,6 +11,11 @@ SSE connection stays open the whole time either way, so `es.onerror` cannot
 detect a merely-slow hand-off — before this story a stalled hand-off looked
 identical to a healthy revise: a spinner, silently, forever.
 
+The banner's escalation partner is now the dead-session overlay (#174), not a
+second banner: a dropped connection stops being a decoration at the top of the
+tab and becomes a block. The mutual-exclusion contract asserted here is
+unchanged — at most one signal, and the harder one wins.
+
 This repo has no JS/browser test harness (CLAUDE.md: stdlib-only, no
 npm/node), so — matching the established pattern in test_server_a11y.py and
 test_server_qa_review_handoff.py — these are string-needle assertions
@@ -87,10 +92,11 @@ def test_banner_creation_function_and_mutual_exclusion():
     assert "Still waiting — check the terminal." in fn_body
     assert "b.id = 'processing-wait-banner';" in fn_body
     assert "b.className = 'error-banner banner-info';" in fn_body
-    # At most one banner at a time: skip creation if the connection-lost
-    # banner is already showing — the harder, more specific signal wins,
-    # mirroring the idempotency check es.onerror itself already uses.
-    assert "if (el('sse-error-banner')) return;" in fn_body
+    # At most one signal at a time: skip creation if the connection has
+    # actually dropped — the dead-session overlay (#174) is the harder, more
+    # specific signal, and it is a full-screen scrim this banner's z-index
+    # would float above and contradict.
+    assert "if (deadSessionIsOpen()) return;" in fn_body
     print("  ok  test_banner_creation_function_and_mutual_exclusion")
 
 
@@ -105,18 +111,18 @@ def test_clear_processing_timer_removes_banner():
 
 def test_onerror_escalates_over_still_waiting_banner():
     # If the connection actually drops after the soft timer already fired,
-    # onerror must remove any still-waiting banner it finds and replace it
-    # with the connection-lost one — a strict escalation, never two banners
-    # stacked at the same position: fixed; top: 0.
+    # onerror must remove any still-waiting banner it finds and escalate to
+    # the dead-session overlay (#174) — never a banner left floating over a
+    # full-screen scrim that contradicts it.
     start = HTML.index("es.onerror = () => {")
     end = HTML.index("\n  };", start)
     assert end > start
     handler = HTML[start:end]
     assert "el('processing-wait-banner')" in handler
     assert ".remove();" in handler
-    assert "Connection lost — check the terminal." in handler
-    # The removal must precede the connection-lost banner's own creation.
-    assert handler.index("processing-wait-banner") < handler.index("sse-error-banner")
+    assert "showDeadSession();" in handler
+    # The removal must precede the escalation.
+    assert handler.index("processing-wait-banner") < handler.index("showDeadSession()")
     print("  ok  test_onerror_escalates_over_still_waiting_banner")
 
 

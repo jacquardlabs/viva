@@ -912,7 +912,9 @@ is the ground these gestures sit on; see Layout.)
 ## Diff rendering (#99, superseded in-branch by diff2html delegation)
 
 `/viva-review` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
-(MIT, `diff2html@3` on jsdelivr — same CDN precedent as marked/DOMPurify/hljs).
+(MIT, pinned at 3.4.56 and vendored under `assets/vendor/` alongside
+marked/DOMPurify/hljs — nothing is fetched from a CDN at review time; see
+`assets/vendor/README.md`).
 Two bundles: the core (`diff2html.min.js`, the `Diff2Html.html` string API)
 and the slim UI wrapper (`diff2html-ui-slim.min.js`, syntax highlighting
 only, fed the page's own hljs — the full UI bundle embeds a second hljs
@@ -943,7 +945,7 @@ as `renderMarkdown` (materializing first would let insertion-time payloads
 execute before removal). The whole render is try/caught, falling back to
 the fenced view rather than stranding a card. Line numbers get
 `aria-hidden` after render (screen readers would otherwise announce them
-before every code line). Fallback chain when a CDN asset is absent —
+before every code line). Fallback chain while an asset is still in flight —
 scripts, or the injected stylesheet, gated via `link.sheet`: fenced
 ` ```diff ` via `renderMarkdown` (tagged `d2h-pending`, upgraded in place
 by load-retry listeners on all three assets) → `md-raw` plain text. Binary

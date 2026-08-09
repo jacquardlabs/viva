@@ -35,10 +35,13 @@ editor over their manuscript, running that type's checks.
 Resolve the plugin once — `$VIVA_DIR` is reused by every later command:
 
 ```bash
-VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -path "*/viva/*" -name server.py -print0 2>/dev/null \
-           | xargs -0 -r ls -t 2>/dev/null | head -1)
+# Highest version wins, not newest mtime: two cached versions can carry the same
+# mtime, and `ls -t` then breaks the tie by name — picking 1.24.0 over 2.0.2.
+VIVA_DIR=$(find ~/.claude/plugins/cache -maxdepth 4 -path "*/jacquardlabs-marketplace/viva/*" -name server.py 2>/dev/null \
+           | awk -F/ '{split($(NF-1), v, "."); printf "%09d%09d%09d\t%s\n", v[1]+0, v[2]+0, v[3]+0, $0}' \
+           | sort -r | head -1 | cut -f2-)
 VIVA_DIR=${VIVA_DIR%/server.py}
-[ -f "$VIVA_DIR/scripts/loop.py" ] || { echo "viva-write: loop.py not found — install the viva plugin (/plugin install viva@jacquardlabs-marketplace)"; exit 1; }
+[ -f "$VIVA_DIR/scripts/loop.py" ] || { echo "viva-write: loop.py not found — /plugin marketplace add jacquardlabs/marketplace, then /plugin install viva@jacquardlabs-marketplace"; exit 1; }
 ```
 
 ---
@@ -95,7 +98,7 @@ open; anything a section of the grammar has no material for. Do **not** ask what
 an attachment already states.
 
 ```bash
-[ -f .viva/server.url ] && { echo "viva-write: a prior session may still be running (.viva/server.url exists). Finish or abandon it, or delete the file if you are certain the server is stopped."; exit 1; }
+[ -f .viva/server.url ] && { echo "viva-write: a session may be open at $(cat .viva/server.url 2>/dev/null) — check that tab first. Finish or abandon it there; delete .viva/server.url only if nothing is answering."; exit 1; }
 
 mkdir -p .viva
 rm -f .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json .viva/answers.json

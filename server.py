@@ -43,6 +43,35 @@ _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\
 # after _viva_dir lands, mirroring the pattern for _PREFS_SCRIPT_PATH above.
 _PREFS_STORE_PATH: str = ""
 
+# Third-party browser assets, vendored under `assets/vendor/` and served from
+# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from
+# jsdelivr any more, so a review works offline and the supply chain is six
+# pinned files in-tree rather than a range resolved by a CDN at load time.
+#
+# Resolved from this file's own location, never the cwd: the server is launched
+# from whatever repo is under review, and `assets/` sits beside server.py in
+# both the repo and the installed plugin cache — same resolution style as the
+# sys.path insert above.
+#
+# The table maps ROUTE → (filename, content type) by exact match. The filename
+# is always a literal from this table and never derived from the request, which
+# is what closes path traversal: an unlisted route is a 404 before any path is
+# built. Versions are stamped into both the filename and the URL, so the same
+# URL can never serve different bytes — that is what makes the `immutable`
+# cache header on these responses correct across a viva upgrade.
+# The files are read per request, not at startup; see assets/vendor/README.md
+# for the pins, licenses, and the bump procedure.
+_VENDOR_DIR = Path(__file__).resolve().parent / "assets" / "vendor"
+_VENDOR_ASSETS = (
+    ("marked-12.0.2.min.js", "text/javascript; charset=utf-8"),
+    ("purify-3.4.13.min.js", "text/javascript; charset=utf-8"),
+    ("highlight-11.11.1.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-3.4.56.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-ui-slim-3.4.56.min.js", "text/javascript; charset=utf-8"),
+    ("diff2html-3.4.56.min.css", "text/css; charset=utf-8"),
+)
+_VENDOR_ROUTES = {"/vendor/" + name: (name, ctype) for name, ctype in _VENDOR_ASSETS}
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,16 +80,15 @@ HTML = r"""<!DOCTYPE html>
 <title>viva</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
-<script defer id="marked-script" src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script defer id="dompurify-script" src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
-<script defer id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"></script>
-<script defer id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"></script>
+<script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
+<script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
+<script defer src="/vendor/highlight-11.11.1.min.js"></script>
+<script defer id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"></script>
+<script defer id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"></script>
 <script>
 /* Theme, applied before first paint. This runs synchronously in <head> —
-   ahead of the stylesheet and every deferred CDN script — because reading the
+   ahead of the stylesheet and every deferred vendor script — because reading the
    stored choice after the body renders means painting the OS theme first and
    flipping to the reader's, which is the flash the toggle exists to avoid.
    Deliberately dependency-free and inside a try: localStorage throws in a
@@ -746,6 +774,23 @@ body {
   line-height: 1.4;
 }
 
+/* The summary, in the HEAD. Scoped override of the base `.section-summary`
+   below, which is sized for the doc print's open prose column; here the point
+   is the COLLAPSED list — 41 `server.py hunk N` heads with no way to tell the
+   segmented rule from the anchor walker (#188). One line, always: the head is
+   an index entry, so a long summary ellipsizes rather than growing the row.
+   `.card-title-wrap` already carries `min-width: 0`, which is what lets the
+   truncation take effect inside the flex head. */
+.card-title-wrap .section-summary {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text3);
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .note-inline {
   font-size: 11px;
   color: var(--text3);
@@ -938,6 +983,9 @@ body {
   background: none;
 }
 
+/* The agent's one-line description of a section, under its title. This is the
+   doc-print size, sitting in the open prose column under the `<h2>`; the
+   accordion head overrides it above (`.card-title-wrap .section-summary`). */
 .section-summary {
   font-size: 13px;
   line-height: 1.65;
@@ -2402,6 +2450,51 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
 .pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
 
+/* ─── Dead-session overlay (#174) ──────────────────────────
+   The tab outliving its server used to be a fully interactive page whose
+   every submit POSTed into a socket that was gone. Same materials as the two
+   dialogs above — scrim, paper, square border, one lift — but this is the one
+   modal with no close control and no Escape: dismissing it hands the reviewer
+   back the dead tab. Orange, because "the connection dropped" is the weight
+   the connection-lost banner already carried here.
+   z-index clears the palette's 1200 (the skip link's 2000 is inside the inert
+   set, so it can't surface through this). */
+.dead-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+.dead-panel {
+  width: min(520px, 92vw);
+  padding: 22px 24px;
+  background: var(--paper);
+  border: 1px solid var(--orange);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+}
+.dead-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin: 0 0 10px;
+}
+.dead-body { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text); }
+.dead-resume { margin: 14px 0 0; font-size: 12px; color: var(--text2); }
+/* `user-select: all` — the whole command in one click, since retyping it is
+   the only way back into this review. */
+.dead-resume code {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg3);
+  padding: 2px 6px;
+  user-select: all;
+}
+
 /* ─── Processing / Complete states ──────────────────────── */
 /* Between-rounds card — the round is in the agent's hands. A pulsing dot
    (alive, not busy — the spinner is gone) over the reviewer's own
@@ -2647,8 +2740,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <summary>keyboard shortcuts</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
-      <dt><kbd>c</kbd></dt><dd>request changes (review) &middot; confirm answer (Q&amp;A)</dd>
-      <dt><kbd>i</kbd></dt><dd>need info</dd>
+      <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
+      <dt><kbd>i</kbd></dt><dd>comment &mdash; need info</dd>
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
@@ -2724,6 +2817,23 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   </div>
 </div>
 
+<!-- Dead-session overlay (#174) — the SSE connection dropping is the honest
+     signal that the server behind this tab is gone (see es.onerror). Ships
+     hidden; showDeadSession() reveals it and only es.onopen — a connection
+     that actually came back — takes it down again. `alertdialog`, not
+     `dialog`: it interrupts rather than offering a choice, and it carries no
+     close control because there is nothing on the other side of it. The
+     resume line ships hidden too: only a review-mode payload names a target
+     `/viva-review` would take. -->
+<div class="dead-overlay" id="dead-overlay" role="alertdialog" aria-modal="true"
+     aria-labelledby="dead-title" aria-describedby="dead-body" style="display:none">
+  <div class="dead-panel" id="dead-panel" tabindex="-1">
+    <h2 class="dead-title" id="dead-title">Session ended</h2>
+    <p class="dead-body" id="dead-body">This tab lost its review server. Nothing submitted from here can reach it &mdash; resume from the terminal.</p>
+    <p class="dead-resume" id="dead-resume" style="display:none">resume: <code id="dead-cmd"></code></p>
+  </div>
+</div>
+
 <!-- Command palette (⌘K, issue #186) — E's keyboard layer. A directory of
      verbs the page already carries as controls and keycaps, never a second
      interaction model. Ships hidden and empty; openPalette() fills the list
@@ -2794,8 +2904,9 @@ function setTabTitle(...parts) {
 }
 
 /* Render verbatim markdown into el. Falls back to raw monospace text if
-   either CDN dependency hasn't loaded yet (slow network, or offline) — marked
-   for parsing, DOMPurify for sanitizing the result. Both are required before
+   either dependency hasn't loaded yet — the /vendor scripts are `defer`, so
+   the boot below runs ahead of them: marked parses, DOMPurify sanitizes the
+   result. Both are required before
    we'll commit HTML to the DOM; parsing without sanitizing would render
    untrusted markdown's raw HTML unescaped. Returns true on a real markdown
    render, false on the raw fallback — callers use this to decide whether the
@@ -2849,7 +2960,7 @@ function sectionTitleFor(id) {
    enhancement layered on the sanitized DOM via the slim UI wrapper and
    the page's own hljs; when either is missing or throws, the word-level
    ins/del emphasis from diff2html itself still renders.
-   Fallback when the CDN assets (core script, or the mode-injected
+   Fallback when the diff2html assets (core script, or the mode-injected
    stylesheet — gated via link.sheet to avoid an unstyled flash when the
    script is cache-warm but the CSS is not) haven't loaded: the
    fenced-```diff markdown view, tagged d2h-pending so the load listeners
@@ -3106,7 +3217,7 @@ function initReview() {
   });
   // Continuous print renders every section up front — there is nothing to
   // open, so there is nothing to render lazily. `_pendingMarkdown` and the
-  // late-CDN retry keep working unchanged: `retryOnceScriptsLoad` selects on
+  // late-load retry keep working unchanged: `retryOnceScriptsLoad` selects on
   // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
   if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
   // Open first non-approved card
@@ -3423,6 +3534,7 @@ function buildReviewCard(section) {
       <span class="dot dot-idle" id="rdot-${section.id}"></span>
       <span class="card-title-wrap">
         <span class="card-title">${esc(section.title)}</span>
+        ${section.summary ? `<span class="section-summary">${esc(section.summary)}</span>` : ''}
         <span class="note-inline" id="rnote-inline-${section.id}" style="display:none"></span>
       </span>
       ${section.diff ? `<span class="rev-tri" title="${revTriTooltip(REVIEW_DATA.round, section)}"><span aria-hidden="true">&#9651;</span> ${String(REVIEW_DATA.round).padStart(2,'0')}${section.revision_count >= 2 ? `<span class="rev-mult"> ${section.revision_count}&times;</span>` : ''}</span>` : ''}
@@ -3986,6 +4098,7 @@ function buildDocSection(section, index) {
 
   sec.innerHTML = docHeadRowHTML(id, `
         <h2 class="doc-head" id="rhead-${id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(section.title)}</h2>
+        ${section.summary ? `<div class="section-summary">${esc(section.summary)}</div>` : ''}
         <div id="rseg-${id}"></div>
         ${diffStripHTML(id, section.diff)}`) + `
     <div class="section-content" id="rcontent-${id}"></div>
@@ -4049,7 +4162,7 @@ function placeDocFlags(id) {
     // Idempotent like its siblings: initReview calls _ensureRendered in the
     // eager loop and again through activateReviewCard, and on the md-raw path
     // neither call deletes from _pendingMarkdown — without this the strip
-    // would stack twice for the length of a CDN outage.
+    // would stack twice for as long as the raw fallback is on screen.
     if (host && !host.querySelector(':scope > .annot-strip')) {
       host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
       host.querySelectorAll('.annot-jump').forEach(btn => {
@@ -4076,7 +4189,7 @@ function placeDocThreads(id) {
       holder.innerHTML = openThreadItemHTML(t);
       node = holder.firstElementChild;
       wireOpenThread(id, node);
-      // A rebuild (the late-CDN retry replaces the container's innerHTML,
+      // A rebuild (the late-load retry replaces the container's innerHTML,
       // threads included) must not lose a reply the reviewer already typed —
       // the text lives in rState, so put it back in the box.
       const pending = ((rState.verdicts[id] || {}).comments || [])
@@ -4382,7 +4495,7 @@ function _ensureRendered(id) {
   const carried = !!(card && card.classList.contains('is-carried'));
   if (!rendered) {
     // marked/DOMPurify haven't landed: the content is raw text, not blocks.
-    // The doc print still grids it — one row — so a CDN-down boot reads as a
+    // The doc print still grids it — one row — so a renderer-less boot reads as a
     // document with its margin rather than as one undifferentiated slab. The
     // retry re-renders in place once the scripts arrive.
     if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }
@@ -4405,7 +4518,7 @@ function _ensureRendered(id) {
   renderDocMargin(id);
 }
 
-// One-time-per-script retry for late-loading CDN renderers: a card opened
+// One-time-per-script retry for late-loading renderers: a card opened
 // before a renderer's dependencies finished loading rendered a fallback and
 // stayed in _pendingMarkdown (marked/DOMPurify missing → raw text tagged
 // .md-raw, since renderMarkdown requires *both*; diff2html missing → fenced
@@ -4478,25 +4591,31 @@ function approveSection(id) {
   updateReviewStats();
 }
 
-function setReviewVerdict(id, verdict) {
-  const prev = rState.verdicts[id]?.verdict;
+/* `c` / `i` — open the composer with that comment type already picked.
 
-  // Toggle off same verdict — clear only the verdict, keeping any attached
-  // images and note text so a mis-click doesn't silently discard them.
-  if (prev === verdict) {
-    if (rState.verdicts[id]) rState.verdicts[id].verdict = undefined;
-    syncReviewCard(id);
-    updateReviewStats();
+   Neither key writes a verdict of its own. They used to (`setReviewVerdict`,
+   now gone): the card badged `changes` while `submitReview` derived the
+   section from `activeComments`, found none, and submitted `pending` — the
+   reviewer's decision visible on screen and absent from the payload (#156).
+   Routing through the composer keeps `changes`/`info` a DERIVED verdict, so it
+   always arrives carrying the note the revise loop acts on.
+
+   Toggle-off went with `setReviewVerdict`; the composer's own controls replace
+   it. Cancel before saving, or remove the saved comment in the margin — the
+   verdict un-derives either way. */
+function openTypedComment(id, type) {
+  const pop = el('rpop-' + id);
+  // Already composing: switch the type on the open box. Re-opening rewrites
+  // its innerHTML, which would discard a half-typed note and any image
+  // already attached. The chip is the one selection path, so drive the chip.
+  if (pop && pop.classList.contains('is-open')) {
+    const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
+    if (chip) chip.click();
     return;
   }
-
-  if (!rState.verdicts[id]) rState.verdicts[id] = {};
-  rState.verdicts[id].verdict = verdict;
-
-  if (verdict === 'approved') advanceFrom(id);
-
-  syncReviewCard(id);
-  updateReviewStats();
+  // A section that already carries comments gets ANOTHER one, not a re-open of
+  // the last: a section owns a list (#68), and each comment is its own thread.
+  openCommentPopover(id, { type });
 }
 
 function syncReviewCard(id) {
@@ -4751,14 +4870,15 @@ function offsetInSource(id, text, occurrence) {
 }
 
 // A small popover with the type chips + a note field + save/cancel. `anchor`
-// is {text, offset} or null (whole-section note).
+// is {text, offset} or null (whole-section note); `type` pre-picks a chip
+// (the `c` / `i` shortcuts), defaulting to `changes`.
 //
 // The third chip, `suggest wording`, adds a replacement field: the reviewer
 // types the exact wording instead of describing the change, and the author
 // applies it verbatim to the anchored span. Review mode only — a diff hunk's
 // suggestion would be a verbatim code edit, and /viva-diff carries no
 // instruction to apply one (issue #166 scopes that out).
-function openCommentPopover(id, { anchor } = {}) {
+function openCommentPopover(id, { anchor, type } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
   const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';
@@ -4825,6 +4945,13 @@ function openCommentPopover(id, { anchor } = {}) {
     ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
     ta.focus();
   });
+  // Opening with a type is the same act as picking its chip — driven through
+  // the chip so the dataset, the `is-on` mark and the placeholder can never
+  // disagree with each other about what the box means.
+  if (type) {
+    const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
+    if (chip) chip.click();
+  }
   ta.focus();
   pop.querySelector('.cmt-save').onclick = () => {
     const text = ta.value.trim();
@@ -5635,6 +5762,10 @@ function snapshotBetweenRounds() {
 // the round is genuinely in flight and the SSE 'processing'/'round' events
 // drive the next view.
 function sendSubmit(result) {
+  // The one choke point every submit passes through, review and qa alike.
+  // The server behind this tab is gone (#174); a POST here fails into the
+  // same silent nothing the dead-session overlay exists to end.
+  if (deadSessionIsOpen()) return;
   fetch('/submit', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -6007,20 +6138,63 @@ function clearProcessingTimer() {
   if (b) b.remove();
 }
 
-// Mirrors es.onerror's own banner mechanism (position: fixed banner
-// prepended to document.body, tokenized colors) so a human who already
-// recognizes "banner at the top of the tab = something needs my attention"
-// recognizes this one on sight. At most one banner at a time: skipped if
-// the connection has actually dropped in the interim (#sse-error-banner
-// already present) — the harder, more specific signal wins.
+// A position: fixed banner prepended to document.body, tokenized colors, so a
+// human reads "banner at the top of the tab = something needs my attention".
+// Skipped outright if the connection has actually dropped in the interim: the
+// dead-session overlay is the harder, more specific signal, and it is a
+// full-screen scrim this banner's z-index would float above and contradict.
 function showStillWaitingBanner() {
   processingTimer = null;
-  if (el('sse-error-banner')) return;
+  if (deadSessionIsOpen()) return;
   const b = document.createElement('div');
   b.id = 'processing-wait-banner';
   b.className = 'error-banner banner-info';
   b.textContent = 'Still waiting — check the terminal.';
   document.body.prepend(b);
+}
+
+/* ─── Dead session (#174) ───────────────────────────────────
+   A banner was the wrong shape for this. The tab kept every control live,
+   so a reviewer could work a whole round into a page whose submit POSTs into
+   a socket that is gone. Three layers block it, each covering what the
+   others cannot: `inert` takes the pointer and Tab out of the background,
+   the document keydown listener (which `inert` never reaches) swallows the
+   shortcut layer, and sendSubmit refuses outright.
+
+   Not dismissible by the reviewer — every dismissal returns them to the dead
+   tab this exists to stop them working in. es.onopen is the one thing that
+   takes it down, because a connection that came back means the session was
+   never dead: a lid-close blip must not lock a reviewer out of a live server
+   and lose the round's in-memory verdicts. */
+function deadSessionIsOpen() { return el('dead-overlay').style.display !== 'none'; }
+
+function showDeadSession() {
+  if (deadSessionIsOpen()) return;
+  // Close the other modals FIRST: they sit outside setBackgroundInert's
+  // subtree, and both restore focus into the background on close — after
+  // this overlay takes focus, that would pull it straight back out.
+  closeRecap();
+  closePrefsPanel();
+  closePalette();
+  // The one command this tab can honestly name. `doc_file` is a real target
+  // only in review mode — parse_diff.py writes review_target.py's LABEL there
+  // ("PR #187", "working tree"), and a qa payload has no doc at all — so
+  // those two get the generic line rather than a command that would not run.
+  const doc = REVIEW_DATA && REVIEW_DATA.mode === 'review' && REVIEW_DATA.doc_file;
+  el('dead-cmd').textContent = doc ? '/viva-review ' + doc : '';
+  el('dead-resume').style.display = doc ? '' : 'none';
+  el('dead-overlay').style.display = '';
+  setBackgroundInert(true);
+  el('dead-panel').focus();
+}
+
+function hideDeadSession() {
+  if (!deadSessionIsOpen()) return;
+  const overlay = el('dead-overlay');
+  const hadFocus = overlay.contains(document.activeElement);
+  overlay.style.display = 'none';
+  setBackgroundInert(false);   // clear inert BEFORE restoring focus, same order as closeRecap
+  if (hadFocus) el('btn-submit').focus();
 }
 
 // Renders #processing-view for its two variants: the between-rounds card
@@ -6142,17 +6316,17 @@ function connectSSE() {
   es.onerror = () => {
     // The connection actually dropping is the harder, more specific signal —
     // it supersedes any still-waiting banner already shown rather than the
-    // two stacking on top of each other at the same position: fixed; top: 0.
+    // two stacking, one over a full-screen scrim.
     const waiting = el('processing-wait-banner');
     if (waiting) waiting.remove();
-    if (!el('sse-error-banner')) {
-      const b = document.createElement('div');
-      b.id = 'sse-error-banner';
-      b.className = 'error-banner';
-      b.textContent = 'Connection lost — check the terminal.';
-      document.body.prepend(b);
-    }
+    showDeadSession();
   };
+
+  // EventSource retries on its own, and onerror fires on every attempt — so
+  // "dropped" and "gone" look identical from here. This is the only thing
+  // that tells them apart after the fact: a reconnect that succeeded means
+  // the server outlived the drop, and the tab is live again.
+  es.onopen = () => { hideDeadSession(); };
 }
 
 /* ─── Command palette wiring ────────────────────────────── */
@@ -6165,6 +6339,12 @@ el('pal-overlay').addEventListener('mousedown', e => {
 
 /* ─── Keyboard shortcuts ────────────────────────────────── */
 document.addEventListener('keydown', e => {
+  // Nothing on this page can reach the server any more (#174), Escape
+  // included — the dead-session overlay is the one modal that does not close.
+  // `inert` blocks the pointer and Tab but never this document-level
+  // listener, so without a blanket swallow a/c/i and ⌘+Enter would keep
+  // mutating verdict state behind a full-screen scrim.
+  if (deadSessionIsOpen()) return;
   // ⌘K opens the palette from anywhere, including from inside a textarea —
   // it is the one global verb, and a reviewer mid-reply is exactly who wants
   // "jump to next open thread" without reaching for the mouse. This sits
@@ -6213,8 +6393,10 @@ document.addEventListener('keydown', e => {
       return;
     }
     if (e.key === 'a' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); approveSection(rState.active); return; }
-    if (e.key === 'c' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'changes'); return; }
-    if (e.key === 'i' && rState.active) { e.preventDefault(); setReviewVerdict(rState.active, 'info'); return; }
+    // Modifier-guarded like 'a' and 'o': bare `c` opens a composer, so an
+    // unguarded branch would swallow ⌘C/Ctrl+C — copy, on a page of prose.
+    if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'changes'); return; }
+    if (e.key === 'i' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'info'); return; }
     if (e.key === 'Tab') {
       // Advance to the next card only while focus is inside the active card;
       // otherwise let Tab navigate natively so the skip-link, bottom-bar
@@ -6272,10 +6454,10 @@ document.addEventListener('keydown', e => {
 // Runs immediately (not on DOMContentLoaded): this inline script tag sits at
 // the very end of <body>, after every element it references, so the DOM is
 // already parsed by the time it executes. Waiting for DOMContentLoaded would
-// needlessly serialize this loopback /input fetch behind the two `defer`red
-// CDN <script> tags above (marked, DOMPurify) — the HTML spec guarantees
-// `defer` scripts finish before DOMContentLoaded fires, so a slow/unreachable
-// CDN would stall a fetch that has nothing to do with it.
+// needlessly serialize this loopback /input fetch behind the five `defer`red
+// /vendor <script> tags above — the HTML spec guarantees `defer` scripts finish
+// before DOMContentLoaded fires, so ~570KB of renderer bytes would stall a
+// fetch that has nothing to do with them.
 el('btn-skip').disabled   = true;
 el('btn-submit').disabled = true;
 
@@ -6334,17 +6516,18 @@ Promise.all([
       document.body.classList.add('mode-diff');
       // diff2html's stylesheet is mode-specific — injected here rather than
       // shipped as a render-blocking <link> in <head>, so review/QA sessions
-      // never pay a CDN fetch for a diff-rendering stylesheet they can't use.
+      // never pay a fetch for a diff-rendering stylesheet they can't use.
       // (The companion diff2html script tags stay in <head>: they're defer,
       // so they don't block, and the boot-time d2h-pending retry keys off
       // their loads.) renderDiffHunk gates on link.sheet, so a card opened
       // before this stylesheet lands falls back to the fenced view; the
       // retry attached here — where the <link> actually exists — upgrades
-      // it once the CSS arrives.
+      // it once the CSS arrives. Served from this server's own /vendor route;
+      // the version in the path is the pin (assets/vendor/README.md).
       const d2hCss = document.createElement('link');
       d2hCss.id = 'diff2html-css';
       d2hCss.rel = 'stylesheet';
-      d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css';
+      d2hCss.href = '/vendor/diff2html-3.4.56.min.css';
       document.head.appendChild(d2hCss);
       retryOnceScriptsLoad(['diff2html-css'], '.section-content.d2h-pending');
       bootReviewMode(data, 'diff', 'diff');
@@ -6705,6 +6888,25 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", ""):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
+        elif path in _VENDOR_ROUTES:
+            # Exact-match dict lookup, not a filesystem join on request data:
+            # `filename` is a literal from `_VENDOR_ASSETS`, so `/vendor/../…`
+            # (and its percent-encoded spelling, which `urlparse` leaves
+            # undecoded) simply misses the table and 404s below. Read per
+            # request rather than at import — startup stays free of ~570KB of
+            # I/O for assets a session may never open.
+            filename, ctype = _VENDOR_ROUTES[path]
+            try:
+                body = (_VENDOR_DIR / filename).read_bytes()
+            except OSError:
+                # A truncated install: 404 rather than a traceback, so the
+                # page's md-raw/d2h-pending fallbacks take over.
+                self._error(404, "vendor asset missing: " + filename)
+                return
+            # The version is in the path, so these bytes are immutable for this
+            # URL — an upgrade moves the URL rather than changing what it serves.
+            self._send(200, ctype, body,
+                       cache_control="public, max-age=31536000, immutable")
         elif path == "/input":
             # Snapshot both under the lock, then do `_revision_counts`' N-1
             # historical-round disk reads outside it — mirrors /next-round's
@@ -7036,10 +7238,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
-    def _send(self, status: int, content_type: str, body: bytes) -> None:
+    def _send(self, status: int, content_type: str, body: bytes,
+              cache_control: str = "") -> None:
+        """Send one response. `cache_control` is opt-in and defaults to absent:
+        every other endpoint here serves live session state, and only the
+        version-stamped /vendor routes are safe to cache."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
         self.end_headers()
         self.wfile.write(body)
 

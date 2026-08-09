@@ -6,7 +6,7 @@ built client-side in JS (delegated to diff2html), and this repo has no
 JS/browser test harness (stdlib Python only, no npm/node). What's verifiable
 from a subprocess+urllib harness is that:
 
-  1. The diff2html CDN assets and the renderDiffHunk adapter are actually
+  1. The vendored diff2html assets and the renderDiffHunk adapter are actually
      shipped in the served page, gated on diff mode, and the deleted
      hand-rolled renderer is truly gone (not just bypassed).
   2. A diff-mode round still serves each section's `content` as the verbatim
@@ -31,7 +31,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, get_text, launch_server  # noqa: E402
+from _server_harness import get, get_text, launch_server, post_status  # noqa: E402
 
 DIFF_INPUT = {
     "mode": "diff",
@@ -43,6 +43,9 @@ DIFF_INPUT = {
             "id": "s1",
             "title": "src/foo.py hunk 1",
             "content": "```diff\n@@ -1,3 +1,4 @@\n line 1\n-old line\n+new line\n+extra\n line 3\n```",
+            # The agent's one-liner (#188) — present on one hunk, absent on the
+            # next, because both paths have to hold.
+            "summary": "swaps the placeholder line for the real one",
         },
         {
             "id": "s2",
@@ -133,7 +136,7 @@ def test_page_ships_diff_mode_sort_toggle_guard(page: str) -> None:
 def test_page_ships_mode_diff_layout(page: str) -> None:
     """Wiring check only: the diff dispatch branch stamps mode-diff on <body>
     and injects the diff2html stylesheet (mode-specific, so review/QA never
-    pay a render-blocking CDN fetch for it), and the mode-scoped CSS
+    pay a render-blocking fetch for it), and the mode-scoped CSS
     overrides (wide shell/bottom bar, no nested section scroll) ship in the
     served page. Does not measure rendered layout."""
     m = re.search(r"mode === 'diff'\) \{(.*?)\} else", page, re.S)
@@ -143,7 +146,10 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
         "diff branch does not stamp mode-diff on body"
     for needle in (
         "d2hCss.id = 'diff2html-css'",
-        "d2hCss.href = 'https://cdn.jsdelivr.net/npm/diff2html@3/bundles/css/diff2html.min.css'",
+        # Local, version-stamped route — never jsdelivr (#144). The pin lives
+        # in server.py's _VENDOR_ASSETS; test_server_vendor_assets.py is what
+        # proves this href actually resolves to a served file.
+        "d2hCss.href = '/vendor/diff2html-3.4.56.min.css'",
         "retryOnceScriptsLoad(['diff2html-css']",
     ):
         assert needle in branch, f"diff branch missing stylesheet injection/retry: {needle}"
@@ -166,8 +172,8 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
     numbers, and the spec's exact config. The hand-rolled renderer stays
     gone."""
     for tag in (
-        'id="diff2html-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html.min.js"',
-        'id="diff2html-ui-script" src="https://cdn.jsdelivr.net/npm/diff2html@3/bundles/js/diff2html-ui-slim.min.js"',
+        'id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"',
+        'id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"',
     ):
         assert tag in page, f"page missing script tag: {tag}"
     m = re.search(r"function renderDiffHunk\(.*?\n\}", page, re.S)
@@ -257,6 +263,59 @@ def test_a_rendered_diff_is_not_held_to_the_prose_measure(page: str) -> None:
     print("test_a_rendered_diff_is_not_held_to_the_prose_measure: OK")
 
 
+def test_page_renders_a_section_summary_under_the_title(page: str) -> None:
+    """Wiring check: the agent's one-line `summary` reaches a render site in
+    BOTH builders, escaped, inside the title wrap (#188).
+
+    Scoped to each function body, not to the page: 41 heads reading
+    `server.py hunk N` is the whole complaint, and a summary that landed in
+    `.card-body` instead would satisfy a page-wide needle while leaving the
+    collapsed list exactly as unnavigable. `buildReviewCard` is the diff-mode
+    accordion; `buildDocSection` is review mode's continuous print.
+
+    The head is a `<button>`, so its summary must be a phrasing-level `<span>`
+    — a `<div>` there is invalid content for a button.
+    """
+    for fn, tag in (("buildReviewCard", "span"), ("buildDocSection", "div")):
+        m = re.search(r"function " + fn + r"\(.*?\n\}", page, re.S)
+        assert m, f"page missing: function {fn}"
+        body = m.group(0)
+        needle = 'section.summary ? `<%s class="section-summary">${esc(section.summary)}' % tag
+        assert needle in body, f"{fn} does not render an escaped summary as a <{tag}>"
+    # Conditional, so a section without one emits no empty element at all.
+    assert "${section.summary ? `" in page, \
+        "the summary render must be gated on presence, not always emitted"
+    # The head override exists — one clamped line, or a long summary grows
+    # every row in a 41-hunk list.
+    m = re.search(r"\.card-title-wrap \.section-summary \{[^}]*\}", page)
+    assert m, "page missing: the card-head override for .section-summary"
+    assert "text-overflow: ellipsis" in m.group(0), \
+        "a head summary must clamp to one line"
+    print("test_page_renders_a_section_summary_under_the_title: OK")
+
+
+def test_a_summary_is_served_and_validated(data: dict, base: str) -> None:
+    """`/input` passes the summary through untouched, and the boundary
+    validator rejects a non-string one on the way in.
+
+    The presence gate is what keeps `null` from printing under a card title —
+    and `/next-round` is the wire it has to hold at, because that is the only
+    door a round the agent just rewrote comes through. Run last: a payload that
+    slipped past the gate would replace the live round for every check after it.
+    """
+    by_id = {s["id"]: s for s in data["sections"]}
+    assert by_id["s1"]["summary"] == DIFF_INPUT["sections"][0]["summary"], \
+        "the summary must be served verbatim"
+    assert "summary" not in by_id["s2"], \
+        "a section the agent left undescribed must gain no summary key"
+    bad = json.loads(json.dumps(DIFF_INPUT))
+    bad["output"] = "out2.json"
+    bad["sections"][0]["summary"] = None
+    code = post_status(base, "/next-round", bad)
+    assert code == 400, f"a null summary must be refused at /next-round; got {code}"
+    print("test_a_summary_is_served_and_validated: OK")
+
+
 def main() -> None:
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
@@ -274,6 +333,8 @@ def main() -> None:
         test_page_ships_diff2html_renderer(page)
         test_page_ships_d2h_guards(page)
         test_a_rendered_diff_is_not_held_to_the_prose_measure(page)
+        test_page_renders_a_section_summary_under_the_title(page)
+        test_a_summary_is_served_and_validated(data, base)
     print("\nAll server diff-render tests passed.")
 
 
