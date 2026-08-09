@@ -2,6 +2,58 @@
 
 <!-- version list -->
 
+## v2.1.0 (2026-08-09)
+
+### Bug Fixes
+
+- A dead session says so — blocking overlay, and a collision that points at the live tab
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Count sections with comments in the sign-off row, not "revised" ones
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Point the two undriven collision guards at the live tab too
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Print branch B's launch after the summary write, not before
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Resolve $VIVA_DIR by version, anchored to the viva marketplace
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Route the c/i shortcuts through the comment composer
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+### Documentation
+
+- Add the MIT LICENSE file the manifest only declared
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Sync CLAUDE.md with the go-live batch ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+### Features
+
+- Give every section a one-line summary under its title
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Vendor every browser asset — no CDN at review time
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+- Vendor every browser asset, name every dead session, and grant the license
+  ([#200](https://github.com/jacquardlabs/viva/pull/200),
+  [`51268f7`](https://github.com/jacquardlabs/viva/commit/51268f75b870a0fa7ecc8698fe7462d90bdb9fa7))
+
+
 ## v2.0.2 (2026-08-08)
 
 ### Bug Fixes
