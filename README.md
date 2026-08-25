@@ -8,10 +8,10 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/review-dark.jpg">
-  <img alt="viva reviewing a design doc: prose in the main column, the reviewer's open note and a per-section state table in the margin, a check flag in the left gutter, and a footer showing convergence and the sign-off button" src="assets/review-light.jpg">
+  <img alt="viva reviewing a design doc: the document's prose in the main column, an open thread in the margin beside the exact sentence it questions with the agent's answer nested under it, approved sections dimmed above, and a footer showing item counts, convergence and the dispatch stamp" src="assets/review-light.jpg">
 </picture>
 
-<sub>Round 2 of a `design-doc` review at `line` depth. The reviewer's thread sits in the margin beside the sentence it questions; the gutter flags a missing section; the footer holds the stamp.</sub>
+<sub>Round 2 of a `design-doc` review at `line` depth. The reviewer's thread sits in the margin beside the sentence it questions, with the agent's answer under it and `Reply`/`Settle` still open; sections approved in round 1 are dimmed above; the bar states what is left.</sub>
 
 ## Why
 
@@ -143,7 +143,7 @@ Every argument is optional. With no type, question one is *what's the deliverabl
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/interview-dark.jpg">
-  <img alt="The viva interview: one question expanded with three answer chips carrying digit shortcuts and a recommended badge, a hint and a free-text context box in the margin, and two further questions collapsed below" src="assets/interview-light.jpg">
+  <img alt="The viva interview: one question expanded with three answer chips carrying digit shortcuts and a recommended badge, the agent's hint and a free-text context box beside them, and two further questions collapsed below" src="assets/interview-light.jpg">
 </picture>
 
 <sub>Step 3. The attachments answered everything else; these are what's left.</sub>
