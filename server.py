@@ -2472,7 +2472,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 9px 20px;
-  border: none;
+  /* A transparent 1px border, not `none`: the ready and not-ready states share
+     one box, so the outline state below cannot grow the control by 2px. */
+  border: 1px solid transparent;
   transition: all 0.2s;
 }
 .btn-submit.ready {
@@ -2483,9 +2485,17 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   background: var(--ink);
   transform: none;
 }
+/* The not-ready dispatch takes `.btn-skip`'s quiet outline grammar. It kept
+   the primary's filled shape and painted it `--border2` (an alias of --ink)
+   on `--text3` (an alias of --faint, DESIGN.md's "settled, disabled" ink) —
+   which made the one control that cannot act the highest-contrast block on
+   the page, in both themes. The affordance was inverted; the fix is the
+   shape, not the token. It carries `aria-disabled` from updateReviewStats /
+   updateQAStats; the DOM `disabled` attribute stays reserved for in-flight. */
 .btn-submit.disabled {
-  background: var(--border2);
-  color: var(--text3);
+  background: transparent;
+  color: var(--faint);
+  border-color: var(--rule);
   cursor: not-allowed;
 }
 
@@ -2579,10 +2589,24 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
   text-align: right;
 }
+/* Three children, not one: the blocked state on the left, the two controls on
+   the right. The row held only `confirm & submit`, so a recap opened with
+   sections still pending offered exactly one control and that control could
+   not act. */
 .recap-actions {
-  display: flex; justify-content: flex-end;
+  display: flex; justify-content: flex-end; align-items: center; gap: 12px;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
+}
+/* Why the confirm is quiet, said in place. `.recap-title`'s label grammar, so
+   it reads as a state label rather than as a new ink. */
+.recap-blocked {
+  margin-right: auto;   /* the label holds the left edge; the controls stay right */
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
 }
 
 /* ─── Preferences panel — view/mute learned preferences (#142) ────
@@ -2765,7 +2789,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   padding-bottom: 10px;
   margin-bottom: 16px;
 }
-.processing-requests { max-width: 460px; }
+/* The echoed requests take the PAGE's measure. `#processing-view` keeps the
+   page's left edge and its measure rather than centering — a bare 460px cap
+   honored only the first half of that. */
+.processing-requests { max-width: 72ch; }
 
 .complete-inner {
   display: flex;
@@ -3039,6 +3066,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     </div>
     <div class="recap-grid" id="recap-grid"></div>
     <div class="recap-actions">
+      <span class="recap-blocked" id="recap-blocked"></span>
+      <button type="button" class="btn-skip" id="recap-skip" style="display:none"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
       <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
     </div>
   </div>
@@ -5621,6 +5650,12 @@ function updateReviewStats() {
   // never disagree.
   const openItems = documentBalance().open;
   sub.className = remaining === 0 && reviewed > 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  // Announce the deadness as well as draw it. NOT the `disabled` ATTRIBUTE —
+  // that one already means IN FLIGHT (submitReview sets it, sendSubmit's
+  // failure path and the boot fetch clear it), and openRecap's readiness
+  // mirror reads it; overloading it here would re-enable a not-ready button
+  // on any submit failure.
+  sub.setAttribute('aria-disabled', sub.classList.contains('disabled') ? 'true' : 'false');
   sub.textContent = remaining > 0 ? `approve — dispatch (${remaining} unreviewed)`
                                   : 'approve — dispatch';
   // The composite's footer states four things; this one was stating seven, and
@@ -6159,6 +6194,9 @@ function updateQAStats() {
 
   const sub = el('btn-submit');
   sub.className = remaining === 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  // Same rule as updateReviewStats: aria-disabled for not-ready, the DOM
+  // `disabled` attribute reserved for in-flight.
+  sub.setAttribute('aria-disabled', sub.classList.contains('disabled') ? 'true' : 'false');
   sub.textContent = remaining > 0 ? `answers — dispatch (${remaining} unanswered)`
                                   : 'answers — dispatch';
 }
@@ -6385,9 +6423,30 @@ function openRecap() {
   // re-arming a second POST that would duplicate the ledger rows.
   const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;
   el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
+  el('recap-confirm').setAttribute('aria-disabled', ready ? 'false' : 'true');
+  // Three states, not two, and the reason is printed rather than inferred.
+  // `disabled` is the IN-FLIGHT signal (submitReview sets it, the 'round'
+  // handler clears it); pending is the not-ready one. Derived separately from
+  // `ready` above so that line stays the single readiness rule.
+  const inFlight = el('btn-submit').disabled;
+  // The same arithmetic the bar prints: deriveVerdict returns exactly one of
+  // approved/changes/info/pending, so this equals updateReviewStats's
+  // `remaining` and the two can never disagree.
+  const pending = REVIEW_DATA.sections.filter(s => deriveVerdict(s.id) === 'pending').length;
+  // The control that CAN act with sections still pending. `btn-skip` does the
+  // same job in the bar, but the bar is inert behind this modal, so naming it
+  // in copy would not be enough.
+  const canSkip = pending > 0 && !inFlight;
+  el('recap-skip').style.display = canSkip ? '' : 'none';
+  el('recap-blocked').textContent = inFlight ? 'submitted — the agent is revising'
+                                  : pending ? pending + ' of ' + REVIEW_DATA.sections.length + ' unreviewed'
+                                  : '';
   el('recap-overlay').style.display = '';
   setBackgroundInert(true);   // trap focus + block interaction behind the modal
-  el('recap-confirm').focus();
+  // Focus the control that can act, never a dead primary. Runs AFTER both
+  // display flips above — focus() on a `display:none` node silently no-ops,
+  // the same class of trap closeRecap's comment records for `inert`.
+  (canSkip ? el('recap-skip') : ready ? el('recap-confirm') : el('recap-close')).focus();
 }
 
 // The recap is a modal (aria-modal="true"): mark everything behind it inert
@@ -6424,6 +6483,14 @@ el('recap-confirm').addEventListener('click', () => {
   submitReview(false);
 });
 el('recap-close').addEventListener('click', closeRecap);
+// The bar's early-submit escape hatch, reachable from inside the modal:
+// setBackgroundInert marks #bottom-bar-el inert, so `btn-skip` itself cannot
+// be clicked or tabbed to while the recap is open.
+el('recap-skip').addEventListener('click', () => {
+  if (el('btn-submit').disabled) return;   // never a second POST for a round in flight
+  closeRecap();
+  submitReview(true);
+});
 el('recap-overlay').addEventListener('click', e => {
   if (e.target === el('recap-overlay')) closeRecap();   /* backdrop click */
 });
@@ -7201,6 +7268,17 @@ function connectSSE() {
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
+    // Retire the previous round's controls with its cards. The dispatch button
+    // is dead here, and `skip rest & submit` is worse than stale — it is live,
+    // and would POST a second submit for a round already in flight. The bar
+    // itself stays: theme, preferences and voice remain legitimately usable
+    // while waiting. Restored by the 'round' handler, the only way out.
+    document.querySelector('.btn-group').style.display = 'none';
+    el('foot-seg').style.display = 'none';   // a rule describing a round that is over
+    // #stats-area is aria-live=polite, so this announces the wait once instead
+    // of leaving `blocked · N unreviewed` from the dead round on screen. The
+    // page's own words for this state, from the processing heading above it.
+    el('stat-pending').textContent = 'submitted — the agent is revising';
     clearProcessingTimer();
     processingTimer = setTimeout(showStillWaitingBanner, PROCESSING_STILL_WAITING_MS);
   });
@@ -7255,6 +7333,11 @@ function connectSSE() {
     // source order is not a rule anyone should have to know.
     document.body.classList.remove('mode-qa');
     el('review-view').style.display     = '';
+    // The whole bar restoration in one place. #foot-seg and #stat-pending need
+    // no explicit restore: initReview() above runs updateReviewStats →
+    // reviewFootSeg → renderFootSeg, which sets `bar.style.display` on both of
+    // its branches, and rewrites #stat-pending.
+    document.querySelector('.btn-group').style.display = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
   });

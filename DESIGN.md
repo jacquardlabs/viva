@@ -963,12 +963,34 @@ rebuilds its grid from live verdict state on every open. Each `.recap-row`
   can't submit a round the bottom bar wouldn't.
 - `o` toggles the overlay anytime in review; Escape, the `esc` keycap close,
   and a backdrop click close it; a row click closes-and-activates its section.
-  Focus moves to the confirm control on open and returns to `btn-submit` on
-  close if it was inside the overlay.
+  Focus returns to `btn-submit` on close if it was inside the overlay.
+- **The overlay opens focused on the control that can act.** With sections
+  still pending that is the in-modal `skip rest & submit` (`#recap-skip`);
+  with the round ready it is `#recap-confirm`; with a submit in flight it is
+  the `esc` close. Focus moved to the confirm control unconditionally until
+  this change, which meant a recap opened with pendings put the reviewer on a
+  large primary-looking button whose click and Enter were silent no-ops, while
+  the only control that worked (`btn-skip`) sat behind the inert backdrop.
+  The three `display` flips run before the `focus()` — `focus()` on a
+  `display:none` node no-ops, the same trap `closeRecap` records for `inert`.
+- **The actions row prints the blocked state** (`#recap-blocked`, in
+  `.recap-title`'s label grammar): `N of M unreviewed` while pendings remain,
+  `submitted — the agent is revising` while a submit is in flight, empty when
+  the round is ready. The reason the confirm is quiet is on screen, not
+  inferred. The pending count comes from `deriveVerdict`, the same arithmetic
+  the bar prints, so the two can never disagree.
 - `skip rest & submit` (`btn-skip`) stays a direct `submitReview(true)`
-  escape hatch — no recap. Q&A ships no recap: its done → path calls
+  escape hatch — no recap. `#recap-skip` is the same escape hatch reachable
+  from inside the modal, because `setBackgroundInert` makes `#bottom-bar-el`
+  inert and naming the bar's button in copy would not be enough; it carries
+  the same in-flight guard. The page's single `submitReview(false)` call site
+  is still `#recap-confirm`. Q&A ships no recap: its done → path calls
   `submitQA(false)` directly, and `openRecap` bails without `REVIEW_DATA` or
   with the review view hidden.
+- ⌘⏎ while the recap is open still routes to `#recap-confirm.click()`, which
+  early-returns when the round is not ready. That is left as is deliberately:
+  the blocked line now says why, and the working control is one Tab away and
+  already focused.
 - The SSE `processing`/`round` handlers close a stale recap — the review it
   indexed is gone from under it.
 
@@ -981,6 +1003,21 @@ than centering in an empty viewport. A pulsing accent dot (`.processing-dot`,
 `REV 0N submitted — the agent is revising`, stated in the machine's face over a
 hairline, and then the reviewer's just-submitted `changes`/`info` requests
 verbatim.
+
+The echoed requests take the page's own measure (`72ch`), not a narrower cap —
+"keeps the page's left edge and its measure" is one promise, and a bare 460px
+honored half of it. The left edge stays: `#processing-view` is not centered.
+
+**The previous round's controls retire with its cards.** While the processing
+view is up the bar's `.btn-group` and the segmented footer rule are hidden and
+the stats line reads `submitted — the agent is revising`, the same words the
+heading uses. A dispatch button addressed to a round that no longer exists is
+stale; `skip rest & submit` is worse — it stays clickable and would POST a
+second submit for a round already in flight. The rest of the bar (theme,
+preferences, voice) stays usable. They come back from the `round` handler, the
+only way out of this view: it restores `.btn-group` explicitly, and
+`initReview` restores the rule and the stats line through
+`updateReviewStats → reviewFootSeg → renderFootSeg`.
 
 Those requests print as **notes**, in the margin's own grammar (`.nt` / `.nh` /
 `.nt-body`, `info` taking `.nt-fact`'s ink): they *are* the notes the reviewer
@@ -1166,8 +1203,21 @@ stats area (left) and btn-group (right). The stats area also holds the
 `.prefs-toggle` button (#142) — see Preferences panel below.
 
 Submit button states:
-- `btn-submit disabled` — visually grayed, cursor not-allowed, click blocked in handler.
-- `btn-submit ready` — `var(--accent)` background, glow shadow, slightly raised on hover.
+- `btn-submit disabled` — the quiet outline grammar `btn-skip` already owns:
+  transparent ground, 1px `var(--rule)`, `var(--faint)` text (the token this
+  document names "settled, disabled"), `cursor: not-allowed`, click blocked in
+  the handler, and `aria-disabled="true"` set beside the class stamp in
+  `updateReviewStats` / `updateQAStats`. It kept the primary's filled shape
+  until this change, painted `var(--border2)` on `var(--text3)` — which
+  resolve to `--ink` on `--faint` — making the one control that cannot act the
+  highest-contrast block on the page in both themes. The most visually
+  available control is never the one that cannot act. The DOM `disabled`
+  ATTRIBUTE is a different signal and stays reserved for it: a submit in
+  flight.
+- `btn-submit ready` — `var(--acc)` background, `var(--paper)` text; hover
+  swaps the ground to `var(--ink)` and raises nothing (`transform: none`).
+- Both states share one box: the base rule carries `border: 1px solid
+  transparent`, so taking the outline costs no 2px.
 
 ## Preferences panel (issue #142, unreleased)
 
