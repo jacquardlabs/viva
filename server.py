@@ -2595,6 +2595,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    not act. */
 .recap-actions {
   display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+  flex-wrap: wrap;   /* three children now, in a row built for one */
   padding: 12px 14px;
   border-top: 1px solid var(--border);
 }

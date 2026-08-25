@@ -1005,8 +1005,9 @@ hairline, and then the reviewer's just-submitted `changes`/`info` requests
 verbatim.
 
 The echoed requests take the page's own measure (`72ch`), not a narrower cap —
-"keeps the page's left edge and its measure" is one promise, and a bare 460px
-honored half of it. The left edge stays: `#processing-view` is not centered.
+"keeps the page's left edge and its measure" is one promise, and a narrower
+pixel cap honored half of it. The left edge stays: `#processing-view` is not
+centered.
 
 **The previous round's controls retire with its cards.** While the processing
 view is up the bar's `.btn-group` and the segmented footer rule are hidden and
@@ -1017,7 +1018,10 @@ second submit for a round already in flight. The rest of the bar (theme,
 preferences, voice) stays usable. They come back from the `round` handler, the
 only way out of this view: it restores `.btn-group` explicitly, and
 `initReview` restores the rule and the stats line through
-`updateReviewStats → reviewFootSeg → renderFootSeg`.
+`updateReviewStats → reviewFootSeg → renderFootSeg`. A round the tab refuses
+(below) returns before that restore, so the controls stay retired behind the
+banner — which is right: nothing in the bar is a legitimate action then, and
+the banner says where to look.
 
 Those requests print as **notes**, in the margin's own grammar (`.nt` / `.nh` /
 `.nt-body`, `info` taking `.nt-fact`'s ink): they *are* the notes the reviewer
