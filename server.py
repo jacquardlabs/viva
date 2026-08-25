@@ -3025,7 +3025,13 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       </div>
     </div>
     <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
-    <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level checks" style="display:none"></nav>
+    <!-- "flags", not "checks": the rows are every DOC_SCOPE_KINDS flag, and
+         only `headings-present` is also a CHECK_KIND — a `checklist` row is not
+         a check. The visible head already says "Document · N flags", so naming
+         it checks here gave a screen reader a name the sighted head contradicts.
+         The checks TALLY still rides in that head, where it is one part of the
+         line rather than the name of the whole thing. -->
+    <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level flags" style="display:none"></nav>
     <div class="sort-bar" id="sort-bar" style="display:none">
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
@@ -3556,7 +3562,16 @@ function documentFlags() {
 }
 
 function docSlipHTML() {
-  if (!REVIEW_DATA || REVIEW_DATA.mode !== 'review') return '';
+  /* Every mode that renders sections, NOT review alone. `docFlagSplit` routes a
+     doc-scope flag out of both columns unconditionally, so a mode gate here is
+     not "the slip is a review feature" — it is the flag rendering NOWHERE. A
+     diff round carrying one showed `checks 0/1` in the bar, with
+     `round_is_complete` going on enforcing the gate in Python and no surface
+     anywhere saying what the check was: exactly the worst-of-both this slip was
+     built to prevent, relocated one mode over. `renderDocSlip` is called from
+     `initReview`, which boots review and diff alike, so the surface was already
+     there. */
+  if (!REVIEW_DATA) return '';
   const flags = documentFlags();
   if (!flags.length) return '';
   // The checks tally rides in the head because `sectionSpec` no longer draws
@@ -8454,7 +8469,11 @@ class Handler(BaseHTTPRequestHandler):
                 # should describe this session type as "a review round POSTed
                 # to a server launched with --mode qa", not as a payload field.
                 handoff = "questions" in _input_data and "sections" in new_data
-                _input_data = new_data
+                # Normalize on the way in, the same as the startup boundary: an
+                # absent `round` renders as the literal "REV undefined" and
+                # turns the author-answered freshness test into a NaN
+                # comparison that silently never matches.
+                _input_data = schema.default_round(new_data)
                 _output_path = output
                 # The verdict snapshot belongs to the round that produced it.
                 # Section ids are stable across rounds (s1…sN), so a carried
@@ -8664,6 +8683,9 @@ if __name__ == "__main__":
             schema.validate_review_input(_input_data)
         except ValueError as e:
             sys.exit(f"viva: invalid review-input {args.input}: {e}")
+        # Validated, then normalized — in that order, so a malformed `round`
+        # still fails loudly here rather than being quietly replaced by 1.
+        schema.default_round(_input_data)
     _output_path = args.output
     _launch_mode = args.mode
 

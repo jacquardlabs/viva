@@ -301,6 +301,34 @@ class ReviewOutput(TypedDict, total=False):
 
 
 # ── Boundary validation ───────────────────────────────────────────────────────
+def default_round(data: dict) -> dict:
+    """Give a review-input an explicit `round`, in place, and return it.
+
+    `round` is optional on the wire and both in-repo producers always write it,
+    so this fires only for a hand-built payload — but when it does, absence is
+    not harmless downstream. The browser prints the value straight into the tab
+    title and the bar (`String(undefined)` → the literal "REV undefined") and
+    does round arithmetic with it (`Number(last.round) !== round - 1`, which
+    against `undefined` is a NaN comparison that is never equal, so the round-2
+    landing and the transmittal's `answered` bucket go dead with no error).
+
+    NORMALIZE rather than reject, per the house rule: fix data at the boundary,
+    not at the point of use. One is the only defensible default — an unnumbered
+    round is a first round, and every feature that keys on `round > 1` then
+    behaves correctly instead of accidentally. Rejecting instead would be a wire
+    break for a field the contract has always documented as optional.
+
+    Called at the server's two read boundaries, which are the only places
+    `_input_data` is assigned. `validate_review_input` stays pure and does the
+    other half: a present-but-malformed `round` is a hard failure there.
+    """
+    if not isinstance(data, dict):
+        return data
+    if "round" not in data:
+        data["round"] = 1
+    return data
+
+
 def validate_review_input(data: dict) -> None:
     """Raise `ValueError` if `data` is not a structurally valid review-input.
 
@@ -327,6 +355,27 @@ def validate_review_input(data: dict) -> None:
     # than failing where the bad value was written.
     if "doc_type" in data and not isinstance(data["doc_type"], str):
         raise ValueError("review-input.doc_type must be a string")
+    # Presence-gated, NOT required — the wire contract has always documented
+    # `round` as optional and ~85 fixtures across the suite omit it. What a
+    # present-but-malformed value costs is the reason for the gate: the browser
+    # prints `String(round).padStart(2,'0')` into the tab title and compares
+    # `Number(last.round) !== round - 1` to decide whether an author's answer is
+    # fresh. A string or a null yields "REV undefined" and a NaN comparison that
+    # is never equal, which silently disables the round-2 landing and the
+    # transmittal's `answered` bucket rather than failing anywhere. Absence is
+    # handled by NORMALIZING at the server's read boundary (see
+    # `default_round`), never by rejecting a round a caller is entitled to send.
+    # `bool` is excluded explicitly: it is an `int` subclass, and `True` would
+    # otherwise pass and render as round 01.
+    if "round" in data and (
+        isinstance(data["round"], bool)
+        or not isinstance(data["round"], int)
+        or data["round"] < 1
+    ):
+        raise ValueError(
+            "review-input.round must be an integer >= 1 — omit the key entirely "
+            "for a round that does not number itself, never null"
+        )
     # Presence-gated like the two above, for a sharper reason: the pass is the
     # only round field that changes when `POST /complete` may succeed. A
     # malformed one must fail where it was written — a `null` or a typo'd kind

@@ -261,7 +261,7 @@ Diff mode widens `.shell`, `.bottom-inner`, **and `#paper`** together to
 
 | Class | Is | Worn by |
 |-------|-----|---------|
-| `.doc` | the **grammar**: three-column rows, margin notes with numbered pins, the glyph rail, the segmented rule, the spec table, per-note verbs | every card container that renders sections — review, diff, Q&A |
+| `.doc` | the **grammar**: three-column rows, margin notes with numbered pins, the glyph rail, the segmented rule, the state run, per-note verbs | every card container that renders sections — review, diff, Q&A |
 | `.print` | **continuous print**: every section open at once, a settled one dimming in place | review alone |
 
 Both shipped behind one `.doc` and one `isDocMode()` in #186, which is exactly
@@ -566,9 +566,11 @@ serves both surfaces.
 **The round diff** sits in the **head row's prose cell**, under the segmented
 rule, **shipped collapsed** — one mono line. It is what a round-2 run found
 stacked at full width between the reader and the text, and collapsed-above is
-the one place it fits without becoming the page. It also fills the space the
-spec table opens beside the heading (88px of dead prose column, measured in a
-browser, before it moved there). Expanded, it stays at the reading measure
+the one place it fits without becoming the page. (It once also filled dead
+prose column that the spec table opened beside the heading — 88px, measured.
+That space no longer exists: the head row is a single track and the state run
+prints in the foot band, so the diff earns its place on reading order alone.)
+Expanded, it stays at the reading measure
 rather than breaking out: a prose diff wraps, and a diff wide enough to need
 its own row was the problem.
 

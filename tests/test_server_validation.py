@@ -78,6 +78,32 @@ def _integration() -> None:
             "a well-formed round must still be accepted"
         assert get(base, "/input")["round"] == 2, "the accepted round is served"
 
+        # ── `round` at the read boundary: normalized, not required ──────────
+        # Absence is legal on the wire (the contract has always documented it
+        # optional) but is not harmless in the browser: it renders as the
+        # literal "REV undefined" and turns the author-answered freshness test
+        # into a NaN comparison that never matches. So the boundary DEFAULTS it
+        # rather than refusing a round the caller was entitled to send.
+        roundless = {k: v for k, v in r1.items() if k != "round"}
+        assert post_status(base, "/next-round", dict(roundless, output=out2)) == 200, \
+            "an unnumbered round is legal and must still be accepted"
+        assert get(base, "/input")["round"] == 1, \
+            "an absent round must be served as 1, never as null or missing"
+
+        # ...and a present-but-malformed one is still a hard failure, so the
+        # normalizer can never quietly paper over a typo'd value.
+        for bad in (None, "2", 0, True):
+            assert post_status(base, "/next-round",
+                               dict(r1, round=bad, output=out2)) == 400, \
+                f"round={bad!r} must be refused at the boundary"
+        assert get(base, "/input")["round"] == 1, "and must not have replaced the round"
+
+    # The startup boundary normalizes too — the same file, launched cold.
+    (viva / "in3.json").write_text(json.dumps(roundless))
+    with launch_server(viva / "in3.json", viva / "out3.json", cwd=tmp) as base:
+        assert get(base, "/input")["round"] == 1, \
+            "a roundless input file must boot and serve round 1"
+
     print("  ok  test_next_round_refuses_what_it_cannot_serve")
 
 

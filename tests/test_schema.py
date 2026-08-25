@@ -580,6 +580,50 @@ def test_has_revision_history_is_anchored():
     print("  ok  test_has_revision_history_is_anchored")
 
 
+def test_round_is_presence_gated_and_absence_normalizes():
+    """`round` is optional on the wire and stays optional — but a present
+    malformed one is a hard failure, and an absent one is NORMALIZED rather
+    than rejected.
+
+    Absence is not harmless downstream even though the contract permits it: the
+    browser prints the value into the tab title (`String(undefined)` gives the
+    literal "REV undefined") and does round arithmetic with it
+    (`Number(last.round) !== round - 1` against `undefined` is a NaN compare
+    that is never equal, silently killing the round-2 landing and the
+    transmittal's `answered` bucket). Requiring it instead would be a wire break
+    for a field the contract has always documented as optional, and would force
+    `"round": 1` into ~85 fixtures across this suite that are probing other
+    rules entirely.
+    """
+    base = {"sections": [{"id": "s1", "title": "T", "content": "c"}]}
+
+    # Absent is valid, and normalizes to a first round.
+    schema.validate_review_input(dict(base))
+    d = dict(base)
+    assert schema.default_round(d) is d, "normalizes in place and returns the same dict"
+    assert d["round"] == 1, "an unnumbered round is a first round"
+
+    # A present round is never overwritten.
+    d = dict(base, round=7)
+    schema.default_round(d)
+    assert d["round"] == 7
+
+    # Present-but-malformed is a hard failure — including `True`, which is an
+    # `int` subclass and would otherwise sail through and render as round 01.
+    for bad in (None, "2", 0, -1, True, 1.5, [], {}):
+        try:
+            schema.validate_review_input(dict(base, round=bad))
+        except ValueError as e:
+            assert "round" in str(e), f"the error must name the field, got {e}"
+        else:
+            raise AssertionError(f"round={bad!r} must be refused")
+
+    # The normalizer is pure of policy beyond the default and never raises on a
+    # shape the validator owns.
+    assert schema.default_round("not a dict") == "not a dict"
+    print("  ok  test_round_is_presence_gated_and_absence_normalizes")
+
+
 def main():
     test_section_key_normalizes()
     test_section_key_handles_none_and_empty()
@@ -606,7 +650,8 @@ def main():
     test_check_kinds_covers_every_shipped_bundle_check()
     test_doc_scope_kinds_is_a_closed_set()
     test_has_revision_history_is_anchored()
-    print("OK (24 tests)")
+    test_round_is_presence_gated_and_absence_normalizes()
+    print("OK (25 tests)")
 
 
 if __name__ == "__main__":

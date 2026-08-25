@@ -910,6 +910,22 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "the slip mounts after the transmittal and above the print"
     assert 'id="doc-slip-rows"' in page and "const open = flags.some(a => a.severity === 'error');" in page, \
         "collapsed like the transmittal — unless the document carries an error"
+    # EVERY mode that renders sections, not review alone. `docFlagSplit` routes
+    # a doc-scope flag out of both columns unconditionally, so a mode gate on
+    # the slip is not "the slip is a review feature" — it is the flag rendering
+    # NOWHERE. A diff round carrying one showed `checks 0/1` in the bar with
+    # `round_is_complete` still enforcing the gate in Python and no surface
+    # saying what the check was.
+    slip_fn = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
+    assert "REVIEW_DATA.mode !== 'review'" not in slip_fn, \
+        "a doc-scope flag must have a surface in diff mode too, not vanish"
+    assert "if (!REVIEW_DATA) return '';" in slip_fn, \
+        "the slip still needs a round to read"
+    # ...and the accessible name matches what the rows actually are. Only
+    # `headings-present` is also a CHECK_KIND; a `checklist` row is not a check,
+    # and the visible head already says "Document · N flags".
+    assert 'id="doc-slip" aria-label="Document-level flags"' in page, \
+        "the slip's accessible name must not claim every row is a check"
     # The three readers whose denominator is one section skip doc-scope...
     assert "a => a && CHECK_KINDS.includes(a.kind) && !DOC_SCOPE_KINDS.includes(a.kind));" in page, \
         "sectionSpec's checks tally"
