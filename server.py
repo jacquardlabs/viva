@@ -6779,6 +6779,32 @@ function showStillWaitingBanner() {
   document.body.prepend(b);
 }
 
+/* A round arrived that this tab cannot render. The server refuses such a body
+   at `/next-round` — that is the boundary and this is NOT a second copy of it.
+   This is the strand backstop: the cost of the server ever being wrong is a tab
+   frozen on "the agent is revising" with the throw buried inside initReview and
+   nothing on screen, which is precisely the failure that was reported. The
+   round is refused before any state moves, so what stays on screen is the round
+   the reviewer already has, and the banner says why. Full `--orange` ink, not
+   `.banner-info`: this is a broken payload, not a slow one. */
+function showRoundRefused() {
+  clearProcessingTimer();       // its banner and ours would stack at top: 0
+  if (el('round-refused-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'round-refused-banner';
+  b.className = 'error-banner';
+  b.textContent = 'A round arrived that this tab cannot render — check the terminal.';
+  document.body.prepend(b);
+}
+
+// The one removal site, called from both SSE handlers that mean "the session
+// moved on". A `position: fixed` banner with no removal path outlives the thing
+// it describes and sits over a perfectly good later round.
+function clearRoundRefused() {
+  const b = el('round-refused-banner');
+  if (b) b.remove();
+}
+
 /* ─── Dead session (#174) ───────────────────────────────────
    A banner was the wrong shape for this. The tab kept every control live,
    so a reviewer could work a whole round into a page whose submit POSTs into
@@ -6861,6 +6887,7 @@ function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
+    clearRoundRefused();  // a new submit is in flight; the refused round is history
     closeRecap();       // the review it recapped is gone from under it
     closePrefsPanel();  // ditto — no full-screen backdrop survives a view swap
     renderProcessingView();
@@ -6873,6 +6900,17 @@ function connectSSE() {
 
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
+    // Guard BEFORE routing. Every statement below this point either reads
+    // `data.sections` or overwrites state the current round is still using, so
+    // a payload this tab cannot render has to be turned away while the previous
+    // round is still whole. See showRoundRefused for why the client refuses at
+    // all when the server already validates.
+    if (!data || !Array.isArray(data.sections)) {
+      console.error('viva: refused a round payload with no sections[]', data);
+      showRoundRefused();
+      return;
+    }
+    clearRoundRefused();
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
     closeRecap();        // a stale grid must never sit over a fresh round's cards
     closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
@@ -7716,16 +7754,28 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # `output` travels in the JSON body like every other POST field. The
             # legacy `?output=` query param is still honored as a fallback.
+            # ORDER IS LOAD-BEARING: the missing-`output` refusal stays AHEAD of
+            # the shape validation — `test_server_api.py`'s missing-output case
+            # POSTs a structurally valid round and pins that error text.
             output = new_data.pop("output", None) or params.get("output", [None])[0]
             if not output:
                 self._error(400, "missing 'output' in body")
                 return
-            if "sections" in new_data:
-                try:
-                    schema.validate_review_input(new_data)
-                except ValueError as e:
-                    self._error(400, f"invalid review-input: {e}")
-                    return
+            # EVERY body, not only one that happens to carry `sections`. The
+            # shape gate that used to stand here let a round nested one level
+            # deep (`{"round": {...}, "output": …}`) through untouched: the
+            # server answered `{"ok":true}`, replaced `_input_data` with it, and
+            # pushed a sections-less `round` event that threw inside the
+            # client's initReview — a tab stuck on "the agent is revising"
+            # forever with no error on either side. `/next-round` is
+            # review-shaped only; a `questions`-shaped body is refused here too,
+            # and that is correct, since the `round` SSE handler has always
+            # assumed review shape (`REVIEW_DATA = data; QA_DATA = null`).
+            try:
+                schema.validate_review_input(new_data)
+            except ValueError as e:
+                self._error(400, f"invalid review-input: {e}")
+                return
             with _data_lock:
                 # Unified Q&A → review session (#109): a qa-originated review
                 # round carries no distinguishing field in the wire payload —
@@ -7929,19 +7979,24 @@ if __name__ == "__main__":
     _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
     _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
     _input_data = load_input(args.input)
-    # Validate review-input on read at the boundary. Q&A input has `questions`,
-    # not `sections`, so it is gated out (shape, not mode); a malformed
-    # review-input fails loudly here instead of silently downstream.
-    if "sections" in _input_data:
-        try:
-            schema.validate_review_input(_input_data)
-        except ValueError as e:
-            sys.exit(f"viva: invalid review-input {args.input}: {e}")
-    elif args.mode == "qa":
+    # Validate the input on read at the boundary, keyed on the LAUNCH MODE —
+    # the same thing `/complete`'s guard keys on, and for the same reason:
+    # `--mode` is an argparse choice fixed at startup, while the payload's own
+    # shape is whatever the caller wrote. Keying on shape meant a file that
+    # carried neither `sections` nor `questions` was validated by nobody, so
+    # `--mode review` booted a server that served garbage and bricked the tab
+    # exactly as the `/next-round` hole above did. A shape/mode mismatch now
+    # exits 1 at launch instead of painting a view that cannot render.
+    if args.mode == "qa":
         try:
             schema.validate_qa_input(_input_data)
         except ValueError as e:
             sys.exit(f"viva: invalid qa-input {args.input}: {e}")
+    else:
+        try:
+            schema.validate_review_input(_input_data)
+        except ValueError as e:
+            sys.exit(f"viva: invalid review-input {args.input}: {e}")
     _output_path = args.output
     _launch_mode = args.mode
 

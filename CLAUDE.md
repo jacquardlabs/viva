@@ -138,6 +138,19 @@ content that changed gets a stale description, so it drops and is rewritten.
 at the point of use. A field that a reader forgets silently drops a feature; the
 boundary validator is what turns that into a loud failure.
 
+Both review-input read boundaries are **unconditional and mode-keyed**, and for
+one reason: a gate that keys on the payload's own shape validates nothing when
+the shape is the thing that is wrong. `POST /next-round` validates every body
+(the old `if "sections" in new_data` gate let a round nested one level deep
+through with `{"ok":true}`, replaced the served round, and bricked the tab with
+no error on either side), and startup validation asks `args.mode`, not the
+payload — the same rule `/complete`'s guard already follows, "the exemption keys
+on the launch mode, not the round payload". The browser's SSE `round` handler
+carries a matching refusal, which is a strand backstop rather than a second
+copy of the boundary: the cost of the server being wrong is a tab frozen
+forever, so the handler turns away a payload with no `sections[]` before it
+overwrites `REVIEW_DATA`.
+
 `GET /input` serves the review-input merged with a live `ledger: [...]` key; that
 `ledger` is injected at serve time and is not part of the on-disk file schema.
 

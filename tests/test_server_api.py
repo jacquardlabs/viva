@@ -80,6 +80,12 @@ def main() -> None:
         # Missing output entirely → JSON 400.
         st, ct, payload = raw(base, "/next-round", "POST", body=dict(r1, round=3))
         assert st == 400 and ct == "application/json" and "output" in payload["error"], payload
+        # ...and the missing-output refusal comes FIRST, ahead of the (now
+        # unconditional) review-input validation. A body that is both
+        # output-less and shape-invalid must still name `output`, so the caller
+        # is told about the field it can actually fix.
+        st, ct, payload = raw(base, "/next-round", "POST", body={"round": {"sections": []}})
+        assert st == 400 and "output" in payload["error"], payload
 
     # ── #54: legacy ?output= query param still works (fallback) ──────────────
     # A separate .viva dir so this server's server.url can't collide with the

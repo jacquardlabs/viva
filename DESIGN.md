@@ -844,6 +844,18 @@ back to the minimal `Claude is revising…` line. The #119 soft-timeout banners
 (`Still waiting — check the terminal.` / `Connection lost — check the
 terminal.`) overlay this card exactly as they overlaid the old view.
 
+A third banner shares that surface: `A round arrived that this tab cannot
+render — check the terminal.`, in full `.error-banner` ink rather than
+`.banner-info`'s violet, because a broken payload is not a slow one. The `round`
+SSE handler refuses a payload carrying no `sections[]` before it overwrites any
+state, so the previous round stays whole on screen and the banner says why —
+where the throw it replaces was buried inside `initReview`, leaving the tab on
+`Claude is revising…` forever with nothing said anywhere. The server validates
+every `/next-round` body, so this is a backstop, not the boundary; it clears
+from the `processing` and `round` handlers, the two events that mean the session
+moved on, because a `position: fixed` banner with no removal path outlives what
+it describes.
+
 ## Multiple inline comments (#68, v1.10.0)
 
 A section card hosts a list of typed comments rather than a single verdict pick. The
