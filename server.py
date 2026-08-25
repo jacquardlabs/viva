@@ -2494,13 +2494,25 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  /* Inert at every width where the row already fits. At a narrow viewport it
-     lets the dispatch controls drop to their own line rather than be squeezed
-     — `.mode-diff` caps this bar at 95vw, so at 780px the two flex children
-     were sharing 741px. */
-  flex-wrap: wrap;
+  /* NOWRAP, and the counters give way instead. A flex container breaks its
+     line BEFORE it shrinks anything, so `wrap` here meant the row never even
+     attempted the shrink that would have let it fit: at doc mode's own 1054px
+     cap, 613px of counters against a 450px stamp is 1063, and the stamp
+     dropped to a line of its own over nine pixels. `.stats` is `0 1 auto` with
+     `min-width: 0` and wraps internally, so it absorbs the squeeze down to its
+     own widest child — measured no overflow at 1054, 900, 760, 640 and 520px
+     of container, with the stamp keeping its full 450px at every one. */
+  flex-wrap: nowrap;
 }
 
+/* The counters take the room the dispatch controls do not, and give way
+   INTERNALLY rather than pushing them onto a line of their own. `.btn-group`
+   is `flex: 0 0 auto`, so without `min-width: 0` here the counters claim their
+   full content width and the two blocks overflow the row: measured at doc
+   mode's own 1054px cap, 613px of counters against 450px of buttons is 1063 —
+   over by nine pixels, and the stamp wrapped under the stats. Shrinking lets
+   `.bar-controls` (the `margin-left: auto` cluster) take the second line
+   instead, which is the wrap it was grouped to make graceful. */
 .stats {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -2508,6 +2520,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
+  /* Shrink, never grow. `1 1 auto` made the counters claim the whole row and
+     push the stamp onto a second line just as surely as no shrink at all. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .stat-pending  { color: var(--text3); }
 

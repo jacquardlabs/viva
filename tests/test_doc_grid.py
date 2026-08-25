@@ -1156,10 +1156,23 @@ def test_the_dispatch_controls_never_wrap(page: str) -> None:
         "a button narrower than its label must not break the label"
     assert re.search(r"\.btn-submit \{[^}]*white-space:\s*nowrap", page), \
         "...and its sibling takes the same rule"
-    assert re.search(r"\.bottom-inner \{[^}]*flex-wrap:\s*wrap", page), \
-        "the bar's own row wraps rather than squeezing its children"
+    # The bar's own row does NOT wrap, and that is the whole mechanism. A flex
+    # container breaks its line BEFORE it shrinks anything, so `wrap` here
+    # meant the row never attempted the shrink that would have let it fit: at
+    # doc mode's own 1054px cap, 613px of counters against a 450px stamp is
+    # 1063, and the stamp dropped to a line of its own over nine pixels — the
+    # same defect this test defends against, one container up.
+    assert re.search(r"\.bottom-inner \{[^}]*flex-wrap:\s*nowrap", page), \
+        "the bar's row must squeeze `.stats` rather than break its own line"
     assert re.search(r"\.stats \{[^}]*flex-wrap:\s*wrap", page), \
         "`.stats` is the item that absorbs the width now the buttons will not"
+    # ...which it can only do if it is allowed to shrink below its content
+    # width. `0 1 auto`, never `1 1 auto`: grow made the counters claim the
+    # whole row and push the stamp off it just as surely as no shrink at all.
+    assert re.search(r"\.stats \{[^}]*flex:\s*0 1 auto", page), \
+        "`.stats` must shrink and never grow"
+    assert re.search(r"\.stats \{[^}]*min-width:\s*0", page), \
+        "without min-width:0 a flex item will not shrink past its content"
     print("test_the_dispatch_controls_never_wrap: OK")
 
 
