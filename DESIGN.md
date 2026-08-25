@@ -126,6 +126,43 @@ No display face. A catalog page earns its character from density and rules, not
 from a headline font. `font-variant-numeric: tabular-nums` is set on `body`, so
 every column of digits aligns without per-rule opt-in.
 
+A third face had in fact reached three rules — `.note-field`,
+`.thread-reply-field` and `.complete-detail` each declared
+`'Bricolage Grotesque', sans-serif`, which is named in neither family above. It
+is gone, and those three surfaces inherit the grotesque like everything else.
+Worth recording so the removal is not rediscovered as a regression: the fallback
+in that declaration was generic `sans-serif`, so whenever the remote face failed
+to load, the composer and the reply box did not degrade to the page's own
+grotesque — they degraded past it.
+
+### Verbatim glyphs
+
+Ligature substitution is off page-wide, by a single `font-variant-ligatures:
+none` on `body`. Fragment Mono renders `>=` as one U+2265 glyph and `->` as
+U+2192, and a reviewer approving a hunk cannot tell a substituted glyph from a
+character actually in the file — on a surface whose whole promise is byte-for-byte
+display. Declared once, on the ground, and inherited, deliberately: it has to
+reach the DOM diff2html injects as well as the page's own `pre`/`code`, and a
+per-surface rule is the one the next mono surface forgets.
+
+### The faces are local
+
+Both faces were served from Google Fonts until this change — #79 vendored the
+third-party JS and CSS and scoped the fonts out, so every review still made a
+per-session request to Google, and offline the faces silently fell back. That
+scope decision is reversed. Fragment Mono is vendored under `assets/vendor/` as
+four woff2 subsets (latin and latin-ext, roman and italic) and declared as
+`@font-face` rules against `/vendor/` routes; Cyrillic falls back to the system
+mono rather than shipping a sub-kilobyte subset. The page now issues zero
+cross-origin requests, which is what PRODUCT.md's "local and keyless" principle
+already claimed on its behalf.
+
+Precisely what vendoring bought: the rules spelled `'Fragment Mono', monospace`
+are the ones that fell back offline. The rules spelled `ui-monospace, 'SF Mono',
+'Fragment Mono', Menlo, monospace` resolve to a system face first on macOS and
+never depended on Google at all — the typographic identity was partly remote,
+not wholly.
+
 Label convention: 8–10px, `letter-spacing: 0.08–0.16em`, `text-transform: uppercase`, `color: var(--soft)`.
 
 ### Reading measure
@@ -1119,7 +1156,8 @@ is the ground these gestures sit on; see Layout.)
 
 `/viva-review` renders each hunk via [diff2html](https://github.com/rtfpessoa/diff2html)
 (MIT, pinned at 3.4.56 and vendored under `assets/vendor/` alongside
-marked/DOMPurify/hljs — nothing is fetched from a CDN at review time; see
+marked/DOMPurify/hljs — nothing is fetched from any remote host at review time,
+scripts, styles and both faces alike; see
 `assets/vendor/README.md`).
 Two bundles: the core (`diff2html.min.js`, the `Diff2Html.html` string API)
 and the slim UI wrapper (`diff2html-ui-slim.min.js`, syntax highlighting

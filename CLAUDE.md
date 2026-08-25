@@ -27,17 +27,24 @@ only by JSON files under `.viva/`:
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
-4. **`server.py` — the SPA host** (7,926 lines, of which the embedded
-   HTML/CSS/JS constant `HTML` — opened at line 131 — is the overwhelming
-   majority; the Python HTTP handler around it is small). The bulk being a
+4. **`server.py` — the SPA host** (the embedded HTML/CSS/JS constant `HTML` is
+   the overwhelming majority of it; the Python HTTP handler around it is
+   small). The bulk being a
    frontend is intentional — one file, no build step, no npm. Don't "fix" the
    line count by splitting the constant out. Its one read outside `.viva/` is
-   `assets/vendor/`: six pinned third-party browser assets (#79, #144) served at
+   `assets/vendor/`: ten pinned third-party browser assets (#79, #144) — six JS
+   and CSS bundles plus four Fragment Mono woff2 subsets — served at
    `/vendor/<file>` from an exact-match route table, resolved off `__file__`
    rather than the cwd and read per request. Committed config, like `types/`. A
    version bump edits three places — the file, `_VENDOR_ASSETS`, and the URL in
    `HTML` — and `test_server_vendor_assets.py` compares the last two directly,
    because missing one 404s into the `md-raw` fallback with no error anywhere.
+   For a **font** that third place is spelled `@font-face { src: url('/vendor/…') }`
+   inside `HTML`'s own `<style>`, not a `<script src>`, and the test harvests
+   that spelling separately — a missed font URL 404s into an invisible
+   system-font fallback rather than a visible one. Nothing in the page reaches a
+   remote host, fonts included; `tests/test_typography.py` forbids the host by
+   name so a reinstated `<link>` fails instead of shipping.
    It also owns **`_VOICE_VERBS`/`_VOICE_RULES`** — the spoken grammar of the
    voice layer, injected as `__VOICE_RULES__` the way `__CHECK_KINDS__` is, and
    deliberately here rather than in `schema.py`: the browser is its only

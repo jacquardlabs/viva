@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The SPA's third-party JS/CSS is vendored and served from disk (#79, #144).
+"""The SPA's third-party JS, CSS and fonts are vendored and served from disk.
 
 Before this, five `<script>` tags and one injected `<link>` pointed at
 cdn.jsdelivr.net at `@major` ranges. A review therefore needed the network, the
@@ -9,7 +9,7 @@ under `assets/vendor/` at exact versions and are served by this server.
 
 Four invariants, in the order they can break:
 
-  1. Nothing in the served page points at jsdelivr. Checked against
+  1. Nothing in the served page points at any remote host. Checked against
      `server.HTML` as well as a live page — `_HTML_BYTES` is one constant
      served identically to review, diff, and QA, so a static assertion on the
      constant is the mode-independent statement of "no mode fetches a CDN".
@@ -25,9 +25,17 @@ Four invariants, in the order they can break:
      keeps a future refactor from reintroducing a join.
 
 Not checked here: that the browser makes zero external requests. There is no
-browser harness in this repo (stdlib only, no npm/node), so "no CDN" is proven
-by the absence of the host in what is served. Google Fonts is still remote by
-the decision in #79 and is deliberately out of scope.
+browser harness in this repo (stdlib only, no npm/node), so "no remote host" is
+proven by the absence of the host in what is served.
+
+#79 scoped Google Fonts OUT — the two faces stayed remote while the JS and CSS
+came in-tree, so a review still made a per-session request to Google and, run
+offline, silently lost its typography. That scope decision is reversed: Fragment
+Mono is vendored as four woff2 subsets and declared in the page's own
+stylesheet, and the assertion below that once PROTECTED the font preconnect now
+forbids the host outright. Bricolage Grotesque is not vendored — it was an
+undocumented third family on three rules (DESIGN.md: "Two families only"), and
+those rules now inherit body's grotesque stack instead.
 """
 import http.client
 import json
@@ -77,10 +85,18 @@ def test_no_cdn_reference_survives_in_any_mode() -> None:
         "the served page still references a CDN host"
     assert 'rel="preconnect" href="https://cdn' not in server.HTML, \
         "the jsdelivr preconnect must be gone"
-    # The font preconnects stay — fonts are still remote by the #79 decision,
-    # and dropping them here would be an unannounced performance regression.
-    assert "fonts.gstatic.com" in server.HTML, \
-        "the Google Fonts preconnect was collateral damage"
+    # INVERTED. This assertion used to read `"fonts.gstatic.com" in HTML` and
+    # protected the font preconnect, because #79 left the faces remote. The
+    # faces are vendored now, so the same line states the widened invariant:
+    # the page reaches no font host either, and a reinstated <link> — the
+    # obvious way to "fix" a missing glyph — fails here rather than shipping a
+    # per-session request to Google.
+    assert "fonts.googleapis.com" not in server.HTML, \
+        "the fonts are vendored — nothing in the page may reach Google"
+    assert "fonts.gstatic.com" not in server.HTML, \
+        "the fonts are vendored — nothing in the page may reach Google"
+    assert "preconnect" not in server.HTML, \
+        "a preconnect to anywhere means the page still has a remote host"
     print("  ok  test_no_cdn_reference_survives_in_any_mode")
 
 
@@ -91,7 +107,12 @@ def test_every_vendor_url_in_the_page_has_a_route() -> None:
     urls = set(re.findall(r'(?:src|href)=[\'"](/vendor/[^\'"]+)[\'"]', server.HTML))
     # The mode-diff stylesheet is assigned in JS, not written as an attribute.
     urls |= set(re.findall(r"= '(/vendor/[^']+)'", server.HTML))
-    assert len(urls) == 6, f"expected 6 vendor URLs in the page, found {sorted(urls)}"
+    # The four faces are declared in `@font-face`, not as an element attribute —
+    # a third spelling, invisible to both patterns above. Without this harvest
+    # the font routes read as "routes nothing in the page loads", which is the
+    # right complaint about the wrong thing.
+    urls |= set(re.findall(r"url\(['\"]?(/vendor/[^'\")]+)", server.HTML))
+    assert len(urls) == 10, f"expected 10 vendor URLs in the page, found {sorted(urls)}"
     unrouted = urls - set(server._VENDOR_ROUTES)
     assert not unrouted, f"page references vendor URLs with no route: {sorted(unrouted)}"
     unused = set(server._VENDOR_ROUTES) - urls
@@ -110,9 +131,11 @@ def test_every_route_has_a_file_and_a_license() -> None:
     readme = (server._VENDOR_DIR / "README.md").read_text()
     for name, _ctype in server._VENDOR_ASSETS:
         assert name in readme, f"assets/vendor/README.md does not record {name}"
+    # Per PACKAGE, not per asset: the three diff2html bundles share one file,
+    # and so do the four Fragment Mono subsets.
     licenses = list(server._VENDOR_DIR.glob("LICENSE-*"))
-    assert len(licenses) == 4, \
-        f"expected a license file per package (4), found {[p.name for p in licenses]}"
+    assert len(licenses) == 5, \
+        f"expected a license file per package (5), found {[p.name for p in licenses]}"
     print("  ok  test_every_route_has_a_file_and_a_license")
 
 
@@ -160,6 +183,9 @@ def test_vendor_routes_are_exact_match_only(base: str) -> None:
         "/vendor/nope.js",
         # The bare (unversioned) name a copy-paste from the old CDN URL yields.
         "/vendor/marked.min.js",
+        # Same trap for a face: the version is in the filename, so an
+        # unstamped guess must 404 rather than serve the current bytes.
+        "/vendor/fragment-mono.woff2",
     ):
         status, _headers, _body = _fetch(base, path)
         assert status == 404, f"{path} must 404, got {status}"

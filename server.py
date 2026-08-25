@@ -44,8 +44,9 @@ _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\
 _PREFS_STORE_PATH: str = ""
 
 # Third-party browser assets, vendored under `assets/vendor/` and served from
-# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from
-# jsdelivr any more, so a review works offline and the supply chain is six
+# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from ANY
+# remote host any more — not jsdelivr, and (reversing #79's scope decision) not
+# Google Fonts either — so a review works offline and the supply chain is ten
 # pinned files in-tree rather than a range resolved by a CDN at load time.
 #
 # Resolved from this file's own location, never the cwd: the server is launched
@@ -69,6 +70,13 @@ _VENDOR_ASSETS = (
     ("diff2html-3.4.56.min.js", "text/javascript; charset=utf-8"),
     ("diff2html-ui-slim-3.4.56.min.js", "text/javascript; charset=utf-8"),
     ("diff2html-3.4.56.min.css", "text/css; charset=utf-8"),
+    # The mono face. Referenced from an `@font-face { src: url(...) }` inside
+    # the `HTML` constant's own stylesheet rather than from a `<script src>` —
+    # a fourth spelling of the same three-place coordinated edit.
+    ("fragment-mono-v6-latin.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-ext.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-italic.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-ext-italic.woff2", "font/woff2"),
 )
 _VENDOR_ROUTES = {"/vendor/" + name: (name, ctype) for name, ctype in _VENDOR_ASSETS}
 
@@ -137,9 +145,6 @@ HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viva</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
 <script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
 <script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
 <script defer src="/vendor/highlight-11.11.1.min.js"></script>
@@ -160,6 +165,43 @@ HTML = r"""<!DOCTYPE html>
 })();
 </script>
 <style>
+/* ─── Faces ──────────────────────────────────────────────────
+   Fragment Mono, vendored (assets/vendor/README.md) and served from this
+   server's own /vendor route. Nothing in this page reaches a remote host any
+   more: a review works offline, and viva's "local and keyless" claim covers
+   its typography too — until this, both faces came from Google Fonts, a
+   per-session request to Google on every review. (The host is not named here
+   on purpose: `test_typography.py` forbids the string outright, so a reinstated
+   `<link>` fails rather than shipping.)
+
+   latin + latin-ext only. Google serves a cyrillic-ext subset per style as
+   well; both are under 1 KiB and fall below the truncation floor
+   `test_server_vendor_assets.py` uses to catch a half-downloaded asset, so
+   Cyrillic falls back to the system mono instead, which is the right degrade.
+
+   The unicode-range values are Google's own, kept verbatim so subsetting
+   behaves exactly as it did remotely. No `crossorigin` anywhere: same-origin. */
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext-italic.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Catalog: a parts-catalog page — white ground, compact type, every state
    visible and tabular. Light is the primary theme (the ground the design was
@@ -314,6 +356,16 @@ body {
   color: var(--text);
   min-height: 100vh;
   font-variant-numeric: tabular-nums;
+  /* Byte-verbatim: no glyph the source did not contain. Fragment Mono
+     substitutes `>=` to a single U+2265 and `->` to U+2192, so a reviewer
+     approving a hunk cannot tell the ligature from a real ≥ in the file — on a
+     surface whose whole promise is byte-for-byte display. Declared ONCE, on the
+     ground, and inherited: a per-surface rule is the one the next mono surface
+     forgets. `none` is the complete set (no common, discretionary, historical
+     or contextual). Deliberately the high-level `font-variant-*` property and
+     not the low-level OpenType-feature one: mixing the two on a single element
+     is the only way to put the `tabular-nums` line above at risk. */
+  font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -1974,7 +2026,6 @@ body {
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
   width: 100%;
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 13px;
   padding: 9px 12px;
   border: 1px solid var(--border2);
@@ -2183,7 +2234,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .thread-reply-chips { display: flex; gap: 8px; margin-bottom: 5px; }
 .thread-reply-field {
   width: 100%;
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 12px;
   padding: 6px 9px;
   border: 1px solid var(--border);
@@ -2831,7 +2881,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   margin-bottom: 0.5rem;
 }
 .complete-detail {
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 0.95rem;
   color: var(--text2);
   margin-bottom: 0.25rem;
