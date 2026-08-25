@@ -585,6 +585,19 @@ which is worse than not showing it, and right-aligned ragged 9px type is barely
 readable even when it fits. The rail costs 34px instead of 98px, and the 64px
 went to the prose.
 
+**One decision, printed once.** A `result` already printed in the current pass
+is not printed again — a `checks` round that answers several flags with the
+same sentence had each of them print it verbatim (five flags, one decision,
+five times). Every flag's own message always prints; only the repeated `result`
+drops. The gutter's `title` keeps the full `kind · message · → result`, because
+a tooltip appears one at a time and is not a wall. Two invariants: the
+already-seen set is built per render call (`placeDocFlags` is idempotent by
+contract, so a shared one would blank every result on the first re-sync), and
+the annotation is copied rather than mutated, because `a.result` is also what
+`checksDone`, `settled` and the document slip's `checks D/T` count. That tally
+is computed from the **raw** flags, before any deduping — otherwise five flags
+answered with one sentence would read `checks 1/5` on a finished round.
+
 `.mflag` takes no border and no actions, unlike `.nt` — a producer flag is
 advisory and there is nothing to answer. It mounts above the threads and this
 round's notes: the machine's reading of a paragraph comes before the
@@ -621,7 +634,11 @@ wipe-and-renumber pass and the box the reviewer is typing in describing the same
 place. `scrollIntoView({ block: 'nearest' })` with a `preventScroll` focus keeps
 a tall composer's type chips on screen — `nearest`, not `center`, so a short box
 never yanks the prose. An anchored one still opens beside its own passage, where
-nothing above it moves either.
+nothing above it moves either. **Every** re-focus of that field carries
+`preventScroll`, the voice path's `stageVoiceComment` included: a bare
+`focus()` after the opener has scrolled sends the browser back to the textarea
+and lands the viewport with the type chips and the quote above the fold — a
+composer measured opening at `top: -153px`, with only save and cancel visible.
 
 The **head row's height is now independent of everything**: it has one track.
 
@@ -752,8 +769,9 @@ than a tint of the accent. Built from live state on each open, so "Approve
 section 9" names the section actually under the reader.
 
 Two directories, one shape: `reviewPaletteCommands` for the review and diff
-pages, `qaPaletteCommands` for the interview (the choices by their digits,
-confirm, skip, the jump). `openPalette` used to refuse without `REVIEW_DATA`,
+pages, `qaPaletteCommands` for the interview (every choice, with a
+digit on the first nine; confirm, skip, the jump). `openPalette` used to refuse
+without `REVIEW_DATA`,
 which meant ⌘K silently did nothing in a Q&A session.
 
 ⌘K is handled **ahead of** the `TEXTAREA`/`INPUT` guard (a reviewer mid-reply is
@@ -876,7 +894,10 @@ One question at a time is the point of an interview, so the accordion stays.
   column flex, so a sibling span would stack the digit above the question). The
   prose column holds the choices alone — a `.rule-s` hairline over
   `.choice-chip`s, **one per line**, each carrying the digit that picks it
-  (`<kbd>`, 1–9) — and a question with **no** choices has no prose column at
+  (`<kbd>`, 1–9; the digit stops at nine because the handler reads one keypress,
+  and a tenth choice is reached by Tab — `.choice-chip` is a plain `<button>` —
+  or from the palette, which lists every choice and truncates itself at none) —
+  and a question with **no** choices has no prose column at
   all: `.is-choiceless` reflows the row to two tracks, the same mechanism the
   collapsed margin used before the head row stopped having one. Wrapped into a
   ragged row the chips read as a grid and the digit lands somewhere different on
@@ -960,8 +981,13 @@ review-input — classification and ordering only, no DOM — and
 `renderTransmittal` owns the mount and the jump wiring. Header:
 `Transmittal · REV 0N` (uppercased by the label style).
 
-**Row grammar** — each section lands in exactly one row family, checked in
-this order (diff first, then flags, then carried). Each row is a jump-link
+**Row grammar** — each section lands in exactly one row family. The CHECK
+order is diff → carried → answered → flags; the RENDER order is revised →
+answered → flags → carried. They are not the same order and the difference is
+load-bearing: `answered` is tested after `carried` so a section the reviewer
+already signed off stays `approved & unchanged`, and it renders before the flag
+rows because an answer is the author's turn and a flag is a producer's. Each
+row is a jump-link
 `<button class="transmittal-row">` carrying a marker glyph, a mono label, and
 the section title:
 
@@ -969,6 +995,7 @@ the section title:
 |---|---|---|---|
 | `revised to your note` | `diff` present **and** `open_notes` present | △ | `--orange` |
 | `revised` | `diff` present, no `open_notes` | △ | `--orange` |
+| `answered, not revised` | a thread's last exchange is from the PRIOR round and carries a `response` or `grounds`; no `diff`, not carried | ↳ | `--violet` |
 | `flagged & unreviewed` | strongest annotation severity `error`, not carried | ⚑ | `--orange` |
 | `flagged & unreviewed` | strongest annotation severity `warn`, not carried | ⚑ | `--violet` |
 | `approved & unchanged` | member of `approved_ids` | ▣ | `--teal` |
@@ -978,6 +1005,43 @@ the section title:
 silent diff renders the bare `revised`. The slip never asserts causation the
 data doesn't carry. `info` annotations advise, they don't flag — only
 `error`/`warn` produce flag rows, and the error partition rows before warn.
+
+**`answered, not revised`** is the author's turn where it produced no edit — a
+decline (#167), or a response the request needed no change to satisfy. Before
+it existed, such a section carried no diff, no error/warn flag and no carried
+stamp, so it fell through the whole dispatch and rendered nothing: the one
+thing a round 2 exists for was the one thing the slip could not see. It takes
+the facts/info party's ink because an answer that changed no text is
+information, not a revision. The predicate — a thread's last exchange carrying
+a `response`, or `grounds` keyed on **presence** the way `openNotesHTML` reads
+it, since a decline with no grounds is still a decline — has one definition
+(`authorAnswered` / `sectionAnswered`), because the round-≥2 landing below asks
+the same question and the two must never disagree.
+
+**An answer is news for exactly one round.** The predicate takes the round and
+requires the last exchange to be the prior one (`last.round === round - 1`).
+`open_notes.py` appends an exchange only when the *reviewer* takes a turn on
+that thread, and an unsettled thread carries forward untouched — so without the
+freshness test, a thread answered in round 1 that the reviewer then neither
+settled nor replied to would row as `answered, not revised` in rounds 3, 4 and
+5, and would keep claiming the landing. That is finding 03's own complaint,
+reintroduced by its fix. The offset is `- 1` because an exchange is stamped
+with the round the reviewer's turn was made in, and the author's response to it
+lands in the round after. A stale answer falls through to `flagRank` exactly as
+it did before, so a section carrying both an old answer and a producer flag
+keeps its flag row; only a fresh answer outranks one.
+
+**Where round ≥ 2 lands.** In the continuous print at round ≥ 2, the boot
+activation prefers the first section carrying new business — a `diff`, else a
+thread the author answered — falling back to the first unapproved section
+exactly as round 1 does. The cause: `parse_sections._carry_annotations` copies
+a prior round's flags onto a byte-identical section, so landing on the first
+unapproved section walked a round-2 reader straight back onto the flag wall
+they had already read in round 1, while the answers to their own notes sat
+further down the print. This does **not** overturn the collapsed-slip rule
+above: the slip is an index of what changed, the landing puts the reader on the
+change itself, and expanding a bordered index above the print is precisely the
+chrome #186 measured out.
 
 Empty families drop; all families empty → no slip. Round 1 → no slip,
 unconditionally. Every row jump-activates its section through
@@ -1315,6 +1379,17 @@ Submit button states:
   swaps the ground to `var(--ink)` and raises nothing (`transform: none`).
 - Both states share one box: the base rule carries `border: 1px solid
   transparent`, so taking the outline costs no 2px.
+
+**At a narrow viewport the bar wraps; the buttons do not.** `.bottom-inner`
+carries `flex-wrap: wrap` — inert at every width where the row already fits —
+and `.btn-group` carries `flex: 0 0 auto`, so the two dispatch controls are one
+unit that never shrinks. `.stats` already wraps and is the item that absorbs
+the width instead. Both buttons also take `white-space: nowrap`: a flex item's
+default `flex-shrink: 1` broke `skip rest & submit` onto three lines at a 780px
+viewport, where `.mode-diff` caps the bar at 95vw. `.btn-group` keeps
+`display: flex` in the stylesheet, because the SSE `round` handler restores the
+group with `style.display = ''` and falls back to exactly that rule. The
+content columns reflow well at every width and are deliberately untouched.
 
 ## Preferences panel (issue #142, unreleased)
 

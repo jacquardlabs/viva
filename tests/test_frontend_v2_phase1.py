@@ -263,6 +263,41 @@ def test_round2_serves_transmittal_slip(page: str, data: dict) -> None:
     print("test_round2_serves_transmittal_slip: OK")
 
 
+def test_an_answer_without_a_revision_gets_a_row(page: str) -> None:
+    """Finding 03. The dispatch was `diff → carried → flags`, and a section
+    with open notes, no diff, no error/warn flag and no carried stamp fell
+    through the whole `forEach` and was pushed nowhere — so it rendered no row
+    at all. That is a section where the author answered the reviewer's own note
+    and changed no text: a decline (#167), or a response that needed no edit.
+    The one thing a round 2 exists for was the one thing the slip could not
+    see.
+
+    The bucket sits AFTER the carried test on purpose — a section the reviewer
+    already signed off is settled business, not this round's news — and its
+    rows come BEFORE the flag rows, because an answer is the author's turn and
+    a flag is a producer's."""
+    assert ("answered.map(s => row(s, 'tr-answered', '&#8627;', "
+            "'answered, not revised'))") in page, \
+        "an answer that revised nothing must still get a slip row"
+    assert page.index("answered.map") < page.index("flaggedErr.map"), \
+        "the author's turn rows before the producer's"
+    assert page.index("if (carriedNow(s.id))") < page.index("answered.push(s)"), \
+        "a carried section stays `approved & unchanged`, not `answered`"
+    assert page.index("answered.push(s)") < page.index("const rank = flagRank(s);"), \
+        "an answered section is news before it is machine output"
+    # The bucket asks the shared predicate, never its own copy of the shape.
+    assert "if (sectionAnswered(s, data.round)) { answered.push(s); return; }" in page, \
+        "the `answered` bucket and the round-2 landing must ask one predicate, " \
+        "and it must be asked with the round: an unsettled thread carries " \
+        "forward untouched, so a round-1 answer left alone would otherwise " \
+        "still row as news in round 3. A STALE answer falls through to " \
+        "`flagRank` exactly as before, so a section carrying both an old " \
+        "answer and a flag keeps its flag row."
+    assert ".tr-answered .tr-marker," in page and "var(--violet)" in page, \
+        "an answer that changed no text is information, not a revision"
+    print("test_an_answer_without_a_revision_gets_a_row: OK")
+
+
 def test_round1_zero_transmittal_markers(page: str, data: dict) -> None:
     """Cap: the slip is guarded to round > 1 and review mode — the round-1
     fixture serves an empty, hidden mount, zero rendered slip rows, and a
@@ -858,8 +893,9 @@ def main() -> None:
         test_round2_serves_carried_markup(page, data)
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
+        test_an_answer_without_a_revision_gets_a_row(page)
 
-    print("\nOK (22 tests)")
+    print("\nOK (23 tests)")
 
 
 if __name__ == "__main__":

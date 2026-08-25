@@ -629,6 +629,9 @@ body {
 .tr-flag-error .tr-marker,   .tr-flag-error .tr-label { color: var(--orange); }
 .tr-flag-warn .tr-marker,    .tr-flag-warn .tr-label  { color: var(--violet); }
 .tr-approved .tr-marker,     .tr-approved .tr-label   { color: var(--teal); }
+/* An answer that changed no text is information, not a revision — so it takes
+   the facts/info party's ink, the same slot `.tr-flag-warn` uses. */
+.tr-answered .tr-marker,     .tr-answered .tr-label   { color: var(--violet); }
 
 .progress-track {
   flex: 1;
@@ -2491,6 +2494,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  /* Inert at every width where the row already fits. At a narrow viewport it
+     lets the dispatch controls drop to their own line rather than be squeezed
+     — `.mode-diff` caps this bar at 95vw, so at 780px the two flex children
+     were sharing 741px. */
+  flex-wrap: wrap;
 }
 
 .stats {
@@ -2503,7 +2511,13 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 }
 .stat-pending  { color: var(--text3); }
 
-.btn-group { display: flex; gap: 8px; }
+/* The two dispatch controls are one unit and they do not shrink: a flex item's
+   default `flex-shrink: 1` let `skip rest & submit` wrap onto three lines at a
+   780px viewport (measured). `.stats` above already wraps and absorbs the width
+   instead. The content columns reflow well and are deliberately untouched.
+   `display: flex` stays in the stylesheet — the SSE `round` handler restores
+   this group with `style.display = ''` and falls back to exactly this rule. */
+.btn-group { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .btn-skip {
   font-family: 'Fragment Mono', monospace;
@@ -2514,6 +2528,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   border: 1px solid var(--border2);
   background: transparent;
   color: var(--text2);
+  /* The label is three words and a glyph; a button narrower than its text
+     broke `skip rest & submit` onto three lines before `.btn-group` stopped
+     shrinking. Both halves are needed. */
+  white-space: nowrap;
   transition: all 0.15s;
 }
 .btn-skip:hover { border-color: var(--text3); color: var(--text); }
@@ -2528,6 +2546,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   /* A transparent 1px border, not `none`: the ready and not-ready states share
      one box, so the outline state below cannot grow the control by 2px. */
   border: 1px solid transparent;
+  white-space: nowrap;
   transition: all 0.2s;
 }
 .btn-submit.ready {
@@ -3392,6 +3411,35 @@ function renderLedger() {
 const FLAG_RANK = { error: 0, warn: 1 };
 
 // Strongest flag severity on a section: 0 (error), 1 (warn), or null.
+/* The author's turn on a thread, answered FOR THIS ROUND: a response, or
+   grounds for a decline. Key PRESENCE for `grounds`, exactly as
+   `openNotesHTML` does — a decline with no grounds is still a decline, and a
+   decline is still an answer to the note.
+
+   `round` is not optional and the freshness test is the whole point.
+   `open_notes.py` appends an exchange only when the REVIEWER takes a turn on
+   that cid, and an unsettled thread carries forward untouched — so a thread
+   answered in round 1 that the reviewer then neither settled nor replied to
+   still reads "answered" in round 3, 4 and 5. Without `last.round === round - 1`
+   this predicate re-presents a two-round-old answer as this round's news,
+   which is the exact defect it was written to close. `- 1` because an exchange
+   is stamped with the round the reviewer's turn was made in, and the author's
+   response to it lands in the round after.
+
+   Defined ONCE, taking the round rather than reading a global, because two
+   readers ask the same question and must never disagree about it: the
+   transmittal's `answered` bucket (a pure function over its own `data`), and
+   where round >= 2 lands the reader. */
+function authorAnswered(t, round) {
+  const last = ((t || {}).exchanges || []).slice(-1)[0] || {};
+  if (Number(last.round) !== round - 1) return false;
+  return Boolean(last.response) || last.grounds !== undefined;
+}
+
+function sectionAnswered(s, round) {
+  return ((s || {}).open_notes || []).some(t => authorAnswered(t, round));
+}
+
 // A DOC_SCOPE flag is skipped: it is a fact about the document, and `checklist`
 // emits `severity: "error"`, so one missing template heading would otherwise
 // brand section 1 `flagged & unreviewed` in the cover slip — the same
@@ -3412,12 +3460,23 @@ function transmittalHTML(data) {
   // (and, if it carries annotations, reappears as flagged) — the slip tracks
   // the live verdict, not just the static approved_ids the round shipped with.
   const carriedNow = id => approved.has(id) && rState.verdicts[id]?.verdict === 'approved';
-  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [], carried = [];
+  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [],
+        answered = [], carried = [];
   (data.sections || []).forEach(s => {
     const hasDiff  = Array.isArray(s.diff) && s.diff.length > 0;
     const hasNotes = Array.isArray(s.open_notes) && s.open_notes.length > 0;
     if (hasDiff) { (hasNotes ? revisedNoted : revisedBare).push(s); return; }
     if (carriedNow(s.id)) { carried.push(s); return; }
+    // The author answered the reviewer's own note and made no edit — a decline
+    // (#167), or a response that needed none. Without a row this is the one
+    // thing a round 2 exists for and the only thing the slip could not see: no
+    // diff, no error/warn flag and no carried stamp fell through the whole
+    // dispatch and rendered nothing. AFTER the carried test on purpose: a
+    // section the reviewer already signed off is settled business, not news.
+    // A STALE answer — one the reviewer left unsettled and unanswered for a
+    // round — falls through to `flagRank` exactly as it did before, so a
+    // section carrying both keeps its flag row rather than re-reading as news.
+    if (sectionAnswered(s, data.round)) { answered.push(s); return; }
     const rank = flagRank(s);
     if (rank !== null) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
   });
@@ -3434,6 +3493,9 @@ function transmittalHTML(data) {
                noted ? 'revised to your note' : 'revised');
   };
   const rows = revisedNoted.concat(revisedBare).map(revisedRow).concat(
+    // News before unreviewed machine output: an answer is the author's turn,
+    // a flag is a producer's.
+    answered.map(s => row(s, 'tr-answered', '&#8627;', 'answered, not revised')),
     flaggedErr.map(s => row(s, 'tr-flag-error', '&#9873;', 'flagged &amp; unreviewed')),
     flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
     carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
@@ -3499,7 +3561,12 @@ function docSlipHTML() {
     + (checks.length ? ' &middot; checks ' + done + '/' + checks.length : '')
     + '</span><span class="transmittal-chevron" aria-hidden="true">&#9662;</span></button>'
     + '<div class="transmittal-rows" id="doc-slip-rows"' + (open ? '' : ' hidden') + '>'
-    + flags.map(marginFlagHTML).join('') + '</div>';
+    // The rows dedupe their `result`; the tally above does NOT. `checks D/T` is
+    // computed off the RAW flags because deduping first would read `checks 1/5`
+    // on a round where all five were answered with one sentence — and this head
+    // is the only readout of the `checks` gate anywhere on the page while
+    // `round_is_complete` goes on enforcing it in Python.
+    + dedupeResults(flags, new Set()).map(marginFlagHTML).join('') + '</div>';
 }
 
 function renderDocSlip() {
@@ -3612,10 +3679,29 @@ function initReview() {
   // late-load retry keep working unchanged: `retryOnceScriptsLoad` selects on
   // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
   if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
+  // Where round >= 2 LANDS. A section unchanged since the prior round keeps its
+  // flags verbatim (`parse_sections._carry_annotations` copies them onto a
+  // byte-identical section), so opening on the first unapproved section walked
+  // a round-2 reader straight back onto the same flag wall they had already
+  // read — while the author's answers to their OWN notes, the reason a round 2
+  // exists at all, sat further down the print. On round >= 2 the print lands on
+  // the first section carrying something new: a revision, else a thread the
+  // author answered (a response, or grounds for a decline).
+  //
+  // The `!priorApprovedSet.has` conjunct is belt-and-braces. `_load_approved`
+  // already drops a section whose content changed and one whose prior verdict
+  // was not `approved`, so neither a diffed nor an answered section can be
+  // carried — but the conjunct keeps `activateReviewCard`'s carried branch out
+  // of play should a resume ever pre-approve differently.
+  const newBusiness = (isContinuousPrint() && REVIEW_DATA.round > 1)
+    ? REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id)
+        && ((Array.isArray(s.diff) && s.diff.length > 0)
+            || sectionAnswered(s, REVIEW_DATA.round)))
+    : null;
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
-  if (firstPending) activateReviewCard(firstPending.id);
-  else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
+  const landing = newBusiness || firstPending || REVIEW_DATA.sections[0];
+  if (landing) activateReviewCard(landing.id);
   updateReviewStats();
   renderLedger();
   renderTransmittal();
@@ -4141,6 +4227,31 @@ function marginFlagHTML(a) {
     + '</span></div>';
 }
 
+/* One decision, printed once. A `checks` round answers several flags with the
+   same sentence: five check flags each printed the SAME one-line `result`
+   verbatim, measured in round 3 of a live session — one decision, printed five
+   times. Every flag's MESSAGE still prints and always will; a `result` already
+   printed in this pass is dropped, so the answer reads once and the flags that
+   share it stay legible.
+
+   The annotation is COPIED, never mutated: `a.result` is what `specHTML`'s
+   `checksDone`, `sectionBalance`'s `settled`, `documentBalance` and the slip's
+   own `checks D/T` head all count, and blanking it in place would silently move
+   a number with no error anywhere.
+
+   `seen` is a parameter, not a module-level Set, so every caller owns one per
+   invocation. `placeDocFlags` is idempotent by contract — a shared Set would
+   look right on first paint and suppress every result on the first re-sync. */
+function dedupeResults(list, seen) {
+  return list.map(a => {
+    const r = a && a.result;
+    if (!r) return a;
+    if (seen.has(r)) return Object.assign({}, a, { result: undefined });
+    seen.add(r);
+    return a;
+  });
+}
+
 /* ─── Rows ───────────────────────────────────────────────────
    The rendered markdown's top-level blocks become the prose column of one
    row each, so a note can sit beside the paragraph it annotates rather
@@ -4638,6 +4749,12 @@ function placeDocFlags(id) {
   const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
   const split = docFlagSplit(section);
   const byRow = new Map();
+  // Per call, spanning every row of this section — see `dedupeResults`. Today
+  // no doc-scope kind reaches this loop at all (`docFlagSplit` routes them to
+  // the slip, and `headings-present` is the only CHECK_KIND), so this is the
+  // guard for the day a section-scope check kind lands, not the site that
+  // closed the finding. That one is `docSlipHTML`.
+  const seenResults = new Set();
   split.gutter.forEach(a => {
     const row = a.anchor != null ? rowForAnchor(id, String(a.anchor), 0) : null;
     const key = row || docFootRow(id);
@@ -4648,6 +4765,9 @@ function placeDocFlags(id) {
   // Glyph in the rail, words in the margin, both on the row the flag concerns.
   byRow.forEach((flags, row) => {
     docCell(row, 'rg').innerHTML = flags.map(gutterGlyphHTML).join('');
+    // AFTER the rail, deliberately: the glyph's `title` also carries
+    // `→ result`, but a tooltip appears one at a time and is not a wall.
+    flags = dedupeResults(flags, seenResults);
     const rm = docCell(row, 'rm');
     let host = rm.querySelector(':scope > .rm-flags');
     if (!host) {
@@ -5884,8 +6004,16 @@ function qaPaletteCommands() {
   const live = qState.active ? QA_DATA.questions.find(q => q.id === qState.active) : null;
   if (live) {
     const n = QA_DATA.questions.indexOf(live) + 1;
-    live.choices.slice(0, 9).forEach((c, i) => {
-      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: String(i + 1),
+    // Every choice, not the first nine. The digit handler binds 1-9 (one
+    // keypress, `parseInt(e.key)`), so a tenth choice carries no keycap — but
+    // truncating the list here left it with no place in the directory at all,
+    // which is the palette lying about being the directory of the keyboard
+    // layer. A digit-less row still runs from ⌘K, and the chip itself is a
+    // plain <button> that Tab already reaches — so nothing here needs a `0` or
+    // a letter bound to it, and binding one would collide the day a second
+    // modifier-free letter shortcut lands on this page.
+    live.choices.forEach((c, i) => {
+      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: i < 9 ? String(i + 1) : '',
                   run: () => pickQAChoice(live.id, c) });
     });
     if (qaAnswered(live.id)) {
@@ -7025,7 +7153,11 @@ function stageVoiceComment(id, type, rest) {
   // saying otherwise would be a lie about the record being written.
   const became = pop.dataset.type;
   if (rest) insertDictation(ta, rest);
-  ta.focus();
+  // `preventScroll`, like the opener's own focus: `openCommentPopover` has
+  // already scrolled the whole popover into view, and a bare re-focus here
+  // would scroll back to the field and undo it — leaving the type chips and
+  // the quote above the fold with only save/cancel on screen.
+  ta.focus({ preventScroll: true });
   return 'staged ' + (/^[aeiou]/.test(became) ? 'an ' : 'a ') + became
        + ' comment — say "save" to keep it';
 }

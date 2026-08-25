@@ -977,6 +977,166 @@ def test_the_stamp_never_prints_a_count_it_was_not_given(page: str) -> None:
     print("test_the_stamp_never_prints_a_count_it_was_not_given: OK")
 
 
+def test_round2_lands_on_what_changed(page: str) -> None:
+    """Finding 03. `parse_sections._carry_annotations` copies a prior round's
+    annotations onto a byte-identical section, so a round-2 print opens on the
+    identical flag wall round 1 opened on — while the author's answers to the
+    reviewer's OWN notes, the whole reason a round 2 exists, sit further down.
+
+    On round >= 2 in the continuous print, the landing prefers the first
+    section carrying something NEW: a revision, else a thread the author
+    answered. Round 1 and diff mode are byte-identical in behaviour, and a
+    round with nothing new falls back to the first unapproved section exactly
+    as before."""
+    assert "const newBusiness = (isContinuousPrint() && REVIEW_DATA.round > 1)" in page, \
+        "the new landing must be gated to round >= 2 in the print"
+    assert "const landing = newBusiness || firstPending || REVIEW_DATA.sections[0];" in page, \
+        "with nothing new the fallback chain must be what it always was"
+    # The predicate is defined ONCE and asked by two readers — the landing and
+    # the transmittal's `answered` bucket. Two copies would drift.
+    assert "function authorAnswered(t, round) {" in page \
+        and "function sectionAnswered(s, round) {" in page, \
+        "the author's-turn predicate must have one definition, and it must take " \
+        "the round rather than reading a global — `transmittalHTML` is a pure " \
+        "function over its own `data`"
+    assert "return Boolean(last.response) || last.grounds !== undefined;" in page, \
+        "a decline is an answer, and `grounds` is keyed on PRESENCE — a decline " \
+        "with no grounds is still a decline, the same rule `openNotesHTML` states"
+    # An exact count, deliberately: grounds-presence has exactly two homes, and
+    # a third would be a second reading of the same rule. `openNotesHTML` is
+    # the other — a change there fires this, which is the point.
+    assert page.count(".grounds !== undefined") == 2, \
+        "grounds-presence lives in openNotesHTML and the predicate, nowhere else"
+    # FRESHNESS. `open_notes.py` appends an exchange only when the REVIEWER
+    # takes a turn, and an unsettled thread carries forward untouched — so a
+    # thread answered in round 1 and then left alone still reads "answered" in
+    # round 3. Without this the fix re-presents a two-round-old answer as this
+    # round's news, which is the defect it exists to close. `- 1` because an
+    # exchange is stamped with the round the reviewer's turn was made in and
+    # the author's response to it lands in the round after.
+    assert "if (Number(last.round) !== round - 1) return false;" in page, \
+        "an answer is news for exactly one round"
+    assert "sectionAnswered(s, data.round)" in page, \
+        "the transmittal bucket asks the freshness question too"
+    assert "sectionAnswered(s, REVIEW_DATA.round)" in page, \
+        "...and so does the landing, from its own round"
+    print("test_round2_lands_on_what_changed: OK")
+
+
+def test_one_decision_prints_once(page: str) -> None:
+    """Finding 03. A `checks` round answers several flags with one sentence:
+    five check flags on one section each printed the SAME one-line `result`
+    verbatim — one decision, five times. Every flag's message still prints; a
+    `result` already printed in the pass is dropped.
+
+    Two invariants carry the whole edit. The Set is per-invocation, never
+    module scope (`placeDocFlags` is idempotent by contract — a shared Set
+    would look right on first paint and blank every result on the first
+    re-sync). And the annotation is COPIED, never mutated: `a.result` is what
+    `specHTML`'s `checksDone`, `sectionBalance`'s `settled`, `documentBalance`
+    and the slip's own head tally all count."""
+    assert "function dedupeResults(list, seen) {" in page, \
+        "the Set is a parameter, so no caller can share one"
+    assert "if (seen.has(r)) return Object.assign({}, a, { result: undefined });" in page, \
+        "the annotation must be copied — blanking `result` in place moves a " \
+        "number with no error anywhere"
+    assert "const seen" not in page[:page.index("function dedupeResults(")], \
+        "no module-level dedupe Set may exist above the helper"
+    # The site that actually closes the finding. `docFlagSplit` routes every
+    # DOC_SCOPE kind to the slip and `headings-present` is the only CHECK_KIND,
+    # so today no annotation carrying a `result` reaches `placeDocFlags` at all.
+    slip = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
+    assert "dedupeResults(flags, new Set()).map(marginFlagHTML).join('')" in slip, \
+        "the document slip's rows are where the repeated result wall now lives"
+    # ...and the head tally must NOT see the deduped list, or five flags
+    # answered with one sentence would read `checks 1/5` on a finished round.
+    assert "const checks = flags.filter(a => CHECK_KINDS.includes(a.kind));" in slip, \
+        "`checks D/T` counts the RAW flags — it is the only readout of the gate"
+    assert "const done = checks.filter(a => a.result).length;" in slip, \
+        "the answered tally counts the raw flags too"
+    assert slip.index("const done =") < slip.index("dedupeResults("), \
+        "the tally must be computed before anything is deduped"
+    # The section path keeps the guard for the day a section-scope check kind
+    # lands, and the rail keeps its tooltip: one at a time is not a wall.
+    flags_fn = page[page.index("function placeDocFlags(id) {"):
+                    page.index("function placeDocThreads(id) {")]
+    assert "const seenResults = new Set();" in flags_fn, \
+        "placeDocFlags owns its Set, constructed inside the call"
+    assert "flags = dedupeResults(flags, seenResults);" in flags_fn, \
+        "the callback parameter is reassigned, so the pinned render line stands"
+    assert (flags_fn.index("docCell(row, 'rg').innerHTML")
+            < flags_fn.index("flags = dedupeResults(")), \
+        "the gutter renders first — the glyph's title keeps its full result"
+    # A second parameter on marginFlagHTML would receive the ARRAY INDEX from
+    # `.map` — falsy for the first flag, truthy for every other.
+    assert "function marginFlagHTML(a) {" in page, \
+        "marginFlagHTML takes exactly one argument; `.map` supplies the rest"
+    print("test_one_decision_prints_once: OK")
+
+
+def test_the_voice_composer_stays_where_it_opened(page: str) -> None:
+    """Finding 14, second half. `openCommentPopover` scrolls the whole popover
+    into view and focuses with `preventScroll` (pinned in
+    test_activation_costs_no_layout). `stageVoiceComment` re-focuses the field
+    afterwards — a bare `focus()` there scrolls back to the textarea and undoes
+    it, landing the viewport with the type chips and the quote above the
+    fold."""
+    voice = page[page.index("function stageVoiceComment(id, type, rest) {"):]
+    voice = voice[:voice.index("function runQAVoiceAct(")]
+    assert "ta.focus({ preventScroll: true });" in voice, \
+        "the voice path's re-focus must not undo the opener's scroll"
+    assert "ta.focus();" not in voice, \
+        "no bare focus may survive in the voice staging path"
+    print("test_the_voice_composer_stays_where_it_opened: OK")
+
+
+def test_every_choice_has_a_keyboard_path(page: str) -> None:
+    """Finding 15. The palette is the directory of the keyboard layer, and it
+    truncated itself at nine — choices 10 and 11 appeared in it nowhere, so
+    they had no ⌘K path and no keycap.
+
+    The digit handler binds 1-9 (one keypress, `parseInt(e.key)`), so a tenth
+    choice legitimately carries no cap; the printed cap and the bound key must
+    agree. Note `.choice-chip` is a plain `<button>` with no `tabindex` — Tab
+    already reaches choices 10 and 11 — so nobody should answer this by
+    binding `0` or a letter."""
+    palette = page[page.index("function qaPaletteCommands() {"):]
+    palette = palette[:palette.index("\n}\n")]
+    assert "live.choices.forEach((c, i) => {" in palette, \
+        "the palette must list every choice"
+    assert "slice(0, 9)" not in palette, \
+        "the directory of the keyboard layer may not truncate itself"
+    assert "key: i < 9 ? String(i + 1) : ''" in palette, \
+        "a keycap is printed only where one is actually bound"
+    assert "const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';" in page, \
+        "the chip's printed cap and the palette's bound key share one ceiling"
+    assert "if (!isNaN(n) && n >= 1 && n <= q.choices.length)" in page, \
+        "the digit handler's own ceiling is unchanged"
+    print("test_every_choice_has_a_keyboard_path: OK")
+
+
+def test_the_dispatch_controls_never_wrap(page: str) -> None:
+    """Finding 16, cosmetic. At a 780px viewport `.mode-diff` caps the bar at
+    95vw and the two flex children shared 741px; `.btn-group` carried a flex
+    item's default `flex-shrink: 1`, so `skip rest & submit` broke onto three
+    lines. `.stats` already wraps and absorbs the width instead. The content
+    columns reflow well and are deliberately untouched."""
+    assert re.search(r"\.btn-group \{[^}]*flex:\s*0 0 auto", page), \
+        "the dispatch group is one unit and does not shrink"
+    assert re.search(r"\.btn-group \{[^}]*display:\s*flex", page), \
+        "`display: flex` stays in the stylesheet — the SSE `round` handler " \
+        "restores this group with `style.display = ''` and falls back to it"
+    assert re.search(r"\.btn-skip \{[^}]*white-space:\s*nowrap", page), \
+        "a button narrower than its label must not break the label"
+    assert re.search(r"\.btn-submit \{[^}]*white-space:\s*nowrap", page), \
+        "...and its sibling takes the same rule"
+    assert re.search(r"\.bottom-inner \{[^}]*flex-wrap:\s*wrap", page), \
+        "the bar's own row wraps rather than squeezing its children"
+    assert re.search(r"\.stats \{[^}]*flex-wrap:\s*wrap", page), \
+        "`.stats` is the item that absorbs the width now the buttons will not"
+    print("test_the_dispatch_controls_never_wrap: OK")
+
+
 def test_round2_wire_shape_unchanged(base: str) -> None:
     """Hold: no schema change. The restructure is a rendering change over the
     shapes #184 already ships — GET /input serves the same round, the same
@@ -1027,6 +1187,11 @@ def main() -> None:
             test_qa_wears_the_grammar_not_the_print(page)
             test_a_free_text_question_prints_its_question_once(page)
             test_the_stamp_never_prints_a_count_it_was_not_given(page)
+            test_round2_lands_on_what_changed(page)
+            test_one_decision_prints_once(page)
+            test_the_voice_composer_stays_where_it_opened(page)
+            test_every_choice_has_a_keyboard_path(page)
+            test_the_dispatch_controls_never_wrap(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")
 
