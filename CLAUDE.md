@@ -27,17 +27,33 @@ only by JSON files under `.viva/`:
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
-4. **`server.py` — the SPA host** (7,312 lines, of which the embedded
-   HTML/CSS/JS constant `HTML` — opened at line 75 — is the overwhelming
-   majority; the Python HTTP handler around it is small). The bulk being a
+4. **`server.py` — the SPA host** (the embedded HTML/CSS/JS constant `HTML` is
+   the overwhelming majority of it; the Python HTTP handler around it is
+   small). The bulk being a
    frontend is intentional — one file, no build step, no npm. Don't "fix" the
    line count by splitting the constant out. Its one read outside `.viva/` is
-   `assets/vendor/`: six pinned third-party browser assets (#79, #144) served at
+   `assets/vendor/`: ten pinned third-party browser assets (#79, #144) — six JS
+   and CSS bundles plus four Fragment Mono woff2 subsets — served at
    `/vendor/<file>` from an exact-match route table, resolved off `__file__`
    rather than the cwd and read per request. Committed config, like `types/`. A
    version bump edits three places — the file, `_VENDOR_ASSETS`, and the URL in
    `HTML` — and `test_server_vendor_assets.py` compares the last two directly,
    because missing one 404s into the `md-raw` fallback with no error anywhere.
+   For a **font** that third place is spelled `@font-face { src: url('/vendor/…') }`
+   inside `HTML`'s own `<style>`, not a `<script src>`, and the test harvests
+   that spelling separately — a missed font URL 404s into an invisible
+   system-font fallback rather than a visible one. Nothing in the page reaches a
+   remote host, fonts included; `tests/test_typography.py` forbids the host by
+   name so a reinstated `<link>` fails instead of shipping.
+   It also owns **`_VOICE_VERBS`/`_VOICE_RULES`** — the spoken grammar of the
+   voice layer, injected as `__VOICE_RULES__` the way `__CHECK_KINDS__` is, and
+   deliberately here rather than in `schema.py`: the browser is its only
+   consumer, so it is UI data, not the on-disk contract. Adding a
+   `COMMENT_TYPES` value fails `tests/test_voice_grammar.py` until it has
+   something a reviewer can say. The layer's own invariant — speech STAGES a
+   comment and never commits one, so nothing in it may call `addComment` — is
+   pinned by `tests/test_server_voice.py`; DESIGN.md says why that is
+   load-bearing rather than stylistic.
 5. **The `.viva/*.json` schema — the real contract.** See `scripts/schema.py`
    for the shapes.
 
@@ -65,7 +81,15 @@ import. It holds:
   `THREAD_STATUSES` plus `thread_is_unresolved()` (`open` and `declined` are
   both live; only `settled` closes — membership, never `!= settled`, so an
   unknown status is not silently treated as live), `PASS_KINDS`/`PASS_POSTURES`,
-  and `CHECK_KINDS`. Add a value here, not at a call site.
+  `CHECK_KINDS`, and `DOC_SCOPE_KINDS`. Add a value here, not at a call site.
+
+  `DOC_SCOPE_KINDS` is **a different axis from `CHECK_KINDS`** — that one asks
+  "does this gate a `checks` round", this one asks "what is this flag ABOUT" —
+  and `headings-present` is deliberately in both. It fails open the same way: an
+  unregistered kind is treated as section-scope and piles onto whichever card
+  its producer anchored it to. It is injected into the frontend as
+  `__DOC_SCOPE_KINDS__`, exactly as `__CHECK_KINDS__` is, for the same
+  anti-drift reason.
 - **`round_is_complete()`** — the single completion rule: may this round be
   signed off? Both `loop.py finish` and `server.py`'s `POST /complete` handler
   ask it, from separate processes, so the invariant lives in one place. Pure —
@@ -128,6 +152,19 @@ content that changed gets a stale description, so it drops and is rewritten.
 **Validate at the boundary** — on parse write and server read — never
 at the point of use. A field that a reader forgets silently drops a feature; the
 boundary validator is what turns that into a loud failure.
+
+Both review-input read boundaries are **unconditional and mode-keyed**, and for
+one reason: a gate that keys on the payload's own shape validates nothing when
+the shape is the thing that is wrong. `POST /next-round` validates every body
+(the old `if "sections" in new_data` gate let a round nested one level deep
+through with `{"ok":true}`, replaced the served round, and bricked the tab with
+no error on either side), and startup validation asks `args.mode`, not the
+payload — the same rule `/complete`'s guard already follows, "the exemption keys
+on the launch mode, not the round payload". The browser's SSE `round` handler
+carries a matching refusal, which is a strand backstop rather than a second
+copy of the boundary: the cost of the server being wrong is a tab frozen
+forever, so the handler turns away a payload with no `sections[]` before it
+overwrites `REVIEW_DATA`.
 
 `GET /input` serves the review-input merged with a live `ledger: [...]` key; that
 `ledger` is injected at serve time and is not part of the on-disk file schema.
@@ -212,6 +249,13 @@ cost is that a branch named `42` needs `--kind ref`.
   its round once and replaces it only from `POST /next-round`, so a merge into
   the file on disk under a live round is one `/complete` never sees.
   `loop.py annotate` refuses that case outright.
+
+  **A producer reporting a fact about the WHOLE DOCUMENT registers its `kind`
+  in `schema.DOC_SCOPE_KINDS` as well.** Without it, `parse_sections.py`'s
+  integrity check leaves the first card as the producer's only anchor and its
+  flags render in the margin of section 1 — which is what put five amber lines
+  in the first viewport of every typed round-1 review. Registered, they render
+  once, in the document slip above the print.
 - **Doc-type bundles.** A type is section grammar + check set + default pass, one
   JSON file per name: shipped defaults in `types/`, a repo's overrides in
   `.viva-types/`, the repo's copy winning **wholesale** on a name collision so it

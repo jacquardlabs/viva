@@ -8,10 +8,10 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/review-dark.jpg">
-  <img alt="viva reviewing a design doc: prose in the main column, the reviewer's open note and a per-section state table in the margin, a check flag in the left gutter, and a footer showing convergence and the sign-off button" src="assets/review-light.jpg">
+  <img alt="viva reviewing a design doc: the document's prose in the main column, an open thread in the margin beside the exact sentence it questions with the agent's answer nested under it, approved sections dimmed above, and a footer showing item counts, convergence and the dispatch stamp" src="assets/review-light.jpg">
 </picture>
 
-<sub>Round 2 of a `design-doc` review at `line` depth. The reviewer's thread sits in the margin beside the sentence it questions; the gutter flags a missing section; the footer holds the stamp.</sub>
+<sub>Round 2 of a `design-doc` review at `line` depth. The reviewer's thread sits in the margin beside the sentence it questions, with the agent's answer under it and `Reply`/`Settle` still open; sections approved in round 1 are dimmed above; the bar states what is left.</sub>
 
 ## Why
 
@@ -102,6 +102,26 @@ Each card takes one or more inline comments (GitHub-style threads), typed `chang
 
 Note fields take image attachments (paste, drag-and-drop, or 📎) and Claude reads each one as part of the rewrite.
 
+### Voice — the oral examination
+
+viva is named after the PhD oral, where the candidate submits *writing* and the examiner *speaks*. Press <kbd>v</kbd> (or the `voice` control in the footer) and you examine the document out loud.
+
+| You say | What happens |
+|---------|-------------|
+| "approve" | Signs off the open card and advances |
+| "request changes — the retry claim is unsourced" | Opens the composer with your words in it |
+| "question — why three and not five?" | Same, typed `info` |
+| "suggest wording — the client retries three times" | Same, as a suggested edit |
+| "save" / "cancel" | Keeps or discards the staged comment |
+| "next" / "back" | Moves between cards |
+| "submit" | Opens the recap gate — you still confirm by hand |
+
+**Speech commands; it never authors.** A verb carrying no text (`approve`, `next`) acts immediately — there is nothing to mis-transcribe. Anything carrying your words is *staged* in the comment box for you to read, and only `save` makes it a comment: the ledger records what you approved, not what a recognizer guessed. Every utterance prints in the footer with the reading it got, including the ones that matched nothing.
+
+Dictation works on its own too — the `🎤 dictate` button in any note field, no hands-free mode required. While a note field holds the caret, everything you say goes into it; <kbd>Esc</kbd> or "stop" ends listening from anywhere.
+
+Off by default, and only offered where the browser has a recognizer (Chrome, Edge, Safari — not Firefox). **Your browser's speech recognition is a network service**: Chrome sends the audio to Google. viva itself stays keyless, hosts nothing, and keeps no recording, but the audio does leave your machine — the page says so once, before the first time it listens.
+
 ---
 
 ## `/viva-write` — doc-first intake
@@ -123,7 +143,7 @@ Every argument is optional. With no type, question one is *what's the deliverabl
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/interview-dark.jpg">
-  <img alt="The viva interview: one question expanded with three answer chips carrying digit shortcuts and a recommended badge, a hint and a free-text context box in the margin, and two further questions collapsed below" src="assets/interview-light.jpg">
+  <img alt="The viva interview: one question expanded with three answer chips carrying digit shortcuts and a recommended badge, the agent's hint and a free-text context box beside them, and two further questions collapsed below" src="assets/interview-light.jpg">
 </picture>
 
 <sub>Step 3. The attachments answered everything else; these are what's left.</sub>

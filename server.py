@@ -44,8 +44,9 @@ _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\
 _PREFS_STORE_PATH: str = ""
 
 # Third-party browser assets, vendored under `assets/vendor/` and served from
-# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from
-# jsdelivr any more, so a review works offline and the supply chain is six
+# disk at `/vendor/<file>` (#79, #144). Nothing in the page is fetched from ANY
+# remote host any more — not jsdelivr, and (reversing #79's scope decision) not
+# Google Fonts either — so a review works offline and the supply chain is ten
 # pinned files in-tree rather than a range resolved by a CDN at load time.
 #
 # Resolved from this file's own location, never the cwd: the server is launched
@@ -69,8 +70,74 @@ _VENDOR_ASSETS = (
     ("diff2html-3.4.56.min.js", "text/javascript; charset=utf-8"),
     ("diff2html-ui-slim-3.4.56.min.js", "text/javascript; charset=utf-8"),
     ("diff2html-3.4.56.min.css", "text/css; charset=utf-8"),
+    # The mono face. Referenced from an `@font-face { src: url(...) }` inside
+    # the `HTML` constant's own stylesheet rather than from a `<script src>` —
+    # a fourth spelling of the same three-place coordinated edit.
+    ("fragment-mono-v6-latin.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-ext.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-italic.woff2", "font/woff2"),
+    ("fragment-mono-v6-latin-ext-italic.woff2", "font/woff2"),
 )
 _VENDOR_ROUTES = {"/vendor/" + name: (name, ctype) for name, ctype in _VENDOR_ASSETS}
+
+# ── The spoken grammar (viva voce) ───────────────────────────────────────────
+# In a viva the candidate submits writing and the examiner SPEAKS. viva already
+# has the written defence; this is the examiner's voice, and it is input only.
+#
+# The grammar lives here rather than in `scripts/schema.py` because the browser
+# is its only consumer — nothing outside the page reads a spoken phrase, and
+# schema.py is the on-disk contract. It lives here rather than inline in the JS
+# for the reason `__CHECK_KINDS__` is injected: one table, checked by a test,
+# instead of a hand-kept copy that drifts. `tests/test_voice_grammar.py` pins it
+# to `schema.COMMENT_TYPES` and `schema.VERDICTS`, so adding a comment type
+# fails until it has something a reviewer can say.
+#
+# Two classes of verb, and the split is the safety rule:
+#
+#   carries=False — matches ONLY when the WHOLE normalized utterance is the
+#                   phrase. "improve this section" matches nothing; "approve"
+#                   matches. These act immediately, because a verb with no text
+#                   is a button press: there is nothing a recognizer can
+#                   mis-transcribe INTO THE RECORD.
+#   carries=True  — matches at the START; the remainder is the reviewer's text.
+#                   These never act. They STAGE the text in the comment
+#                   composer, where the reviewer reads it and confirms — which
+#                   is what keeps PRODUCT.md's "verbatim, not summarized" true
+#                   of a ledger built from speech.
+#
+# `submit` is deliberately an alias for `recap`, not for submitting: ending the
+# round is the one action the page already gates behind the recap overlay and a
+# confirm click, and a spoken word does not get to skip a gate the mouse can't.
+_VOICE_VERBS = (
+    # Carrying verbs — one per COMMENT_TYPES value.
+    {"act": "comment", "type": "changes", "carries": True,
+     "phrases": ("request changes", "changes", "change")},
+    {"act": "comment", "type": "info", "carries": True,
+     "phrases": ("need info", "question", "info")},
+    {"act": "comment", "type": schema.SUGGESTION, "carries": True,
+     "phrases": ("suggest wording", "suggest", "replace with")},
+    # Bare verbs — whole-utterance only.
+    # No "pass": in review vocabulary it is ambiguous in the wrong direction —
+    # "I'll pass on this section" means skip, not sign off — and this is the one
+    # bare verb that writes a verdict.
+    {"act": "approve", "carries": False, "phrases": ("approve", "approved")},
+    {"act": "next", "carries": False, "phrases": ("next", "skip", "move on")},
+    {"act": "back", "carries": False, "phrases": ("back", "previous", "go back")},
+    {"act": "save", "carries": False, "phrases": ("save", "done", "commit")},
+    {"act": "cancel", "carries": False, "phrases": ("cancel", "scratch that", "never mind")},
+    {"act": "recap", "carries": False, "phrases": ("recap", "submit", "submit all")},
+    {"act": "stop", "carries": False, "phrases": ("stop listening", "stop")},
+)
+
+# Flattened one-rule-per-phrase and sorted LONGEST PHRASE FIRST, so the browser
+# can take the first match and be right: "request changes …" must never be read
+# as the verb `changes` carrying the word "request". Sorting here rather than in
+# JS keeps the ordering rule in the same file as the table it orders.
+_VOICE_RULES = tuple(sorted(
+    (dict(phrase=phrase, act=verb["act"], carries=verb["carries"],
+          **({"type": verb["type"]} if "type" in verb else {}))
+     for verb in _VOICE_VERBS for phrase in verb["phrases"]),
+    key=lambda rule: -len(rule["phrase"])))
 
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -78,9 +145,6 @@ HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viva</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
 <script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
 <script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
 <script defer src="/vendor/highlight-11.11.1.min.js"></script>
@@ -101,6 +165,43 @@ HTML = r"""<!DOCTYPE html>
 })();
 </script>
 <style>
+/* ─── Faces ──────────────────────────────────────────────────
+   Fragment Mono, vendored (assets/vendor/README.md) and served from this
+   server's own /vendor route. Nothing in this page reaches a remote host any
+   more: a review works offline, and viva's "local and keyless" claim covers
+   its typography too — until this, both faces came from Google Fonts, a
+   per-session request to Google on every review. (The host is not named here
+   on purpose: `test_typography.py` forbids the string outright, so a reinstated
+   `<link>` fails rather than shipping.)
+
+   latin + latin-ext only. Google serves a cyrillic-ext subset per style as
+   well; both are under 1 KiB and fall below the truncation floor
+   `test_server_vendor_assets.py` uses to catch a half-downloaded asset, so
+   Cyrillic falls back to the system mono instead, which is the right degrade.
+
+   The unicode-range values are Google's own, kept verbatim so subsetting
+   behaves exactly as it did remotely. No `crossorigin` anywhere: same-origin. */
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext-italic.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 /* ─── Tokens ─────────────────────────────────────────────── */
 /* Catalog: a parts-catalog page — white ground, compact type, every state
    visible and tabular. Light is the primary theme (the ground the design was
@@ -255,6 +356,16 @@ body {
   color: var(--text);
   min-height: 100vh;
   font-variant-numeric: tabular-nums;
+  /* Byte-verbatim: no glyph the source did not contain. Fragment Mono
+     substitutes `>=` to a single U+2265 and `->` to U+2192, so a reviewer
+     approving a hunk cannot tell the ligature from a real ≥ in the file — on a
+     surface whose whole promise is byte-for-byte display. Declared ONCE, on the
+     ground, and inherited: a per-surface rule is the one the next mono surface
+     forgets. `none` is the complete set (no common, discretionary, historical
+     or contextual). Deliberately the high-level `font-variant-*` property and
+     not the low-level OpenType-feature one: mixing the two on a single element
+     is the only way to put the `tabular-nums` line above at risk. */
+  font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -518,6 +629,9 @@ body {
 .tr-flag-error .tr-marker,   .tr-flag-error .tr-label { color: var(--orange); }
 .tr-flag-warn .tr-marker,    .tr-flag-warn .tr-label  { color: var(--violet); }
 .tr-approved .tr-marker,     .tr-approved .tr-label   { color: var(--teal); }
+/* An answer that changed no text is information, not a revision — so it takes
+   the facts/info party's ink, the same slot `.tr-flag-warn` uses. */
+.tr-answered .tr-marker,     .tr-answered .tr-label   { color: var(--violet); }
 
 .progress-track {
   flex: 1;
@@ -609,9 +723,78 @@ body {
   border: 1px solid var(--rule);
   border-radius: 0;
   background: none;
+}
+
+/* The session controls — learned prefs, voice, theme — as ONE unit.
+   `margin-left: auto` used to sit on the theme toggle alone, which right-aligned
+   it inside the wrapping stats row. With voice beside it the row no longer fits
+   on one line at ordinary widths, and an auto margin on a single item wraps that
+   item by itself: the theme control printed on a line of its own under
+   everything else. They are one cluster, so they wrap as one. */
+.bar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 .theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ─── Voice — the oral examination ───────────────────────────
+   The toggle wears the theme toggle's grammar and states its mode in words
+   for the same reason: a microphone glyph makes the reader guess whether it
+   names the state or the action. Cobalt only while listening — speech is the
+   reviewer's party, and an idle control is not doing anything yet. */
+.voice-toggle {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--soft);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+}
+.voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
+.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
+
+/* The strip is the transcript, and it exists so nothing is ever swallowed in
+   silence: every utterance prints here with the reading it got, INCLUDING the
+   ones that matched no verb. A reviewer who cannot tell "heard nothing" from
+   "heard something and ignored it" cannot trust the layer at all. */
+.voice-strip {
+  max-width: 1240px;
+  margin: 0 auto 8px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.voice-strip .vs-state { color: var(--acc); font-weight: 600; text-transform: uppercase; }
+.voice-strip .vs-heard { color: var(--text); }
+.voice-strip .vs-read  { color: var(--text3); }
+/* Interim results are the recognizer still deciding — shown so the reviewer
+   can see it is hearing them, dimmed so it never reads as the record. */
+.voice-strip .vs-interim { color: var(--text3); font-style: italic; }
+.voice-notice { color: var(--text2); }
+.voice-notice button {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--acc);
+  background: none;
+  border: 1px solid var(--acc);
+  border-radius: 0;
+  padding: 3px 9px;
+  margin-left: 8px;
+}
 
 /* A section is a run of the print, not a box on it. The card kept a 1px
    border and a filled panel from the era when it was a drawing pinned to a
@@ -1255,27 +1438,113 @@ body {
 /* One type size for the whole print, so `ch` means the same thing in every
    row — the heading and the machine's own faces set their own size on top. */
 .doc-section { font-size: 13.5px; }
-/* With the margin collapsed there is nowhere beside the heading to hang the
-   section's own controls, so the head row drops to two tracks and its margin
-   cell prints under the heading instead. Pure CSS: the cluster is built once
-   and never moved between hosts, so a collapse/expand can't blur focus.
+/* The head row has no margin cell in any state, so it needs no collapsed-margin
+   exemption, no reflow rule and no spec cap — three special cases deleted,
+   none added. The FOOT band keeps a two-track twin, and only because
+   `updateDocColumns` counts `docFlagSplit(s).margin` and `docNotes(s)` but NOT
+   `split.gutter`: a section-scope, non-jumping flag whose anchor resolves to no
+   row falls back to the foot band and renders its words there through
+   `marginFlagHTML`, which on a `no-margin` document would be a 0px track. (The
+   COMPOSER needs no such rule — `.rm .comment-popover.is-open` drops
+   `no-margin` synchronously before paint; see openCommentPopover.)
 
-   `1fr`, not the `72ch` this shipped with — the last `ch` in a grid template,
-   and the one invariant #5 was written against. It resolved against the row's
-   own font-size, so the head row came out narrower than every prose row below
-   it on a collapsed document, and in the accordion (where no `.doc-section`
-   fixes one size for the print) it would have resolved differently again. The
-   head row now measures exactly what the rows under it measure. */
-.doc.no-margin .row-head { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
-.doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
-.doc.no-margin .row-head .rm .spec { max-width: 340px; }
+   `1fr`, not `72ch` — the last `ch` in a grid template, and the one invariant
+   #5 was written against: it resolves against the row's own font-size, so the
+   band would come out narrower than every prose row above it. */
+.doc.no-margin .row-foot { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+.doc.no-margin .row-foot .rm { grid-column: 2; padding-left: 0; }
 /* Below the composite's own breakpoint the third column has no room to be a
    margin; notes fall under the passage they annotate and the gutter narrows
-   to a glyph rail. */
+   to a glyph rail. `.row-foot` needs no term in either list — it is a
+   `.doc .row` and its margin cell is a `.doc .rm`, both already covered. Nor
+   does the wide-row selector, which was only ever a redundant restatement of
+   the same two tracks: a wide row IS a `.doc .row`, and no top-level rule
+   re-templates it. Naming it here also put a wide-row template restatement in
+   the source, which `assert_catalog_ground` forbids outright — masked until
+   now only by whichever selector happened to follow it in the list. */
 @media (max-width: 920px) {
-  .doc .row, .doc .row.wide, .doc.no-margin .row-head { grid-template-columns: 30px minmax(0, 1fr); }
+  .doc .row { grid-template-columns: 30px minmax(0, 1fr); }
   .doc .rg { padding-right: 8px; }
-  .doc .rm, .doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+  .doc .rm { grid-column: 2; padding-left: 0; }
+}
+
+/* ─── The foot band ───────────────────────────────────────────
+   The section's DISPOSITION: what is open on it, and what you do about it.
+   Horizontal, at the reading measure, under the prose — which is where a parts
+   catalog puts an entry's spec block and its order line.
+
+   It was the head row's margin cell: a vertical stack of a five-row state
+   table and a button cluster in a 328px column, beside a one-line title. That
+   is 101px against 40px on EVERY annotated section, and 400px against 40px
+   once unanchored notes joined it — 360px of blank page between a heading and
+   its own first paragraph, measured. The margin column earns its position for
+   a note that points at a passage sitting beside it; a section's state points
+   at the section, has no passage beside it, and was being paid for in white.
+
+   A sibling of `.section-content`, never a child — `docRows` is
+   `#rcontent-<id> > .row`, and a row inside it is one `rowForAnchor` can
+   return, `docNotesOrdered` can index and `markAndPin` walks. */
+.doc .row-foot { margin-top: 18px; }
+/* `.doc .row + .row`'s 10px does not reach here — the foot row's previous
+   sibling is `.section-content`, not a row — and 10px is a paragraph gap
+   anyway. This band closes a section. */
+
+/* The reading measure, taken as a max-width rather than a grid track: `ch`
+   resolves against the element's own font-size, which is exactly why no `ch`
+   appears in a TEMPLATE (issue #5's lesson) and exactly why it is right here —
+   the band measures what the prose above it measures, on whichever surface it
+   is on. Without it, diff mode's `min(95vw, 1600px)` shell would put `approve`
+   1200px from the state readout. */
+.doc .row-foot .rp { max-width: 72ch; }
+
+.doc-apparatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+}
+/* The verbs LEAD and the state TRAILS, visually — `approve` sits on the same
+   left edge the reader has been reading down, in the same place whether or not
+   the section has a spec to state, so the one control that is always there
+   never moves. In the DOM the state comes first, because "2 comments open"
+   before "approve" is the order a screen reader should hear it. The reordered
+   element carries no focusable content, so focus order is untouched and the
+   `order` pair costs nothing. */
+.spec-strip { order: 2; margin-left: auto; }
+.doc-acts   { order: 1; }
+/* An all-zero spec renders nothing (specHTML's early return) — then the band
+   is one line of verbs, and an empty flex item with an auto margin has no
+   business eating the free space. */
+.spec-strip:empty { display: none; }
+
+/* The state, as a run rather than a table: five label/value pairs at 10.5px
+   mono is one line at the measure, against the ~120px a five-row table took in
+   a 328px column. Separation is `gap`, never generated content — a `::before`
+   punctuation mark is announced by some screen readers, and the `.sp-k`/`.sp-v`
+   ink pairing already separates a label from its value. */
+.spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.sp-k { color: var(--soft); }
+.sp-v { color: var(--text2); }
+/* The one thing that is open takes the reviewer's ink, exactly as
+   `.spec .spec-open td:last-child` did. */
+.sp-open .sp-v { color: var(--acc); font-weight: 600; }
+/* At narrow widths the state run leads the left edge under the verbs —
+   right-aligning it against a 30px-gutter column strands it. This media query
+   sits AFTER `.spec-strip { margin-left: auto }` deliberately: the two rules
+   tie on specificity, so source order is the whole mechanism. */
+@media (max-width: 920px) {
+  .spec-strip { margin-left: 0; }
 }
 
 .doc-section { position: relative; animation: fadeUp 0.4s ease both; }
@@ -1285,6 +1554,12 @@ body {
 .doc-section.is-approved .rp { opacity: 0.5; }
 .doc-section.is-approved .doc-head { color: var(--faint); }
 .doc-section.is-approved:hover .rp { opacity: 0.85; transition: opacity 0.2s; }
+/* The prose dims on approval; the band that lets you take it back does not.
+   `↺ withdraw approval` is the only way out of an approved section, and this
+   fight was already had for carried cards (0.55 rather than `.is-approved`'s
+   0.42, "so the affordances stay discoverable"). Specificity 0,4,0 — it TIES
+   the hover rule above, so its position after it is the whole mechanism. */
+.doc-section.is-approved .row-foot .rp { opacity: 1; }
 
 /* The section heading carries its catalog number, the way a parts catalog
    numbers its entries — `9 · One human, N threads`. */
@@ -1514,28 +1789,6 @@ body {
   vertical-align: 1px;
 }
 
-/* ─── Margin spec table ───────────────────────────────────────
-   The transmittal slip's successor at section scale: what is open on this
-   section, stated as a spec rather than described. */
-.spec {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-  margin-bottom: 10px;
-  font-variant-numeric: tabular-nums;
-}
-.spec caption {
-  text-align: left;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--soft);
-  padding-bottom: 3px;
-}
-.spec td { border: 1px solid var(--rule); padding: 2px 7px; }
-.spec td:first-child { color: var(--soft); width: 62%; }
-.spec .spec-open td:last-child { color: var(--acc); font-weight: 600; }
-
 /* ─── Suggestion fence ────────────────────────────────────────
    The one place red and green are correct: the fence and the diff are the
    same object, and diff semantics already own those two colors. Squared off
@@ -1761,7 +2014,7 @@ body {
    a border instead of a gradient stack. Registering --c keeps the recolor
    animatable; without @property support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.choice-chip, .attach-btn, .cmt-chip, .cmt-save, .cmt-cancel {
+.choice-chip, .attach-btn, .mic-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --c: var(--rule);
   border: 1px solid var(--c);
   background: var(--paper);
@@ -1776,7 +2029,6 @@ body {
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
   width: 100%;
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 13px;
   padding: 9px 12px;
   border: 1px solid var(--border2);
@@ -1858,6 +2110,24 @@ body {
   padding: 5px 10px;
 }
 .attach-btn:hover { --c: var(--text3); color: var(--text); }
+/* The composer's second secondary control — same grammar as attach, same
+   `--c` edge, because it does the same kind of job: it fills the box beside
+   it and never decides anything. Cobalt while live: speech is the reviewer's
+   party, and a control that is currently doing something is the one place the
+   accent belongs. */
+.mic-btn {
+  margin-top: 6px;
+  margin-left: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.mic-btn:hover { --c: var(--text3); color: var(--text); }
+.mic-btn.is-live { --c: var(--accent); color: var(--accent); }
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
@@ -1967,7 +2237,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .thread-reply-chips { display: flex; gap: 8px; margin-bottom: 5px; }
 .thread-reply-field {
   width: 100%;
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 12px;
   padding: 6px 9px;
   border: 1px solid var(--border);
@@ -2046,8 +2315,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    somewhere different on every row. Stacked, the labels start on one left
    edge and the keycaps end on one right edge, which is exactly the shape
    `.pal-row` already uses for the same job: a list of things you pick, each
-   with the key that picks it. */
-.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; }
+   with the key that picks it.
+
+   BOUNDED to 328px — `--margin-w`'s maximum, the width every other pick-list
+   -shaped object here takes. `.pal-row` is a ~500px palette holding
+   sentence-length labels; stretching that shape across a 606px measure to hold
+   `per-request` stranded the digit keycap ~550px from its label.
+   `align-items: flex-start` would keep the digit near its label by making the
+   chips ragged — trading away the property this comment argues for. Bound it,
+   don't un-stretch it. */
+.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; max-width: 328px; }
 
 .choice-chip {
   font-size: 12px;
@@ -2101,13 +2378,21 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 }
 .nt-compose .attach-btn { margin-top: 6px; }
 .nt-compose .thumb-strip { margin-top: 6px; }
-/* With the question restated as the entry's own heading, the disclosure head
-   is an index line — one line, however long the question runs, and quiet once
-   the entry below it is open. Without the second half the same sentence
-   printed twice, a line apart, reads as a duplication rather than as an index
-   pointing at its entry. */
-#qa-cards .card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#qa-cards .card.is-active .card-title { color: var(--soft); font-weight: 400; }
+/* The disclosure head IS the question — printed once, wrapping, numbered like
+   a catalog entry. It was clamped to one line and dimmed once open, as an
+   index line pointing at the `<h2>` below it; that mitigation assumed the entry
+   held something other than the same sentence, which a free-text question does
+   not. With the duplicate gone the head has to carry the whole question, so the
+   clamp goes with it — ellipsizing a question now printed nowhere else leaves
+   it readable nowhere. */
+#qa-cards .card-title { white-space: normal; }
+
+/* A free-text question has nothing to put in the prose column, and a 606px
+   empty track beside a 328px compose note is the same wasted-space failure
+   `.doc.no-margin` exists to answer. Decided as a constant, because whether a
+   question has choices cannot change mid-session. */
+#qa-cards .row-head.is-choiceless { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+#qa-cards .row-head.is-choiceless .rm { grid-column: 2; padding-left: 0; max-width: 420px; }
 
 /* ─── Skip link (first Tab stop; hidden until focused) ───── */
 .skip-link {
@@ -2141,6 +2426,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
 .theme-toggle:focus-visible, .pal-hint:focus-visible,
+.voice-toggle:focus-visible, .mic-btn:focus-visible, .voice-notice button:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -2172,6 +2458,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   align-items: center;
 }
 .kbd-list dt { margin: 0; }
+/* The second list in the same disclosure: the aggregates, defined. Its terms
+   are words, not keycaps, so they get no `.kbd-list kbd` chrome — only the
+   rule that separates the two lists. */
+.term-list { margin-top: 12px; }
+.term-list dt { color: var(--text2); }
 .kbd-list dd { margin: 0; color: var(--text2); }
 .kbd-list kbd {
   font-family: 'Fragment Mono', monospace;
@@ -2203,8 +2494,25 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  /* NOWRAP, and the counters give way instead. A flex container breaks its
+     line BEFORE it shrinks anything, so `wrap` here meant the row never even
+     attempted the shrink that would have let it fit: at doc mode's own 1054px
+     cap, 613px of counters against a 450px stamp is 1063, and the stamp
+     dropped to a line of its own over nine pixels. `.stats` is `0 1 auto` with
+     `min-width: 0` and wraps internally, so it absorbs the squeeze down to its
+     own widest child — measured no overflow at 1054, 900, 760, 640 and 520px
+     of container, with the stamp keeping its full 450px at every one. */
+  flex-wrap: nowrap;
 }
 
+/* The counters take the room the dispatch controls do not, and give way
+   INTERNALLY rather than pushing them onto a line of their own. `.btn-group`
+   is `flex: 0 0 auto`, so without `min-width: 0` here the counters claim their
+   full content width and the two blocks overflow the row: measured at doc
+   mode's own 1054px cap, 613px of counters against 450px of buttons is 1063 —
+   over by nine pixels, and the stamp wrapped under the stats. Shrinking lets
+   `.bar-controls` (the `margin-left: auto` cluster) take the second line
+   instead, which is the wrap it was grouped to make graceful. */
 .stats {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -2212,12 +2520,20 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
+  /* Shrink, never grow. `1 1 auto` made the counters claim the whole row and
+     push the stamp onto a second line just as surely as no shrink at all. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
-.stat-approved { color: var(--teal); }
-.stat-feedback { color: var(--orange); }
 .stat-pending  { color: var(--text3); }
 
-.btn-group { display: flex; gap: 8px; }
+/* The two dispatch controls are one unit and they do not shrink: a flex item's
+   default `flex-shrink: 1` let `skip rest & submit` wrap onto three lines at a
+   780px viewport (measured). `.stats` above already wraps and absorbs the width
+   instead. The content columns reflow well and are deliberately untouched.
+   `display: flex` stays in the stylesheet — the SSE `round` handler restores
+   this group with `style.display = ''` and falls back to exactly this rule. */
+.btn-group { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .btn-skip {
   font-family: 'Fragment Mono', monospace;
@@ -2228,6 +2544,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   border: 1px solid var(--border2);
   background: transparent;
   color: var(--text2);
+  /* The label is three words and a glyph; a button narrower than its text
+     broke `skip rest & submit` onto three lines before `.btn-group` stopped
+     shrinking. Both halves are needed. */
+  white-space: nowrap;
   transition: all 0.15s;
 }
 .btn-skip:hover { border-color: var(--text3); color: var(--text); }
@@ -2239,7 +2559,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 9px 20px;
-  border: none;
+  /* A transparent 1px border, not `none`: the ready and not-ready states share
+     one box, so the outline state below cannot grow the control by 2px. */
+  border: 1px solid transparent;
+  white-space: nowrap;
   transition: all 0.2s;
 }
 .btn-submit.ready {
@@ -2250,9 +2573,17 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   background: var(--ink);
   transform: none;
 }
+/* The not-ready dispatch takes `.btn-skip`'s quiet outline grammar. It kept
+   the primary's filled shape and painted it `--border2` (an alias of --ink)
+   on `--text3` (an alias of --faint, DESIGN.md's "settled, disabled" ink) —
+   which made the one control that cannot act the highest-contrast block on
+   the page, in both themes. The affordance was inverted; the fix is the
+   shape, not the token. It carries `aria-disabled` from updateReviewStats /
+   updateQAStats; the DOM `disabled` attribute stays reserved for in-flight. */
 .btn-submit.disabled {
-  background: var(--border2);
-  color: var(--text3);
+  background: transparent;
+  color: var(--faint);
+  border-color: var(--rule);
   cursor: not-allowed;
 }
 
@@ -2346,10 +2677,25 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   color: var(--text3);
   text-align: right;
 }
+/* Three children, not one: the blocked state on the left, the two controls on
+   the right. The row held only `confirm & submit`, so a recap opened with
+   sections still pending offered exactly one control and that control could
+   not act. */
 .recap-actions {
-  display: flex; justify-content: flex-end;
+  display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+  flex-wrap: wrap;   /* three children now, in a row built for one */
   padding: 12px 14px;
   border-top: 1px solid var(--border);
+}
+/* Why the confirm is quiet, said in place. `.recap-title`'s label grammar, so
+   it reads as a state label rather than as a new ink. */
+.recap-blocked {
+  margin-right: auto;   /* the label holds the left edge; the controls stay right */
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
 }
 
 /* ─── Preferences panel — view/mute learned preferences (#142) ────
@@ -2532,7 +2878,10 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   padding-bottom: 10px;
   margin-bottom: 16px;
 }
-.processing-requests { max-width: 460px; }
+/* The echoed requests take the PAGE's measure. `#processing-view` keeps the
+   page's left edge and its measure rather than centering — a bare 460px cap
+   honored only the first half of that. */
+.processing-requests { max-width: 72ch; }
 
 .complete-inner {
   display: flex;
@@ -2570,7 +2919,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   margin-bottom: 0.5rem;
 }
 .complete-detail {
-  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 0.95rem;
   color: var(--text2);
   margin-bottom: 0.25rem;
@@ -2677,6 +3025,13 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       </div>
     </div>
     <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
+    <!-- "flags", not "checks": the rows are every DOC_SCOPE_KINDS flag, and
+         only `headings-present` is also a CHECK_KIND — a `checklist` row is not
+         a check. The visible head already says "Document · N flags", so naming
+         it checks here gave a screen reader a name the sighted head contradicts.
+         The checks TALLY still rides in that head, where it is one part of the
+         line rather than the name of the whole thing. -->
+    <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level flags" style="display:none"></nav>
     <div class="sort-bar" id="sort-bar" style="display:none">
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
@@ -2737,7 +3092,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   </div>
 
   <details class="kbd-legend">
-    <summary>keyboard shortcuts</summary>
+    <summary>keyboard shortcuts &amp; what the counts mean</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
       <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
@@ -2745,8 +3100,21 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
+      <dt><kbd>v</kbd></dt><dd>voice &mdash; the oral examination; Escape stops listening from anywhere</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
+    </dl>
+    <!-- Every aggregate the bar and the footer print, defined once, in the
+         page, in the reader's reach. A reviewer who cannot reproduce the
+         arithmetic stops trusting the numbers — on the one surface whose
+         whole job is to be trustworthy state. `title` on the two cells is a
+         mouse convenience; this list is what states them. -->
+    <dl class="kbd-list term-list">
+      <dt>item</dt><dd>one thing with a state: a carried thread, a comment you made, an unanswered check, or a section's own sign-off. A producer flag is advisory and is not an item.</dd>
+      <dt>open</dt><dd>items still waiting on someone &mdash; judgment (changes, suggestions, declines) plus facts (questions, unanswered checks). Everything else is settled.</dd>
+      <dt>convergence</dt><dd>open items when this round was armed &rarr; open items now. Falling means you are closing more than you open.</dd>
+      <dt>approved</dt><dd>sections carrying an approved verdict, out of all sections. A section with feedback is reviewed but not approved.</dd>
+      <dt>checks</dt><dd>producer checks that carry an answer, out of all of them. A document-level check is counted here and nowhere else.</dd>
     </dl>
   </details>
 
@@ -2760,10 +3128,13 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
      review mode only, since a diff or Q&A round has no document balance. -->
 <div class="bottom-bar" id="bottom-bar-el">
   <div class="foot-seg" id="foot-seg" style="display:none"></div>
+  <!-- The voice transcript. Its own aria-live region rather than a cell inside
+       #stats-area's: the counters announce a count, this announces a sentence,
+       and one region cannot pace both. Ships hidden — nothing about this page
+       changes until a reviewer turns the microphone on. -->
+  <div class="voice-strip" id="voice-strip" aria-live="polite" style="display:none"></div>
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
-      <span class="stat-approved" id="stat-approved"></span>
-      <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
       <!-- Review-mode footer (#186). `convergence` is the question a
            multi-round review actually asks — is the reviewer closing more than
@@ -2771,9 +3142,15 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
            the last same-origin request this page made. -->
       <span class="stat-conv" id="stat-conv" style="display:none"></span>
       <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
-      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
-      <button type="button" class="theme-toggle" id="theme-toggle"
-              title="Cycle theme: follow system, light, dark">theme: system</button>
+      <div class="bar-controls">
+        <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
+        <!-- Ships hidden and stays hidden where the browser has no recognizer:
+             a control that cannot work is worse than no control. `initVoice`
+             reveals it. -->
+        <button type="button" class="voice-toggle" id="voice-toggle" style="display:none">voice: off</button>
+        <button type="button" class="theme-toggle" id="theme-toggle"
+                title="Cycle theme: follow system, light, dark">theme: system</button>
+      </div>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -2793,6 +3170,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     </div>
     <div class="recap-grid" id="recap-grid"></div>
     <div class="recap-actions">
+      <span class="recap-blocked" id="recap-blocked"></span>
+      <button type="button" class="btn-skip" id="recap-skip" style="display:none"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
       <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
     </div>
   </div>
@@ -3054,8 +3433,42 @@ function renderLedger() {
 const FLAG_RANK = { error: 0, warn: 1 };
 
 // Strongest flag severity on a section: 0 (error), 1 (warn), or null.
+/* The author's turn on a thread, answered FOR THIS ROUND: a response, or
+   grounds for a decline. Key PRESENCE for `grounds`, exactly as
+   `openNotesHTML` does — a decline with no grounds is still a decline, and a
+   decline is still an answer to the note.
+
+   `round` is not optional and the freshness test is the whole point.
+   `open_notes.py` appends an exchange only when the REVIEWER takes a turn on
+   that cid, and an unsettled thread carries forward untouched — so a thread
+   answered in round 1 that the reviewer then neither settled nor replied to
+   still reads "answered" in round 3, 4 and 5. Without `last.round === round - 1`
+   this predicate re-presents a two-round-old answer as this round's news,
+   which is the exact defect it was written to close. `- 1` because an exchange
+   is stamped with the round the reviewer's turn was made in, and the author's
+   response to it lands in the round after.
+
+   Defined ONCE, taking the round rather than reading a global, because two
+   readers ask the same question and must never disagree about it: the
+   transmittal's `answered` bucket (a pure function over its own `data`), and
+   where round >= 2 lands the reader. */
+function authorAnswered(t, round) {
+  const last = ((t || {}).exchanges || []).slice(-1)[0] || {};
+  if (Number(last.round) !== round - 1) return false;
+  return Boolean(last.response) || last.grounds !== undefined;
+}
+
+function sectionAnswered(s, round) {
+  return ((s || {}).open_notes || []).some(t => authorAnswered(t, round));
+}
+
+// A DOC_SCOPE flag is skipped: it is a fact about the document, and `checklist`
+// emits `severity: "error"`, so one missing template heading would otherwise
+// brand section 1 `flagged & unreviewed` in the cover slip — the same
+// misattribution in the transmittal that the margin used to make.
 function flagRank(section) {
   const ranks = ((section && section.annotations) || [])
+    .filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))
     .map(a => FLAG_RANK[(a || {}).severity])
     .filter(r => r !== undefined);
   return ranks.length ? Math.min(...ranks) : null;
@@ -3069,12 +3482,23 @@ function transmittalHTML(data) {
   // (and, if it carries annotations, reappears as flagged) — the slip tracks
   // the live verdict, not just the static approved_ids the round shipped with.
   const carriedNow = id => approved.has(id) && rState.verdicts[id]?.verdict === 'approved';
-  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [], carried = [];
+  const revisedNoted = [], revisedBare = [], flaggedErr = [], flaggedWarn = [],
+        answered = [], carried = [];
   (data.sections || []).forEach(s => {
     const hasDiff  = Array.isArray(s.diff) && s.diff.length > 0;
     const hasNotes = Array.isArray(s.open_notes) && s.open_notes.length > 0;
     if (hasDiff) { (hasNotes ? revisedNoted : revisedBare).push(s); return; }
     if (carriedNow(s.id)) { carried.push(s); return; }
+    // The author answered the reviewer's own note and made no edit — a decline
+    // (#167), or a response that needed none. Without a row this is the one
+    // thing a round 2 exists for and the only thing the slip could not see: no
+    // diff, no error/warn flag and no carried stamp fell through the whole
+    // dispatch and rendered nothing. AFTER the carried test on purpose: a
+    // section the reviewer already signed off is settled business, not news.
+    // A STALE answer — one the reviewer left unsettled and unanswered for a
+    // round — falls through to `flagRank` exactly as it did before, so a
+    // section carrying both keeps its flag row rather than re-reading as news.
+    if (sectionAnswered(s, data.round)) { answered.push(s); return; }
     const rank = flagRank(s);
     if (rank !== null) { (rank === 0 ? flaggedErr : flaggedWarn).push(s); return; }
   });
@@ -3091,6 +3515,9 @@ function transmittalHTML(data) {
                noted ? 'revised to your note' : 'revised');
   };
   const rows = revisedNoted.concat(revisedBare).map(revisedRow).concat(
+    // News before unreviewed machine output: an answer is the author's turn,
+    // a flag is a producer's.
+    answered.map(s => row(s, 'tr-answered', '&#8627;', 'answered, not revised')),
     flaggedErr.map(s => row(s, 'tr-flag-error', '&#9873;', 'flagged &amp; unreviewed')),
     flaggedWarn.map(s => row(s, 'tr-flag-warn', '&#9873;', 'flagged &amp; unreviewed')),
     carried.map(s => row(s, 'tr-approved', '&#9635;', 'approved &amp; unchanged')));
@@ -3118,6 +3545,69 @@ function renderTransmittal() {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
   });
   const head = el('transmittal-head'), body = el('transmittal-rows');
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+}
+
+/* ─── The document slip ──────────────────────────────────────
+   Every doc-scope flag in the round, once, in section order. They are the same
+   fact wherever a producer had to hang them, so the document states them ONCE
+   — as a slip, the way the transmittal states what changed — instead of five
+   amber lines in the margin of section 1. */
+function documentFlags() {
+  return ((REVIEW_DATA && REVIEW_DATA.sections) || [])
+    .flatMap(s => docFlagSplit(s).doc);
+}
+
+function docSlipHTML() {
+  /* Every mode that renders sections, NOT review alone. `docFlagSplit` routes a
+     doc-scope flag out of both columns unconditionally, so a mode gate here is
+     not "the slip is a review feature" — it is the flag rendering NOWHERE. A
+     diff round carrying one showed `checks 0/1` in the bar, with
+     `round_is_complete` going on enforcing the gate in Python and no surface
+     anywhere saying what the check was: exactly the worst-of-both this slip was
+     built to prevent, relocated one mode over. `renderDocSlip` is called from
+     `initReview`, which boots review and diff alike, so the surface was already
+     there. */
+  if (!REVIEW_DATA) return '';
+  const flags = documentFlags();
+  if (!flags.length) return '';
+  // The checks tally rides in the head because `sectionSpec` no longer draws
+  // one: today's only CHECK_KIND is doc-scope, so with the flags out of the
+  // sections the gate would have no readout anywhere on the page while
+  // `round_is_complete` went on enforcing it — the worst of both.
+  const checks = flags.filter(a => CHECK_KINDS.includes(a.kind));
+  const done = checks.filter(a => a.result).length;
+  // Collapsed, like the transmittal, for the reading-order reason its own
+  // comment states — UNLESS the document is carrying an error. Demoting a
+  // document-level error to a digit behind a disclosure is a claim about
+  // severity nobody made; one condition answers it without a debate.
+  const open = flags.some(a => a.severity === 'error');
+  return '<button type="button" class="transmittal-head" id="doc-slip-head" aria-expanded="'
+    + (open ? 'true' : 'false') + '" aria-controls="doc-slip-rows">'
+    + '<span class="transmittal-title">Document &middot; ' + flags.length
+    + (flags.length === 1 ? ' flag' : ' flags')
+    + (checks.length ? ' &middot; checks ' + done + '/' + checks.length : '')
+    + '</span><span class="transmittal-chevron" aria-hidden="true">&#9662;</span></button>'
+    + '<div class="transmittal-rows" id="doc-slip-rows"' + (open ? '' : ' hidden') + '>'
+    // The rows dedupe their `result`; the tally above does NOT. `checks D/T` is
+    // computed off the RAW flags because deduping first would read `checks 1/5`
+    // on a round where all five were answered with one sentence — and this head
+    // is the only readout of the `checks` gate anywhere on the page while
+    // `round_is_complete` goes on enforcing it in Python.
+    + dedupeResults(flags, new Set()).map(marginFlagHTML).join('') + '</div>';
+}
+
+function renderDocSlip() {
+  const panel = el('doc-slip');
+  if (!panel) return;
+  const html = docSlipHTML();
+  if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.innerHTML = html;
+  panel.style.display = '';
+  const head = el('doc-slip-head'), body = el('doc-slip-rows');
   if (head && body) head.addEventListener('click', () => {
     body.hidden = !body.hidden;
     head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
@@ -3220,13 +3710,36 @@ function initReview() {
   // late-load retry keep working unchanged: `retryOnceScriptsLoad` selects on
   // the `.md-raw`/`.d2h-pending` marker classes, not on pending state.
   if (asDoc) REVIEW_DATA.sections.forEach(s => _ensureRendered(s.id));
+  // Where round >= 2 LANDS. A section unchanged since the prior round keeps its
+  // flags verbatim (`parse_sections._carry_annotations` copies them onto a
+  // byte-identical section), so opening on the first unapproved section walked
+  // a round-2 reader straight back onto the same flag wall they had already
+  // read — while the author's answers to their OWN notes, the reason a round 2
+  // exists at all, sat further down the print. On round >= 2 the print lands on
+  // the first section carrying something new: a revision, else a thread the
+  // author answered (a response, or grounds for a decline).
+  //
+  // The `!priorApprovedSet.has` conjunct is belt-and-braces. `_load_approved`
+  // already drops a section whose content changed and one whose prior verdict
+  // was not `approved`, so neither a diffed nor an answered section can be
+  // carried — but the conjunct keeps `activateReviewCard`'s carried branch out
+  // of play should a resume ever pre-approve differently.
+  const newBusiness = (isContinuousPrint() && REVIEW_DATA.round > 1)
+    ? REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id)
+        && ((Array.isArray(s.diff) && s.diff.length > 0)
+            || sectionAnswered(s, REVIEW_DATA.round)))
+    : null;
   // Open first non-approved card
   const firstPending = REVIEW_DATA.sections.find(s => !priorApprovedSet.has(s.id));
-  if (firstPending) activateReviewCard(firstPending.id);
-  else if (REVIEW_DATA.sections.length > 0) activateReviewCard(REVIEW_DATA.sections[0].id);
+  const landing = newBusiness || firstPending || REVIEW_DATA.sections[0];
+  if (landing) activateReviewCard(landing.id);
   updateReviewStats();
   renderLedger();
   renderTransmittal();
+  // Per-round static: doc-scope flags never change with a verdict, so this is
+  // the only call site — the two verdict paths that re-render the transmittal
+  // have nothing to say to it, and `/next-round` re-enters initReview.
+  renderDocSlip();
   setupCardSort();
 }
 
@@ -3543,8 +4056,9 @@ function buildReviewCard(section) {
     <div class="card-body-wrap" id="rbody-${section.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          ${docHeadRowHTML(section.id, `<div id="rseg-${section.id}"></div>${diffStripHTML(section.id, section.diff)}`, { skip: true })}
+          ${docHeadRowHTML(section.id, `<div id="rseg-${section.id}"></div>${diffStripHTML(section.id, section.diff)}`)}
           <div class="section-content" id="rcontent-${section.id}"></div>
+          ${docFootRowHTML(section.id, section.title, { skip: true })}
           <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
         </div>
       </div>
@@ -3554,7 +4068,7 @@ function buildReviewCard(section) {
     toggleReviewCard(section.id);
   });
 
-  wireDocHeadRow(card, section.id);
+  wireDocSection(card, section.id);
   return card;
 }
 
@@ -3649,6 +4163,13 @@ function withdrawApproval(id) {
    `checks` round, and a second copy of it in the frontend is exactly the
    fail-open drift the schema module exists to prevent. ═════════════════ */
 const CHECK_KINDS = __CHECK_KINDS__;
+/* The scope registry, injected for the same reason and against the same
+   failure. DOC_SCOPE_KINDS is a DIFFERENT AXIS from CHECK_KINDS — that one
+   asks "does this gate a `checks` round", this one asks "what is this flag
+   ABOUT" — and `headings-present` is deliberately in both. A hand-kept second
+   copy would fail open the same silent way: an unregistered kind is treated as
+   section-scope and piles onto whichever card its producer anchored it to. */
+const DOC_SCOPE_KINDS = __DOC_SCOPE_KINDS__;
 
 /* ─── The seam: the grammar is not the print ─────────────────
    The restructure is TWO things, and one class stamped for both is what
@@ -3685,9 +4206,16 @@ function isContinuousPrint() { return !!(REVIEW_DATA && REVIEW_DATA.mode === 're
    the jump wiring those two features already ship. */
 function docFlagSplit(section) {
   const titles = reviewSectionTitles();
-  const gutter = [], margin = [];
+  const gutter = [], margin = [], doc = [];
   (section.annotations || []).forEach(a => {
     if (!a) return;
+    // A document fact, not a flag on this passage. Both producers that emit one
+    // anchor it to the first card because that is the only document-level
+    // handle they have — taking that literally put five amber "missing expected
+    // design-doc section" lines in the margin of section 1, which is the first
+    // thing a round-1 review paints. It goes to neither column: it goes to the
+    // document slip.
+    if (DOC_SCOPE_KINDS.includes(a.kind)) { doc.push(a); return; }
     // A confidence annotation is the agent's self-report about the whole
     // section, not a flag on a passage — it drives the triage sort, and its
     // readout is the spec table. Letting it into the gutter would hold 98px
@@ -3699,7 +4227,7 @@ function docFlagSplit(section) {
     const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
     (jumps ? margin : gutter).push(a);
   });
-  return { gutter, margin };
+  return { gutter, margin, doc };
 }
 
 const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
@@ -3728,6 +4256,31 @@ function marginFlagHTML(a) {
     + '<span>' + esc(a.message || '')
     + (a.result ? '<span class="r">&rarr; ' + esc(a.result) + '</span>' : '')
     + '</span></div>';
+}
+
+/* One decision, printed once. A `checks` round answers several flags with the
+   same sentence: five check flags each printed the SAME one-line `result`
+   verbatim, measured in round 3 of a live session — one decision, printed five
+   times. Every flag's MESSAGE still prints and always will; a `result` already
+   printed in this pass is dropped, so the answer reads once and the flags that
+   share it stay legible.
+
+   The annotation is COPIED, never mutated: `a.result` is what `specHTML`'s
+   `checksDone`, `sectionBalance`'s `settled`, `documentBalance` and the slip's
+   own `checks D/T` head all count, and blanking it in place would silently move
+   a number with no error anywhere.
+
+   `seen` is a parameter, not a module-level Set, so every caller owns one per
+   invocation. `placeDocFlags` is idempotent by contract — a shared Set would
+   look right on first paint and suppress every result on the first re-sync. */
+function dedupeResults(list, seen) {
+  return list.map(a => {
+    const r = a && a.result;
+    if (!r) return a;
+    if (seen.has(r)) return Object.assign({}, a, { result: undefined });
+    seen.add(r);
+    return a;
+  });
 }
 
 /* ─── Rows ───────────────────────────────────────────────────
@@ -3777,9 +4330,13 @@ function docRows(id) {
   return host ? Array.from(host.querySelectorAll(':scope > .row')) : [];
 }
 
-function docHeadRow(id) {
+/* The section's foot band. Static markup from both builders — a pure query,
+   like `docHeadRow` was, so nothing here creates DOM inside a render loop.
+   `buildCarriedCard` builds no bands, so a carried reveal yields null and every
+   caller's `if (!host) return;` keeps doing the job it already did. */
+function docFootRow(id) {
   const sec = el('rcard-' + id);
-  return sec ? sec.querySelector('.row-head') : null;
+  return sec ? sec.querySelector('.row-foot') : null;
 }
 
 // The row whose prose holds the given occurrence of `text`. Counts occurrences
@@ -3817,8 +4374,15 @@ function docCell(row, cls) {
   return cell;
 }
 
+/* Where a note hangs. A note whose anchor resolved into a row hangs in that
+   row's margin, beside its own passage — the whole reason the margin column
+   exists. A note with no row of its own — unanchored, or an anchor that
+   resolved to nothing — hangs at the section's FOOT, which is where a
+   whole-section note is read. Never at the head: a note about all of a section
+   is not an introduction to it, and at the head it started the section's own
+   first paragraph 400px down the page. */
 function docNoteHost(id, row) {
-  const target = row || docHeadRow(id);
+  const target = row || docFootRow(id);
   if (!target) return null;
   const rm = docCell(target, 'rm');
   let host = rm.querySelector(':scope > .rm-notes');
@@ -3852,14 +4416,25 @@ function docNotes(section) {
 }
 
 // Notes in reading order: by the row their anchor lands in, then by the order
-// they were made. An unanchored note sorts to -1 — the section head, which is
-// above every row — because a whole-section note is about all of it.
+// they were made. An unanchored note sorts to the END — `rows.length`, past
+// every real index — because a whole-section note is read AFTER the section,
+// not before it, and because that is where it now renders (the foot band). It
+// sorted to -1, the section head, until that put 400px of margin beside a
+// one-line title and started the section's own first paragraph 400px below it.
+//
+// An anchor that resolves to NO row degrades the same way. `rowForAnchor` reads
+// a row's concatenated prose text and matches across element boundaries;
+// `wrapNth` needs the needle inside a single text node and is strictly
+// stricter, so a `rowForAnchor` miss implies a `wrapNth` miss: the note lands
+// at the foot with its quote echo, takes the highest ordinal, and carries no
+// pin. That is the honest degrade, and at the foot it reads as a whole-section
+// note instead of disappearing into a pile above the prose.
 function docNotesOrdered(section) {
   const rows = docRows(section.id);
   return docNotes(section)
     .map((n, i) => {
       const r = n.anchor ? rowForAnchor(section.id, n.anchor.text, n.anchor.occurrence) : null;
-      return Object.assign({}, n, { row: r ? rows.indexOf(r) : -1, seq: i });
+      return Object.assign({}, n, { row: r ? rows.indexOf(r) : rows.length, seq: i });
     })
     .sort((a, b) => a.row - b.row || a.seq - b.seq);
 }
@@ -3916,11 +4491,9 @@ function commentNoteHTML(n) {
     + '</div></div>';
 }
 
-/* ─── Spec table ─────────────────────────────────────────────
-   The transmittal slip's successor at section scale, and the margin's
-   answer to "what is open here" — stated as a spec, not described. Drawn
-   for the LIVE section only: a spec table on every section at once is a
-   table of contents, not a state readout. */
+/* ─── The state run ──────────────────────────────────────────
+   The transmittal slip's successor at section scale, and the foot band's
+   answer to "what is open here" — stated as a spec, not described. */
 function sectionSpec(section) {
   const id = section.id;
   const threads = section.open_notes || [];
@@ -3935,33 +4508,45 @@ function sectionSpec(section) {
   });
   activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
     .forEach(c => { if (c.type === 'suggestion') suggestions++; else comments++; });
-  const checks = (section.annotations || []).filter(a => a && CHECK_KINDS.includes(a.kind));
+  // A doc-scope check is a fact about the document, and its readout is the
+  // document slip's own `checks D/T` tally — not this section's state.
+  const checks = (section.annotations || []).filter(
+    a => a && CHECK_KINDS.includes(a.kind) && !DOC_SCOPE_KINDS.includes(a.kind));
   return { comments, suggestions, declined,
            checks: checks.length, checksDone: checks.filter(a => a.result).length };
 }
 
 function specHTML(section) {
   const s = sectionSpec(section);
-  // Nothing open and nothing checked: no table. A spec reading all zeros is
-  // not a state readout, and this is also what keeps the head row's height
-  // independent of which section is live — see renderDocSpec.
+  // Nothing open and nothing checked: no state run at all. A spec reading all
+  // zeros is not a state readout, and this is also what keeps the FOOT band's
+  // height independent of which section is live — see renderDocSpec. On a
+  // clean typed round 1 whose only annotations were doc-scope producer flags,
+  // this early return is now what leaves section 1's band as bare verbs.
   const conf0 = confidenceAnnot(section);
   if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
-  const row = (label, value, open) =>
-    '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
-  // The agent's own confidence is a spec line, not a gutter flag: it is about
-  // the section, and it is what the triage sort orders on.
+  // A RUN, not a table: five label/value pairs at 10.5px mono are one line at
+  // the reading measure, against the ~120px a five-row table took in a 328px
+  // column beside a one-line title. Same items, same ink rule, same early
+  // return. The table's `<caption>` is gone — `.doc-apparatus` carries a
+  // `role="group"` with an `aria-label`, so the band is still named.
+  const item = (label, value, open) =>
+    '<span class="sp' + (open ? ' sp-open' : '') + '">'
+    + '<span class="sp-k">' + label + '</span> <span class="sp-v">' + value + '</span></span>';
+  // The agent's own confidence is a state item, not a gutter flag: it is about
+  // the section, and it is what the triage sort orders on. `docFlagSplit` sends
+  // a `confidence` annotation to NEITHER column precisely because this is its
+  // readout — drop it here and a documented feature goes invisible with no
+  // error anywhere.
   const conf = confidenceAnnot(section);
-  const rows = row('comments open', s.comments, s.comments > 0)
-    + row('suggestions open', s.suggestions, s.suggestions > 0)
-    + row('author kept as-is', s.declined, false)
-    + (s.checks ? row('checks', s.checksDone + '/' + s.checks
+  return item('comments open', s.comments, s.comments > 0)
+    + item('suggestions open', s.suggestions, s.suggestions > 0)
+    + item('author kept as-is', s.declined, false)
+    + (s.checks ? item('checks', s.checksDone + '/' + s.checks
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
-    + (conf ? row('agent confidence',
+    + (conf ? item('agent confidence',
         [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
         conf.level === 'low') : '');
-  return '<table class="spec"><caption>' + esc(section.title) + ' &mdash; state</caption>'
-    + '<tbody>' + rows + '</tbody></table>';
 }
 
 /* ─── Segmented rule ─────────────────────────────────────────
@@ -3988,11 +4573,47 @@ function sectionBalance(section) {
     .forEach(c => { if (c.type === 'changes' || c.type === 'suggestion') judgment++; else facts++; });
   (section.annotations || []).forEach(a => {
     if (!a) return;
+    // A DOCUMENT fact is not this section's item. Placed ABOVE the CHECK_KINDS
+    // branch on purpose: `headings-present` is doc-scope AND a check kind, so
+    // without this the branch below would count five document facts as five
+    // open items on section 1 — the section none of them concerns.
+    //
+    // A stated decision, not a derivation: because the skip precedes that
+    // branch, an ANSWERED doc-scope check contributes no `settled` here or in
+    // `documentBalance`'s sum. It is accounted for exactly once, in
+    // `documentBalance`'s own `checks`/`checksDone` pair, which is what the
+    // slip's `checks D/T` prints.
+    if (DOC_SCOPE_KINDS.includes(a.kind)) return;
     if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; else facts++; return; }
-    if (a.severity === 'warn' || a.severity === 'error') facts++;
+    // And a PLAIN producer flag is not an item at all. `.mflag` takes no
+    // border and no actions — it is advisory and there is nothing to answer,
+    // so nothing the reviewer can do makes it close. Counting it as an open
+    // fact painted a section whose only annotation was one warn flag with a
+    // 100%-wide amber bar (four on the first screen, measured) and held
+    // `N open` off zero on a round where every section was approved and every
+    // check answered. An unanswered CHECK_KIND above is the opposite case: it
+    // is answered with `result` and it gates a `checks` round, so it stays.
   });
-  if (deriveVerdict(id) === 'approved') settled++;
-  return { judgment, facts, settled };
+  /* The section's own sign-off is an item in BOTH states, and that is the
+     whole of the correction. It used to count only once approved (`settled++`
+     and nothing on the other branch), so a document's item total measured
+     decisions ALREADY MADE rather than things to decide: a fresh eight-section
+     round with five unanswered checks printed `0 items · 0 open`, which the
+     legend's own definition — "an item is … or a section's own sign-off" —
+     says is eight. The count grew as the reviewer worked, which is the exact
+     class of defect the aggregates were redefined to end.
+
+     It rides out as its own field rather than folding into `judgment` because
+     the two consumers want different things and both are right. A pending
+     sign-off IS open business, so `documentBalance` counts it. It is not
+     business the segmented rule should paint: `segHTML` sums only
+     judgment/facts/settled, so a section whose only open item is its own
+     sign-off still draws the settled hairline instead of a 100%-wide cobalt
+     slab on every unreviewed section of every round 1 — finding 09 in a
+     different ink. */
+  const signoff = deriveVerdict(id) === 'approved' ? 0 : 1;
+  if (!signoff) settled++;
+  return { judgment, facts, settled, signoff };
 }
 
 function segHTML(bal) {
@@ -4010,41 +4631,81 @@ function segHTML(bal) {
     + seg('seg-settled', bal.settled) + '</div>';
 }
 
-/* ─── The head row, shared by both builders ──────────────────
-   The PROSE cell differs by surface — the print prints the section's heading
-   there, the accordion has already printed it in the disclosure button — so
-   it is passed in. The MARGIN cell does not differ at all, and it is the one
-   that carries the section: the spec table, the note host, and the section's
-   own verbs. One copy, so a verb added to a document review cannot go missing
-   from a diff review.
+/* ─── The head row: orientation, one track ───────────────────
+   The heading, the section's number, its summary, the segmented rule and the
+   collapsed round diff. Nothing else, and NO margin cell — that is the whole
+   of finding 01. The margin column exists for a note that points at a passage
+   sitting beside it; a section's state table and its verbs point at the
+   SECTION, have no passage beside them, and were being paid for in blank page.
+   A one-line title beside a 400px pile of margin rendered as 360px of white
+   between a heading and its own first paragraph, and even the bare
+   state-table-plus-approve case measured 40px against 101px on EVERY annotated
+   section. The head row is now a single track: its height is its prose's
+   height, and a void is not expressible.
+
+   The prose cell still differs by surface — the print prints the heading here,
+   the accordion has already printed it in the disclosure button — so it is
+   still passed in. What used to differ is gone: there is no margin cell to
+   keep identical. The section's verbs moved WITH the state, to the foot band
+   (`docFootRowHTML`), which is where `skip` went too. */
+function docHeadRowHTML(id, proseHTML) {
+  return '<div class="row row-head"><div class="rp">' + proseHTML + '</div></div>';
+}
+
+/* ─── The foot band: disposition ─────────────────────────────
+   What the head row used to hold in its margin, laid out the way a catalog
+   lays out an entry's state block: horizontally, at the reading measure, under
+   the thing it describes. A parts catalog prints the entry, then its
+   specification, then how to order it. So does this.
+
+   Static markup from both builders, never created on demand — that keeps
+   `docFootRow` a pure query (the same shape `docHeadRow` was) and keeps DOM
+   creation out of the render loops that call into it on every sync.
+   `buildCarriedCard` builds neither band, so a carried reveal still yields
+   `null` for the same structural reason it always did, and the three
+   `if (!host) return;` guards keep guarding with no explicit refusal.
+
+   It is a SIBLING of `.section-content`, never a child: `docRows` is
+   `#rcontent-<id> > .row`, so a foot row inside it would become a row
+   `rowForAnchor` can return, `docNotesOrdered` can index, `markAndPin` can
+   walk and `proseWalker` has to filter — the margin's own echo re-entering the
+   document walk, which is the #95 failure this grid already fought once.
+   Outside it, it is invisible to all four.
+
+   The VERBS lead and the state trails (see `.spec-strip { order: 2 }`), so
+   `approve` sits on the same left edge the reader has been reading down,
+   whether or not the section has a spec to state.
 
    `skip` is the accordion's alone. In the print every section is on the page
    already and skipping to the next one is just reading on; with one hunk open
    at a time, "not this one, not now" is a real move and it needs a control. */
-function docHeadRowHTML(id, proseHTML, opts) {
+function docFootRowHTML(id, title, opts) {
   const skip = !!(opts && opts.skip);
-  return '<div class="row row-head">'
-    + '<div class="rp">' + proseHTML + '</div>'
-    + '<div class="rm" id="rspec-' + id + '">'
-    +   '<div class="rm-spec" id="rspecbody-' + id + '"></div>'
-    +   '<div class="rm-notes"></div>'
-    +   '<div class="nt-acts doc-acts">'
-    +     '<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">'
-    +       '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>'
-    +     '<button type="button" class="nt-btn is-quiet" id="rcmtnote-' + id + '">+ note</button>'
-    +     (skip ? '<button type="button" class="nt-btn is-quiet" id="rbtn-skip-' + id + '">'
-                + '<span aria-hidden="true">&#8595;</span> skip</button>' : '')
+  return '<div class="row row-foot">'
+    + '<div class="rp">'
+    +   '<div class="doc-apparatus" role="group" aria-label="'
+    +     esc(title) + ' &mdash; state and actions">'
+    +     '<div class="spec-strip" id="rspecbody-' + id + '"></div>'
+    +     '<div class="nt-acts doc-acts">'
+    +       '<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">'
+    +         '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>'
+    +       '<button type="button" class="nt-btn is-quiet" id="rcmtnote-' + id + '">+ note</button>'
+    +       (skip ? '<button type="button" class="nt-btn is-quiet" id="rbtn-skip-' + id + '">'
+                  + '<span aria-hidden="true">&#8595;</span> skip</button>' : '')
+    +     '</div>'
     +   '</div>'
     + '</div>'
     + '</div>';
 }
 
-/* The wiring that goes with it. Approve is the section's own control and it
-   stays reachable by pointer and by Tab: with the action row gone, a section
-   carrying no notes would otherwise hold no focusable element at all, and
-   keyboard access to every section is a hard requirement (test_server_a11y).
-   ⌘K is a second path to the same verb, never the only one. */
-function wireDocHeadRow(root, id) {
+/* The wiring that goes with the two bands. Approve is the section's own
+   control and it stays reachable by pointer and by Tab: with the action row
+   gone, a section carrying no notes would otherwise hold no focusable element
+   at all, and keyboard access to every section is a hard requirement
+   (test_server_a11y). ⌘K is a second path to the same verb, never the only
+   one. `root` is the whole card/section in both builders, so the head/foot
+   split is invisible here — everything is addressed by id. */
+function wireDocSection(root, id) {
   root.querySelector('#rbtn-primary-' + id).addEventListener('click', e => {
     e.stopPropagation();
     if (deriveVerdict(id) === 'approved') docWithdraw(id); else approveSection(id);
@@ -4101,7 +4762,8 @@ function buildDocSection(section, index) {
         ${section.summary ? `<div class="section-summary">${esc(section.summary)}</div>` : ''}
         <div id="rseg-${id}"></div>
         ${diffStripHTML(id, section.diff)}`) + `
-    <div class="section-content" id="rcontent-${id}"></div>
+    <div class="section-content" id="rcontent-${id}"></div>`
+    + docFootRowHTML(id, section.title) + `
     <div class="comment-popover" id="rpop-${id}" style="display:none"></div>`;
 
   // The live section follows the reader: pointing at or tabbing into one
@@ -4112,7 +4774,7 @@ function buildDocSection(section, index) {
   sec.addEventListener('mousedown', () => activateReviewCard(id, { noScroll: true }));
   sec.addEventListener('focusin',   () => activateReviewCard(id, { noScroll: true }));
 
-  wireDocHeadRow(sec, id);
+  wireDocSection(sec, id);
   return sec;
 }
 
@@ -4136,9 +4798,15 @@ function placeDocFlags(id) {
   const section = REVIEW_DATA.sections.find(s => s.id === id); if (!section) return;
   const split = docFlagSplit(section);
   const byRow = new Map();
+  // Per call, spanning every row of this section — see `dedupeResults`. Today
+  // no doc-scope kind reaches this loop at all (`docFlagSplit` routes them to
+  // the slip, and `headings-present` is the only CHECK_KIND), so this is the
+  // guard for the day a section-scope check kind lands, not the site that
+  // closed the finding. That one is `docSlipHTML`.
+  const seenResults = new Set();
   split.gutter.forEach(a => {
     const row = a.anchor != null ? rowForAnchor(id, String(a.anchor), 0) : null;
-    const key = row || docHeadRow(id);
+    const key = row || docFootRow(id);
     if (!key) return;
     if (!byRow.has(key)) byRow.set(key, []);
     byRow.get(key).push(a);
@@ -4146,6 +4814,9 @@ function placeDocFlags(id) {
   // Glyph in the rail, words in the margin, both on the row the flag concerns.
   byRow.forEach((flags, row) => {
     docCell(row, 'rg').innerHTML = flags.map(gutterGlyphHTML).join('');
+    // AFTER the rail, deliberately: the glyph's `title` also carries
+    // `→ result`, but a tooltip appears one at a time and is not a wall.
+    flags = dedupeResults(flags, seenResults);
     const rm = docCell(row, 'rm');
     let host = rm.querySelector(':scope > .rm-flags');
     if (!host) {
@@ -4201,9 +4872,10 @@ function placeDocThreads(id) {
     }
     const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
     // The same guard `placeDocFlags` and `docNoteHost` carry, and for the same
-    // reason: an unanchored thread falls back to the head row, and a surface
-    // that has no head row has nowhere to put it.
-    const host = row || docHeadRow(id);
+    // reason: an unanchored thread falls back to the section's FOOT band, and
+    // a surface that has no foot band (a carried reveal) has nowhere to put it.
+    // The three fallbacks move together or they disagree.
+    const host = row || docFootRow(id);
     if (!host) return;
     const rm = docCell(host, 'rm');
     let threadHost = rm.querySelector(':scope > .rm-threads');
@@ -4212,6 +4884,15 @@ function placeDocThreads(id) {
       threadHost.className = 'rm-threads';
       // Threads precede this round's fresh notes: a carried thread is older
       // business than a comment made a minute ago.
+      //
+      // With the head row's static `<div class="rm-notes">` gone, the foot
+      // band's `.rm` starts empty and this query returns null on the first
+      // call — `insertBefore(node, null)` appends, and `docNoteHost` then
+      // creates `.rm-notes` after it. Flags → threads → notes still comes out
+      // in the documented order, but it comes out that way from
+      // `_ensureRendered`'s call order rather than from this line. Do not
+      // "simplify" the insertBefore to an append: a rebuild that places a
+      // thread AFTER notes already in the cell would reverse them.
       rm.insertBefore(threadHost, rm.querySelector(':scope > .rm-notes'));
     }
     if (node.parentElement !== threadHost) threadHost.appendChild(node);
@@ -4372,7 +5053,10 @@ function renderDocMargin(id) {
       }
       return;
     }
-    const host = docNoteHost(id, n.row < 0 ? null : docRows(id)[n.row]);
+    // An unanchored note carries `row === rows.length`, so the index read is
+    // out of range and yields undefined; `|| null` states that rather than
+    // leaning on `undefined || footRow` inside docNoteHost.
+    const host = docNoteHost(id, docRows(id)[n.row] || null);
     if (host) host.insertAdjacentHTML('beforeend', commentNoteHTML(n));
   });
   sec.querySelectorAll('.rm-notes .cmt-del').forEach(b =>
@@ -4391,7 +5075,7 @@ function renderDocSeg(id) {
 
 /* Drawn for every section that has something to state, NOT only the live one.
    Gating it on `rState.active` made activation a layout change: clicking `+
-   note` on a section moved the spec table from one head row to another, so the
+   note` on a section moved the state readout from one band to another, so the
    section jumped 57px up while the button slid 17px out from under the cursor
    (measured). A reviewer cannot click a control that leaves when they reach
    for it. The live section is marked at its heading instead — a border and a
@@ -4423,10 +5107,17 @@ function updateDocColumns() {
   // An OPEN compose popover holds the margin as surely as a saved note does.
   // Without it, the first anchored comment on a bare document — the exact
   // document the collapse rule exists for — mounts its textarea into a 0px
-  // track. (The head row is immune: `.doc.no-margin .row-head .rm` reflows
-  // under the heading, which is why the `+ note` path never showed this.)
+  // track. It is also what makes the `+ note` composer safe in the foot band
+  // with no rule of its own — this clause runs synchronously before paint.
   // `.is-open` rather than a style-attribute match: the serialized inline
   // style is the browser's business, not a selector's.
+  //
+  // NOTE what is deliberately NOT counted: `split.gutter`. A gutter-bucket
+  // flag renders words into a `.rm` too (placeDocFlags' byRow loop), so one
+  // whose anchor resolves to no row lands in the foot band's margin on a
+  // document this rule would otherwise collapse. That is what the
+  // `.doc.no-margin .row-foot` twin in the CSS is for — widening this line
+  // instead would hold the column open on every flagged document.
   const margin = sections.some(s => docFlagSplit(s).margin.length || docNotes(s).length)
     || !!doc.querySelector('.rm .comment-popover.is-open');
   doc.classList.toggle('no-gutter', !gutter);
@@ -4488,7 +5179,8 @@ function _ensureRendered(id) {
   /* A CARRIED card is the one thing that renders section content without
      wearing the grammar. It is a read-only reveal of a hunk already signed
      off: nothing to annotate, no notes to place, no verbs — and, crucially,
-     no `.row-head`, because buildCarriedCard never builds one. Running the
+     no `.row-head` and no `.row-foot`, because buildCarriedCard never builds
+     either band. Running the
      pipeline over it grids a body nobody can comment on, and an unanchored
      carried thread takes `placeDocThreads` down `docCell(null, 'rm')`. */
   const card = el('rcard-' + id);
@@ -4893,25 +5585,38 @@ function openCommentPopover(id, { anchor, type } = {}) {
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
+    + (voiceSupported()
+        ? '<button type="button" class="mic-btn"><span aria-hidden="true">&#127908;</span> dictate</button>'
+        : '')
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
-  // The popover composes a MARGIN note, so it opens in the margin beside the
-  // passage being annotated rather than at the foot of the section — the note
-  // lands where the reviewer is already looking, and the prose never shifts to
-  // make room for a compose box. Anchored: beside its own passage. Unanchored
-  // (`+ note`): at the FOOT of the head row's margin, below the controls —
-  // mounting it in `.rm-notes` put it above them and pushed the very button
-  // just clicked down the page. Moved before focus: relocating a node after
-  // focusing inside it blurs the field.
+  // The popover composes a MARGIN note, so it opens in the margin: anchored,
+  // beside its own passage; unanchored (`+ note`), in the FOOT band's margin,
+  // appended after whatever is already there — which is exactly the cell the
+  // note it saves lands in, one child up, in `.rm-notes`. The composer and
+  // every unanchored note it creates share ONE `.rm`, which is what keeps
+  // `renderDocMargin`'s wipe-and-renumber pass and the box the reviewer is
+  // typing in describing the same place.
+  //
+  // The invariant this used to guard — the button just clicked must not move —
+  // is now structural rather than positional. `+ note` lives in the same foot
+  // row, in the PROSE cell; a box appended to the margin cell beside it cannot
+  // displace it at all. Moved before focus: relocating a node after focusing
+  // inside it blurs the field.
   const row = anchor ? rowForAnchor(id, anchor.text, anchor.occurrence) : null;
-  const head = docHeadRow(id);
-  const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));
+  const foot = docFootRow(id);
+  const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));
   if (host && pop.parentElement !== host) host.appendChild(pop);
   pop.style.display = '';
   pop.classList.add('is-open');
   // Opening the box is what makes the margin non-empty; closing it (saved or
-  // cancelled) is what may let the column collapse again.
+  // cancelled) is what may let the column collapse again. This is also why the
+  // FOOT band needs no `.doc.no-margin` twin for the composer: the sequence
+  // above is synchronous and completes before paint, so `.rm .comment-popover
+  // .is-open` has already dropped `no-margin` by the time the textarea is laid
+  // out. (The twin that IS kept is for a gutter-bucket flag whose anchor
+  // resolved to nothing — `updateDocColumns` does not count those.)
   updateDocColumns();
 
   const ta        = pop.querySelector('.cmt-pop-note');
@@ -4952,7 +5657,13 @@ function openCommentPopover(id, { anchor, type } = {}) {
     const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
     if (chip) chip.click();
   }
-  ta.focus();
+  // `nearest`, not `center`: a popover taller than the viewport aligns to its
+  // top — where the type chips are — and a short one does not move the page at
+  // all, so the prose is never yanked out from under the reader. `preventScroll`
+  // on the focus, or the browser's own scroll-to-field undoes it and lands the
+  // viewport on the textarea with the chips and the quote above the fold.
+  ta.focus({ preventScroll: true });
+  pop.scrollIntoView({ block: 'nearest' });
   pop.querySelector('.cmt-save').onclick = () => {
     const text = ta.value.trim();
     // A suggestion ships on its wording: the same box the other types use for
@@ -4972,6 +5683,16 @@ function openCommentPopover(id, { anchor, type } = {}) {
     closeCommentPopover(id);
   };
   pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
+  // Dictation is the same act as typing here: it fills THIS box, and the save
+  // above is still the only thing that makes a comment. The button turns the
+  // microphone on and puts the caret back — from there the modal rule takes
+  // over, because a focused note field is what makes speech dictation.
+  const mic = pop.querySelector('.mic-btn');
+  if (mic) {
+    // Built after paintVoiceToggle last ran, so it paints its own live state.
+    mic.classList.toggle('is-live', voiceIsOn());
+    mic.onclick = () => startVoice(() => ta.focus());
+  }
 }
 
 function closeCommentPopover(id) {
@@ -5154,11 +5875,11 @@ function updateReviewStats() {
   const remaining= total - reviewed;
 
   el('r-progress').style.width = (reviewed / total * 100) + '%';
-  el('r-progress-label').textContent = `${reviewed} / ${total}`;
-  el('stat-approved').textContent = `${approved} approved`;
-  const fEl = el('stat-feedback');
-  if (withFeedback > 0) { fEl.style.display=''; fEl.textContent=`${withFeedback} with feedback`; }
-  else fEl.style.display = 'none';
+  // The cell is LABELLED `approved` (and DESIGN.md specifies `approved N/M`),
+  // so it prints APPROVED. It printed `reviewed`, which counts sections
+  // carrying feedback too — which is how the bar could read `approved 8 / 8`
+  // on a round where three sections had open changes.
+  el('r-progress-label').textContent = `${approved} / ${total}`;
   el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
 
   const sub = el('btn-submit');
@@ -5168,15 +5889,23 @@ function updateReviewStats() {
   // never disagree.
   const openItems = documentBalance().open;
   sub.className = remaining === 0 && reviewed > 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  // Announce the deadness as well as draw it. NOT the `disabled` ATTRIBUTE —
+  // that one already means IN FLIGHT (submitReview sets it, sendSubmit's
+  // failure path and the boot fetch clear it), and openRecap's readiness
+  // mirror reads it; overloading it here would re-enable a not-ready button
+  // on any submit failure.
+  sub.setAttribute('aria-disabled', sub.classList.contains('disabled') ? 'true' : 'false');
   sub.textContent = remaining > 0 ? `approve — dispatch (${remaining} unreviewed)`
                                   : 'approve — dispatch';
   // The composite's footer states four things; this one was stating seven, and
   // at the doc page's width that wrapped the stamp onto a second line. The bar
   // above already carries `approved N/M` and the item counts, so the footer
   // keeps only what is about DISPATCHING: what blocks it, whether the round is
-  // converging, and what the last round trip cost.
-  el('stat-approved').style.display = 'none';
-  el('stat-feedback').style.display = 'none';
+  // converging, and what the last round trip cost. The two cells that stated
+  // `N approved` and `N with feedback` are GONE, not hidden: they were set and
+  // then hidden on every path, and the feedback cell's else-branch hid without
+  // clearing, so `#stats-area` — an `aria-live` region — kept announcing a
+  // stale `3 with feedback` beside a live `8 open` forever.
   const cap = ' <kbd>&#8984;&#9166;</kbd>';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unreviewed`
@@ -5190,29 +5919,56 @@ function updateReviewStats() {
    The bar and the footer state one quantity between them — how many items
    this document holds and how many are still open — so the two can never
    disagree. An ITEM is what sectionBalance already counts: a thread, a
-   comment, a check, a producer flag, and a section's own sign-off. */
+   comment, an unanswered check, and a section's own sign-off. A producer flag
+   is advisory and is NOT an item — see sectionBalance. The vocabulary is
+   stated to the reader in the `kbd-legend` disclosure, because a reviewer who
+   cannot reproduce the arithmetic stops trusting it. */
 function documentBalance() {
   let judgment = 0, facts = 0, settled = 0, atStart = 0, checks = 0, checksDone = 0;
+  let signoff = 0;
+  // Which sections arrived already signed off. The baseline reads the round as
+  // ARMED, so it asks `approved_ids` — the static field the round shipped with —
+  // never the live verdict, which is the thing convergence measures against it.
+  const armedApproved = new Set(REVIEW_DATA.approved_ids || []);
   (REVIEW_DATA.sections || []).forEach(s => {
     const b = sectionBalance(s);
-    judgment += b.judgment; facts += b.facts; settled += b.settled;
+    judgment += b.judgment; facts += b.facts; settled += b.settled; signoff += b.signoff;
     // What was open when the round was ARMED: every carried thread arrives
-    // unsettled, every unanswered check and flag arrives open. Nothing here
+    // unsettled, every unanswered check and flag arrives open, and every
+    // section not in `approved_ids` arrives owing a sign-off. Nothing here
     // reads live reviewer state — that is what makes it a baseline to measure
     // convergence against rather than a second view of the same number.
     atStart += (s.open_notes || []).length;
+    // Both ends of the arrow count the sign-off or the arrow lies: `open` now
+    // includes every pending one, so a baseline that skipped them would read
+    // `convergence 0 → 8` on a round where the reviewer has done nothing yet.
+    if (!armedApproved.has(s.id)) atStart++;
     (s.annotations || []).forEach(a => {
       if (!a) return;
+      // Only a CHECK is an annotation this baseline counts. A doc-scope flag IS
+      // counted in `checks`/`checksDone` — that pair is the bar's document-level
+      // `checks D/T` readout, and a fact about the document is exactly what
+      // belongs in it. It is NOT counted in `atStart`, and the asymmetry is
+      // load-bearing rather than sloppy: `atStart` is the LEFT of the
+      // convergence arrow and `open` is the RIGHT, but `open` is a sum of
+      // `sectionBalance`, which skips doc-scope. Count it on one side only and
+      // a document carrying five unanswered `headings-present` flags and
+      // nothing else reads `convergence 5 → 0` on a round where nothing was
+      // closed. The two ends of the arrow answer the same question or the
+      // arrow lies — which is also why a plain warn/error producer flag is
+      // counted at NEITHER end: `sectionBalance` stopped treating an advisory
+      // flag as an open item, so a baseline that still counted one would make
+      // every flagged round appear to converge by exactly its flag count.
       if (CHECK_KINDS.includes(a.kind)) {
         checks++;
-        if (a.result) checksDone++; else atStart++;
-        return;
+        if (a.result) checksDone++;
+        else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;
       }
-      if (a.severity === 'warn' || a.severity === 'error') atStart++;
     });
   });
-  return { judgment, facts, settled, checks, checksDone, atStart,
-           open: judgment + facts, total: judgment + facts + settled };
+  return { judgment, facts, settled, checks, checksDone, atStart, signoff,
+           open: judgment + facts + signoff,
+           total: judgment + facts + settled + signoff };
 }
 
 // The last same-origin round trip this page actually measured. A real number
@@ -5235,6 +5991,11 @@ function renderDocStatus() {
   el('tb-checks').style.display = b.checks ? '' : 'none';
   el('r-items').innerHTML = b.total + ' item' + (b.total === 1 ? '' : 's')
     + ' &middot; <b>' + b.open + '</b> open';
+  // Hover convenience only — `title` is not keyboard-reachable and most screen
+  // readers do not announce it on a non-interactive div. The `kbd-legend`
+  // term list is what actually states this vocabulary.
+  el('r-items').title = 'an item is a thread, a comment, an unanswered check, '
+    + 'or a section sign-off; open = judgment + facts';
   el('tb-items').style.display = '';
   el('tb-palette').style.display = '';
   // Convergence: open items when the round was armed against open items now.
@@ -5243,6 +6004,7 @@ function renderDocStatus() {
   const conv = el('stat-conv');
   conv.style.display = '';
   conv.innerHTML = 'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>';
+  conv.title = 'open items when this round was armed → open items now';
   const lat = el('stat-lat');
   if (_lastRTT === null) lat.style.display = 'none';
   else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
@@ -5302,8 +6064,16 @@ function qaPaletteCommands() {
   const live = qState.active ? QA_DATA.questions.find(q => q.id === qState.active) : null;
   if (live) {
     const n = QA_DATA.questions.indexOf(live) + 1;
-    live.choices.slice(0, 9).forEach((c, i) => {
-      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: String(i + 1),
+    // Every choice, not the first nine. The digit handler binds 1-9 (one
+    // keypress, `parseInt(e.key)`), so a tenth choice carries no keycap — but
+    // truncating the list here left it with no place in the directory at all,
+    // which is the palette lying about being the directory of the keyboard
+    // layer. A digit-less row still runs from ⌘K, and the chip itself is a
+    // plain <button> that Tab already reaches — so nothing here needs a `0` or
+    // a letter bound to it, and binding one would collide the day a second
+    // modifier-free letter shortcut lands on this page.
+    live.choices.forEach((c, i) => {
+      cmds.push({ label: 'Answer ' + n + ' — ' + c, key: i < 9 ? String(i + 1) : '',
                   run: () => pickQAChoice(live.id, c) });
     });
     if (qaAnswered(live.id)) {
@@ -5315,6 +6085,7 @@ function qaPaletteCommands() {
                                         && q.id !== qState.active);
   if (next) cmds.push({ label: 'Jump to next unanswered', key: 'j',
                         run: () => activateQACard(next.id) });
+  if (voiceSupported()) cmds.push(voicePaletteCommand());
   cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
   return cmds;
 }
@@ -5341,8 +6112,16 @@ function reviewPaletteCommands() {
     if (p && p.style.display !== 'none') { p.classList.remove('is-collapsed'); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   } });
   cmds.push({ label: 'Open recap and submit', key: 'o', run: () => openRecap() });
+  if (voiceSupported()) cmds.push(voicePaletteCommand());
   cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
   return cmds;
+}
+
+// One entry, both directories — the palette is a directory of the keyboard
+// layer, and `v` means the same thing on the review page and in the interview.
+function voicePaletteCommand() {
+  return { label: voiceIsOn() ? 'Stop listening' : 'Start the oral examination (voice)',
+           key: 'v', run: () => toggleVoice() };
 }
 
 // The next section carrying live business, from the live section forward and
@@ -5469,23 +6248,30 @@ function buildQACard(q, index) {
     return `<button class="choice-chip" data-choice="${esc(c)}"><span class="chip-label">${esc(c)}</span>${badge}${cap}</button>`;
   }).join('');
 
+  // The disclosure head IS the question, printed once, wrapping, numbered like
+  // a catalog entry. The `<h2>` that used to restate it one line below is gone:
+  // the head was clamped and dimmed as "an index line" pointing at that
+  // heading, a mitigation that assumed the entry held something OTHER than the
+  // duplicate — and a free-text entry holds a hairline and nothing else. The
+  // number goes INSIDE `.card-title`: `.card-title-wrap` is `flex-direction:
+  // column`, so a sibling span would stack the digit above the question.
+  const choiceless = q.choices.length === 0;
   card.innerHTML = `
     <button type="button" class="card-head" aria-expanded="false" aria-controls="qbody-${q.id}">
       <span class="dot dot-idle" id="qdot-${q.id}"></span>
       <span class="card-title-wrap">
-        <span class="card-title">${esc(q.text)}</span>
+        <span class="card-title"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</span>
       </span>
       <span class="vbadge vbadge-approved" id="qbadge-${q.id}" style="display:none"></span>
     </button>
     <div class="card-body-wrap" id="qbody-${q.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          <div class="row row-head">
-            <div class="rp">
-              <h2 class="doc-head" id="qhead-${q.id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</h2>
+          <div class="row row-head${choiceless ? ' is-choiceless' : ''}">
+            ${choiceless ? '' : `<div class="rp">
               <div class="rule-s"></div>
               <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
-            </div>
+            </div>`}
             <div class="rm">
               ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
               <div class="nt nt-compose">
@@ -5493,6 +6279,7 @@ function buildQACard(q, index) {
                 <textarea class="note-field" id="qnote-${q.id}" placeholder="Optional — or paste a screenshot"></textarea>
                 <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
                 <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
+                ${voiceSupported() ? `<button type="button" class="mic-btn" id="qmic-${q.id}"><span aria-hidden="true">&#127908;</span> dictate</button>` : ''}
                 <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
               </div>
               <div class="nt-acts doc-acts">
@@ -5507,7 +6294,12 @@ function buildQACard(q, index) {
 
   card.querySelector('.card-head').addEventListener('click', () => toggleQACard(q.id));
 
-  card.querySelector('#qchoices-' + q.id).addEventListener('click', e => {
+  // Guarded: a choiceless question has no prose cell and therefore no chip
+  // list. Both readers of `#qchoices-` carry the guard — this one and
+  // `syncQACard`'s — or the one that does not throws on every sync of that
+  // card, on a surface no test can execute.
+  const ch = card.querySelector('#qchoices-' + q.id);
+  if (ch) ch.addEventListener('click', e => {
     const chip = e.target.closest('.choice-chip');
     if (!chip) return;
     e.stopPropagation();
@@ -5529,6 +6321,14 @@ function buildQACard(q, index) {
 
   card.querySelector('#qconfirm-' + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
   card.querySelector('#qskip-'   + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
+
+  // Same contract as the review composer's mic: turn the microphone on, put
+  // the caret in this box, and let the modal rule do the rest.
+  const qmic = card.querySelector('#qmic-' + q.id);
+  if (qmic) {
+    qmic.classList.toggle('is-live', voiceIsOn());
+    qmic.addEventListener('click', e => { e.stopPropagation(); startVoice(() => qta.focus()); });
+  }
 
   wireCapture(
     () => (qState.answers[q.id] ||= {}),
@@ -5613,8 +6413,10 @@ function advanceQA(id) {
 function syncQACard(id) {
   const choice = qState.answers[id]?.choice || null;
 
-  // Chip selections
-  el('qchoices-' + id).querySelectorAll('.choice-chip').forEach(chip => {
+  // Chip selections. Guarded for the same reason buildQACard's wiring is: a
+  // choiceless question has no `#qchoices-` element at all.
+  const chEl = el('qchoices-' + id);
+  if (chEl) chEl.querySelectorAll('.choice-chip').forEach(chip => {
     chip.classList.toggle('selected', chip.dataset.choice === choice);
   });
 
@@ -5652,8 +6454,6 @@ function updateQAStats() {
   // judgment/facts axis — an answer is given or it is not — so the balance
   // rule fills with settled alone and the bare track is what nobody has
   // answered yet, which is the one honest way to draw "not yet decided".
-  el('stat-approved').style.display = 'none';
-  el('stat-feedback').style.display = 'none';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unanswered`
     : 'ready <kbd>&#8984;&#9166;</kbd>';
@@ -5662,6 +6462,9 @@ function updateQAStats() {
 
   const sub = el('btn-submit');
   sub.className = remaining === 0 ? 'btn-submit ready' : 'btn-submit disabled';
+  // Same rule as updateReviewStats: aria-disabled for not-ready, the DOM
+  // `disabled` attribute reserved for in-flight.
+  sub.setAttribute('aria-disabled', sub.classList.contains('disabled') ? 'true' : 'false');
   sub.textContent = remaining > 0 ? `answers — dispatch (${remaining} unanswered)`
                                   : 'answers — dispatch';
 }
@@ -5888,9 +6691,30 @@ function openRecap() {
   // re-arming a second POST that would duplicate the ledger rows.
   const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;
   el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');
+  el('recap-confirm').setAttribute('aria-disabled', ready ? 'false' : 'true');
+  // Three states, not two, and the reason is printed rather than inferred.
+  // `disabled` is the IN-FLIGHT signal (submitReview sets it, the 'round'
+  // handler clears it); pending is the not-ready one. Derived separately from
+  // `ready` above so that line stays the single readiness rule.
+  const inFlight = el('btn-submit').disabled;
+  // The same arithmetic the bar prints: deriveVerdict returns exactly one of
+  // approved/changes/info/pending, so this equals updateReviewStats's
+  // `remaining` and the two can never disagree.
+  const pending = REVIEW_DATA.sections.filter(s => deriveVerdict(s.id) === 'pending').length;
+  // The control that CAN act with sections still pending. `btn-skip` does the
+  // same job in the bar, but the bar is inert behind this modal, so naming it
+  // in copy would not be enough.
+  const canSkip = pending > 0 && !inFlight;
+  el('recap-skip').style.display = canSkip ? '' : 'none';
+  el('recap-blocked').textContent = inFlight ? 'submitted — the agent is revising'
+                                  : pending ? pending + ' of ' + REVIEW_DATA.sections.length + ' unreviewed'
+                                  : '';
   el('recap-overlay').style.display = '';
   setBackgroundInert(true);   // trap focus + block interaction behind the modal
-  el('recap-confirm').focus();
+  // Focus the control that can act, never a dead primary. Runs AFTER both
+  // display flips above — focus() on a `display:none` node silently no-ops,
+  // the same class of trap closeRecap's comment records for `inert`.
+  (canSkip ? el('recap-skip') : ready ? el('recap-confirm') : el('recap-close')).focus();
 }
 
 // The recap is a modal (aria-modal="true"): mark everything behind it inert
@@ -5927,6 +6751,14 @@ el('recap-confirm').addEventListener('click', () => {
   submitReview(false);
 });
 el('recap-close').addEventListener('click', closeRecap);
+// The bar's early-submit escape hatch, reachable from inside the modal:
+// setBackgroundInert marks #bottom-bar-el inert, so `btn-skip` itself cannot
+// be clicked or tabbed to while the recap is open.
+el('recap-skip').addEventListener('click', () => {
+  if (el('btn-submit').disabled) return;   // never a second POST for a round in flight
+  closeRecap();
+  submitReview(true);
+});
 el('recap-overlay').addEventListener('click', e => {
   if (e.target === el('recap-overlay')) closeRecap();   /* backdrop click */
 });
@@ -6104,6 +6936,446 @@ function cycleTheme() {
 el('theme-toggle').addEventListener('click', cycleTheme);
 paintThemeToggle();
 
+/* ═══ Voice — the oral examination (input only) ══════════════════════════
+   viva is named after the PhD oral: the candidate submits WRITING and the
+   examiner SPEAKS. The written defence is already here — the doc, the
+   rewrites, the ledger. This is the examiner's half, and it is input only.
+
+   THE INVARIANT: speech may command, it may never author.
+
+     A verb carrying no text (approve, next, save, stop) acts immediately. It
+     is a button press; there is nothing a recognizer can mis-transcribe into
+     the record, and every one of them is reversible on screen.
+
+     A note, question, or suggestion is STAGED in the comment composer, where
+     the reviewer reads it and confirms. Nothing below calls `addComment`.
+     That is not a convention, it is the reason the layer is safe: a ledger
+     PRODUCT.md promises is verbatim must not carry a sentence the human never
+     read. `tests/test_server_voice.py` holds the line.
+
+   A spoken "save" is both the last word of the comment and the confirm of it.
+   That is deliberate and it is not a hole: the staged text is on the screen,
+   unedited, at the moment the reviewer chooses to say the word.
+
+   THE MODAL RULE, one sentence: a focused note field makes speech dictation;
+   nothing focused makes it grammar. `save`, `cancel` and `stop` work from
+   inside a field anyway, or the microphone is hot with the caret in a textarea
+   and no spoken word gets you out.
+
+   Nothing here runs until a reviewer turns it on: no recognizer is
+   constructed at load, and the control is not even drawn where the browser
+   has none. PRODUCT.md principle 4, the same as every other layer. ══════ */
+
+// Injected from server.py's `_VOICE_RULES`, longest phrase first — see the
+// table there for the two verb classes. Injected rather than restated for the
+// reason `__CHECK_KINDS__` is: a second copy in JS drifts, silently.
+const VOICE_RULES = __VOICE_RULES__;
+
+const VoiceCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const VOICE_ACK_KEY = 'viva-voice';
+// The three verbs that must still work while a note field holds the caret.
+const VOICE_ESCAPES = ['save', 'cancel', 'stop'];
+
+let _rec = null;          // constructed on first start, never at load
+let _voiceOn = false;     // the reviewer's switch, not the recognizer's state
+let _voiceRestarts = 0;
+// The card a spoken verb last applied to. See `voiceReopen` — this is the way
+// back out of the state where nothing is open.
+let _voiceLastCard = null;
+
+function voiceSupported() { return Boolean(VoiceCtor); }
+function voiceIsOn() { return _voiceOn; }
+
+/* Lowercase, punctuation to spaces, whitespace collapsed — the form every
+   phrase in the table is already written in. Known limitation: a hyphen
+   INSIDE one of the first words of an utterance splits it in two here but not
+   in the raw text, so the remainder handed to a carrying verb would drop a
+   word. Recognizers emit commas and terminal stops, not mid-phrase hyphens,
+   so this has never been observed; it is written down rather than guarded. */
+function normalizeUtterance(raw) {
+  return String(raw || '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ')
+                          .replace(/\s+/g, ' ').trim();
+}
+
+// First match wins, and the table is sorted longest-first, so "request
+// changes …" can never be read as the verb `changes` carrying "request".
+function matchVoiceRule(norm) {
+  for (let i = 0; i < VOICE_RULES.length; i++) {
+    const r = VOICE_RULES[i];
+    if (norm === r.phrase || (r.carries && norm.indexOf(r.phrase + ' ') === 0)) {
+      return { rule: r, words: r.phrase.split(' ').length };
+    }
+  }
+  return null;
+}
+
+// The reviewer's own text, in their own casing — taken off the RAW utterance,
+// never the normalized one, because the note is what goes on the record.
+function remainderOf(raw, words) {
+  return String(raw).trim().split(/\s+/).slice(words).join(' ')
+                    .replace(/^[\s,:;.!?-]+/, '');
+}
+
+function activeNoteField() {
+  const a = document.activeElement;
+  return a && a.classList && a.classList.contains('note-field') ? a : null;
+}
+
+function blurNoteField() { const f = activeNoteField(); if (f) f.blur(); }
+
+// Land dictated text at the caret rather than replacing the box: a reviewer
+// who typed half a sentence and finished it out loud keeps both halves.
+function insertDictation(field, text) {
+  const cur = field.value;
+  const at = field.selectionStart == null ? cur.length : field.selectionStart;
+  const before = cur.slice(0, at), after = cur.slice(at);
+  const sep = before && !/\s$/.test(before) ? ' ' : '';
+  field.value = before + sep + text + after;
+  const pos = (before + sep + text).length;
+  try { field.setSelectionRange(pos, pos); } catch (e) { /* detached field */ }
+  // The Q&A note wires its state off `input`; the review composer reads
+  // `.value` at save time. Firing the event serves the first and is inert for
+  // the second, so one line covers both surfaces.
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* ─── The strip ───────────────────────────────────────────
+   The transcript exists so nothing is ever swallowed in silence: every
+   utterance prints here with the reading it got, INCLUDING the ones that
+   matched no verb. A reviewer who cannot tell "heard nothing" from "heard
+   something and ignored it" cannot trust the layer at all. */
+function voiceSay(state, heard, read) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">' + esc(state) + '</span>'
+    + (heard ? '<span class="vs-heard">&ldquo;' + esc(String(heard).trim()) + '&rdquo;</span>' : '')
+    + (read  ? '<span class="vs-read">' + esc(read) + '</span>' : '');
+}
+
+// Interim results are the recognizer still deciding. Shown so the reviewer can
+// see it is hearing them — and `aria-hidden` so it is not ANNOUNCED, because a
+// live region reading every partial guess aloud is unusable. The final
+// reading, through voiceSay above, is what announces.
+function voiceInterim(text) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">listening</span>'
+    + '<span class="vs-interim" aria-hidden="true">' + esc(text) + '</span>';
+}
+
+function hideVoiceStrip() {
+  const s = el('voice-strip');
+  if (s) { s.style.display = 'none'; s.innerHTML = ''; }
+}
+
+/* ─── Routing one utterance ───────────────────────────────── */
+// Is there still a round on screen to command? The processing and complete
+// views leave `REVIEW_DATA` set and `rState.active` null, which is exactly the
+// state `voiceReopen` treats as "reopen where you were" — so without this a
+// spoken verb walks last round's cards while the page reads "Claude is
+// revising…".
+function voiceRoundIsLive() {
+  const shown = id => { const n = el(id); return n && n.style.display !== 'none'; };
+  return !shown('processing-view') && !shown('complete-view');
+}
+
+function handleUtterance(raw) {
+  const norm = normalizeUtterance(raw);
+  if (!norm) return;
+  /* The terminal and modal guards, in the keydown handler's own order and for
+     its reason (#174). Speech is a SECOND input path into the same verdict
+     state, so every guard that stops a keystroke has to stop an utterance too
+     or the hole it closed is open again through the microphone. The two
+     TERMINAL states also turn the microphone off, at their own source — a hot
+     mic with nothing left to command is worse than an unresponsive one.
+     Between rounds is not terminal: the next round lands in this same tab, so
+     the utterance is refused and the microphone stays on rather than making
+     the reviewer re-arm it every round. */
+  if (deadSessionIsOpen()) { stopVoice('the session ended'); return; }
+  if (!voiceRoundIsLive()) {
+    voiceSay('heard', raw, 'no round on screen yet — nothing to command');
+    return;
+  }
+  if (prefsIsOpen()) {
+    voiceSay('heard', raw, 'the preferences panel is open — close it first');
+    return;
+  }
+  if (REVIEW_DATA && recapIsOpen()) {
+    voiceSay('heard', raw, 'the recap is open — confirm or close it by hand');
+    return;
+  }
+  const hit = norm ? matchVoiceRule(norm) : null;
+  const field = activeNoteField();
+  if (field) {
+    if (hit && norm === hit.rule.phrase && VOICE_ESCAPES.indexOf(hit.rule.act) >= 0) {
+      voiceSay('heard', raw, runVoiceAct(hit.rule, ''));
+      return;
+    }
+    insertDictation(field, String(raw).trim());
+    voiceSay('dictated', raw, 'into the open note');
+    return;
+  }
+  if (!hit) {
+    // Named in the vocabulary of the page actually on screen: an interview has
+    // no sections to approve, and offering the review's verbs there teaches the
+    // reviewer the wrong three words.
+    voiceSay('heard', raw, REVIEW_DATA
+      ? 'no command — try "approve", "request changes …", "next"'
+      : 'no command — try "question …", "next", or press dictate to answer aloud');
+    return;
+  }
+  voiceSay('heard', raw, runVoiceAct(hit.rule, remainderOf(raw, hit.words)));
+}
+
+// Every branch RETURNS what it did, in the reviewer's words, and the strip
+// prints it. A verb that acted silently would be indistinguishable from one
+// that was misheard.
+function runVoiceAct(rule, rest) {
+  if (rule.act === 'stop') { stopVoice('you said so'); return 'stopped listening'; }
+  const pop = document.querySelector('.comment-popover.is-open');
+  if (rule.act === 'save') {
+    if (pop) { pop.querySelector('.cmt-save').click(); return 'saved the comment'; }
+    blurNoteField(); return 'nothing staged — closed the note';
+  }
+  if (rule.act === 'cancel') {
+    if (pop) { pop.querySelector('.cmt-cancel').click(); return 'discarded the comment'; }
+    blurNoteField(); return 'nothing staged — closed the note';
+  }
+  if (REVIEW_DATA) return runReviewVoiceAct(rule, rest);
+  if (QA_DATA)     return runQAVoiceAct(rule, rest);
+  return 'nothing on screen to command';
+}
+
+function runReviewVoiceAct(rule, rest) {
+  /* "submit" is an alias for the RECAP, never for submitting. Ending the round
+     is the one action this page already gates behind an overlay and a confirm
+     click, and a spoken word does not get to skip a gate the mouse cannot. */
+  if (rule.act === 'recap') { openRecap(); return 'opened the recap — confirm there to submit'; }
+  const secs = REVIEW_DATA.sections;
+  const id = rState.active;
+  /* Approving or skipping the LAST open card leaves nothing active, and every
+     verb below needs a card. On a keyboard that is a shrug — you click one. A
+     reviewer working hands-free has no click, so without this the answer to
+     every remaining utterance is "no section is open", forever, including the
+     verb they would say to get out. So the first verb spoken into that state
+     REOPENS where they were and does nothing else: an ambiguous target is
+     worth a second utterance, and approving a card nobody can see is not. */
+  if (!id) return voiceReopen();
+  _voiceLastCard = id;
+  const n = secs.findIndex(s => s.id === id) + 1;
+  if (rule.act === 'approve') {
+    // Same refusal the approve button carries, said out loud: a section
+    // holding live comments is not one anybody can sign off.
+    if (activeComments(id).length) return 'section ' + n + ' has open comments — settle them first';
+    approveSection(id);
+    return 'approved section ' + n;
+  }
+  if (rule.act === 'next') { skipReviewCard(id); return 'moved on from section ' + n; }
+  if (rule.act === 'back') {
+    const prev = secs[(secs.findIndex(s => s.id === id) - 1 + secs.length) % secs.length];
+    activateReviewCard(prev.id);
+    return 'back to section ' + (secs.indexOf(prev) + 1);
+  }
+  if (rule.act === 'comment') return stageVoiceComment(id, rule.type, rest);
+  return 'no command';
+}
+
+// Reopen the last card a spoken verb touched — or the first one, when speech
+// has not touched any yet. Carried sections have no accordion to open, so this
+// walks forward to one that does rather than reporting success on a card that
+// never appears.
+function voiceReopen() {
+  const secs = REVIEW_DATA.sections;
+  const start = Math.max(0, secs.findIndex(s => s.id === _voiceLastCard));
+  const order = [...secs.slice(start), ...secs.slice(0, start)];
+  const hit = order.find(s => {
+    const card = el('rcard-' + s.id);
+    return card && !card.classList.contains('is-carried');
+  });
+  if (!hit) return 'nothing left open — use the recap to submit';
+  _voiceLastCard = hit.id;
+  activateReviewCard(hit.id);
+  return 'reopened section ' + (secs.indexOf(hit) + 1) + ' — say the verb again';
+}
+
+/* The load-bearing half. Opens the composer, drops the transcript in its box,
+   leaves the caret there — and stops. The reviewer reads what the recognizer
+   heard and says "save" (or clicks it) to make it a comment. */
+function stageVoiceComment(id, type, rest) {
+  openCommentPopover(id, { type });
+  const pop = el('rpop-' + id);
+  const ta = pop && pop.querySelector('.cmt-pop-note');
+  if (!ta) return 'could not open the composer';
+  // Report what the box actually BECAME, not what was asked for: `suggest
+  // wording` has no chip in diff mode, so the composer stays on `changes` and
+  // saying otherwise would be a lie about the record being written.
+  const became = pop.dataset.type;
+  if (rest) insertDictation(ta, rest);
+  // `preventScroll`, like the opener's own focus: `openCommentPopover` has
+  // already scrolled the whole popover into view, and a bare re-focus here
+  // would scroll back to the field and undo it — leaving the type chips and
+  // the quote above the fold with only save/cancel on screen.
+  ta.focus({ preventScroll: true });
+  return 'staged ' + (/^[aeiou]/.test(became) ? 'an ' : 'a ') + became
+       + ' comment — say "save" to keep it';
+}
+
+function runQAVoiceAct(rule, rest) {
+  if (rule.act === 'recap') return 'the interview has no recap gate';
+  const qs = QA_DATA.questions;
+  const id = qState.active;
+  // Confirming the last question closes everything, the same dead end
+  // `voiceReopen` exists for on the review page — and the same way out.
+  if (!id) {
+    const start = Math.max(0, qs.findIndex(q => q.id === _voiceLastCard));
+    _voiceLastCard = qs[start].id;
+    activateQACard(qs[start].id);
+    return 'reopened question ' + (start + 1) + ' — say the verb again';
+  }
+  _voiceLastCard = id;
+  const n = qs.findIndex(q => q.id === id) + 1;
+  // The interview's own verb for "I am done here" is confirm, and it is the
+  // same move as skip — `advanceQA` is what both buttons call.
+  if (rule.act === 'next' || rule.act === 'approve') { advanceQA(id); return 'moved on from question ' + n; }
+  if (rule.act === 'back') {
+    const prev = qs[(qs.findIndex(q => q.id === id) - 1 + qs.length) % qs.length];
+    activateQACard(prev.id);
+    return 'back to question ' + (qs.indexOf(prev) + 1);
+  }
+  if (rule.act === 'comment') {
+    const ta = el('qnote-' + id);
+    if (!ta) return 'this question has no note field';
+    if (rest) insertDictation(ta, rest);
+    ta.focus();
+    return 'added to question ' + n + '’s note';
+  }
+  return 'no command in the interview';
+}
+
+/* ─── The switch ──────────────────────────────────────────── */
+function voiceAcknowledged() {
+  try { return localStorage.getItem(VOICE_ACK_KEY) === 'ack'; } catch (e) { return false; }
+}
+
+/* Disclosed once, and disclosed rather than buried. The browser's recognizer
+   is a network service: viva itself stays keyless, hosts nothing and stores no
+   audio, but the audio does leave the machine, and "local" is a promise this
+   page makes. The reviewer decides with the fact in front of them. */
+function showVoiceNotice(after) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">voice</span>'
+    + '<span class="voice-notice">Your browser’s speech recognition sends audio to its vendor '
+    + '(Google, in Chrome). viva itself stays keyless and keeps no recording.'
+    + '<button type="button" id="voice-ack">start listening</button>'
+    + '<button type="button" id="voice-nack">not now</button></span>';
+  el('voice-ack').onclick = () => {
+    try { localStorage.setItem(VOICE_ACK_KEY, 'ack'); } catch (e) { /* holds for this tab */ }
+    beginVoice(after);
+  };
+  el('voice-nack').onclick = () => hideVoiceStrip();
+  el('voice-ack').focus();
+}
+
+function startVoice(after) {
+  if (!voiceSupported()) return;
+  if (_voiceOn) { if (after) after(); return; }
+  if (!voiceAcknowledged()) { showVoiceNotice(after); return; }
+  beginVoice(after);
+}
+
+function beginVoice(after) {
+  _voiceOn = true;
+  _voiceRestarts = 0;
+  paintVoiceToggle();
+  ensureRecognizer();
+  try { _rec.start(); } catch (e) { /* already starting; onstart still fires */ }
+  voiceSay('listening', '', 'say "approve", "request changes …", "next" — Escape or "stop" to end');
+  if (after) after();
+}
+
+function stopVoice(why) {
+  const wasOn = _voiceOn;
+  _voiceOn = false;                       // read by onend — set BEFORE stop()
+  paintVoiceToggle();
+  if (_rec) { try { _rec.stop(); } catch (e) { /* never started */ } }
+  if (wasOn) voiceSay('off', '', why || 'microphone off');
+}
+
+function toggleVoice() {
+  if (_voiceOn) stopVoice('you turned it off'); else startVoice();
+}
+
+function ensureRecognizer() {
+  if (_rec) return;
+  _rec = new VoiceCtor();
+  _rec.continuous = true;
+  _rec.interimResults = true;
+  _rec.lang = document.documentElement.lang || 'en-US';
+
+  _rec.onresult = e => {
+    _voiceRestarts = 0;                   // real speech: the storm guard resets
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) handleUtterance(r[0].transcript);
+      else interim += r[0].transcript;
+    }
+    if (interim.trim()) voiceInterim(interim.trim());
+  };
+
+  _rec.onerror = ev => {
+    // A refused microphone is terminal — restarting just re-refuses. Everything
+    // else (`no-speech`, `aborted`, `network`) is transient and `onend`, which
+    // always follows, is the one place that decides whether to come back.
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      stopVoice('the browser refused microphone access');
+    }
+  };
+
+  _rec.onend = () => {
+    if (!_voiceOn) return;                // the reviewer's switch wins
+    /* A "continuous" recognizer is really a restarted one — Chrome ends the
+       session on its own after a silence. The counter is the storm guard: a
+       recognizer that cannot stay up ends immediately every time, and without
+       a ceiling that is an invisible infinite loop. It resets on every result,
+       so a long review with real speech in it never reaches the ceiling. */
+    if (_voiceRestarts >= 8) { stopVoice('the recognizer kept dropping'); return; }
+    _voiceRestarts++;
+    setTimeout(() => { if (_voiceOn) { try { _rec.start(); } catch (e) {} } }, 250);
+  };
+}
+
+function paintVoiceToggle() {
+  const btn = el('voice-toggle');
+  if (!btn) return;
+  btn.textContent = 'voice: ' + (_voiceOn ? 'listening' : 'off');
+  btn.classList.toggle('is-live', _voiceOn);
+  /* The label states which state is ON, so the accessible name has to say what
+     the button DOES — the same rule the theme toggle follows, for the same
+     reason: otherwise a screen reader hears a state and cannot tell it from an
+     action. */
+  btn.setAttribute('aria-label', _voiceOn
+    ? 'Voice input is listening. Activate to stop listening.'
+    : 'Voice input is off. Activate to start the oral examination.');
+  document.querySelectorAll('.mic-btn').forEach(m => m.classList.toggle('is-live', _voiceOn));
+}
+
+function initVoice() {
+  // No control where there is no recognizer: a button that cannot work is
+  // worse than no button, and every caller already asks `voiceSupported()`
+  // before drawing its own.
+  if (!voiceSupported()) return;
+  el('voice-toggle').style.display = '';
+  paintVoiceToggle();
+  el('voice-toggle').addEventListener('click', () => toggleVoice());
+}
+initVoice();
+/* ═══ End voice ══════════════════════════════════════════════════════════ */
+
 el('prefs-toggle').addEventListener('click', () => openPrefsPanel(el('prefs-toggle')));
 el('prefs-close').addEventListener('click', closePrefsPanel);
 el('prefs-overlay').addEventListener('click', e => {
@@ -6153,6 +7425,32 @@ function showStillWaitingBanner() {
   document.body.prepend(b);
 }
 
+/* A round arrived that this tab cannot render. The server refuses such a body
+   at `/next-round` — that is the boundary and this is NOT a second copy of it.
+   This is the strand backstop: the cost of the server ever being wrong is a tab
+   frozen on "the agent is revising" with the throw buried inside initReview and
+   nothing on screen, which is precisely the failure that was reported. The
+   round is refused before any state moves, so what stays on screen is the round
+   the reviewer already has, and the banner says why. Full `--orange` ink, not
+   `.banner-info`: this is a broken payload, not a slow one. */
+function showRoundRefused() {
+  clearProcessingTimer();       // its banner and ours would stack at top: 0
+  if (el('round-refused-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'round-refused-banner';
+  b.className = 'error-banner';
+  b.textContent = 'A round arrived that this tab cannot render — check the terminal.';
+  document.body.prepend(b);
+}
+
+// The one removal site, called from both SSE handlers that mean "the session
+// moved on". A `position: fixed` banner with no removal path outlives the thing
+// it describes and sits over a perfectly good later round.
+function clearRoundRefused() {
+  const b = el('round-refused-banner');
+  if (b) b.remove();
+}
+
 /* ─── Dead session (#174) ───────────────────────────────────
    A banner was the wrong shape for this. The tab kept every control live,
    so a reviewer could work a whole round into a page whose submit POSTs into
@@ -6176,6 +7474,11 @@ function showDeadSession() {
   closeRecap();
   closePrefsPanel();
   closePalette();
+  // And the microphone. `inert` on #paper takes the pointer and Tab away from
+  // the voice toggle, and the document keydown listener returns above the
+  // Escape-stop branch — so a mic left hot here is one the reviewer cannot
+  // reach any control to turn off.
+  stopVoice('the session ended');
   // The one command this tab can honestly name. `doc_file` is a real target
   // only in review mode — parse_diff.py writes review_target.py's LABEL there
   // ("PR #187", "working tree"), and a qa payload has no doc at all — so
@@ -6230,18 +7533,41 @@ function connectSSE() {
   const es = new EventSource('/events');
 
   es.addEventListener('processing', () => {
+    clearRoundRefused();  // a new submit is in flight; the refused round is history
     closeRecap();       // the review it recapped is gone from under it
     closePrefsPanel();  // ditto — no full-screen backdrop survives a view swap
     renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('processing-view').style.display = '';
+    // Retire the previous round's controls with its cards. The dispatch button
+    // is dead here, and `skip rest & submit` is worse than stale — it is live,
+    // and would POST a second submit for a round already in flight. The bar
+    // itself stays: theme, preferences and voice remain legitimately usable
+    // while waiting. Restored by the 'round' handler, the only way out.
+    document.querySelector('.btn-group').style.display = 'none';
+    el('foot-seg').style.display = 'none';   // a rule describing a round that is over
+    // #stats-area is aria-live=polite, so this announces the wait once instead
+    // of leaving `blocked · N unreviewed` from the dead round on screen. The
+    // page's own words for this state, from the processing heading above it.
+    el('stat-pending').textContent = 'submitted — the agent is revising';
     clearProcessingTimer();
     processingTimer = setTimeout(showStillWaitingBanner, PROCESSING_STILL_WAITING_MS);
   });
 
   es.addEventListener('round', e => {
     const data = JSON.parse(e.data);
+    // Guard BEFORE routing. Every statement below this point either reads
+    // `data.sections` or overwrites state the current round is still using, so
+    // a payload this tab cannot render has to be turned away while the previous
+    // round is still whole. See showRoundRefused for why the client refuses at
+    // all when the server already validates.
+    if (!data || !Array.isArray(data.sections)) {
+      console.error('viva: refused a round payload with no sections[]', data);
+      showRoundRefused();
+      return;
+    }
+    clearRoundRefused();
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
     closeRecap();        // a stale grid must never sit over a fresh round's cards
     closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
@@ -6279,6 +7605,11 @@ function connectSSE() {
     // source order is not a rule anyone should have to know.
     document.body.classList.remove('mode-qa');
     el('review-view').style.display     = '';
+    // The whole bar restoration in one place. #foot-seg and #stat-pending need
+    // no explicit restore: initReview() above runs updateReviewStats →
+    // reviewFootSeg → renderFootSeg, which sets `bar.style.display` on both of
+    // its branches, and rewrites #stat-pending.
+    document.querySelector('.btn-group').style.display = '';
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
   });
@@ -6287,18 +7618,33 @@ function connectSSE() {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
     closePrefsPanel();  // no full-screen backdrop survives into complete-view
+    stopVoice('the review is signed off');  // nothing left to command
     el('processing-view').style.display = 'none';
     clearProcessingTimer();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
     setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');
-    const r   = data.rounds_total     != null ? data.rounds_total    : '?';
-    const s   = data.sections_total   != null ? data.sections_total  : '?';
+    const r   = data.rounds_total;
+    const s   = data.sections_total;
     const rev = data.sections_revised != null ? data.sections_revised : null;
     el('complete-headline').textContent = '';
     const stampSub = el('stamp-sub');
-    if (stampSub) stampSub.textContent = `${s} sheet${s !== 1 ? 's' : ''} · ${r} revision${r !== 1 ? 's' : ''}`;
+    if (stampSub) {
+      // Absent counts DROP the line, never degrade it. The summary is
+      // caller-supplied and unvalidated (`json.loads(body) if body.strip()
+      // else {}`), and a real caller already omits `sections_total`, so
+      // `? sheets · 1 revision` was reachable — printed into the APPROVED
+      // stamp, the product's one uninterrupted moment. Both counts or
+      // neither: a half-known line is the same defect. `display:none` as well
+      // as an empty string, because `.stamp-sub` carries `margin-top: 2px`
+      // and an empty div would still spend it.
+      const counted = typeof r === 'number' && typeof s === 'number';
+      stampSub.textContent = counted
+        ? `${s} sheet${s !== 1 ? 's' : ''} · ${r} revision${r !== 1 ? 's' : ''}`
+        : '';
+      stampSub.style.display = counted ? '' : 'none';
+    }
     const stampMeta = el('stamp-meta');
     if (stampMeta) stampMeta.textContent = 'viva · ' + new Date().toISOString().slice(0, 10);
     el('complete-detail').textContent   = rev != null
@@ -6368,6 +7714,16 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  /* Escape stops listening from ANYWHERE, and like ⌘K it sits ahead of the
+     TEXTAREA/INPUT guard on purpose — that is the whole point of it. Staging a
+     spoken comment puts the caret in a textarea, so every key below this line
+     is unreachable exactly when the microphone is hot and the reviewer most
+     wants it off. Never over the two modals that own Escape themselves. */
+  if (e.key === 'Escape' && voiceIsOn()
+      && !prefsIsOpen() && !(REVIEW_DATA && recapIsOpen())) {
+    e.preventDefault(); stopVoice('you pressed Escape'); return;
+  }
+
   const tag = document.activeElement?.tagName;
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
@@ -6382,6 +7738,14 @@ document.addEventListener('keydown', e => {
   // .pref-row — neither TEXTAREA nor INPUT — so the guard above this block
   // doesn't catch it either; this is the only thing that does.
   if (prefsIsOpen()) return;
+
+  /* `v` is a MODE toggle, so it belongs in the theme/palette tier rather than
+     with `a`/`c`/`i`: it is not about the card under the reader, it works in
+     the interview as well as the review, and gating it on `rState.active`
+     would make it dead on a page with nothing expanded. */
+  if (e.key === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey && voiceSupported()) {
+    e.preventDefault(); toggleVoice(); return;
+  }
 
   if (REVIEW_DATA) {
     if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
@@ -6568,6 +7932,17 @@ Promise.all([
     # frontend would fail open the same silent way, in the surface that draws
     # `checks N/M`, so the frontend reads the registry itself.
     "__CHECK_KINDS__", json.dumps(list(schema.CHECK_KINDS))
+).replace(
+    # The scope registry, beside the check registry so the two read as one
+    # block. A doc-scope flag is about the DOCUMENT, not about the card its
+    # producer had to anchor it to; the frontend routes on this and would
+    # fail open the same silent way on a hand-kept copy.
+    "__DOC_SCOPE_KINDS__", json.dumps(list(schema.DOC_SCOPE_KINDS))
+).replace(
+    # The spoken grammar, injected for the same reason and in the same shape:
+    # one table, in `_VOICE_RULES` above, already sorted longest-phrase-first so
+    # the browser can take the first match and be right.
+    "__VOICE_RULES__", json.dumps(list(_VOICE_RULES))
 )
 
 _HTML_BYTES = HTML.encode()
@@ -7061,16 +8436,28 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # `output` travels in the JSON body like every other POST field. The
             # legacy `?output=` query param is still honored as a fallback.
+            # ORDER IS LOAD-BEARING: the missing-`output` refusal stays AHEAD of
+            # the shape validation — `test_server_api.py`'s missing-output case
+            # POSTs a structurally valid round and pins that error text.
             output = new_data.pop("output", None) or params.get("output", [None])[0]
             if not output:
                 self._error(400, "missing 'output' in body")
                 return
-            if "sections" in new_data:
-                try:
-                    schema.validate_review_input(new_data)
-                except ValueError as e:
-                    self._error(400, f"invalid review-input: {e}")
-                    return
+            # EVERY body, not only one that happens to carry `sections`. The
+            # shape gate that used to stand here let a round nested one level
+            # deep (`{"round": {...}, "output": …}`) through untouched: the
+            # server answered `{"ok":true}`, replaced `_input_data` with it, and
+            # pushed a sections-less `round` event that threw inside the
+            # client's initReview — a tab stuck on "the agent is revising"
+            # forever with no error on either side. `/next-round` is
+            # review-shaped only; a `questions`-shaped body is refused here too,
+            # and that is correct, since the `round` SSE handler has always
+            # assumed review shape (`REVIEW_DATA = data; QA_DATA = null`).
+            try:
+                schema.validate_review_input(new_data)
+            except ValueError as e:
+                self._error(400, f"invalid review-input: {e}")
+                return
             with _data_lock:
                 # Unified Q&A → review session (#109): a qa-originated review
                 # round carries no distinguishing field in the wire payload —
@@ -7082,7 +8469,11 @@ class Handler(BaseHTTPRequestHandler):
                 # should describe this session type as "a review round POSTed
                 # to a server launched with --mode qa", not as a payload field.
                 handoff = "questions" in _input_data and "sections" in new_data
-                _input_data = new_data
+                # Normalize on the way in, the same as the startup boundary: an
+                # absent `round` renders as the literal "REV undefined" and
+                # turns the author-answered freshness test into a NaN
+                # comparison that silently never matches.
+                _input_data = schema.default_round(new_data)
                 _output_path = output
                 # The verdict snapshot belongs to the round that produced it.
                 # Section ids are stable across rounds (s1…sN), so a carried
@@ -7274,19 +8665,27 @@ if __name__ == "__main__":
     _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
     _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
     _input_data = load_input(args.input)
-    # Validate review-input on read at the boundary. Q&A input has `questions`,
-    # not `sections`, so it is gated out (shape, not mode); a malformed
-    # review-input fails loudly here instead of silently downstream.
-    if "sections" in _input_data:
-        try:
-            schema.validate_review_input(_input_data)
-        except ValueError as e:
-            sys.exit(f"viva: invalid review-input {args.input}: {e}")
-    elif args.mode == "qa":
+    # Validate the input on read at the boundary, keyed on the LAUNCH MODE —
+    # the same thing `/complete`'s guard keys on, and for the same reason:
+    # `--mode` is an argparse choice fixed at startup, while the payload's own
+    # shape is whatever the caller wrote. Keying on shape meant a file that
+    # carried neither `sections` nor `questions` was validated by nobody, so
+    # `--mode review` booted a server that served garbage and bricked the tab
+    # exactly as the `/next-round` hole above did. A shape/mode mismatch now
+    # exits 1 at launch instead of painting a view that cannot render.
+    if args.mode == "qa":
         try:
             schema.validate_qa_input(_input_data)
         except ValueError as e:
             sys.exit(f"viva: invalid qa-input {args.input}: {e}")
+    else:
+        try:
+            schema.validate_review_input(_input_data)
+        except ValueError as e:
+            sys.exit(f"viva: invalid review-input {args.input}: {e}")
+        # Validated, then normalized — in that order, so a malformed `round`
+        # still fails loudly here rather than being quietly replaced by 1.
+        schema.default_round(_input_data)
     _output_path = args.output
     _launch_mode = args.mode
 

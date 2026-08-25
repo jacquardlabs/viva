@@ -68,7 +68,14 @@ def test_the_set_of_choices_readers_has_not_grown():
     test, which is the point: someone has to look at where it runs."""
     html = server.HTML
     readers = set(re.findall(r"(\w+)\.choices\.(\w+)", html))
-    assert readers == {("q", "map"), ("live", "slice"), ("q", "length")}, (
+    # `("live", "slice")` became `("live", "forEach")` when `qaPaletteCommands`
+    # stopped truncating its own directory at nine choices. Confirmed
+    # downstream of the boot normalization by hand, which is what this tripwire
+    # asks for and cannot itself check: `qaPaletteCommands` is reached only
+    # through `paletteCommands()`'s `return REVIEW_DATA ? reviewPaletteCommands()
+    # : qaPaletteCommands();`, i.e. from an open ⌘K palette — long after
+    # `QA_DATA = data;`. The set did not grow; one member changed method.
+    assert readers == {("q", "map"), ("live", "forEach"), ("q", "length")}, (
         "the set of `.choices` readers changed — confirm each still runs "
         "AFTER the boot normalization, then update this list: %s"
         % sorted(readers)

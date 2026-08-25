@@ -143,13 +143,19 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
                  'class="comment-list"', 'function renderCommentList(',
                  'function openThreadHTML(', 'function renderHighlights('):
         assert dead not in page, f"accordion chrome must be deleted, not hidden: {dead}"
-    # The open hunk is a row grid with a margin, from the SAME head-row builder
-    # the print uses — one copy, so a verb added to a document review cannot go
-    # missing from a diff review.
-    assert "function docHeadRowHTML(id, proseHTML, opts)" in page, \
+    # The open hunk is a row grid with a margin, from the SAME two band builders
+    # the print uses — one copy each, so a verb added to a document review
+    # cannot go missing from a diff review. The head row carries orientation in
+    # ONE track and has no margin cell at all; the section's state and its verbs
+    # are the foot band's.
+    assert "function docHeadRowHTML(id, proseHTML)" in page, \
         "both builders must raise the head row from one function"
-    assert "${docHeadRowHTML(section.id, " in page and "{ skip: true })}" in page, \
+    assert "function docFootRowHTML(id, title, opts)" in page, \
+        "both builders must raise the foot band from one function"
+    assert "${docHeadRowHTML(section.id, " in page, \
         "the accordion's head row must come from the shared builder"
+    assert "docFootRowHTML(section.id, section.title, { skip: true })" in page, \
+        "the accordion's foot band must come from the shared builder, skip included"
     # `skip` is the accordion's alone: with one hunk open at a time, "not this
     # one, not now" is a real move; in the print it is just reading on.
     assert "const skip = !!(opts && opts.skip);" in page
@@ -192,8 +198,15 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
         "the row pipeline must skip a carried reveal"
     assert "if (!carried) { layoutDocRows(id); placeDocFlags(id); placeDocThreads(id); renderDocMargin(id); }" in page, \
         "...on the md-raw fallback path too"
-    assert "const host = row || docHeadRow(id);" in page and "if (!host) return;" in page, \
+    assert "const host = row || docFootRow(id);" in page and "if (!host) return;" in page, \
         "placeDocThreads must carry the same missing-host guard as its siblings"
+    # `docHeadRow` got the carried-card refusal for free — buildCarriedCard
+    # builds no `.row-head`. `docFootRow` must keep it for the same structural
+    # reason, which is only true while it stays a QUERY: build the band on
+    # demand from a `.section-content` a carried card DOES have and the guard
+    # above stops guarding, and this TypeError comes straight back.
+    assert "function docFootRow(id)" in page and "sec.querySelector('.row-foot')" in page, \
+        "the foot band must be found, never created — that is what keeps a carried reveal null"
     print("test_diff_keeps_the_accordion_and_loses_its_chrome: OK")
 
 
@@ -258,21 +271,28 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         "the gutter must collapse when nothing in the round carries a flag"
     assert "doc.classList.toggle('no-margin', !margin);" in page, \
         "the margin must collapse when the round carries nothing for it"
-    # With the margin gone the head row drops to two tracks and the section's
-    # own controls print under its heading — pure CSS, so a collapse can never
-    # move a focused control between hosts.
-    # `1fr`, not the `72ch` this shipped with — the last `ch` in a grid
-    # template, and the one invariant #5 was written against. It resolved
-    # against the row's own font-size, so the head row came out narrower than
-    # every prose row below it, and in the accordion (where no `.doc-section`
-    # fixes one size) it would have resolved differently again.
-    assert re.search(r'\.doc\.no-margin \.row-head\s*\{[^}]*grid-template-columns:\s*'
+    # The HEAD row has no margin cell in any state, so it needs no
+    # collapsed-margin exemption at all — three special cases deleted, and a
+    # rule that reappears is a head row that grew a margin back.
+    assert ".doc.no-margin .row-head" not in page, \
+        "the head row is one track; a collapse exemption for it is a margin cell returning"
+    # The FOOT band keeps the twin, and only for one reader: `updateDocColumns`
+    # counts `docFlagSplit(s).margin` and `docNotes(s)` but NOT `split.gutter`,
+    # so a section-scope non-jumping flag whose anchor resolves to no row falls
+    # back to the foot band and renders its words into what would otherwise be
+    # a 0px track. (The composer needs no rule — `.rm .comment-popover.is-open`
+    # drops `no-margin` synchronously before paint.)
+    # `1fr`, not `72ch` — the last `ch` in a grid template, and the one
+    # invariant #5 was written against: it resolves against the row's own
+    # font-size, so the band would come out narrower than every prose row.
+    assert re.search(r'\.doc\.no-margin \.row-foot\s*\{[^}]*grid-template-columns:\s*'
                      r'var\(--gutter-w\)\s+minmax\(0,\s*1fr\)', page), \
-        "a collapsed margin must drop the head row to two tracks, at the rows' own measure"
-    assert "ch)" not in re.search(r'\.doc[^\n]*grid-template-columns[^\n]*', page).group(0), \
-        "no `ch` may appear in a grid template"
-    assert re.search(r'\.doc\.no-margin \.row-head \.rm\s*\{[^}]*grid-column:\s*2', page), \
-        "the head row's controls must reflow under the heading, not disappear"
+        "a collapsed margin must drop the foot band to two tracks, at the rows' own measure"
+    # Every `.doc*` grid template, not just the first one `re.search` finds.
+    for line in re.findall(r'\.doc[^\n]*grid-template-columns[^\n]*', page):
+        assert "ch)" not in line, f"no `ch` may appear in a grid template: {line}"
+    assert re.search(r'\.doc\.no-margin \.row-foot \.rm\s*\{[^}]*grid-column:\s*2', page), \
+        "the foot band's margin must reflow under the prose, not disappear"
     # An OPEN compose popover holds the margin as surely as a saved note does.
     # Without this the FIRST anchored comment on a bare document — precisely
     # the document the collapse rule exists for — mounts its textarea into a
@@ -337,7 +357,23 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
     can be checked rather than taken on faith. A section with nothing open gets
     the thin hairline: a state bar there is decoration."""
     assert "function sectionBalance(section)" in page, "page missing the balance function"
-    assert "return { judgment, facts, settled };" in page
+    assert "return { judgment, facts, settled, signoff };" in page
+    # A section's own sign-off is an item in BOTH states — pending as well as
+    # settled. It used to count only once approved, so a fresh eight-section
+    # round printed `0 items · 0 open` while its own legend defined an item as
+    # "… or a section's own sign-off": the total measured decisions already
+    # made and GREW as the reviewer worked.
+    assert "const signoff = deriveVerdict(id) === 'approved' ? 0 : 1;" in page, \
+        "a pending sign-off must count as an item, not only a settled one"
+    assert "if (!signoff) settled++;" in page, \
+        "an approved section's sign-off stays in `settled`"
+    # ...and it rides out as its OWN field rather than folding into `judgment`,
+    # because the segmented rule must not paint it. Folded in, every unreviewed
+    # section of every round 1 would take a 100%-wide cobalt slab — finding 09
+    # in a different ink. segHTML's denominator is the proof: it sums three
+    # fields, not four.
+    assert "const total = bal.judgment + bal.facts + bal.settled;" in page, \
+        "segHTML must exclude `signoff` — a pending sign-off is not a painted segment"
     # Fixed order, in the markup the reader gets.
     order = page.index("seg('seg-judgment', bal.judgment) + seg('seg-fact', bal.facts)")
     assert order > 0 and "seg('seg-settled', bal.settled)" in page[order:order + 200], \
@@ -346,6 +382,25 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
         "the segmented rule must state its raw counts in the aria-label"
     assert "if (!bal.judgment && !bal.facts) return '<div class=\"rule-s\"></div>';" in page, \
         "a section with nothing open takes the thin settled hairline, not a bar"
+    # Finding 09. A PLAIN producer flag is advisory — `.mflag` takes no border
+    # and no actions, and nothing the reviewer can do closes it — so it is not
+    # an open item. Counting it as one gave a section whose only annotation was
+    # one warn flag a 100%-wide amber bar (four on the first screen, measured),
+    # making `--fact` the most-printed ink on a page where it is the scarce
+    # machine-flagged-open-fact ink, and it held `N open` off zero on a round
+    # where every section was approved. The ink was never wrong; the arithmetic
+    # was. A section carrying only producer flags now draws NO rule at all —
+    # segHTML's `if (!total) return ''` fires before the hairline branch.
+    sec_balance = page[page.index("function sectionBalance(section)"):]
+    sec_balance = sec_balance[:sec_balance.index("\n}")]
+    assert "a.severity" not in sec_balance, \
+        "an advisory producer flag must not be counted as an open item"
+    # ...and the deletion must not be over-applied to a check. An unanswered
+    # CHECK_KIND is ANSWERABLE via `result` and it gates a `checks` round, so
+    # it stays a fact until it carries one.
+    assert ("if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; "
+            "else facts++; return; }") in sec_balance, \
+        "an answerable check stays an open fact until it carries a result"
     # The footer carries the same grammar for the whole round — counts in, so
     # the one thing both footers share holds no mode branch. An interview has
     # no judgment/facts axis: an answer is given or it is not.
@@ -549,7 +604,17 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
     assert "function documentBalance()" in page, "page missing the one arithmetic"
     assert "atStart += (s.open_notes || []).length;" in page, \
         "the baseline counts carried threads, which all arrive unsettled"
-    assert "open: judgment + facts, total: judgment + facts + settled" in page
+    assert "open: judgment + facts + signoff" in page
+    assert "total: judgment + facts + settled + signoff" in page
+    # Both ends of the convergence arrow count the sign-off, or the arrow lies.
+    # `open` includes every pending one, so a baseline that skipped them would
+    # read `convergence 0 → 8` on a round where the reviewer has done nothing.
+    # The baseline asks `approved_ids` — the static field the round shipped
+    # with — never the live verdict, which is the thing it is measured against.
+    assert "const armedApproved = new Set(REVIEW_DATA.approved_ids || []);" in page, \
+        "the baseline must read the round as armed, not as it stands now"
+    assert "if (!armedApproved.has(s.id)) atStart++;" in page, \
+        "a section that arrived owing a sign-off is open at the arrow's left"
     assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
     # The stamp is named for what it does to the document, on every surface
     # that dispatches one.
@@ -567,6 +632,33 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
         "the document's closed mass is drawn in ink"
     assert re.search(r'\.foot-seg\s*\{[^}]*height:\s*6px', page), \
         "the footer's rule is heavier than a section's"
+    # Finding 08. Every aggregate on the page either states what it counts or
+    # it is gone.
+    #
+    # (a) The cell LABELLED `approved` prints approved. It printed `reviewed`
+    #     (approved + withFeedback), which is how a measured session read
+    #     `approved 8 / 8` beside `3 with feedback`. DESIGN.md already
+    #     specified `approved N/M`; this is the code catching up to the doc.
+    assert "el('r-progress-label').textContent = `${approved} / ${total}`;" in page, \
+        "the cell labelled `approved` must print approved, never reviewed"
+    # (b) `N approved` / `N with feedback` are DELETED, not hidden. They were
+    #     set and then hidden on every path, and the feedback cell's
+    #     else-branch hid without clearing, so `#stats-area` — an aria-live
+    #     region — kept a stale `3 with feedback` in the DOM forever. Assert
+    #     the CALL SITES are gone as well as the markup: leaving
+    #     `updateQAStats`'s two `.style.display` lines behind the deleted
+    #     markup throws on every Q&A round, and nothing here runs JS.
+    for dead in ("el('stat-approved')", "el('stat-feedback')",
+                 'id="stat-approved"', 'id="stat-feedback"',
+                 ".stat-approved {", ".stat-feedback {"):
+        assert dead not in page, f"the retired aggregate still ships: {dead}"
+    # (c) The survivors define themselves, in the page, in the reader's reach.
+    #     A `title` is hover-only; this list is the definition.
+    legend = page[page.index('<details class="kbd-legend">'):]
+    legend = legend[:legend.index("</details>")]
+    for term in ("<dt>item</dt>", "<dt>open</dt>", "<dt>convergence</dt>",
+                 "<dt>approved</dt>", "<dt>checks</dt>"):
+        assert term in legend, f"an aggregate that never defines itself: {term}"
     print("test_bar_and_footer_state_one_arithmetic: OK")
 
 
@@ -593,10 +685,25 @@ def test_activation_costs_no_layout(page: str) -> None:
     assert re.search(r'\.doc-section\.is-active \.doc-head\s*\{\s*border-left:\s*2px solid var\(--ink\);'
                      r'\s*margin-left:\s*-10px;\s*padding-left:\s*8px', page), \
         "the live marker must occupy no space"
-    # And the unanchored compose box opens BELOW the controls, so the button
-    # just clicked does not move.
-    assert "const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));" in page, \
-        "`+ note` must mount its box at the foot of the margin, under the controls"
+    # And the unanchored compose box opens in the FOOT band's margin cell. The
+    # invariant is the one it always was — the button just clicked must not
+    # move — and the foot band satisfies it structurally rather than
+    # positionally: `+ note` is in the same row, one cell to the left, so a box
+    # appended to the margin beside it cannot displace it at all. (Mounting in
+    # the head row's `.rm` merely put the box below the button; the button was
+    # still in the pile that made the head row 400px tall.)
+    assert "const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));" in page, \
+        "`+ note` must mount its box in the foot band's margin, beside its own button"
+    # What supplies the proximity the head mount gave. Without these two the
+    # test passes on a change that opens a composer the reviewer cannot see.
+    composer = page[page.index("function openCommentPopover(") :
+                    page.index("function closeCommentPopover(")]
+    assert "pop.scrollIntoView({ block: 'nearest' });" in composer, \
+        "the composer must bring itself into view"
+    assert "ta.focus({ preventScroll: true });" in composer, \
+        "...and the browser's own scroll-to-field must not undo it"
+    assert "block: 'center'" not in composer, \
+        "`center` yanks the prose out from under the reader; `nearest` does not"
     # A verdict repaints the balance and the spec — approve used to leave the
     # segmented rule showing the state before the stamp.
     assert "renderDocSeg(id); renderDocSpec(id);" in page, \
@@ -637,8 +744,15 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
     margin, look back, and hunt for the chip it meant."""
     assert "container.className = 'cards doc no-gutter';" in page, \
         "Q&A must wear the grammar and not the print"
-    assert '<h2 class="doc-head" id="qhead-${q.id}">' in page, \
-        "the question is the entry's own heading, numbered"
+    # The DISCLOSURE HEAD is the question, printed once, numbered like a
+    # catalog entry. It used to be an index line — clamped and dimmed — above
+    # an `<h2>` that restated the same sentence one line below it; that
+    # mitigation assumed the entry held something OTHER than the duplicate, and
+    # a free-text entry holds a hairline and nothing else. The number goes
+    # INSIDE `.card-title` because `.card-title-wrap` is a column flex.
+    assert ('<span class="card-title"><span class="doc-num" aria-hidden="true">'
+            '${index + 1} &middot;</span> ${esc(q.text)}</span>') in page, \
+        "the disclosure head is the question, numbered"
     assert '<div class="nt nt-check"><div class="nh">hint</div>' in page, \
         "the hint is a margin note in the machine's ink"
     assert 'class="nt nt-compose"' in page, \
@@ -671,6 +785,411 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
     assert "if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;" in page, \
         "the palette must open on the interview too"
     print("test_qa_wears_the_grammar_not_the_print: OK")
+
+
+def test_the_head_row_is_one_track(page: str) -> None:
+    """Finding 01, at its root. The head row's margin cell held the section's
+    state table, its verbs, every unanchored comment, every carried thread and
+    the `+ note` composer — beside a prose cell holding one line, the title.
+    Measured: prose 40px against margin 400px with three unanchored comments
+    (360px of blank page between a heading and its own first paragraph, and the
+    section's own text pushed 400px down), 40 against 327 on an H1 carrying
+    five doc-level flags, 40 against 101 on the state-table-plus-approve case
+    that fires on EVERY annotated section.
+
+    The cell is deleted, not shrunk. A one-track row cannot have a void — its
+    height is its prose's height, and margin-minus-prose is not expressible."""
+    assert "function docHeadRowHTML(id, proseHTML)" in page, \
+        "the head row takes prose and nothing else — no `opts`, no margin cell"
+    builder = page[page.index("function docHeadRowHTML(id, proseHTML)"):]
+    builder = builder[:builder.index("\n}")]
+    assert 'class="rm' not in builder, \
+        "a margin cell in the head row is the void returning"
+    assert "docHeadRow(" not in page, \
+        "the head-row query has no callers left; it must be deleted, not kept"
+    # The three collapsed-margin exemptions the head row needed are gone with
+    # it, and neither media-query selector list names it any more.
+    assert ".doc.no-margin .row-head" not in page and ".spec {" not in page, \
+        "three special cases deleted for a row that has no margin in any state"
+    print("test_the_head_row_is_one_track: OK")
+
+
+def test_a_whole_section_note_sits_at_the_section_foot(page: str) -> None:
+    """Where everything the head margin held went. A note that points at a
+    passage sitting beside it keeps its row's margin; everything ABOUT the
+    whole section — its state, its verbs, an unanchored comment, an unanchored
+    carried thread, a flag whose anchor resolved to no row, the `+ note`
+    composer — moves to a foot band under the prose, which is where a catalog
+    puts an entry's spec block and its order line."""
+    # Static markup from both builders, emitted AFTER the content and as a
+    # SIBLING of it. `docRows` is `#rcontent-<id> > .row`, so a foot row inside
+    # it would be a row `rowForAnchor` can return, `docNotesOrdered` can index
+    # and `markAndPin` walks — the margin's own echo re-entering the document
+    # walk, which is the #95 failure this grid already fought once.
+    for content, foot in (('<div class="section-content" id="rcontent-${section.id}"></div>',
+                           "docFootRowHTML(section.id, section.title, { skip: true })"),
+                          ('<div class="section-content" id="rcontent-${id}"></div>',
+                           "docFootRowHTML(id, section.title)")):
+        assert page.index(content) < page.index(foot), \
+            "the foot band follows the content and is never inside it"
+    # All four fallbacks move together, or they disagree.
+    assert "const target = row || docFootRow(id);" in page, "docNoteHost"
+    assert "const host = row || docFootRow(id);" in page, "placeDocThreads"
+    assert "const key = row || docFootRow(id);" in page, "placeDocFlags"
+    assert "const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));" in page, \
+        "the composer"
+    # An unanchored note sorts LAST — past every real index — because a
+    # whole-section note is read after the section, not before it. `rows.length`
+    # rather than a comparator change: the comparator is pinned verbatim above.
+    assert "row: r ? rows.indexOf(r) : rows.length" in page, \
+        "an unanchored note sorts to the foot, not to the head"
+    assert "const host = docNoteHost(id, docRows(id)[n.row] || null);" in page, \
+        "the out-of-range index must be stated, not left to `undefined || footRow`"
+    # The ids the rest of the app addresses these by do not move.
+    for anchor in ('id="rbtn-primary-', 'id="rcmtnote-', 'id="rspecbody-', 'id="rbtn-skip-'):
+        assert anchor in page, f"the foot band must keep {anchor}"
+    print("test_a_whole_section_note_sits_at_the_section_foot: OK")
+
+
+def test_the_foot_band_states_and_acts(page: str) -> None:
+    """The band's own grammar. The state is a horizontal RUN at the reading
+    measure, not a five-row table in a 328px column; the verbs lead it so
+    `approve` sits on the left edge the reader has been reading down whether or
+    not the section has state to print."""
+    # The deleted `<table>`'s `<caption>` named the state readout. `role=group`
+    # with an explicit label is what replaces it — a band removed AND unnamed
+    # would be an a11y regression nothing else in the suite catches.
+    assert 'class="doc-apparatus" role="group" aria-label="' in page, \
+        "the band must be announced by name, as the spec table's caption was"
+    assert '<table class="spec">' not in page, "the table is gone; the caption with it"
+    assert re.search(r'\.spec-strip \{[^}]*order:\s*2', page) and \
+        re.search(r'\.doc-acts\s*\{[^}]*order:\s*1', page), \
+        "the verbs lead and the state trails, so approve never moves"
+    assert re.search(r'\.spec-strip:empty\s*\{\s*display:\s*none', page), \
+        "an all-zero spec renders nothing; an empty auto-margin item must not eat the row"
+    assert re.search(r'\.doc \.row-foot \.rp\s*\{\s*max-width:\s*72ch', page), \
+        "the band takes the reading measure, or diff mode strands approve 1200px away"
+    assert re.search(r'\.doc \.row-foot\s*\{[^}]*margin-top:', page), \
+        "the band closes a section; `.doc .row + .row` never reaches it"
+    # The prose dims on approval and the band that lets you take it back does
+    # not. Specificity 0,4,0 — it TIES the hover rule, so its position AFTER it
+    # is the whole mechanism, and this only misbehaves once something is
+    # approved, which nothing else would notice.
+    assert page.index(".doc-section.is-approved:hover .rp") \
+        < page.index(".doc-section.is-approved .row-foot .rp { opacity: 1; }"), \
+        "the withdraw control must not dim; source order is what wins the tie"
+    # The confidence readout has no other home: docFlagSplit sends a
+    # `confidence` annotation to NEITHER column precisely because this is it.
+    assert "item('agent confidence'," in page, \
+        "dropping confidence here makes a documented feature invisible with no error"
+    print("test_the_foot_band_states_and_acts: OK")
+
+
+def test_document_flags_leave_the_first_section(page: str) -> None:
+    """Finding 02. `headings_present.py` and `checklist.py` both anchor a fact
+    about the WHOLE DOCUMENT to `sections[0]["id"]`, because
+    `parse_sections.py`'s integrity check makes a card for an absent section
+    impossible and the first card is the only document-level handle either has.
+    Taking that literally opened every typed round-1 review on five amber
+    "missing expected design-doc section" lines in the margin of section 1,
+    with roughly zero pixels of document prose in the first viewport — on a
+    surface whose stated principle is verbatim, not summarized."""
+    # Injected, never restated — the same anti-drift pair CHECK_KINDS carries.
+    assert ("const DOC_SCOPE_KINDS = " + json.dumps(list(schema.DOC_SCOPE_KINDS)) + ";") in page, \
+        "the scope registry must be injected from scripts/schema.py"
+    assert "__DOC_SCOPE_KINDS__" not in page, "the placeholder must not ship raw"
+    # Routing: a third bucket, at the one routing boundary.
+    assert "const gutter = [], margin = [], doc = [];" in page
+    assert "if (DOC_SCOPE_KINDS.includes(a.kind)) { doc.push(a); return; }" in page, \
+        "a document fact goes to neither column"
+    # The slip.
+    for fn in ("function documentFlags(", "function docSlipHTML(", "function renderDocSlip("):
+        assert fn in page, f"the document slip is missing {fn}"
+    assert page.index('id="transmittal"') < page.index('id="doc-slip"') \
+        < page.index('id="review-cards"'), \
+        "the slip mounts after the transmittal and above the print"
+    assert 'id="doc-slip-rows"' in page and "const open = flags.some(a => a.severity === 'error');" in page, \
+        "collapsed like the transmittal — unless the document carries an error"
+    # EVERY mode that renders sections, not review alone. `docFlagSplit` routes
+    # a doc-scope flag out of both columns unconditionally, so a mode gate on
+    # the slip is not "the slip is a review feature" — it is the flag rendering
+    # NOWHERE. A diff round carrying one showed `checks 0/1` in the bar with
+    # `round_is_complete` still enforcing the gate in Python and no surface
+    # saying what the check was.
+    slip_fn = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
+    assert "REVIEW_DATA.mode !== 'review'" not in slip_fn, \
+        "a doc-scope flag must have a surface in diff mode too, not vanish"
+    assert "if (!REVIEW_DATA) return '';" in slip_fn, \
+        "the slip still needs a round to read"
+    # ...and the accessible name matches what the rows actually are. Only
+    # `headings-present` is also a CHECK_KIND; a `checklist` row is not a check,
+    # and the visible head already says "Document · N flags".
+    assert 'id="doc-slip" aria-label="Document-level flags"' in page, \
+        "the slip's accessible name must not claim every row is a check"
+    # The three readers whose denominator is one section skip doc-scope...
+    assert "a => a && CHECK_KINDS.includes(a.kind) && !DOC_SCOPE_KINDS.includes(a.kind));" in page, \
+        "sectionSpec's checks tally"
+    assert "if (DOC_SCOPE_KINDS.includes(a.kind)) return;" in page, \
+        "sectionBalance's annotation loop"
+    assert ".filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))" in page, \
+        "flagRank — or a round-2 slip brands section 1 flagged for a document fact"
+    # ...and `documentBalance` splits the difference, because it computes BOTH
+    # ends of the convergence arrow. It still counts a doc-scope flag in
+    # `checks`/`checksDone` — that pair is the bar's document-level `checks D/T`
+    # readout, and a document fact belongs in it. It must NOT count one in
+    # `atStart`: `atStart` is the arrow's left and `open` is its right, but
+    # `open` is a sum of `sectionBalance`, which skips doc-scope. Counted on one
+    # side only, a document carrying five unanswered `headings-present` flags
+    # and nothing else reads `convergence 5 → 0` on a round where nothing was
+    # closed. The two ends answer the same question or the arrow lies.
+    doc_balance = page[page.index("function documentBalance()"):]
+    doc_balance = doc_balance[:doc_balance.index("\n}")]
+    assert "checks++;" in doc_balance and "if (a.result) checksDone++;" in doc_balance, \
+        "documentBalance still tallies doc-scope checks — that is the bar's readout"
+    assert "else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;" in doc_balance, \
+        "an unanswered document check must not sit at the left of the arrow alone"
+    # The doc-scope warn/error guard that used to stand here guarded a line
+    # that no longer exists: a plain producer flag is advisory and is counted
+    # at NEITHER end of the arrow now (finding 09), so `CHECK_KINDS` is the
+    # only annotation branch left. Assert that directly — it is the stronger
+    # claim, and it is what keeps a future branch from being added below the
+    # check without an `atStart` decision.
+    assert "a.severity" not in doc_balance, \
+        "an advisory producer flag is not an item at either end of the arrow"
+    print("test_document_flags_leave_the_first_section: OK")
+
+
+def test_a_free_text_question_prints_its_question_once(page: str) -> None:
+    """Finding 04. `buildQACard`'s `.card-title` printed the question and the
+    `<h2 class="doc-head">` inside the entry printed it AGAIN, one line below.
+    DESIGN.md anticipated it and clamped/dimmed the head as an index line —
+    a mitigation that assumed the entry held something other than the
+    duplicate. A free-text question's entry holds a hairline and nothing
+    else."""
+    card = page[page.index("function buildQACard(q, index)"):]
+    card = card[:card.index("\nfunction ")]
+    assert card.count("${esc(q.text)}") == 1, \
+        "the question is printed once, in the disclosure head"
+    # The clamp goes with the `<h2>`: ellipsizing a question now printed
+    # nowhere else would leave it readable nowhere.
+    assert "#qa-cards .card-title { white-space: normal; }" in page
+    assert "#qa-cards .card.is-active .card-title { color: var(--soft)" not in page, \
+        "the dim mitigation cannot be restored — the thing it mitigated is gone"
+    # A choiceless question has no prose column at all, reflowed by the same
+    # two-track mechanism the collapsed margin used.
+    assert "#qa-cards .row-head.is-choiceless { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }" in page
+    assert "const choiceless = q.choices.length === 0;" in page
+    # Both readers of `#qchoices-` are guarded, not just the wiring. Unguarded,
+    # syncQACard throws on EVERY sync of a choiceless card — and no test in this
+    # repo runs JS, so the suite would stay green over it.
+    assert "const ch = card.querySelector('#qchoices-' + q.id);\n  if (ch) ch.addEventListener" in page, \
+        "buildQACard's chip wiring must survive a missing chip list"
+    assert "const chEl = el('qchoices-' + id);\n  if (chEl) chEl.querySelectorAll" in page, \
+        "syncQACard must too — this is the site a partial edit leaves throwing"
+    # Bounded, not un-stretched: `stretch` is what puts every label on one left
+    # edge and every keycap on one right edge, which is `.pal-row`'s shape and
+    # the whole reason the chips stack. `flex-start` would trade that away.
+    assert re.search(r'\.choices \{[^}]*flex-direction:\s*column[^}]*max-width:\s*328px', page), \
+        "the choice run is bounded to 328px while staying stretched"
+    assert re.search(r'\.chip-label \{[^}]*flex:\s*1', page)
+    print("test_a_free_text_question_prints_its_question_once: OK")
+
+
+def test_the_stamp_never_prints_a_count_it_was_not_given(page: str) -> None:
+    """Finding 10. The `complete` summary is caller-supplied and unvalidated —
+    `summary = json.loads(body) if body.strip() else {}` under a bare except —
+    and a real caller already omits `sections_total`
+    (tests/test_server_pass.py POSTs `/complete` with `{"rounds_total": 1}`
+    alone). The handler filled the gap with a literal `'?'`, so the APPROVED
+    stamp could read `? sheets · 1 revision`: the product's one uninterrupted
+    moment, degraded.
+
+    Absent counts DROP the line. Both counts or neither — a half-known
+    `3 sheets · ? revisions` is the same defect — and `display:none` as well as
+    an empty string, because `.stamp-sub` carries `margin-top: 2px` and an
+    empty div would still spend it."""
+    handler = page[page.index("es.addEventListener('complete'"):]
+    handler = handler[:handler.index("\n  });")]
+    assert "const counted = typeof r === 'number' && typeof s === 'number';" in handler, \
+        "the stamp must know whether it was given both counts"
+    assert "stampSub.style.display = counted ? '' : 'none';" in handler, \
+        "an unknown count drops the line rather than reserving its margin"
+    assert "'?'" not in handler, \
+        "no question mark may reach the stamp"
+    print("test_the_stamp_never_prints_a_count_it_was_not_given: OK")
+
+
+def test_round2_lands_on_what_changed(page: str) -> None:
+    """Finding 03. `parse_sections._carry_annotations` copies a prior round's
+    annotations onto a byte-identical section, so a round-2 print opens on the
+    identical flag wall round 1 opened on — while the author's answers to the
+    reviewer's OWN notes, the whole reason a round 2 exists, sit further down.
+
+    On round >= 2 in the continuous print, the landing prefers the first
+    section carrying something NEW: a revision, else a thread the author
+    answered. Round 1 and diff mode are byte-identical in behaviour, and a
+    round with nothing new falls back to the first unapproved section exactly
+    as before."""
+    assert "const newBusiness = (isContinuousPrint() && REVIEW_DATA.round > 1)" in page, \
+        "the new landing must be gated to round >= 2 in the print"
+    assert "const landing = newBusiness || firstPending || REVIEW_DATA.sections[0];" in page, \
+        "with nothing new the fallback chain must be what it always was"
+    # The predicate is defined ONCE and asked by two readers — the landing and
+    # the transmittal's `answered` bucket. Two copies would drift.
+    assert "function authorAnswered(t, round) {" in page \
+        and "function sectionAnswered(s, round) {" in page, \
+        "the author's-turn predicate must have one definition, and it must take " \
+        "the round rather than reading a global — `transmittalHTML` is a pure " \
+        "function over its own `data`"
+    assert "return Boolean(last.response) || last.grounds !== undefined;" in page, \
+        "a decline is an answer, and `grounds` is keyed on PRESENCE — a decline " \
+        "with no grounds is still a decline, the same rule `openNotesHTML` states"
+    # An exact count, deliberately: grounds-presence has exactly two homes, and
+    # a third would be a second reading of the same rule. `openNotesHTML` is
+    # the other — a change there fires this, which is the point.
+    assert page.count(".grounds !== undefined") == 2, \
+        "grounds-presence lives in openNotesHTML and the predicate, nowhere else"
+    # FRESHNESS. `open_notes.py` appends an exchange only when the REVIEWER
+    # takes a turn, and an unsettled thread carries forward untouched — so a
+    # thread answered in round 1 and then left alone still reads "answered" in
+    # round 3. Without this the fix re-presents a two-round-old answer as this
+    # round's news, which is the defect it exists to close. `- 1` because an
+    # exchange is stamped with the round the reviewer's turn was made in and
+    # the author's response to it lands in the round after.
+    assert "if (Number(last.round) !== round - 1) return false;" in page, \
+        "an answer is news for exactly one round"
+    assert "sectionAnswered(s, data.round)" in page, \
+        "the transmittal bucket asks the freshness question too"
+    assert "sectionAnswered(s, REVIEW_DATA.round)" in page, \
+        "...and so does the landing, from its own round"
+    print("test_round2_lands_on_what_changed: OK")
+
+
+def test_one_decision_prints_once(page: str) -> None:
+    """Finding 03. A `checks` round answers several flags with one sentence:
+    five check flags on one section each printed the SAME one-line `result`
+    verbatim — one decision, five times. Every flag's message still prints; a
+    `result` already printed in the pass is dropped.
+
+    Two invariants carry the whole edit. The Set is per-invocation, never
+    module scope (`placeDocFlags` is idempotent by contract — a shared Set
+    would look right on first paint and blank every result on the first
+    re-sync). And the annotation is COPIED, never mutated: `a.result` is what
+    `specHTML`'s `checksDone`, `sectionBalance`'s `settled`, `documentBalance`
+    and the slip's own head tally all count."""
+    assert "function dedupeResults(list, seen) {" in page, \
+        "the Set is a parameter, so no caller can share one"
+    assert "if (seen.has(r)) return Object.assign({}, a, { result: undefined });" in page, \
+        "the annotation must be copied — blanking `result` in place moves a " \
+        "number with no error anywhere"
+    assert "const seen" not in page[:page.index("function dedupeResults(")], \
+        "no module-level dedupe Set may exist above the helper"
+    # The site that actually closes the finding. `docFlagSplit` routes every
+    # DOC_SCOPE kind to the slip and `headings-present` is the only CHECK_KIND,
+    # so today no annotation carrying a `result` reaches `placeDocFlags` at all.
+    slip = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
+    assert "dedupeResults(flags, new Set()).map(marginFlagHTML).join('')" in slip, \
+        "the document slip's rows are where the repeated result wall now lives"
+    # ...and the head tally must NOT see the deduped list, or five flags
+    # answered with one sentence would read `checks 1/5` on a finished round.
+    assert "const checks = flags.filter(a => CHECK_KINDS.includes(a.kind));" in slip, \
+        "`checks D/T` counts the RAW flags — it is the only readout of the gate"
+    assert "const done = checks.filter(a => a.result).length;" in slip, \
+        "the answered tally counts the raw flags too"
+    assert slip.index("const done =") < slip.index("dedupeResults("), \
+        "the tally must be computed before anything is deduped"
+    # The section path keeps the guard for the day a section-scope check kind
+    # lands, and the rail keeps its tooltip: one at a time is not a wall.
+    flags_fn = page[page.index("function placeDocFlags(id) {"):
+                    page.index("function placeDocThreads(id) {")]
+    assert "const seenResults = new Set();" in flags_fn, \
+        "placeDocFlags owns its Set, constructed inside the call"
+    assert "flags = dedupeResults(flags, seenResults);" in flags_fn, \
+        "the callback parameter is reassigned, so the pinned render line stands"
+    assert (flags_fn.index("docCell(row, 'rg').innerHTML")
+            < flags_fn.index("flags = dedupeResults(")), \
+        "the gutter renders first — the glyph's title keeps its full result"
+    # A second parameter on marginFlagHTML would receive the ARRAY INDEX from
+    # `.map` — falsy for the first flag, truthy for every other.
+    assert "function marginFlagHTML(a) {" in page, \
+        "marginFlagHTML takes exactly one argument; `.map` supplies the rest"
+    print("test_one_decision_prints_once: OK")
+
+
+def test_the_voice_composer_stays_where_it_opened(page: str) -> None:
+    """Finding 14, second half. `openCommentPopover` scrolls the whole popover
+    into view and focuses with `preventScroll` (pinned in
+    test_activation_costs_no_layout). `stageVoiceComment` re-focuses the field
+    afterwards — a bare `focus()` there scrolls back to the textarea and undoes
+    it, landing the viewport with the type chips and the quote above the
+    fold."""
+    voice = page[page.index("function stageVoiceComment(id, type, rest) {"):]
+    voice = voice[:voice.index("function runQAVoiceAct(")]
+    assert "ta.focus({ preventScroll: true });" in voice, \
+        "the voice path's re-focus must not undo the opener's scroll"
+    assert "ta.focus();" not in voice, \
+        "no bare focus may survive in the voice staging path"
+    print("test_the_voice_composer_stays_where_it_opened: OK")
+
+
+def test_every_choice_has_a_keyboard_path(page: str) -> None:
+    """Finding 15. The palette is the directory of the keyboard layer, and it
+    truncated itself at nine — choices 10 and 11 appeared in it nowhere, so
+    they had no ⌘K path and no keycap.
+
+    The digit handler binds 1-9 (one keypress, `parseInt(e.key)`), so a tenth
+    choice legitimately carries no cap; the printed cap and the bound key must
+    agree. Note `.choice-chip` is a plain `<button>` with no `tabindex` — Tab
+    already reaches choices 10 and 11 — so nobody should answer this by
+    binding `0` or a letter."""
+    palette = page[page.index("function qaPaletteCommands() {"):]
+    palette = palette[:palette.index("\n}\n")]
+    assert "live.choices.forEach((c, i) => {" in palette, \
+        "the palette must list every choice"
+    assert "slice(0, 9)" not in palette, \
+        "the directory of the keyboard layer may not truncate itself"
+    assert "key: i < 9 ? String(i + 1) : ''" in palette, \
+        "a keycap is printed only where one is actually bound"
+    assert "const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';" in page, \
+        "the chip's printed cap and the palette's bound key share one ceiling"
+    assert "if (!isNaN(n) && n >= 1 && n <= q.choices.length)" in page, \
+        "the digit handler's own ceiling is unchanged"
+    print("test_every_choice_has_a_keyboard_path: OK")
+
+
+def test_the_dispatch_controls_never_wrap(page: str) -> None:
+    """Finding 16, cosmetic. At a 780px viewport `.mode-diff` caps the bar at
+    95vw and the two flex children shared 741px; `.btn-group` carried a flex
+    item's default `flex-shrink: 1`, so `skip rest & submit` broke onto three
+    lines. `.stats` already wraps and absorbs the width instead. The content
+    columns reflow well and are deliberately untouched."""
+    assert re.search(r"\.btn-group \{[^}]*flex:\s*0 0 auto", page), \
+        "the dispatch group is one unit and does not shrink"
+    assert re.search(r"\.btn-group \{[^}]*display:\s*flex", page), \
+        "`display: flex` stays in the stylesheet — the SSE `round` handler " \
+        "restores this group with `style.display = ''` and falls back to it"
+    assert re.search(r"\.btn-skip \{[^}]*white-space:\s*nowrap", page), \
+        "a button narrower than its label must not break the label"
+    assert re.search(r"\.btn-submit \{[^}]*white-space:\s*nowrap", page), \
+        "...and its sibling takes the same rule"
+    # The bar's own row does NOT wrap, and that is the whole mechanism. A flex
+    # container breaks its line BEFORE it shrinks anything, so `wrap` here
+    # meant the row never attempted the shrink that would have let it fit: at
+    # doc mode's own 1054px cap, 613px of counters against a 450px stamp is
+    # 1063, and the stamp dropped to a line of its own over nine pixels — the
+    # same defect this test defends against, one container up.
+    assert re.search(r"\.bottom-inner \{[^}]*flex-wrap:\s*nowrap", page), \
+        "the bar's row must squeeze `.stats` rather than break its own line"
+    assert re.search(r"\.stats \{[^}]*flex-wrap:\s*wrap", page), \
+        "`.stats` is the item that absorbs the width now the buttons will not"
+    # ...which it can only do if it is allowed to shrink below its content
+    # width. `0 1 auto`, never `1 1 auto`: grow made the counters claim the
+    # whole row and push the stamp off it just as surely as no shrink at all.
+    assert re.search(r"\.stats \{[^}]*flex:\s*0 1 auto", page), \
+        "`.stats` must shrink and never grow"
+    assert re.search(r"\.stats \{[^}]*min-width:\s*0", page), \
+        "without min-width:0 a flex item will not shrink past its content"
+    print("test_the_dispatch_controls_never_wrap: OK")
 
 
 def test_round2_wire_shape_unchanged(base: str) -> None:
@@ -716,7 +1235,18 @@ def main() -> None:
             test_bar_and_footer_state_one_arithmetic(page)
             test_activation_costs_no_layout(page)
             test_the_slip_ships_collapsed(page)
+            test_the_head_row_is_one_track(page)
+            test_a_whole_section_note_sits_at_the_section_foot(page)
+            test_the_foot_band_states_and_acts(page)
+            test_document_flags_leave_the_first_section(page)
             test_qa_wears_the_grammar_not_the_print(page)
+            test_a_free_text_question_prints_its_question_once(page)
+            test_the_stamp_never_prints_a_count_it_was_not_given(page)
+            test_round2_lands_on_what_changed(page)
+            test_one_decision_prints_once(page)
+            test_the_voice_composer_stays_where_it_opened(page)
+            test_every_choice_has_a_keyboard_path(page)
+            test_the_dispatch_controls_never_wrap(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")
 

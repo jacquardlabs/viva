@@ -263,6 +263,41 @@ def test_round2_serves_transmittal_slip(page: str, data: dict) -> None:
     print("test_round2_serves_transmittal_slip: OK")
 
 
+def test_an_answer_without_a_revision_gets_a_row(page: str) -> None:
+    """Finding 03. The dispatch was `diff → carried → flags`, and a section
+    with open notes, no diff, no error/warn flag and no carried stamp fell
+    through the whole `forEach` and was pushed nowhere — so it rendered no row
+    at all. That is a section where the author answered the reviewer's own note
+    and changed no text: a decline (#167), or a response that needed no edit.
+    The one thing a round 2 exists for was the one thing the slip could not
+    see.
+
+    The bucket sits AFTER the carried test on purpose — a section the reviewer
+    already signed off is settled business, not this round's news — and its
+    rows come BEFORE the flag rows, because an answer is the author's turn and
+    a flag is a producer's."""
+    assert ("answered.map(s => row(s, 'tr-answered', '&#8627;', "
+            "'answered, not revised'))") in page, \
+        "an answer that revised nothing must still get a slip row"
+    assert page.index("answered.map") < page.index("flaggedErr.map"), \
+        "the author's turn rows before the producer's"
+    assert page.index("if (carriedNow(s.id))") < page.index("answered.push(s)"), \
+        "a carried section stays `approved & unchanged`, not `answered`"
+    assert page.index("answered.push(s)") < page.index("const rank = flagRank(s);"), \
+        "an answered section is news before it is machine output"
+    # The bucket asks the shared predicate, never its own copy of the shape.
+    assert "if (sectionAnswered(s, data.round)) { answered.push(s); return; }" in page, \
+        "the `answered` bucket and the round-2 landing must ask one predicate, " \
+        "and it must be asked with the round: an unsettled thread carries " \
+        "forward untouched, so a round-1 answer left alone would otherwise " \
+        "still row as news in round 3. A STALE answer falls through to " \
+        "`flagRank` exactly as before, so a section carrying both an old " \
+        "answer and a flag keeps its flag row."
+    assert ".tr-answered .tr-marker," in page and "var(--violet)" in page, \
+        "an answer that changed no text is information, not a revision"
+    print("test_an_answer_without_a_revision_gets_a_row: OK")
+
+
 def test_round1_zero_transmittal_markers(page: str, data: dict) -> None:
     """Cap: the slip is guarded to round > 1 and review mode — the round-1
     fixture serves an empty, hidden mount, zero rendered slip rows, and a
@@ -525,6 +560,121 @@ def test_activate_carried_scrolls_not_activates(page: str) -> None:
     print("test_activate_carried_scrolls_not_activates: OK")
 
 
+def test_recap_offers_the_action_that_works(page: str) -> None:
+    """Regression (finding 06): the recap opened focused on #recap-confirm even
+    when the round was not ready. That control renders as a primary filled
+    button, its click handler is class-gated, and the only control that DOES
+    work with pendings (btn-skip) sits behind the inert backdrop — so the
+    reviewer was focused on a large primary whose click and Enter were silent
+    no-ops, with nothing on screen saying why. The overlay now ships an
+    in-modal skip and a blocked line, and focuses whichever control can act."""
+    # The two new statics: an empty reason slot and a hidden in-modal skip
+    # wearing btn-skip's quiet outline grammar (no new class, no new <kbd>).
+    assert '<span class="recap-blocked" id="recap-blocked"></span>' in page, \
+        "recap actions must ship an empty blocked-reason slot"
+    assert ('<button type="button" class="btn-skip" id="recap-skip" '
+            'style="display:none">') in page, \
+        "recap actions must ship the in-modal skip, hidden"
+    # Three states, derived from two independent signals.
+    assert "const inFlight = el('btn-submit').disabled;" in page, \
+        "in-flight must be derived separately from readiness"
+    assert ("const pending = REVIEW_DATA.sections.filter"
+            "(s => deriveVerdict(s.id) === 'pending').length;") in page, \
+        "the modal's pending count must be the bar's own arithmetic"
+    assert "const canSkip = pending > 0 && !inFlight;" in page, \
+        "the skip is offered only when there is something to skip"
+    assert "el('recap-skip').style.display = canSkip ? '' : 'none';" in page, \
+        "the in-modal skip must show only when it can act"
+    assert "el('recap-blocked').textContent = inFlight ? " in page, \
+        "the blocked reason must be printed, not inferred"
+    # The confirm carries an aria state beside its class stamp — but never the
+    # DOM `disabled` attribute, which already means IN FLIGHT.
+    assert "el('recap-confirm').setAttribute('aria-disabled', ready ? 'false' : 'true');" in page, \
+        "a dead confirm must announce itself as well as draw itself"
+    # Focus lands on the control that can act, and AFTER the display flips —
+    # focus() on a display:none node silently no-ops and no needle would catch it.
+    focus_line = ("(canSkip ? el('recap-skip') : ready ? el('recap-confirm') "
+                  ": el('recap-close')).focus();")
+    assert focus_line in page, "the recap must open focused on a control that can act"
+    assert "el('recap-confirm').focus();" not in page, \
+        "the unconditional confirm focus must be gone, not shadowed"
+    assert (page.index("el('recap-skip').style.display = canSkip")
+            < page.index("el('recap-overlay').style.display = '';")
+            < page.index(focus_line)), \
+        "both display flips must precede the focus() or it no-ops"
+    # The handler: the same submitReview(true) escape hatch, with the same
+    # in-flight guard, wired after the recap-close wiring.
+    skip_wiring = page.index("el('recap-skip').addEventListener('click'")
+    assert page.index("el('recap-close').addEventListener('click', closeRecap);") < skip_wiring, \
+        "the recap-skip wiring must sit after the recap-close wiring"
+    assert "if (el('btn-submit').disabled) return;   // never a second POST" in page, \
+        "the in-modal skip must refuse while a submit is in flight"
+    assert "submitReview(true);" in page[skip_wiring:], \
+        "the in-modal skip must call the same early-submit path btn-skip does"
+    print("test_recap_offers_the_action_that_works: OK")
+
+
+def test_not_ready_dispatch_is_not_the_primary(page: str) -> None:
+    """Regression (finding 07): `.btn-submit.disabled` kept the primary's
+    filled-block shape and painted it var(--border2) (an alias of --ink) on
+    var(--text3) (an alias of --faint), making the highest-contrast block on
+    the page the one control that cannot act. It now takes btn-skip's quiet
+    outline grammar, and both states share one box."""
+    rule = re.search(r"\.btn-submit\.disabled \{[^}]*\}", page)
+    assert rule, "page missing the .btn-submit.disabled rule"
+    body = rule.group(0)
+    assert "background: transparent;" in body, \
+        "the not-ready dispatch must not be a filled block"
+    assert "var(--border2)" not in body and "var(--ink)" not in body, \
+        "the not-ready dispatch must not carry the page's strongest ink"
+    assert "color: var(--faint);" in body and "border-color: var(--rule);" in body, \
+        "the not-ready dispatch takes btn-skip's outline grammar"
+    assert "cursor: not-allowed;" in body, "the not-ready dispatch keeps its cursor"
+    base = re.search(r"\.btn-submit \{[^}]*\}", page)
+    assert base and "border: 1px solid transparent;" in base.group(0), \
+        "both states must share one box — the base rule needs a transparent border"
+    # Announced, not only drawn — in both stat updaters, beside the class stamp.
+    assert page.count(
+        "sub.setAttribute('aria-disabled', sub.classList.contains('disabled') "
+        "? 'true' : 'false');") == 2, \
+        "updateReviewStats and updateQAStats must both announce the dead state"
+    # ...and never via the DOM attribute, which means IN FLIGHT.
+    assert "sub.disabled = true" not in page, \
+        "not-ready must never use the `disabled` attribute — that means in flight"
+    print("test_not_ready_dispatch_is_not_the_primary: OK")
+
+
+def test_processing_retires_the_previous_rounds_controls(page: str) -> None:
+    """Regression (finding 13): between rounds the bar kept the dead dispatch
+    button, the previous round's segmented rule and a still-clickable `skip
+    rest & submit` — controls addressed to a round that no longer exists. The
+    skip was the hazard: live, and a second POST for a round already in
+    flight."""
+    proc = page.index("es.addEventListener('processing'")
+    rnd = page.index("es.addEventListener('round'")
+    done = page.index("es.addEventListener('complete'")
+    hides = page[proc:rnd]
+    restores = page[rnd:done]
+    assert "document.querySelector('.btn-group').style.display = 'none';" in hides, \
+        "the processing view must retire the dispatch controls"
+    assert "el('foot-seg').style.display = 'none';" in hides, \
+        "the processing view must retire the previous round's segmented rule"
+    assert "el('stat-pending').textContent = 'submitted — the agent is revising';" in hides, \
+        "the stats line must read the wait, in the heading's own words"
+    assert "document.querySelector('.btn-group').style.display = '';" in restores, \
+        "the round handler must bring the dispatch controls back"
+    # #foot-seg and #stat-pending need no explicit restore: renderFootSeg sets
+    # display on BOTH its branches and updateReviewStats rewrites the line.
+    assert "if (!total) { bar.style.display = 'none'; bar.innerHTML = ''; return; }" in page, \
+        "renderFootSeg's zero branch must still set display"
+    assert "bar.style.display = '';" in page, \
+        "renderFootSeg's non-zero branch must still set display"
+    # The echoed requests take the page's measure, not a narrower pixel cap.
+    assert ".processing-requests { max-width: 72ch; }" in page, \
+        "the between-rounds requests must take the page's own measure"
+    print("test_processing_retires_the_previous_rounds_controls: OK")
+
+
 def test_page_ships_between_rounds_card(page: str) -> None:
     """Cap: #processing-view ships as the between-rounds card — a pulsing dot
     (the spinner is replaced, not accompanied), the `REV 0N submitted — the
@@ -721,6 +871,9 @@ def main() -> None:
         test_page_ships_recap_overlay(page)
         test_ready_submit_routes_through_recap(page)
         test_recap_confirm_blocks_duplicate_submit(page)
+        test_recap_offers_the_action_that_works(page)
+        test_not_ready_dispatch_is_not_the_primary(page)
+        test_processing_retires_the_previous_rounds_controls(page)
         test_submit_failure_reenables_bar(page)
         test_close_recap_clears_inert_before_focus(page)
         test_recap_modal_traps_focus(page)
@@ -740,8 +893,9 @@ def main() -> None:
         test_round2_serves_carried_markup(page, data)
         test_round2_submit_records_carried_approved(base, viva2)
         test_round2_serves_transmittal_slip(page, data)
+        test_an_answer_without_a_revision_gets_a_row(page)
 
-    print("\nOK (19 tests)")
+    print("\nOK (23 tests)")
 
 
 if __name__ == "__main__":

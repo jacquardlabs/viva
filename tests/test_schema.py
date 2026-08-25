@@ -529,6 +529,40 @@ def test_check_kinds_covers_every_shipped_bundle_check():
     print("  ok  test_check_kinds_covers_every_shipped_bundle_check")
 
 
+def test_doc_scope_kinds_is_a_closed_set():
+    """`DOC_SCOPE_KINDS` is the scope registry: what a producer's flag is ABOUT.
+    `headings_present.py` and `checklist.py` both report a fact about the whole
+    DOCUMENT and both anchor it to `sections[0]["id"]`, because
+    `parse_sections.py`'s integrity check makes a card for an absent section
+    impossible and the first card is the only document-level handle either has.
+    A reader that takes the anchor literally prints five document facts in the
+    margin of section 1.
+
+    A DIFFERENT AXIS from `CHECK_KINDS`, which asks "does this gate a `checks`
+    round". `headings-present` is deliberately in both, and the two must not be
+    folded together: `checklist` in `CHECK_KINDS` would make a missing template
+    heading gate a `checks` round, which nothing has decided.
+    """
+    assert isinstance(schema.DOC_SCOPE_KINDS, tuple), "a vocabulary is a tuple"
+    scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+    # Read the producers rather than restating their strings.
+    hp_src = (scripts_dir / "headings_present.py").read_text(encoding="utf-8")
+    cl_src = (scripts_dir / "checklist.py").read_text(encoding="utf-8")
+    assert 'KIND = "headings-present"' in hp_src, "headings_present.py's KIND moved"
+    assert '"kind": "checklist"' in cl_src, "checklist.py's emitted kind moved"
+    assert set(schema.DOC_SCOPE_KINDS) == {"headings-present", "checklist"}, \
+        "the registry must name exactly the two document-level producers"
+    # The same mechanical mapping a bundle's `checks[]` uses.
+    for kind in schema.DOC_SCOPE_KINDS:
+        producer = scripts_dir / (kind.replace("-", "_") + ".py")
+        assert producer.exists(), f"{kind} names no producer at {producer}"
+    assert set(schema.DOC_SCOPE_KINDS) != set(schema.CHECK_KINDS), \
+        "scope and gating are different axes; collapsing them makes checklist gate a round"
+    assert "headings-present" in schema.DOC_SCOPE_KINDS, "it is doc-scope"
+    assert "headings-present" in schema.CHECK_KINDS, "...and it gates a checks round"
+    print("  ok  test_doc_scope_kinds_is_a_closed_set")
+
+
 def test_has_revision_history_is_anchored():
     """Substring matching is the defect this replaces: viva's own SKILL.md and
     DESIGN.md discuss the ledger by name, and a false positive takes `start`'s
@@ -544,6 +578,50 @@ def test_has_revision_history_is_anchored():
     assert not schema.has_revision_history("### Revision History\n"), \
         "a different heading level is a different heading"
     print("  ok  test_has_revision_history_is_anchored")
+
+
+def test_round_is_presence_gated_and_absence_normalizes():
+    """`round` is optional on the wire and stays optional — but a present
+    malformed one is a hard failure, and an absent one is NORMALIZED rather
+    than rejected.
+
+    Absence is not harmless downstream even though the contract permits it: the
+    browser prints the value into the tab title (`String(undefined)` gives the
+    literal "REV undefined") and does round arithmetic with it
+    (`Number(last.round) !== round - 1` against `undefined` is a NaN compare
+    that is never equal, silently killing the round-2 landing and the
+    transmittal's `answered` bucket). Requiring it instead would be a wire break
+    for a field the contract has always documented as optional, and would force
+    `"round": 1` into ~85 fixtures across this suite that are probing other
+    rules entirely.
+    """
+    base = {"sections": [{"id": "s1", "title": "T", "content": "c"}]}
+
+    # Absent is valid, and normalizes to a first round.
+    schema.validate_review_input(dict(base))
+    d = dict(base)
+    assert schema.default_round(d) is d, "normalizes in place and returns the same dict"
+    assert d["round"] == 1, "an unnumbered round is a first round"
+
+    # A present round is never overwritten.
+    d = dict(base, round=7)
+    schema.default_round(d)
+    assert d["round"] == 7
+
+    # Present-but-malformed is a hard failure — including `True`, which is an
+    # `int` subclass and would otherwise sail through and render as round 01.
+    for bad in (None, "2", 0, -1, True, 1.5, [], {}):
+        try:
+            schema.validate_review_input(dict(base, round=bad))
+        except ValueError as e:
+            assert "round" in str(e), f"the error must name the field, got {e}"
+        else:
+            raise AssertionError(f"round={bad!r} must be refused")
+
+    # The normalizer is pure of policy beyond the default and never raises on a
+    # shape the validator owns.
+    assert schema.default_round("not a dict") == "not a dict"
+    print("  ok  test_round_is_presence_gated_and_absence_normalizes")
 
 
 def main():
@@ -570,8 +648,10 @@ def main():
     test_thread_statuses_and_a_declined_suggestion_still_holds_proof()
     test_no_pass_relaxes_the_all_approved_base()
     test_check_kinds_covers_every_shipped_bundle_check()
+    test_doc_scope_kinds_is_a_closed_set()
     test_has_revision_history_is_anchored()
-    print("OK (23 tests)")
+    test_round_is_presence_gated_and_absence_normalizes()
+    print("OK (25 tests)")
 
 
 if __name__ == "__main__":

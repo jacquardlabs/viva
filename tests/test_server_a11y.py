@@ -134,6 +134,34 @@ def test_keyboard_legend_present_and_real():
     print("  ok  test_keyboard_legend_present_and_real")
 
 
+def test_the_counts_define_themselves_in_reach():
+    """Finding 08. The bar and the footer print `N items · M open`,
+    `convergence N → M`, `approved N/M` and `checks D/T`, and none of them
+    said anywhere what it counted. A reviewer who cannot reproduce the
+    arithmetic stops trusting it — on the one surface whose whole job is to be
+    trustworthy state.
+
+    An accessibility claim, which is why it lives here: `title` on the two
+    cells is hover-only, not keyboard-reachable, and most screen readers do
+    not announce it on a non-interactive div. The definitions ride in the
+    page's existing `kbd-legend` disclosure, which is a real `<details>` a
+    keyboard reaches."""
+    legend = HTML[HTML.index('<details class="kbd-legend">'):]
+    legend = legend[:legend.index("</details>")]
+    assert "what the counts mean" in legend, \
+        "the disclosure must say it holds the vocabulary, not only the keys"
+    for term in ("<dt>item</dt>", "<dt>open</dt>", "<dt>convergence</dt>",
+                 "<dt>approved</dt>", "<dt>checks</dt>"):
+        assert term in legend, f"an aggregate that never defines itself: {term}"
+    # The producer-flag exclusion is the one part of the vocabulary a reader
+    # cannot guess, and it is what finding 09 changed. State it to them, not
+    # only in DESIGN.md.
+    item = legend[legend.index("<dt>item</dt>"):]
+    assert "not an item" in item[:item.index("</dd>")], \
+        "the `item` definition must say a producer flag is not one"
+    print("  ok  test_the_counts_define_themselves_in_reach")
+
+
 def test_a_key_calls_approve_section():
     # The 'a' shortcut must route through approveSection — which refuses to
     # approve while the section has open comments — not the old direct
@@ -400,6 +428,7 @@ def main():
     test_decorative_emoji_are_aria_hidden()
     test_focus_visible_group_and_button_types()
     test_keyboard_legend_present_and_real()
+    test_the_counts_define_themselves_in_reach()
     test_a_key_calls_approve_section()
     test_catalog_ground_ships()
     test_grid_and_sheet_frame_gone()
@@ -415,7 +444,7 @@ def main():
     test_prefs_data_fetched_once_and_cached_for_round_rebuilds()
     test_dead_session_overlay_is_the_one_modal_that_does_not_close()
     test_preference_badge_reuses_annot_jump_never_the_raw_id()
-    print("OK (23 tests)")
+    print("OK (25 tests)")
 
 
 if __name__ == "__main__":
