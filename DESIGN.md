@@ -932,8 +932,11 @@ One question at a time is the point of an interview, so the accordion stays.
   and the clamp goes with it — ellipsizing a question now printed nowhere else
   leaves it readable nowhere. A `<button>`'s content cannot be a heading, so the
   interview loses one `<h2>` per entry; this matches `buildReviewCard`, whose
-  accordion head has never carried one, and the button remains the entry's
-  accessible name through `aria-controls`.
+  accordion head has never carried one. The entry is still named, by the
+  button's **own content** — the question text itself — which is where a
+  control's accessible name comes from. Not by `aria-controls`, which points at
+  the region a control expands and confers no name on anything; the attribute is
+  here for the disclosure relationship (a11y requirement 2), and nothing else.
 - **The choices are bounded to 328px** — `--margin-w`'s maximum, the width every
   other pick-list-shaped object here takes. `align-items: stretch` stays: it is
   what puts every label on one left edge and every keycap on one right edge.
