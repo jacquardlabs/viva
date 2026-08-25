@@ -637,7 +637,7 @@ single denominator:
 | Segment | Ink | Counts |
 |---------|-----|--------|
 | judgment | `--acc` | open `changes`/`suggestion` threads and comments, plus declined threads (waiting on accept-or-insist) |
-| facts | `--fact` | open `info` threads and comments, unanswered `CHECK_KINDS` flags, warn/error producer flags |
+| facts | `--fact` | open `info` threads and comments, unanswered `CHECK_KINDS` flags |
 | settled | `--settled` | settled threads, answered checks, and the section's own approval |
 
 The order is **fixed** (judgment → facts → settled) and that fixed order is the
@@ -645,7 +645,28 @@ colorblind-safe second encoding. Raw counts ride out in the `aria-label`
 ("open: 2 judgment, 1 fact; 1 settled"), so the honest-proportions claim is
 auditable rather than asserted. Drawn **only where something is open**: a
 section with nothing open takes the thin `.rule-s` hairline, because a state bar
-on a settled section is decoration.
+on a settled section is decoration. A section carrying **only** producer flags
+takes no rule at all — `segHTML` returns nothing before it reaches the hairline
+branch, because such a section holds no items.
+
+**A plain producer flag is not an item.** The facts row read "…, warn/error
+producer flags" until this change, which contradicted the Flags section two
+screens down: "`.mflag` takes no border and no actions, unlike `.nt` — a
+producer flag is advisory and there is nothing to answer." The two passages
+disagreed and this resolves toward the load-bearing half. Counting an
+unanswerable flag as an open fact gave a section whose only annotation was one
+warn flag a **100%-wide amber bar** — four of them on the first screen,
+measured — which made `--fact` the most-printed ink on a page where it is the
+scarce machine-flagged-open-fact ink, and it held `N open` off zero on a round
+where every section was approved and every check answered. Nothing the reviewer
+can do closes an advisory flag, so a count that includes one can never fall.
+
+The ink was never the defect and no hue moved: a warn flag is still amber in
+the margin, where the four-parties table puts it ("a claim missing a source" is
+exactly a machine-flagged open fact). What changed is that the *rule* stopped
+asserting it as an open item. An unanswered `CHECK_KINDS` flag is the opposite
+case and stays a fact — it is answered with `result` and it gates a `checks`
+round.
 
 `--settled` is a token, not a party ink — settled belongs to nobody, so it is a
 filled neutral (`#e3e4e2` light, `#3a3e41` dark) rather than a hue.
@@ -661,7 +682,26 @@ the one honest way to draw "not yet decided" without a fourth color.
 Both state the document's condition, and `documentBalance()` is the single
 arithmetic behind them, so `7 items · 5 open` in the bar can never disagree with
 `blocked · 5 open` below it. An **item** is what `sectionBalance` counts: a
-thread, a comment, a check, a producer flag, and a section's own sign-off.
+thread, a comment, an unanswered check, and a section's own sign-off. A
+producer flag is advisory and is **not** an item (see Segmented rule).
+
+**Every aggregate defines itself, in the page.** `item`, `open`, `convergence`,
+`approved` and `checks` are stated as a term list inside the `kbd-legend`
+disclosure at the foot of `<main>`, beside the shortcuts. A reviewer who cannot
+reproduce the arithmetic stops trusting it, and a measured session read
+`8 approved · 3 with feedback · 8 open` in the footer while the bar read
+`18 items · 5 open`, `checks 5/5 ✓` and `approved 8/8` — four numbers that
+cannot all be true of one document. `#r-items` and `#stat-conv` also carry a
+`title`, but that is a mouse convenience: `title` is not keyboard-reachable and
+most screen readers do not announce it on a non-interactive `div`. The list is
+the definition; the tooltip is not.
+
+Two footer cells are **gone**, not hidden. `N approved` (`#stat-approved`) and
+`N with feedback` (`#stat-feedback`) were set and then hidden on every path,
+and the feedback cell's `else` branch hid without clearing its `textContent` —
+so `#stats-area`, an `aria-live` region, held a stale `3 with feedback` in the
+DOM forever, beside a live `8 open`. An aggregate that cannot justify itself is
+deleted, not explained.
 
 **Bar** (review and diff; cells ship hidden and `renderDocStatus` reveals
 them): `doc · round NN · pass · checks N/M · N items · M open · approved N/M ·
@@ -670,7 +710,13 @@ palette ⌘K`. Q&A carries the same bar in its own vocabulary —
 progress, in state rather than in percent, and two bars saying the same thing
 differently is one bar too many. `palette ⌘K` is stated here rather than buried
 in the legend at the foot of the page: a palette nobody knows about is a palette
-nobody uses.
+nobody uses. `approved N/M` counts sections carrying an **approved** verdict —
+a section with feedback is reviewed but not approved. This spec was already
+right and the code was wrong: `updateReviewStats` printed `reviewed / total`
+(approved *plus* with-feedback) into a cell labelled `approved`, which is how a
+measured session read `approved 8/8` on a round with three sections still
+holding open changes. The fix is the code catching up to the doc, not a new
+decision.
 
 **Footer**: four things, like the composite's, because at the doc page's width
 seven wrapped the stamp onto a second line. Everything it keeps is about
@@ -1151,6 +1197,15 @@ is the ground these gestures sit on; see Layout.)
   inner rule at `inset: 3px`), slammed on at a `-5deg` tilt via the `stamp-down`
   animation. Children: `.stamp-word` ("APPROVED", `2.1rem`), `.stamp-meta` ("viva ·
   <date>"), `.stamp-sub` ("N sheets · M revisions"). All Fragment Mono.
+  `.stamp-sub` is **dropped entirely** — emptied and `display:none`, so it does
+  not spend its `margin-top` — when `rounds_total` or `sections_total` is
+  absent from the `/complete` summary. Both counts or neither; a half-known
+  "3 sheets · ? revisions" is the same defect as two question marks. The
+  summary is caller-supplied and unvalidated (`json.loads(body) if body.strip()
+  else {}`, under a bare except) and a real caller already omits
+  `sections_total`, so the literal `'?'` fallback was reachable — printed into
+  the one uninterrupted moment the product exists for. A stamp that states only
+  APPROVED and the date states nothing false.
 
 ## Diff rendering (#99, superseded in-branch by diff2html delegation)
 

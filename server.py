@@ -2455,6 +2455,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   align-items: center;
 }
 .kbd-list dt { margin: 0; }
+/* The second list in the same disclosure: the aggregates, defined. Its terms
+   are words, not keycaps, so they get no `.kbd-list kbd` chrome — only the
+   rule that separates the two lists. */
+.term-list { margin-top: 12px; }
+.term-list dt { color: var(--text2); }
 .kbd-list dd { margin: 0; color: var(--text2); }
 .kbd-list kbd {
   font-family: 'Fragment Mono', monospace;
@@ -2496,8 +2501,6 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   gap: 14px;
   flex-wrap: wrap;
 }
-.stat-approved { color: var(--teal); }
-.stat-feedback { color: var(--orange); }
 .stat-pending  { color: var(--text3); }
 
 .btn-group { display: flex; gap: 8px; }
@@ -3048,7 +3051,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   </div>
 
   <details class="kbd-legend">
-    <summary>keyboard shortcuts</summary>
+    <summary>keyboard shortcuts &amp; what the counts mean</summary>
     <dl class="kbd-list">
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
       <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
@@ -3059,6 +3062,18 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>v</kbd></dt><dd>voice &mdash; the oral examination; Escape stops listening from anywhere</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
+    </dl>
+    <!-- Every aggregate the bar and the footer print, defined once, in the
+         page, in the reader's reach. A reviewer who cannot reproduce the
+         arithmetic stops trusting the numbers — on the one surface whose
+         whole job is to be trustworthy state. `title` on the two cells is a
+         mouse convenience; this list is what states them. -->
+    <dl class="kbd-list term-list">
+      <dt>item</dt><dd>one thing with a state: a carried thread, a comment you made, an unanswered check, or a section's own sign-off. A producer flag is advisory and is not an item.</dd>
+      <dt>open</dt><dd>items still waiting on someone &mdash; judgment (changes, suggestions, declines) plus facts (questions, unanswered checks). Everything else is settled.</dd>
+      <dt>convergence</dt><dd>open items when this round was armed &rarr; open items now. Falling means you are closing more than you open.</dd>
+      <dt>approved</dt><dd>sections carrying an approved verdict, out of all sections. A section with feedback is reviewed but not approved.</dd>
+      <dt>checks</dt><dd>producer checks that carry an answer, out of all of them. A document-level check is counted here and nowhere else.</dd>
     </dl>
   </details>
 
@@ -3079,8 +3094,6 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   <div class="voice-strip" id="voice-strip" aria-live="polite" style="display:none"></div>
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
-      <span class="stat-approved" id="stat-approved"></span>
-      <span class="stat-feedback" id="stat-feedback" style="display:none"></span>
       <span class="stat-pending"  id="stat-pending"></span>
       <!-- Review-mode footer (#186). `convergence` is the question a
            multi-round review actually asks — is the reviewer closing more than
@@ -4430,7 +4443,14 @@ function sectionBalance(section) {
     // slip's `checks D/T` prints.
     if (DOC_SCOPE_KINDS.includes(a.kind)) return;
     if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; else facts++; return; }
-    if (a.severity === 'warn' || a.severity === 'error') facts++;
+    // And a PLAIN producer flag is not an item at all. `.mflag` takes no
+    // border and no actions — it is advisory and there is nothing to answer,
+    // so nothing the reviewer can do makes it close. Counting it as an open
+    // fact painted a section whose only annotation was one warn flag with a
+    // 100%-wide amber bar (four on the first screen, measured) and held
+    // `N open` off zero on a round where every section was approved and every
+    // check answered. An unanswered CHECK_KIND above is the opposite case: it
+    // is answered with `result` and it gates a `checks` round, so it stays.
   });
   if (deriveVerdict(id) === 'approved') settled++;
   return { judgment, facts, settled };
@@ -5686,11 +5706,11 @@ function updateReviewStats() {
   const remaining= total - reviewed;
 
   el('r-progress').style.width = (reviewed / total * 100) + '%';
-  el('r-progress-label').textContent = `${reviewed} / ${total}`;
-  el('stat-approved').textContent = `${approved} approved`;
-  const fEl = el('stat-feedback');
-  if (withFeedback > 0) { fEl.style.display=''; fEl.textContent=`${withFeedback} with feedback`; }
-  else fEl.style.display = 'none';
+  // The cell is LABELLED `approved` (and DESIGN.md specifies `approved N/M`),
+  // so it prints APPROVED. It printed `reviewed`, which counts sections
+  // carrying feedback too — which is how the bar could read `approved 8 / 8`
+  // on a round where three sections had open changes.
+  el('r-progress-label').textContent = `${approved} / ${total}`;
   el('stat-pending').textContent = remaining > 0 ? `${remaining} unreviewed` : 'all reviewed';
 
   const sub = el('btn-submit');
@@ -5712,9 +5732,11 @@ function updateReviewStats() {
   // at the doc page's width that wrapped the stamp onto a second line. The bar
   // above already carries `approved N/M` and the item counts, so the footer
   // keeps only what is about DISPATCHING: what blocks it, whether the round is
-  // converging, and what the last round trip cost.
-  el('stat-approved').style.display = 'none';
-  el('stat-feedback').style.display = 'none';
+  // converging, and what the last round trip cost. The two cells that stated
+  // `N approved` and `N with feedback` are GONE, not hidden: they were set and
+  // then hidden on every path, and the feedback cell's else-branch hid without
+  // clearing, so `#stats-area` — an `aria-live` region — kept announcing a
+  // stale `3 with feedback` beside a live `8 open` forever.
   const cap = ' <kbd>&#8984;&#9166;</kbd>';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unreviewed`
@@ -5728,7 +5750,10 @@ function updateReviewStats() {
    The bar and the footer state one quantity between them — how many items
    this document holds and how many are still open — so the two can never
    disagree. An ITEM is what sectionBalance already counts: a thread, a
-   comment, a check, a producer flag, and a section's own sign-off. */
+   comment, an unanswered check, and a section's own sign-off. A producer flag
+   is advisory and is NOT an item — see sectionBalance. The vocabulary is
+   stated to the reader in the `kbd-legend` disclosure, because a reviewer who
+   cannot reproduce the arithmetic stops trusting it. */
 function documentBalance() {
   let judgment = 0, facts = 0, settled = 0, atStart = 0, checks = 0, checksDone = 0;
   (REVIEW_DATA.sections || []).forEach(s => {
@@ -5741,24 +5766,25 @@ function documentBalance() {
     atStart += (s.open_notes || []).length;
     (s.annotations || []).forEach(a => {
       if (!a) return;
-      // A doc-scope flag IS counted in `checks`/`checksDone` — that pair is the
-      // bar's document-level `checks D/T` readout, and a fact about the
-      // document is exactly what belongs in it. It is NOT counted in
-      // `atStart`, and the asymmetry is load-bearing rather than sloppy:
-      // `atStart` is the LEFT of the convergence arrow and `open` is the
-      // RIGHT, but `open` is a sum of `sectionBalance`, which skips doc-scope.
-      // Count it on one side only and a document carrying five unanswered
-      // `headings-present` flags and nothing else reads `convergence 5 → 0` on
-      // a round where nothing was closed. The two ends of the arrow answer the
-      // same question or the arrow lies.
+      // Only a CHECK is an annotation this baseline counts. A doc-scope flag IS
+      // counted in `checks`/`checksDone` — that pair is the bar's document-level
+      // `checks D/T` readout, and a fact about the document is exactly what
+      // belongs in it. It is NOT counted in `atStart`, and the asymmetry is
+      // load-bearing rather than sloppy: `atStart` is the LEFT of the
+      // convergence arrow and `open` is the RIGHT, but `open` is a sum of
+      // `sectionBalance`, which skips doc-scope. Count it on one side only and
+      // a document carrying five unanswered `headings-present` flags and
+      // nothing else reads `convergence 5 → 0` on a round where nothing was
+      // closed. The two ends of the arrow answer the same question or the
+      // arrow lies — which is also why a plain warn/error producer flag is
+      // counted at NEITHER end: `sectionBalance` stopped treating an advisory
+      // flag as an open item, so a baseline that still counted one would make
+      // every flagged round appear to converge by exactly its flag count.
       if (CHECK_KINDS.includes(a.kind)) {
         checks++;
         if (a.result) checksDone++;
         else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;
-        return;
       }
-      if (DOC_SCOPE_KINDS.includes(a.kind)) return;
-      if (a.severity === 'warn' || a.severity === 'error') atStart++;
     });
   });
   return { judgment, facts, settled, checks, checksDone, atStart,
@@ -5785,6 +5811,11 @@ function renderDocStatus() {
   el('tb-checks').style.display = b.checks ? '' : 'none';
   el('r-items').innerHTML = b.total + ' item' + (b.total === 1 ? '' : 's')
     + ' &middot; <b>' + b.open + '</b> open';
+  // Hover convenience only — `title` is not keyboard-reachable and most screen
+  // readers do not announce it on a non-interactive div. The `kbd-legend`
+  // term list is what actually states this vocabulary.
+  el('r-items').title = 'an item is a thread, a comment, an unanswered check, '
+    + 'or a section sign-off; open = judgment + facts';
   el('tb-items').style.display = '';
   el('tb-palette').style.display = '';
   // Convergence: open items when the round was armed against open items now.
@@ -5793,6 +5824,7 @@ function renderDocStatus() {
   const conv = el('stat-conv');
   conv.style.display = '';
   conv.innerHTML = 'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>';
+  conv.title = 'open items when this round was armed → open items now';
   const lat = el('stat-lat');
   if (_lastRTT === null) lat.style.display = 'none';
   else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
@@ -6234,8 +6266,6 @@ function updateQAStats() {
   // judgment/facts axis — an answer is given or it is not — so the balance
   // rule fills with settled alone and the bare track is what nobody has
   // answered yet, which is the one honest way to draw "not yet decided".
-  el('stat-approved').style.display = 'none';
-  el('stat-feedback').style.display = 'none';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unanswered`
     : 'ready <kbd>&#8984;&#9166;</kbd>';
@@ -7403,12 +7433,26 @@ function connectSSE() {
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
     setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');
-    const r   = data.rounds_total     != null ? data.rounds_total    : '?';
-    const s   = data.sections_total   != null ? data.sections_total  : '?';
+    const r   = data.rounds_total;
+    const s   = data.sections_total;
     const rev = data.sections_revised != null ? data.sections_revised : null;
     el('complete-headline').textContent = '';
     const stampSub = el('stamp-sub');
-    if (stampSub) stampSub.textContent = `${s} sheet${s !== 1 ? 's' : ''} · ${r} revision${r !== 1 ? 's' : ''}`;
+    if (stampSub) {
+      // Absent counts DROP the line, never degrade it. The summary is
+      // caller-supplied and unvalidated (`json.loads(body) if body.strip()
+      // else {}`), and a real caller already omits `sections_total`, so
+      // `? sheets · 1 revision` was reachable — printed into the APPROVED
+      // stamp, the product's one uninterrupted moment. Both counts or
+      // neither: a half-known line is the same defect. `display:none` as well
+      // as an empty string, because `.stamp-sub` carries `margin-top: 2px`
+      // and an empty div would still spend it.
+      const counted = typeof r === 'number' && typeof s === 'number';
+      stampSub.textContent = counted
+        ? `${s} sheet${s !== 1 ? 's' : ''} · ${r} revision${r !== 1 ? 's' : ''}`
+        : '';
+      stampSub.style.display = counted ? '' : 'none';
+    }
     const stampMeta = el('stamp-meta');
     if (stampMeta) stampMeta.textContent = 'viva · ' + new Date().toISOString().slice(0, 10);
     el('complete-detail').textContent   = rev != null

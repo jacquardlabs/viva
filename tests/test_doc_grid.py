@@ -366,6 +366,25 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
         "the segmented rule must state its raw counts in the aria-label"
     assert "if (!bal.judgment && !bal.facts) return '<div class=\"rule-s\"></div>';" in page, \
         "a section with nothing open takes the thin settled hairline, not a bar"
+    # Finding 09. A PLAIN producer flag is advisory — `.mflag` takes no border
+    # and no actions, and nothing the reviewer can do closes it — so it is not
+    # an open item. Counting it as one gave a section whose only annotation was
+    # one warn flag a 100%-wide amber bar (four on the first screen, measured),
+    # making `--fact` the most-printed ink on a page where it is the scarce
+    # machine-flagged-open-fact ink, and it held `N open` off zero on a round
+    # where every section was approved. The ink was never wrong; the arithmetic
+    # was. A section carrying only producer flags now draws NO rule at all —
+    # segHTML's `if (!total) return ''` fires before the hairline branch.
+    sec_balance = page[page.index("function sectionBalance(section)"):]
+    sec_balance = sec_balance[:sec_balance.index("\n}")]
+    assert "a.severity" not in sec_balance, \
+        "an advisory producer flag must not be counted as an open item"
+    # ...and the deletion must not be over-applied to a check. An unanswered
+    # CHECK_KIND is ANSWERABLE via `result` and it gates a `checks` round, so
+    # it stays a fact until it carries one.
+    assert ("if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; "
+            "else facts++; return; }") in sec_balance, \
+        "an answerable check stays an open fact until it carries a result"
     # The footer carries the same grammar for the whole round — counts in, so
     # the one thing both footers share holds no mode branch. An interview has
     # no judgment/facts axis: an answer is given or it is not.
@@ -587,6 +606,33 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
         "the document's closed mass is drawn in ink"
     assert re.search(r'\.foot-seg\s*\{[^}]*height:\s*6px', page), \
         "the footer's rule is heavier than a section's"
+    # Finding 08. Every aggregate on the page either states what it counts or
+    # it is gone.
+    #
+    # (a) The cell LABELLED `approved` prints approved. It printed `reviewed`
+    #     (approved + withFeedback), which is how a measured session read
+    #     `approved 8 / 8` beside `3 with feedback`. DESIGN.md already
+    #     specified `approved N/M`; this is the code catching up to the doc.
+    assert "el('r-progress-label').textContent = `${approved} / ${total}`;" in page, \
+        "the cell labelled `approved` must print approved, never reviewed"
+    # (b) `N approved` / `N with feedback` are DELETED, not hidden. They were
+    #     set and then hidden on every path, and the feedback cell's
+    #     else-branch hid without clearing, so `#stats-area` — an aria-live
+    #     region — kept a stale `3 with feedback` in the DOM forever. Assert
+    #     the CALL SITES are gone as well as the markup: leaving
+    #     `updateQAStats`'s two `.style.display` lines behind the deleted
+    #     markup throws on every Q&A round, and nothing here runs JS.
+    for dead in ("el('stat-approved')", "el('stat-feedback')",
+                 'id="stat-approved"', 'id="stat-feedback"',
+                 ".stat-approved {", ".stat-feedback {"):
+        assert dead not in page, f"the retired aggregate still ships: {dead}"
+    # (c) The survivors define themselves, in the page, in the reader's reach.
+    #     A `title` is hover-only; this list is the definition.
+    legend = page[page.index('<details class="kbd-legend">'):]
+    legend = legend[:legend.index("</details>")]
+    for term in ("<dt>item</dt>", "<dt>open</dt>", "<dt>convergence</dt>",
+                 "<dt>approved</dt>", "<dt>checks</dt>"):
+        assert term in legend, f"an aggregate that never defines itself: {term}"
     print("test_bar_and_footer_state_one_arithmetic: OK")
 
 
@@ -860,8 +906,14 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "documentBalance still tallies doc-scope checks — that is the bar's readout"
     assert "else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;" in doc_balance, \
         "an unanswered document check must not sit at the left of the arrow alone"
-    assert "if (DOC_SCOPE_KINDS.includes(a.kind)) return;" in doc_balance, \
-        "...nor may a doc-scope warn/error flag"
+    # The doc-scope warn/error guard that used to stand here guarded a line
+    # that no longer exists: a plain producer flag is advisory and is counted
+    # at NEITHER end of the arrow now (finding 09), so `CHECK_KINDS` is the
+    # only annotation branch left. Assert that directly — it is the stronger
+    # claim, and it is what keeps a future branch from being added below the
+    # check without an `atStart` decision.
+    assert "a.severity" not in doc_balance, \
+        "an advisory producer flag is not an item at either end of the arrow"
     print("test_document_flags_leave_the_first_section: OK")
 
 
@@ -899,6 +951,30 @@ def test_a_free_text_question_prints_its_question_once(page: str) -> None:
         "the choice run is bounded to 328px while staying stretched"
     assert re.search(r'\.chip-label \{[^}]*flex:\s*1', page)
     print("test_a_free_text_question_prints_its_question_once: OK")
+
+
+def test_the_stamp_never_prints_a_count_it_was_not_given(page: str) -> None:
+    """Finding 10. The `complete` summary is caller-supplied and unvalidated —
+    `summary = json.loads(body) if body.strip() else {}` under a bare except —
+    and a real caller already omits `sections_total`
+    (tests/test_server_pass.py POSTs `/complete` with `{"rounds_total": 1}`
+    alone). The handler filled the gap with a literal `'?'`, so the APPROVED
+    stamp could read `? sheets · 1 revision`: the product's one uninterrupted
+    moment, degraded.
+
+    Absent counts DROP the line. Both counts or neither — a half-known
+    `3 sheets · ? revisions` is the same defect — and `display:none` as well as
+    an empty string, because `.stamp-sub` carries `margin-top: 2px` and an
+    empty div would still spend it."""
+    handler = page[page.index("es.addEventListener('complete'"):]
+    handler = handler[:handler.index("\n  });")]
+    assert "const counted = typeof r === 'number' && typeof s === 'number';" in handler, \
+        "the stamp must know whether it was given both counts"
+    assert "stampSub.style.display = counted ? '' : 'none';" in handler, \
+        "an unknown count drops the line rather than reserving its margin"
+    assert "'?'" not in handler, \
+        "no question mark may reach the stamp"
+    print("test_the_stamp_never_prints_a_count_it_was_not_given: OK")
 
 
 def test_round2_wire_shape_unchanged(base: str) -> None:
@@ -950,6 +1026,7 @@ def main() -> None:
             test_document_flags_leave_the_first_section(page)
             test_qa_wears_the_grammar_not_the_print(page)
             test_a_free_text_question_prints_its_question_once(page)
+            test_the_stamp_never_prints_a_count_it_was_not_given(page)
             test_round2_wire_shape_unchanged(base)
     print("OK")
 
