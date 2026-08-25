@@ -4563,8 +4563,26 @@ function sectionBalance(section) {
     // check answered. An unanswered CHECK_KIND above is the opposite case: it
     // is answered with `result` and it gates a `checks` round, so it stays.
   });
-  if (deriveVerdict(id) === 'approved') settled++;
-  return { judgment, facts, settled };
+  /* The section's own sign-off is an item in BOTH states, and that is the
+     whole of the correction. It used to count only once approved (`settled++`
+     and nothing on the other branch), so a document's item total measured
+     decisions ALREADY MADE rather than things to decide: a fresh eight-section
+     round with five unanswered checks printed `0 items · 0 open`, which the
+     legend's own definition — "an item is … or a section's own sign-off" —
+     says is eight. The count grew as the reviewer worked, which is the exact
+     class of defect the aggregates were redefined to end.
+
+     It rides out as its own field rather than folding into `judgment` because
+     the two consumers want different things and both are right. A pending
+     sign-off IS open business, so `documentBalance` counts it. It is not
+     business the segmented rule should paint: `segHTML` sums only
+     judgment/facts/settled, so a section whose only open item is its own
+     sign-off still draws the settled hairline instead of a 100%-wide cobalt
+     slab on every unreviewed section of every round 1 — finding 09 in a
+     different ink. */
+  const signoff = deriveVerdict(id) === 'approved' ? 0 : 1;
+  if (!signoff) settled++;
+  return { judgment, facts, settled, signoff };
 }
 
 function segHTML(bal) {
@@ -5876,14 +5894,24 @@ function updateReviewStats() {
    cannot reproduce the arithmetic stops trusting it. */
 function documentBalance() {
   let judgment = 0, facts = 0, settled = 0, atStart = 0, checks = 0, checksDone = 0;
+  let signoff = 0;
+  // Which sections arrived already signed off. The baseline reads the round as
+  // ARMED, so it asks `approved_ids` — the static field the round shipped with —
+  // never the live verdict, which is the thing convergence measures against it.
+  const armedApproved = new Set(REVIEW_DATA.approved_ids || []);
   (REVIEW_DATA.sections || []).forEach(s => {
     const b = sectionBalance(s);
-    judgment += b.judgment; facts += b.facts; settled += b.settled;
+    judgment += b.judgment; facts += b.facts; settled += b.settled; signoff += b.signoff;
     // What was open when the round was ARMED: every carried thread arrives
-    // unsettled, every unanswered check and flag arrives open. Nothing here
+    // unsettled, every unanswered check and flag arrives open, and every
+    // section not in `approved_ids` arrives owing a sign-off. Nothing here
     // reads live reviewer state — that is what makes it a baseline to measure
     // convergence against rather than a second view of the same number.
     atStart += (s.open_notes || []).length;
+    // Both ends of the arrow count the sign-off or the arrow lies: `open` now
+    // includes every pending one, so a baseline that skipped them would read
+    // `convergence 0 → 8` on a round where the reviewer has done nothing yet.
+    if (!armedApproved.has(s.id)) atStart++;
     (s.annotations || []).forEach(a => {
       if (!a) return;
       // Only a CHECK is an annotation this baseline counts. A doc-scope flag IS
@@ -5907,8 +5935,9 @@ function documentBalance() {
       }
     });
   });
-  return { judgment, facts, settled, checks, checksDone, atStart,
-           open: judgment + facts, total: judgment + facts + settled };
+  return { judgment, facts, settled, checks, checksDone, atStart, signoff,
+           open: judgment + facts + signoff,
+           total: judgment + facts + settled + signoff };
 }
 
 // The last same-origin round trip this page actually measured. A real number

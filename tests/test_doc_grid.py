@@ -357,7 +357,23 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
     can be checked rather than taken on faith. A section with nothing open gets
     the thin hairline: a state bar there is decoration."""
     assert "function sectionBalance(section)" in page, "page missing the balance function"
-    assert "return { judgment, facts, settled };" in page
+    assert "return { judgment, facts, settled, signoff };" in page
+    # A section's own sign-off is an item in BOTH states — pending as well as
+    # settled. It used to count only once approved, so a fresh eight-section
+    # round printed `0 items · 0 open` while its own legend defined an item as
+    # "… or a section's own sign-off": the total measured decisions already
+    # made and GREW as the reviewer worked.
+    assert "const signoff = deriveVerdict(id) === 'approved' ? 0 : 1;" in page, \
+        "a pending sign-off must count as an item, not only a settled one"
+    assert "if (!signoff) settled++;" in page, \
+        "an approved section's sign-off stays in `settled`"
+    # ...and it rides out as its OWN field rather than folding into `judgment`,
+    # because the segmented rule must not paint it. Folded in, every unreviewed
+    # section of every round 1 would take a 100%-wide cobalt slab — finding 09
+    # in a different ink. segHTML's denominator is the proof: it sums three
+    # fields, not four.
+    assert "const total = bal.judgment + bal.facts + bal.settled;" in page, \
+        "segHTML must exclude `signoff` — a pending sign-off is not a painted segment"
     # Fixed order, in the markup the reader gets.
     order = page.index("seg('seg-judgment', bal.judgment) + seg('seg-fact', bal.facts)")
     assert order > 0 and "seg('seg-settled', bal.settled)" in page[order:order + 200], \
@@ -588,7 +604,17 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
     assert "function documentBalance()" in page, "page missing the one arithmetic"
     assert "atStart += (s.open_notes || []).length;" in page, \
         "the baseline counts carried threads, which all arrive unsettled"
-    assert "open: judgment + facts, total: judgment + facts + settled" in page
+    assert "open: judgment + facts + signoff" in page
+    assert "total: judgment + facts + settled + signoff" in page
+    # Both ends of the convergence arrow count the sign-off, or the arrow lies.
+    # `open` includes every pending one, so a baseline that skipped them would
+    # read `convergence 0 → 8` on a round where the reviewer has done nothing.
+    # The baseline asks `approved_ids` — the static field the round shipped
+    # with — never the live verdict, which is the thing it is measured against.
+    assert "const armedApproved = new Set(REVIEW_DATA.approved_ids || []);" in page, \
+        "the baseline must read the round as armed, not as it stands now"
+    assert "if (!armedApproved.has(s.id)) atStart++;" in page, \
+        "a section that arrived owing a sign-off is open at the arrow's left"
     assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
     # The stamp is named for what it does to the document, on every surface
     # that dispatches one.

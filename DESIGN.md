@@ -702,6 +702,23 @@ arithmetic behind them, so `7 items · 5 open` in the bar can never disagree wit
 thread, a comment, an unanswered check, and a section's own sign-off. A
 producer flag is advisory and is **not** an item (see Segmented rule).
 
+A section's sign-off is an item in **both** states — pending as well as settled.
+It first counted only once approved, which made the total measure decisions
+already made rather than things to decide: a fresh eight-section round printed
+`0 items · 0 open` against a definition that says eight, and the count *grew* as
+the reviewer worked. It rides out of `sectionBalance` as its own `signoff` field
+rather than folding into `judgment`, because the two consumers want different
+things and both are right. `documentBalance` counts it — a pending sign-off is
+open business, and `open: 0` now means precisely "every section is approved",
+the same base `round_is_complete()` gates on. The **segmented rule does not
+paint it**: `segHTML`'s denominator sums judgment/facts/settled only, so a
+section whose sole open item is its own sign-off still draws the settled
+hairline instead of a 100%-wide cobalt slab on every unreviewed section of every
+round 1 — which would be the amber-bar defect in a different ink. Both ends of
+the convergence arrow count it, or the arrow lies; the baseline reads
+`approved_ids`, the field the round shipped with, never the live verdict it is
+being measured against.
+
 **Every aggregate defines itself, in the page.** `item`, `open`, `convergence`,
 `approved` and `checks` are stated as a term list inside the `kbd-legend`
 disclosure at the foot of `<main>`, beside the shortcuts. A reviewer who cannot
