@@ -74,7 +74,15 @@ import. It holds:
   `THREAD_STATUSES` plus `thread_is_unresolved()` (`open` and `declined` are
   both live; only `settled` closes — membership, never `!= settled`, so an
   unknown status is not silently treated as live), `PASS_KINDS`/`PASS_POSTURES`,
-  and `CHECK_KINDS`. Add a value here, not at a call site.
+  `CHECK_KINDS`, and `DOC_SCOPE_KINDS`. Add a value here, not at a call site.
+
+  `DOC_SCOPE_KINDS` is **a different axis from `CHECK_KINDS`** — that one asks
+  "does this gate a `checks` round", this one asks "what is this flag ABOUT" —
+  and `headings-present` is deliberately in both. It fails open the same way: an
+  unregistered kind is treated as section-scope and piles onto whichever card
+  its producer anchored it to. It is injected into the frontend as
+  `__DOC_SCOPE_KINDS__`, exactly as `__CHECK_KINDS__` is, for the same
+  anti-drift reason.
 - **`round_is_complete()`** — the single completion rule: may this round be
   signed off? Both `loop.py finish` and `server.py`'s `POST /complete` handler
   ask it, from separate processes, so the invariant lives in one place. Pure —
@@ -234,6 +242,13 @@ cost is that a branch named `42` needs `--kind ref`.
   its round once and replaces it only from `POST /next-round`, so a merge into
   the file on disk under a live round is one `/complete` never sees.
   `loop.py annotate` refuses that case outright.
+
+  **A producer reporting a fact about the WHOLE DOCUMENT registers its `kind`
+  in `schema.DOC_SCOPE_KINDS` as well.** Without it, `parse_sections.py`'s
+  integrity check leaves the first card as the producer's only anchor and its
+  flags render in the margin of section 1 — which is what put five amber lines
+  in the first viewport of every typed round-1 review. Registered, they render
+  once, in the document slip above the print.
 - **Doc-type bundles.** A type is section grammar + check set + default pass, one
   JSON file per name: shipped defaults in `types/`, a repo's overrides in
   `.viva-types/`, the repo's copy winning **wholesale** on a name collision so it

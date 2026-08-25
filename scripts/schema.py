@@ -55,6 +55,21 @@ PASS_POSTURES = ("normal", "hard")
 # are advisory producers with nothing to do with checking claims.
 CHECK_KINDS = ("headings-present",)
 
+# The scope a producer's flag is ABOUT. `headings_present.py` and `checklist.py`
+# both report a fact about the WHOLE DOCUMENT and both anchor it to
+# `sections[0]["id"]` — not because it belongs there, but because
+# `parse_sections.py`'s integrity check makes a card for a section the document
+# does not have impossible, so the first card is the only document-level handle
+# either one has (both docstrings say so). A reader that takes the anchor
+# literally prints five document facts in the margin of section 1, which is the
+# first thing a round-1 review paints. Registered here, never tested at a call
+# site. Fails open exactly as CHECK_KINDS does: an unregistered kind is simply
+# treated as section-scope and lands wherever its producer anchored it.
+#
+# A DIFFERENT AXIS from CHECK_KINDS, which asks "does this gate a `checks`
+# round". `headings-present` is deliberately in both.
+DOC_SCOPE_KINDS = ("headings-present", "checklist")
+
 # The comment type a reviewer's suggested edit carries, beside today's `changes`
 # and `info`: a directive with the wording attached. The reviewer supplies the
 # exact `replacement` for the span their `anchor` names instead of describing

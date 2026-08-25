@@ -254,7 +254,23 @@ annotates rather than beside the section.
 |-------|-------|-------|
 | gutter (`.rg`) | one severity glyph per producer flag (`.lflag`) | `--gutter-w: 34px` (14px glyph + alley) |
 | prose (`.rp`) | one markdown block | `minmax(0, 1fr)` — takes whatever the other two do not |
-| margin (`.rm`) | threads, notes, spec table, section controls | `--margin-w: minmax(253px, 328px)` |
+| margin (`.rm`) | threads and notes that point at the row's own passage | `--margin-w: minmax(253px, 328px)` |
+
+The margin holds what points at the passage beside it, and nothing else. A
+section's own state and its own verbs point at the *section*; they have no
+passage to sit beside, and in the head row's margin they were paid for in blank
+page — 101px of margin against a 40px title on every annotated section, 400px
+once unanchored notes joined the pile, which rendered as 360px of white between
+a heading and its own first paragraph. They moved to the **foot band** (below).
+
+Each section is therefore three bands: a **head row** (`.row-head`, ONE track —
+heading, number, summary, segmented rule, collapsed round diff, and no margin
+cell in any state), the prose rows, and a **foot row** (`.row-foot`). Both bands
+are static markup from both builders and both are **siblings** of
+`.section-content`, never children: `docRows` is `#rcontent-<id> > .row`, so a
+band inside it would be a row `rowForAnchor` can return, `docNotesOrdered` can
+index, `markAndPin` walks and `proseWalker` has to filter — the margin's own
+echo re-entering the document walk. Outside it, it is invisible to all four.
 
 **The margin is capped and the PAGE holds the measure.**
 `.mode-doc .shell` caps the review print at **1054px** — as wide as its three
@@ -340,21 +356,63 @@ carries no producer flags to rail, and the margin always holds its verbs.
 **Section numbers.** `N ·` in `.doc-num`, document order, 1-based, counting
 carried sections.
 
-**Actions.** The per-section action row is gone from every surface. Approve
-and add-note live in the head row's margin with the note grammar (`.nt-btn`),
-keeping the `rbtn-primary-`/`rcmtnote-` ids the rest of the app addresses them
-by. One control, one grammar, one label rule (`renderPrimaryButton`): approve
+**Actions.** The verbs are margin-grammar controls (`.nt-btn`,
+`.nt-acts.doc-acts`), keeping the `rbtn-primary-`/`rcmtnote-` ids the rest of
+the app addresses them by. They live in the section's **foot band**, in its
+prose track, beside the state run. One control, one grammar, one label rule
+(`renderPrimaryButton`): approve
 reads `approve` only while nothing is open, `✓ done · N comments` while
 something is, and `↺ withdraw approval` on an approved section — which calls
 `docWithdraw`, since nothing was ever collapsed and withdrawing is only the
 verdict going back to pending.
 
-`docHeadRowHTML` builds that head row for **both** builders. The prose cell
-differs by surface (the print prints the section's heading, the accordion has
-already printed it in the disclosure button); the margin cell does not, so a
-verb added to a document review cannot go missing from a diff review. `skip` is
-the accordion's alone (`{ skip: true }`): with one entry open at a time, "not
-this one, not now" is a real move; in the print it is just reading on.
+**This overturns their LOCATION, not their grammar.** They lived in the head
+row's margin cell, and #186's own reading-order argument was about material
+*above* the prose — the annotation strip, the stacked thread list — which a
+foot band is not. What the head-margin position cost was 61px of blank page
+between every annotated heading and its own first paragraph, on every section,
+permanently, because "activation costs no layout" requires the state be drawn
+whether or not a section is live. This is a per-section action row again, below
+the content, and saying otherwise would be a dodge: what survives is *one
+control, one grammar, one label rule*, and what changed is where a
+whole-section object is allowed to sit. `docHeadRowHTML` no longer emits a
+margin cell at all, which is why `.doc.no-margin`'s three head-row exemptions
+and their media-query terms are **deleted** rather than twinned for a second
+row.
+
+The verbs **lead** the band and the state run **trails** it, right-aligned:
+`approve` sits on the same left edge the reader has been reading down and is in
+the same place whether or not the section has state to print. In the DOM the
+state comes first — a screen reader should hear what is open before it is
+offered the verb — and the two are swapped with `order`, which is safe because
+the state run holds nothing focusable. The band is named to assistive
+technology by a `role="group"` with an `aria-label` on `.doc-apparatus`, which
+is what the deleted spec table's `<caption>` used to do.
+
+The prose dims on approval; the band that lets you take it back does not
+(`.doc-section.is-approved .row-foot .rp { opacity: 1 }`, which ties the hover
+rule at 0,4,0 and therefore depends on coming after it in source). `↺ withdraw
+approval` is the only way out of an approved section — the same fight carried
+cards already had.
+
+`docHeadRowHTML` and `docFootRowHTML` build the two bands for **both**
+builders. The head's prose cell differs by surface (the print prints the
+section's heading, the accordion has already printed it in the disclosure
+button); the foot band does not, so a verb added to a document review cannot go
+missing from a diff review. `skip` is the accordion's alone (`{ skip: true }`,
+now on the foot builder — every verb is in the foot band): with one entry open
+at a time, "not this one, not now" is a real move; in the print it is just
+reading on.
+
+**The state run.** `specHTML` returns a horizontal run of `.sp-k`/`.sp-v` pairs
+at 10.5px mono, not a five-row `<table class="spec">` — one line at the reading
+measure against the ~120px the table took in a 328px column. Same items, same
+ink rule (`.sp-open .sp-v` takes `--acc`), same early return: a spec reading all
+zeros renders nothing, which is what lets the band collapse to bare verbs. The
+band's `.rp` is capped at `72ch` so diff mode's `min(95vw, 1600px)` shell cannot
+strand `approve` 1200px from the readout. Separation between items is `gap`,
+never generated content — a `::before` punctuation mark is announced by some
+screen readers.
 
 **Approve stays per-section for accessibility.** In the print the head is a
 heading (`<h2 class="doc-head">`, `aria-labelledby` on the section, no
@@ -408,11 +466,23 @@ re-opens its own box, so a rebuild never hides feedback already given. Settling
 toggles a class rather than rewriting the button's label — the label names the
 verb and carries a keycap, and both would be lost.
 
-**Numbering.** `docNotesOrdered` sorts by the row an anchor resolves into
-(unanchored → the section head), then by creation order. `markAndPin` assigns
-the number and writes **both** ends in one pass — the pin in the text and the
-note in the margin can never disagree about which span is note 3. The pin is a
-button and jumps to its own note.
+**Numbering.** `docNotesOrdered` sorts by the row an anchor resolves into, then
+by creation order. An unanchored note — or one whose anchor resolves to no row
+— sorts **last**, past every real index (`rows.length`), and renders in the
+section's **foot band**: a whole-section note is read after the section, not
+before it. It sorted first, to the section head, until that put 400px of margin
+beside a one-line title and started the section's own first paragraph 400px down
+the page. `markAndPin` assigns the number and writes **both** ends in one pass —
+the pin in the text and the note in the margin can never disagree about which
+span is note 3. The pin is a button and jumps to its own note.
+
+`rowForAnchor` reads a row's concatenated prose text, so it matches across
+element boundaries; `wrapNth` needs the needle inside a single text node and is
+strictly stricter. A `rowForAnchor` failure therefore implies a `wrapNth`
+failure: the note lands at the foot with its quote echo, takes the highest
+ordinal, and carries **no pin**. That is the honest degrade, and at the foot it
+reads as a whole-section note instead of disappearing into a pile above the
+prose.
 
 **Ink.** An anchored span in the doc print wears `var(--touch)` plus a 1.5px
 `var(--touch-edge)`, per the ink discipline ("the reviewer's touch ON THE
@@ -423,14 +493,27 @@ fill is already the mark, and `#ffec8f` on charcoal, where `--touch` is a 22%
 wash worth about a 5% luminance lift. The composite settles nothing here: its
 specimen hardcodes the white ground and has no dark rendering at all.
 
-**Flags.** `docFlagSplit` sends plain severity and check flags to the rail +
+**Flags.** `docFlagSplit` has **three** routes, not two. A flag whose kind is in
+`schema.DOC_SCOPE_KINDS` is about the **document** and goes to neither column:
+it goes to the document slip. Both producers that emit one
+(`headings_present.py`, `checklist.py`) anchor it to `sections[0]["id"]` only
+because `parse_sections.py`'s integrity check makes a card for a section the
+document does not have impossible, so the first card is the only document-level
+handle either has. Taking that literally opened every typed round-1 review on
+five amber *"missing expected design-doc section"* lines in the margin of
+section 1, with roughly zero pixels of document prose in the first viewport — on
+a surface whose stated principle is *verbatim, not summarized*. One consequence
+worth stating: a document whose only flags are doc-scope now collapses the glyph
+rail, which is the wasted-space rule finally applying to that shape.
+
+The remaining routes are unchanged. `docFlagSplit` sends plain severity and check flags to the rail +
 margin pair described under *The gutter is a glyph rail* below, and any flag
 carrying an **interactive jump** — a contradiction's cross-section link, a
 preference's badge-to-entry link — to the margin through `annotStripHTML`,
 which keeps that wiring. A glyph is a locator, not a control. A
 `kind: "confidence"` annotation goes to neither: it is the agent's self-report
-about the whole section, it drives the triage sort, and its readout is a
-spec-table row.
+about the whole section, it drives the triage sort, and its readout is an item
+in the foot band's state run.
 
 **Anchoring reads the prose, never the commentary.** The margin and the gutter
 are descendants of `#rcontent-<id>`, and every margin note echoes the wording it
@@ -485,14 +568,25 @@ Two rules keep the page still:
 
 - The spec is drawn for **every section that has something to state**, never
   only the live one, and a spec with nothing to say renders nothing. A section's
-  head row is therefore the same height whether or not it is live.
+  foot band is therefore the same height whether or not it is live.
 - The live section is marked at its heading — `border-left` with a compensating
   `margin-left: -10px` — which occupies no space.
 
-An **unanchored** compose box (`+ note`) mounts at the *foot* of the head row's
-margin, below the controls; in `.rm-notes` it opened above them and pushed the
-button just clicked down the page. An anchored one still opens beside its own
-passage, where nothing above it moves either.
+An **unanchored** compose box (`+ note`) mounts in the **foot band's margin
+cell**, appended after whatever is already there. The invariant it was written
+for — the button just clicked must not move — is now structural rather than
+positional: `+ note` is in the same foot row, one cell to the left, and a box
+appended to the margin cell beside it cannot displace it at all. That also
+closes the gap the head-row mount left, where the button and the box it opened
+were the two ends of a 400px pile. The composer and every unanchored note it
+saves share **one `.rm`**, which is what keeps `renderDocMargin`'s
+wipe-and-renumber pass and the box the reviewer is typing in describing the same
+place. `scrollIntoView({ block: 'nearest' })` with a `preventScroll` focus keeps
+a tall composer's type chips on screen — `nearest`, not `center`, so a short box
+never yanks the prose. An anchored one still opens beside its own passage, where
+nothing above it moves either.
+
+The **head row's height is now independent of everything**: it has one track.
 
 `syncReviewCard` repaints the section's segmented rule and spec, because a
 verdict is part of both — an approval is a settled item, and before this the
@@ -694,19 +788,37 @@ The Q&A gate is the interview step of `/viva-write` (#170), not a leftover, and
 it is designed as a first-class surface: the **grammar** without the **print**.
 One question at a time is the point of an interview, so the accordion stays.
 
-- **The prose column is the question.** It prints as the entry's own heading,
-  numbered like a catalog entry (`<h2 class="doc-head">`, `N ·`), over a
-  `.rule-s` hairline, with the choices under it as `.choice-chip`s, **one per
-  line**. Each chip carries the digit that picks it (`<kbd>`, 1–9) — the
-  keyboard layer on the control rather than only in the legend. Wrapped into a
-  ragged row they read as a grid and the digit lands somewhere different on
-  every row; stacked, the `.chip-label` takes the row (`flex: 1`) so the
-  labels start on one left edge and the badges and keycaps end on one right
-  edge. That is `.pal-row`'s shape, for `.pal-row`'s job.
-- **The disclosure head is an index line**: the same question, clamped to one
-  line and dropped to `var(--soft)` at regular weight once its entry is open.
-  Without that, the same sentence printed twice a line apart reads as a
-  duplication rather than as an index pointing at its entry.
+- **The disclosure head IS the question**, printed once, wrapping, numbered like
+  a catalog entry with `.doc-num` inside `.card-title` (`.card-title-wrap` is a
+  column flex, so a sibling span would stack the digit above the question). The
+  prose column holds the choices alone — a `.rule-s` hairline over
+  `.choice-chip`s, **one per line**, each carrying the digit that picks it
+  (`<kbd>`, 1–9) — and a question with **no** choices has no prose column at
+  all: `.is-choiceless` reflows the row to two tracks, the same mechanism the
+  collapsed margin used before the head row stopped having one. Wrapped into a
+  ragged row the chips read as a grid and the digit lands somewhere different on
+  every row; stacked, the `.chip-label` takes the row (`flex: 1`) so the labels
+  start on one left edge and the badges and keycaps end on one right edge. That
+  is `.pal-row`'s shape, for `.pal-row`'s job.
+- **What this overturns.** The head was an index line — clamped to one line and
+  dropped to `var(--soft)` once its entry was open — pointing at an
+  `<h2 class="doc-head">` that restated the question below it. The mitigation
+  assumed the entry held something other than the duplicate; a free-text entry
+  holds a hairline and nothing else, so the head and the heading printed the
+  same sentence one line apart with nothing between them. The `<h2>` is deleted,
+  and the clamp goes with it — ellipsizing a question now printed nowhere else
+  leaves it readable nowhere. A `<button>`'s content cannot be a heading, so the
+  interview loses one `<h2>` per entry; this matches `buildReviewCard`, whose
+  accordion head has never carried one, and the button remains the entry's
+  accessible name through `aria-controls`.
+- **The choices are bounded to 328px** — `--margin-w`'s maximum, the width every
+  other pick-list-shaped object here takes. `align-items: stretch` stays: it is
+  what puts every label on one left edge and every keycap on one right edge.
+  `.pal-row` is a ~500px palette holding sentence-length labels; stretching that
+  shape across a 606px measure to hold `per-request` stranded the digit keycap
+  ~550px from its label. `align-items: flex-start` would have kept the digit
+  near its label by making the chips ragged — trading away the property the
+  bullet above argues for. Bound it, don't un-stretch it.
 - **The margin is the commentary**: the machine's `hint` as a `.nt.nt-check`
   note, the reviewer's optional context and its attachments inside one
   `.nt.nt-compose` note, and the verbs (`✓ confirm` with its `c` keycap,
@@ -790,6 +902,47 @@ unconditionally. Every row jump-activates its section through
 ships no slip**: hunk identity is positional across rounds
 (`{filepath} hunk N`), so a re-cut diff can renumber hunks and break the
 attribution.
+
+## The document slip
+
+Every doc-scope flag in the round, once, in section order, rendered through
+`marginFlagHTML` — the same line the margin gives a producer flag, inked by
+severity, leading with its glyph, printing `→ result` under the message. It
+mounts as its own `<nav class="transmittal doc-slip" id="doc-slip">` after the
+transmittal and before `#review-cards`, and it is a **separate element** from
+the transmittal on purpose: the transmittal is guarded to round ≥ 2 and the
+document slip is above all a round-1 surface.
+
+Its head carries `Document · N flags · checks D/T`, and that tally is not
+decoration: `sectionSpec` no longer draws a checks item, because today's only
+`CHECK_KIND` is doc-scope. Without the slip's tally the `checks` completion gate
+would be invisible in the UI while `round_is_complete` went on enforcing it.
+
+It ships **collapsed**, for the reading-order reason the transmittal already
+states — a cover note is not the round's content — **unless it carries an
+`error`**, in which case it ships expanded. `checklist.py` emits
+`severity: "error"`, and demoting a document-level error to a digit behind a
+disclosure is a claim about severity that nothing in the product made.
+
+It reuses `.transmittal-head` / `.transmittal-title` / `.transmittal-chevron` /
+`.transmittal-rows` rather than a third `.card-head` disclosure: no new CSS, no
+new token.
+
+`sectionSpec`, `sectionBalance` and `flagRank` all skip doc-scope flags,
+because their denominator is one section. `documentBalance` splits the
+difference, because it computes both ends of the convergence arrow: it still
+tallies a doc-scope flag in `checks`/`checksDone` — that pair is the bar's
+document-level `checks D/T` readout, and a document fact belongs in it — but it
+must **not** count one in `atStart`. `atStart` is the arrow's left and `open` is
+its right, and `open` is a sum of `sectionBalance`. Counted on one side only, a
+document carrying five unanswered `headings-present` flags and nothing else
+reads `convergence 5 → 0` on a round where nothing was closed. The two ends
+answer the same question or the arrow lies. That asymmetry is commented in
+place, because it is otherwise invisible and the next reader will "fix" it.
+
+A second stated decision: because `sectionBalance`'s skip precedes its
+`CHECK_KINDS` branch, an **answered** doc-scope check contributes no `settled`
+anywhere. It is accounted for exactly once, in `checks`/`checksDone`.
 
 ## Recap overlay — the submit gate (frontend v2 phase 1, unreleased)
 

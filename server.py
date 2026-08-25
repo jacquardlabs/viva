@@ -1383,27 +1383,113 @@ body {
 /* One type size for the whole print, so `ch` means the same thing in every
    row — the heading and the machine's own faces set their own size on top. */
 .doc-section { font-size: 13.5px; }
-/* With the margin collapsed there is nowhere beside the heading to hang the
-   section's own controls, so the head row drops to two tracks and its margin
-   cell prints under the heading instead. Pure CSS: the cluster is built once
-   and never moved between hosts, so a collapse/expand can't blur focus.
+/* The head row has no margin cell in any state, so it needs no collapsed-margin
+   exemption, no reflow rule and no spec cap — three special cases deleted,
+   none added. The FOOT band keeps a two-track twin, and only because
+   `updateDocColumns` counts `docFlagSplit(s).margin` and `docNotes(s)` but NOT
+   `split.gutter`: a section-scope, non-jumping flag whose anchor resolves to no
+   row falls back to the foot band and renders its words there through
+   `marginFlagHTML`, which on a `no-margin` document would be a 0px track. (The
+   COMPOSER needs no such rule — `.rm .comment-popover.is-open` drops
+   `no-margin` synchronously before paint; see openCommentPopover.)
 
-   `1fr`, not the `72ch` this shipped with — the last `ch` in a grid template,
-   and the one invariant #5 was written against. It resolved against the row's
-   own font-size, so the head row came out narrower than every prose row below
-   it on a collapsed document, and in the accordion (where no `.doc-section`
-   fixes one size for the print) it would have resolved differently again. The
-   head row now measures exactly what the rows under it measure. */
-.doc.no-margin .row-head { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
-.doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
-.doc.no-margin .row-head .rm .spec { max-width: 340px; }
+   `1fr`, not `72ch` — the last `ch` in a grid template, and the one invariant
+   #5 was written against: it resolves against the row's own font-size, so the
+   band would come out narrower than every prose row above it. */
+.doc.no-margin .row-foot { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+.doc.no-margin .row-foot .rm { grid-column: 2; padding-left: 0; }
 /* Below the composite's own breakpoint the third column has no room to be a
    margin; notes fall under the passage they annotate and the gutter narrows
-   to a glyph rail. */
+   to a glyph rail. `.row-foot` needs no term in either list — it is a
+   `.doc .row` and its margin cell is a `.doc .rm`, both already covered. Nor
+   does the wide-row selector, which was only ever a redundant restatement of
+   the same two tracks: a wide row IS a `.doc .row`, and no top-level rule
+   re-templates it. Naming it here also put a wide-row template restatement in
+   the source, which `assert_catalog_ground` forbids outright — masked until
+   now only by whichever selector happened to follow it in the list. */
 @media (max-width: 920px) {
-  .doc .row, .doc .row.wide, .doc.no-margin .row-head { grid-template-columns: 30px minmax(0, 1fr); }
+  .doc .row { grid-template-columns: 30px minmax(0, 1fr); }
   .doc .rg { padding-right: 8px; }
-  .doc .rm, .doc.no-margin .row-head .rm { grid-column: 2; padding-left: 0; }
+  .doc .rm { grid-column: 2; padding-left: 0; }
+}
+
+/* ─── The foot band ───────────────────────────────────────────
+   The section's DISPOSITION: what is open on it, and what you do about it.
+   Horizontal, at the reading measure, under the prose — which is where a parts
+   catalog puts an entry's spec block and its order line.
+
+   It was the head row's margin cell: a vertical stack of a five-row state
+   table and a button cluster in a 328px column, beside a one-line title. That
+   is 101px against 40px on EVERY annotated section, and 400px against 40px
+   once unanchored notes joined it — 360px of blank page between a heading and
+   its own first paragraph, measured. The margin column earns its position for
+   a note that points at a passage sitting beside it; a section's state points
+   at the section, has no passage beside it, and was being paid for in white.
+
+   A sibling of `.section-content`, never a child — `docRows` is
+   `#rcontent-<id> > .row`, and a row inside it is one `rowForAnchor` can
+   return, `docNotesOrdered` can index and `markAndPin` walks. */
+.doc .row-foot { margin-top: 18px; }
+/* `.doc .row + .row`'s 10px does not reach here — the foot row's previous
+   sibling is `.section-content`, not a row — and 10px is a paragraph gap
+   anyway. This band closes a section. */
+
+/* The reading measure, taken as a max-width rather than a grid track: `ch`
+   resolves against the element's own font-size, which is exactly why no `ch`
+   appears in a TEMPLATE (issue #5's lesson) and exactly why it is right here —
+   the band measures what the prose above it measures, on whichever surface it
+   is on. Without it, diff mode's `min(95vw, 1600px)` shell would put `approve`
+   1200px from the state readout. */
+.doc .row-foot .rp { max-width: 72ch; }
+
+.doc-apparatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+}
+/* The verbs LEAD and the state TRAILS, visually — `approve` sits on the same
+   left edge the reader has been reading down, in the same place whether or not
+   the section has a spec to state, so the one control that is always there
+   never moves. In the DOM the state comes first, because "2 comments open"
+   before "approve" is the order a screen reader should hear it. The reordered
+   element carries no focusable content, so focus order is untouched and the
+   `order` pair costs nothing. */
+.spec-strip { order: 2; margin-left: auto; }
+.doc-acts   { order: 1; }
+/* An all-zero spec renders nothing (specHTML's early return) — then the band
+   is one line of verbs, and an empty flex item with an auto margin has no
+   business eating the free space. */
+.spec-strip:empty { display: none; }
+
+/* The state, as a run rather than a table: five label/value pairs at 10.5px
+   mono is one line at the measure, against the ~120px a five-row table took in
+   a 328px column. Separation is `gap`, never generated content — a `::before`
+   punctuation mark is announced by some screen readers, and the `.sp-k`/`.sp-v`
+   ink pairing already separates a label from its value. */
+.spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.sp-k { color: var(--soft); }
+.sp-v { color: var(--text2); }
+/* The one thing that is open takes the reviewer's ink, exactly as
+   `.spec .spec-open td:last-child` did. */
+.sp-open .sp-v { color: var(--acc); font-weight: 600; }
+/* At narrow widths the state run leads the left edge under the verbs —
+   right-aligning it against a 30px-gutter column strands it. This media query
+   sits AFTER `.spec-strip { margin-left: auto }` deliberately: the two rules
+   tie on specificity, so source order is the whole mechanism. */
+@media (max-width: 920px) {
+  .spec-strip { margin-left: 0; }
 }
 
 .doc-section { position: relative; animation: fadeUp 0.4s ease both; }
@@ -1413,6 +1499,12 @@ body {
 .doc-section.is-approved .rp { opacity: 0.5; }
 .doc-section.is-approved .doc-head { color: var(--faint); }
 .doc-section.is-approved:hover .rp { opacity: 0.85; transition: opacity 0.2s; }
+/* The prose dims on approval; the band that lets you take it back does not.
+   `↺ withdraw approval` is the only way out of an approved section, and this
+   fight was already had for carried cards (0.55 rather than `.is-approved`'s
+   0.42, "so the affordances stay discoverable"). Specificity 0,4,0 — it TIES
+   the hover rule above, so its position after it is the whole mechanism. */
+.doc-section.is-approved .row-foot .rp { opacity: 1; }
 
 /* The section heading carries its catalog number, the way a parts catalog
    numbers its entries — `9 · One human, N threads`. */
@@ -1641,28 +1733,6 @@ body {
   margin: 0 5px 0 0;
   vertical-align: 1px;
 }
-
-/* ─── Margin spec table ───────────────────────────────────────
-   The transmittal slip's successor at section scale: what is open on this
-   section, stated as a spec rather than described. */
-.spec {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-  margin-bottom: 10px;
-  font-variant-numeric: tabular-nums;
-}
-.spec caption {
-  text-align: left;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--soft);
-  padding-bottom: 3px;
-}
-.spec td { border: 1px solid var(--rule); padding: 2px 7px; }
-.spec td:first-child { color: var(--soft); width: 62%; }
-.spec .spec-open td:last-child { color: var(--acc); font-weight: 600; }
 
 /* ─── Suggestion fence ────────────────────────────────────────
    The one place red and green are correct: the fence and the diff are the
@@ -2192,8 +2262,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    somewhere different on every row. Stacked, the labels start on one left
    edge and the keycaps end on one right edge, which is exactly the shape
    `.pal-row` already uses for the same job: a list of things you pick, each
-   with the key that picks it. */
-.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; }
+   with the key that picks it.
+
+   BOUNDED to 328px — `--margin-w`'s maximum, the width every other pick-list
+   -shaped object here takes. `.pal-row` is a ~500px palette holding
+   sentence-length labels; stretching that shape across a 606px measure to hold
+   `per-request` stranded the digit keycap ~550px from its label.
+   `align-items: flex-start` would keep the digit near its label by making the
+   chips ragged — trading away the property this comment argues for. Bound it,
+   don't un-stretch it. */
+.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; max-width: 328px; }
 
 .choice-chip {
   font-size: 12px;
@@ -2247,13 +2325,21 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 }
 .nt-compose .attach-btn { margin-top: 6px; }
 .nt-compose .thumb-strip { margin-top: 6px; }
-/* With the question restated as the entry's own heading, the disclosure head
-   is an index line — one line, however long the question runs, and quiet once
-   the entry below it is open. Without the second half the same sentence
-   printed twice, a line apart, reads as a duplication rather than as an index
-   pointing at its entry. */
-#qa-cards .card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#qa-cards .card.is-active .card-title { color: var(--soft); font-weight: 400; }
+/* The disclosure head IS the question — printed once, wrapping, numbered like
+   a catalog entry. It was clamped to one line and dimmed once open, as an
+   index line pointing at the `<h2>` below it; that mitigation assumed the entry
+   held something other than the same sentence, which a free-text question does
+   not. With the duplicate gone the head has to carry the whole question, so the
+   clamp goes with it — ellipsizing a question now printed nowhere else leaves
+   it readable nowhere. */
+#qa-cards .card-title { white-space: normal; }
+
+/* A free-text question has nothing to put in the prose column, and a 606px
+   empty track beside a 328px compose note is the same wasted-space failure
+   `.doc.no-margin` exists to answer. Decided as a constant, because whether a
+   question has choices cannot change mid-session. */
+#qa-cards .row-head.is-choiceless { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+#qa-cards .row-head.is-choiceless .rm { grid-column: 2; padding-left: 0; max-width: 420px; }
 
 /* ─── Skip link (first Tab stop; hidden until focused) ───── */
 .skip-link {
@@ -2824,6 +2910,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       </div>
     </div>
     <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
+    <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level checks" style="display:none"></nav>
     <div class="sort-bar" id="sort-bar" style="display:none">
       <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
     </div>
@@ -3213,8 +3300,13 @@ function renderLedger() {
 const FLAG_RANK = { error: 0, warn: 1 };
 
 // Strongest flag severity on a section: 0 (error), 1 (warn), or null.
+// A DOC_SCOPE flag is skipped: it is a fact about the document, and `checklist`
+// emits `severity: "error"`, so one missing template heading would otherwise
+// brand section 1 `flagged & unreviewed` in the cover slip — the same
+// misattribution in the transmittal that the margin used to make.
 function flagRank(section) {
   const ranks = ((section && section.annotations) || [])
+    .filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))
     .map(a => FLAG_RANK[(a || {}).severity])
     .filter(r => r !== undefined);
   return ranks.length ? Math.min(...ranks) : null;
@@ -3277,6 +3369,55 @@ function renderTransmittal() {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
   });
   const head = el('transmittal-head'), body = el('transmittal-rows');
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+}
+
+/* ─── The document slip ──────────────────────────────────────
+   Every doc-scope flag in the round, once, in section order. They are the same
+   fact wherever a producer had to hang them, so the document states them ONCE
+   — as a slip, the way the transmittal states what changed — instead of five
+   amber lines in the margin of section 1. */
+function documentFlags() {
+  return ((REVIEW_DATA && REVIEW_DATA.sections) || [])
+    .flatMap(s => docFlagSplit(s).doc);
+}
+
+function docSlipHTML() {
+  if (!REVIEW_DATA || REVIEW_DATA.mode !== 'review') return '';
+  const flags = documentFlags();
+  if (!flags.length) return '';
+  // The checks tally rides in the head because `sectionSpec` no longer draws
+  // one: today's only CHECK_KIND is doc-scope, so with the flags out of the
+  // sections the gate would have no readout anywhere on the page while
+  // `round_is_complete` went on enforcing it — the worst of both.
+  const checks = flags.filter(a => CHECK_KINDS.includes(a.kind));
+  const done = checks.filter(a => a.result).length;
+  // Collapsed, like the transmittal, for the reading-order reason its own
+  // comment states — UNLESS the document is carrying an error. Demoting a
+  // document-level error to a digit behind a disclosure is a claim about
+  // severity nobody made; one condition answers it without a debate.
+  const open = flags.some(a => a.severity === 'error');
+  return '<button type="button" class="transmittal-head" id="doc-slip-head" aria-expanded="'
+    + (open ? 'true' : 'false') + '" aria-controls="doc-slip-rows">'
+    + '<span class="transmittal-title">Document &middot; ' + flags.length
+    + (flags.length === 1 ? ' flag' : ' flags')
+    + (checks.length ? ' &middot; checks ' + done + '/' + checks.length : '')
+    + '</span><span class="transmittal-chevron" aria-hidden="true">&#9662;</span></button>'
+    + '<div class="transmittal-rows" id="doc-slip-rows"' + (open ? '' : ' hidden') + '>'
+    + flags.map(marginFlagHTML).join('') + '</div>';
+}
+
+function renderDocSlip() {
+  const panel = el('doc-slip');
+  if (!panel) return;
+  const html = docSlipHTML();
+  if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.innerHTML = html;
+  panel.style.display = '';
+  const head = el('doc-slip-head'), body = el('doc-slip-rows');
   if (head && body) head.addEventListener('click', () => {
     body.hidden = !body.hidden;
     head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
@@ -3386,6 +3527,10 @@ function initReview() {
   updateReviewStats();
   renderLedger();
   renderTransmittal();
+  // Per-round static: doc-scope flags never change with a verdict, so this is
+  // the only call site — the two verdict paths that re-render the transmittal
+  // have nothing to say to it, and `/next-round` re-enters initReview.
+  renderDocSlip();
   setupCardSort();
 }
 
@@ -3702,8 +3847,9 @@ function buildReviewCard(section) {
     <div class="card-body-wrap" id="rbody-${section.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          ${docHeadRowHTML(section.id, `<div id="rseg-${section.id}"></div>${diffStripHTML(section.id, section.diff)}`, { skip: true })}
+          ${docHeadRowHTML(section.id, `<div id="rseg-${section.id}"></div>${diffStripHTML(section.id, section.diff)}`)}
           <div class="section-content" id="rcontent-${section.id}"></div>
+          ${docFootRowHTML(section.id, section.title, { skip: true })}
           <div class="comment-popover" id="rpop-${section.id}" style="display:none"></div>
         </div>
       </div>
@@ -3713,7 +3859,7 @@ function buildReviewCard(section) {
     toggleReviewCard(section.id);
   });
 
-  wireDocHeadRow(card, section.id);
+  wireDocSection(card, section.id);
   return card;
 }
 
@@ -3808,6 +3954,13 @@ function withdrawApproval(id) {
    `checks` round, and a second copy of it in the frontend is exactly the
    fail-open drift the schema module exists to prevent. ═════════════════ */
 const CHECK_KINDS = __CHECK_KINDS__;
+/* The scope registry, injected for the same reason and against the same
+   failure. DOC_SCOPE_KINDS is a DIFFERENT AXIS from CHECK_KINDS — that one
+   asks "does this gate a `checks` round", this one asks "what is this flag
+   ABOUT" — and `headings-present` is deliberately in both. A hand-kept second
+   copy would fail open the same silent way: an unregistered kind is treated as
+   section-scope and piles onto whichever card its producer anchored it to. */
+const DOC_SCOPE_KINDS = __DOC_SCOPE_KINDS__;
 
 /* ─── The seam: the grammar is not the print ─────────────────
    The restructure is TWO things, and one class stamped for both is what
@@ -3844,9 +3997,16 @@ function isContinuousPrint() { return !!(REVIEW_DATA && REVIEW_DATA.mode === 're
    the jump wiring those two features already ship. */
 function docFlagSplit(section) {
   const titles = reviewSectionTitles();
-  const gutter = [], margin = [];
+  const gutter = [], margin = [], doc = [];
   (section.annotations || []).forEach(a => {
     if (!a) return;
+    // A document fact, not a flag on this passage. Both producers that emit one
+    // anchor it to the first card because that is the only document-level
+    // handle they have — taking that literally put five amber "missing expected
+    // design-doc section" lines in the margin of section 1, which is the first
+    // thing a round-1 review paints. It goes to neither column: it goes to the
+    // document slip.
+    if (DOC_SCOPE_KINDS.includes(a.kind)) { doc.push(a); return; }
     // A confidence annotation is the agent's self-report about the whole
     // section, not a flag on a passage — it drives the triage sort, and its
     // readout is the spec table. Letting it into the gutter would hold 98px
@@ -3858,7 +4018,7 @@ function docFlagSplit(section) {
     const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
     (jumps ? margin : gutter).push(a);
   });
-  return { gutter, margin };
+  return { gutter, margin, doc };
 }
 
 const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
@@ -3936,9 +4096,13 @@ function docRows(id) {
   return host ? Array.from(host.querySelectorAll(':scope > .row')) : [];
 }
 
-function docHeadRow(id) {
+/* The section's foot band. Static markup from both builders — a pure query,
+   like `docHeadRow` was, so nothing here creates DOM inside a render loop.
+   `buildCarriedCard` builds no bands, so a carried reveal yields null and every
+   caller's `if (!host) return;` keeps doing the job it already did. */
+function docFootRow(id) {
   const sec = el('rcard-' + id);
-  return sec ? sec.querySelector('.row-head') : null;
+  return sec ? sec.querySelector('.row-foot') : null;
 }
 
 // The row whose prose holds the given occurrence of `text`. Counts occurrences
@@ -3976,8 +4140,15 @@ function docCell(row, cls) {
   return cell;
 }
 
+/* Where a note hangs. A note whose anchor resolved into a row hangs in that
+   row's margin, beside its own passage — the whole reason the margin column
+   exists. A note with no row of its own — unanchored, or an anchor that
+   resolved to nothing — hangs at the section's FOOT, which is where a
+   whole-section note is read. Never at the head: a note about all of a section
+   is not an introduction to it, and at the head it started the section's own
+   first paragraph 400px down the page. */
 function docNoteHost(id, row) {
-  const target = row || docHeadRow(id);
+  const target = row || docFootRow(id);
   if (!target) return null;
   const rm = docCell(target, 'rm');
   let host = rm.querySelector(':scope > .rm-notes');
@@ -4011,14 +4182,25 @@ function docNotes(section) {
 }
 
 // Notes in reading order: by the row their anchor lands in, then by the order
-// they were made. An unanchored note sorts to -1 — the section head, which is
-// above every row — because a whole-section note is about all of it.
+// they were made. An unanchored note sorts to the END — `rows.length`, past
+// every real index — because a whole-section note is read AFTER the section,
+// not before it, and because that is where it now renders (the foot band). It
+// sorted to -1, the section head, until that put 400px of margin beside a
+// one-line title and started the section's own first paragraph 400px below it.
+//
+// An anchor that resolves to NO row degrades the same way. `rowForAnchor` reads
+// a row's concatenated prose text and matches across element boundaries;
+// `wrapNth` needs the needle inside a single text node and is strictly
+// stricter, so a `rowForAnchor` miss implies a `wrapNth` miss: the note lands
+// at the foot with its quote echo, takes the highest ordinal, and carries no
+// pin. That is the honest degrade, and at the foot it reads as a whole-section
+// note instead of disappearing into a pile above the prose.
 function docNotesOrdered(section) {
   const rows = docRows(section.id);
   return docNotes(section)
     .map((n, i) => {
       const r = n.anchor ? rowForAnchor(section.id, n.anchor.text, n.anchor.occurrence) : null;
-      return Object.assign({}, n, { row: r ? rows.indexOf(r) : -1, seq: i });
+      return Object.assign({}, n, { row: r ? rows.indexOf(r) : rows.length, seq: i });
     })
     .sort((a, b) => a.row - b.row || a.seq - b.seq);
 }
@@ -4075,11 +4257,9 @@ function commentNoteHTML(n) {
     + '</div></div>';
 }
 
-/* ─── Spec table ─────────────────────────────────────────────
-   The transmittal slip's successor at section scale, and the margin's
-   answer to "what is open here" — stated as a spec, not described. Drawn
-   for the LIVE section only: a spec table on every section at once is a
-   table of contents, not a state readout. */
+/* ─── The state run ──────────────────────────────────────────
+   The transmittal slip's successor at section scale, and the foot band's
+   answer to "what is open here" — stated as a spec, not described. */
 function sectionSpec(section) {
   const id = section.id;
   const threads = section.open_notes || [];
@@ -4094,33 +4274,45 @@ function sectionSpec(section) {
   });
   activeComments(id).filter(c => !c.reply && !threads.some(t => t.cid === c.cid))
     .forEach(c => { if (c.type === 'suggestion') suggestions++; else comments++; });
-  const checks = (section.annotations || []).filter(a => a && CHECK_KINDS.includes(a.kind));
+  // A doc-scope check is a fact about the document, and its readout is the
+  // document slip's own `checks D/T` tally — not this section's state.
+  const checks = (section.annotations || []).filter(
+    a => a && CHECK_KINDS.includes(a.kind) && !DOC_SCOPE_KINDS.includes(a.kind));
   return { comments, suggestions, declined,
            checks: checks.length, checksDone: checks.filter(a => a.result).length };
 }
 
 function specHTML(section) {
   const s = sectionSpec(section);
-  // Nothing open and nothing checked: no table. A spec reading all zeros is
-  // not a state readout, and this is also what keeps the head row's height
-  // independent of which section is live — see renderDocSpec.
+  // Nothing open and nothing checked: no state run at all. A spec reading all
+  // zeros is not a state readout, and this is also what keeps the FOOT band's
+  // height independent of which section is live — see renderDocSpec. On a
+  // clean typed round 1 whose only annotations were doc-scope producer flags,
+  // this early return is now what leaves section 1's band as bare verbs.
   const conf0 = confidenceAnnot(section);
   if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
-  const row = (label, value, open) =>
-    '<tr' + (open ? ' class="spec-open"' : '') + '><td>' + label + '</td><td>' + value + '</td></tr>';
-  // The agent's own confidence is a spec line, not a gutter flag: it is about
-  // the section, and it is what the triage sort orders on.
+  // A RUN, not a table: five label/value pairs at 10.5px mono are one line at
+  // the reading measure, against the ~120px a five-row table took in a 328px
+  // column beside a one-line title. Same items, same ink rule, same early
+  // return. The table's `<caption>` is gone — `.doc-apparatus` carries a
+  // `role="group"` with an `aria-label`, so the band is still named.
+  const item = (label, value, open) =>
+    '<span class="sp' + (open ? ' sp-open' : '') + '">'
+    + '<span class="sp-k">' + label + '</span> <span class="sp-v">' + value + '</span></span>';
+  // The agent's own confidence is a state item, not a gutter flag: it is about
+  // the section, and it is what the triage sort orders on. `docFlagSplit` sends
+  // a `confidence` annotation to NEITHER column precisely because this is its
+  // readout — drop it here and a documented feature goes invisible with no
+  // error anywhere.
   const conf = confidenceAnnot(section);
-  const rows = row('comments open', s.comments, s.comments > 0)
-    + row('suggestions open', s.suggestions, s.suggestions > 0)
-    + row('author kept as-is', s.declined, false)
-    + (s.checks ? row('checks', s.checksDone + '/' + s.checks
+  return item('comments open', s.comments, s.comments > 0)
+    + item('suggestions open', s.suggestions, s.suggestions > 0)
+    + item('author kept as-is', s.declined, false)
+    + (s.checks ? item('checks', s.checksDone + '/' + s.checks
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
-    + (conf ? row('agent confidence',
+    + (conf ? item('agent confidence',
         [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
         conf.level === 'low') : '');
-  return '<table class="spec"><caption>' + esc(section.title) + ' &mdash; state</caption>'
-    + '<tbody>' + rows + '</tbody></table>';
 }
 
 /* ─── Segmented rule ─────────────────────────────────────────
@@ -4147,6 +4339,17 @@ function sectionBalance(section) {
     .forEach(c => { if (c.type === 'changes' || c.type === 'suggestion') judgment++; else facts++; });
   (section.annotations || []).forEach(a => {
     if (!a) return;
+    // A DOCUMENT fact is not this section's item. Placed ABOVE the CHECK_KINDS
+    // branch on purpose: `headings-present` is doc-scope AND a check kind, so
+    // without this the branch below would count five document facts as five
+    // open items on section 1 — the section none of them concerns.
+    //
+    // A stated decision, not a derivation: because the skip precedes that
+    // branch, an ANSWERED doc-scope check contributes no `settled` here or in
+    // `documentBalance`'s sum. It is accounted for exactly once, in
+    // `documentBalance`'s own `checks`/`checksDone` pair, which is what the
+    // slip's `checks D/T` prints.
+    if (DOC_SCOPE_KINDS.includes(a.kind)) return;
     if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; else facts++; return; }
     if (a.severity === 'warn' || a.severity === 'error') facts++;
   });
@@ -4169,41 +4372,81 @@ function segHTML(bal) {
     + seg('seg-settled', bal.settled) + '</div>';
 }
 
-/* ─── The head row, shared by both builders ──────────────────
-   The PROSE cell differs by surface — the print prints the section's heading
-   there, the accordion has already printed it in the disclosure button — so
-   it is passed in. The MARGIN cell does not differ at all, and it is the one
-   that carries the section: the spec table, the note host, and the section's
-   own verbs. One copy, so a verb added to a document review cannot go missing
-   from a diff review.
+/* ─── The head row: orientation, one track ───────────────────
+   The heading, the section's number, its summary, the segmented rule and the
+   collapsed round diff. Nothing else, and NO margin cell — that is the whole
+   of finding 01. The margin column exists for a note that points at a passage
+   sitting beside it; a section's state table and its verbs point at the
+   SECTION, have no passage beside them, and were being paid for in blank page.
+   A one-line title beside a 400px pile of margin rendered as 360px of white
+   between a heading and its own first paragraph, and even the bare
+   state-table-plus-approve case measured 40px against 101px on EVERY annotated
+   section. The head row is now a single track: its height is its prose's
+   height, and a void is not expressible.
+
+   The prose cell still differs by surface — the print prints the heading here,
+   the accordion has already printed it in the disclosure button — so it is
+   still passed in. What used to differ is gone: there is no margin cell to
+   keep identical. The section's verbs moved WITH the state, to the foot band
+   (`docFootRowHTML`), which is where `skip` went too. */
+function docHeadRowHTML(id, proseHTML) {
+  return '<div class="row row-head"><div class="rp">' + proseHTML + '</div></div>';
+}
+
+/* ─── The foot band: disposition ─────────────────────────────
+   What the head row used to hold in its margin, laid out the way a catalog
+   lays out an entry's state block: horizontally, at the reading measure, under
+   the thing it describes. A parts catalog prints the entry, then its
+   specification, then how to order it. So does this.
+
+   Static markup from both builders, never created on demand — that keeps
+   `docFootRow` a pure query (the same shape `docHeadRow` was) and keeps DOM
+   creation out of the render loops that call into it on every sync.
+   `buildCarriedCard` builds neither band, so a carried reveal still yields
+   `null` for the same structural reason it always did, and the three
+   `if (!host) return;` guards keep guarding with no explicit refusal.
+
+   It is a SIBLING of `.section-content`, never a child: `docRows` is
+   `#rcontent-<id> > .row`, so a foot row inside it would become a row
+   `rowForAnchor` can return, `docNotesOrdered` can index, `markAndPin` can
+   walk and `proseWalker` has to filter — the margin's own echo re-entering the
+   document walk, which is the #95 failure this grid already fought once.
+   Outside it, it is invisible to all four.
+
+   The VERBS lead and the state trails (see `.spec-strip { order: 2 }`), so
+   `approve` sits on the same left edge the reader has been reading down,
+   whether or not the section has a spec to state.
 
    `skip` is the accordion's alone. In the print every section is on the page
    already and skipping to the next one is just reading on; with one hunk open
    at a time, "not this one, not now" is a real move and it needs a control. */
-function docHeadRowHTML(id, proseHTML, opts) {
+function docFootRowHTML(id, title, opts) {
   const skip = !!(opts && opts.skip);
-  return '<div class="row row-head">'
-    + '<div class="rp">' + proseHTML + '</div>'
-    + '<div class="rm" id="rspec-' + id + '">'
-    +   '<div class="rm-spec" id="rspecbody-' + id + '"></div>'
-    +   '<div class="rm-notes"></div>'
-    +   '<div class="nt-acts doc-acts">'
-    +     '<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">'
-    +       '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>'
-    +     '<button type="button" class="nt-btn is-quiet" id="rcmtnote-' + id + '">+ note</button>'
-    +     (skip ? '<button type="button" class="nt-btn is-quiet" id="rbtn-skip-' + id + '">'
-                + '<span aria-hidden="true">&#8595;</span> skip</button>' : '')
+  return '<div class="row row-foot">'
+    + '<div class="rp">'
+    +   '<div class="doc-apparatus" role="group" aria-label="'
+    +     esc(title) + ' &mdash; state and actions">'
+    +     '<div class="spec-strip" id="rspecbody-' + id + '"></div>'
+    +     '<div class="nt-acts doc-acts">'
+    +       '<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">'
+    +         '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd></button>'
+    +       '<button type="button" class="nt-btn is-quiet" id="rcmtnote-' + id + '">+ note</button>'
+    +       (skip ? '<button type="button" class="nt-btn is-quiet" id="rbtn-skip-' + id + '">'
+                  + '<span aria-hidden="true">&#8595;</span> skip</button>' : '')
+    +     '</div>'
     +   '</div>'
     + '</div>'
     + '</div>';
 }
 
-/* The wiring that goes with it. Approve is the section's own control and it
-   stays reachable by pointer and by Tab: with the action row gone, a section
-   carrying no notes would otherwise hold no focusable element at all, and
-   keyboard access to every section is a hard requirement (test_server_a11y).
-   ⌘K is a second path to the same verb, never the only one. */
-function wireDocHeadRow(root, id) {
+/* The wiring that goes with the two bands. Approve is the section's own
+   control and it stays reachable by pointer and by Tab: with the action row
+   gone, a section carrying no notes would otherwise hold no focusable element
+   at all, and keyboard access to every section is a hard requirement
+   (test_server_a11y). ⌘K is a second path to the same verb, never the only
+   one. `root` is the whole card/section in both builders, so the head/foot
+   split is invisible here — everything is addressed by id. */
+function wireDocSection(root, id) {
   root.querySelector('#rbtn-primary-' + id).addEventListener('click', e => {
     e.stopPropagation();
     if (deriveVerdict(id) === 'approved') docWithdraw(id); else approveSection(id);
@@ -4260,7 +4503,8 @@ function buildDocSection(section, index) {
         ${section.summary ? `<div class="section-summary">${esc(section.summary)}</div>` : ''}
         <div id="rseg-${id}"></div>
         ${diffStripHTML(id, section.diff)}`) + `
-    <div class="section-content" id="rcontent-${id}"></div>
+    <div class="section-content" id="rcontent-${id}"></div>`
+    + docFootRowHTML(id, section.title) + `
     <div class="comment-popover" id="rpop-${id}" style="display:none"></div>`;
 
   // The live section follows the reader: pointing at or tabbing into one
@@ -4271,7 +4515,7 @@ function buildDocSection(section, index) {
   sec.addEventListener('mousedown', () => activateReviewCard(id, { noScroll: true }));
   sec.addEventListener('focusin',   () => activateReviewCard(id, { noScroll: true }));
 
-  wireDocHeadRow(sec, id);
+  wireDocSection(sec, id);
   return sec;
 }
 
@@ -4297,7 +4541,7 @@ function placeDocFlags(id) {
   const byRow = new Map();
   split.gutter.forEach(a => {
     const row = a.anchor != null ? rowForAnchor(id, String(a.anchor), 0) : null;
-    const key = row || docHeadRow(id);
+    const key = row || docFootRow(id);
     if (!key) return;
     if (!byRow.has(key)) byRow.set(key, []);
     byRow.get(key).push(a);
@@ -4360,9 +4604,10 @@ function placeDocThreads(id) {
     }
     const row = t.quote ? rowForAnchor(id, t.quote, 0) : null;
     // The same guard `placeDocFlags` and `docNoteHost` carry, and for the same
-    // reason: an unanchored thread falls back to the head row, and a surface
-    // that has no head row has nowhere to put it.
-    const host = row || docHeadRow(id);
+    // reason: an unanchored thread falls back to the section's FOOT band, and
+    // a surface that has no foot band (a carried reveal) has nowhere to put it.
+    // The three fallbacks move together or they disagree.
+    const host = row || docFootRow(id);
     if (!host) return;
     const rm = docCell(host, 'rm');
     let threadHost = rm.querySelector(':scope > .rm-threads');
@@ -4371,6 +4616,15 @@ function placeDocThreads(id) {
       threadHost.className = 'rm-threads';
       // Threads precede this round's fresh notes: a carried thread is older
       // business than a comment made a minute ago.
+      //
+      // With the head row's static `<div class="rm-notes">` gone, the foot
+      // band's `.rm` starts empty and this query returns null on the first
+      // call — `insertBefore(node, null)` appends, and `docNoteHost` then
+      // creates `.rm-notes` after it. Flags → threads → notes still comes out
+      // in the documented order, but it comes out that way from
+      // `_ensureRendered`'s call order rather than from this line. Do not
+      // "simplify" the insertBefore to an append: a rebuild that places a
+      // thread AFTER notes already in the cell would reverse them.
       rm.insertBefore(threadHost, rm.querySelector(':scope > .rm-notes'));
     }
     if (node.parentElement !== threadHost) threadHost.appendChild(node);
@@ -4531,7 +4785,10 @@ function renderDocMargin(id) {
       }
       return;
     }
-    const host = docNoteHost(id, n.row < 0 ? null : docRows(id)[n.row]);
+    // An unanchored note carries `row === rows.length`, so the index read is
+    // out of range and yields undefined; `|| null` states that rather than
+    // leaning on `undefined || footRow` inside docNoteHost.
+    const host = docNoteHost(id, docRows(id)[n.row] || null);
     if (host) host.insertAdjacentHTML('beforeend', commentNoteHTML(n));
   });
   sec.querySelectorAll('.rm-notes .cmt-del').forEach(b =>
@@ -4550,7 +4807,7 @@ function renderDocSeg(id) {
 
 /* Drawn for every section that has something to state, NOT only the live one.
    Gating it on `rState.active` made activation a layout change: clicking `+
-   note` on a section moved the spec table from one head row to another, so the
+   note` on a section moved the state readout from one band to another, so the
    section jumped 57px up while the button slid 17px out from under the cursor
    (measured). A reviewer cannot click a control that leaves when they reach
    for it. The live section is marked at its heading instead — a border and a
@@ -4582,10 +4839,17 @@ function updateDocColumns() {
   // An OPEN compose popover holds the margin as surely as a saved note does.
   // Without it, the first anchored comment on a bare document — the exact
   // document the collapse rule exists for — mounts its textarea into a 0px
-  // track. (The head row is immune: `.doc.no-margin .row-head .rm` reflows
-  // under the heading, which is why the `+ note` path never showed this.)
+  // track. It is also what makes the `+ note` composer safe in the foot band
+  // with no rule of its own — this clause runs synchronously before paint.
   // `.is-open` rather than a style-attribute match: the serialized inline
   // style is the browser's business, not a selector's.
+  //
+  // NOTE what is deliberately NOT counted: `split.gutter`. A gutter-bucket
+  // flag renders words into a `.rm` too (placeDocFlags' byRow loop), so one
+  // whose anchor resolves to no row lands in the foot band's margin on a
+  // document this rule would otherwise collapse. That is what the
+  // `.doc.no-margin .row-foot` twin in the CSS is for — widening this line
+  // instead would hold the column open on every flagged document.
   const margin = sections.some(s => docFlagSplit(s).margin.length || docNotes(s).length)
     || !!doc.querySelector('.rm .comment-popover.is-open');
   doc.classList.toggle('no-gutter', !gutter);
@@ -4647,7 +4911,8 @@ function _ensureRendered(id) {
   /* A CARRIED card is the one thing that renders section content without
      wearing the grammar. It is a read-only reveal of a hunk already signed
      off: nothing to annotate, no notes to place, no verbs — and, crucially,
-     no `.row-head`, because buildCarriedCard never builds one. Running the
+     no `.row-head` and no `.row-foot`, because buildCarriedCard never builds
+     either band. Running the
      pipeline over it grids a body nobody can comment on, and an unanchored
      carried thread takes `placeDocThreads` down `docCell(null, 'rm')`. */
   const card = el('rcard-' + id);
@@ -5058,22 +5323,32 @@ function openCommentPopover(id, { anchor, type } = {}) {
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
-  // The popover composes a MARGIN note, so it opens in the margin beside the
-  // passage being annotated rather than at the foot of the section — the note
-  // lands where the reviewer is already looking, and the prose never shifts to
-  // make room for a compose box. Anchored: beside its own passage. Unanchored
-  // (`+ note`): at the FOOT of the head row's margin, below the controls —
-  // mounting it in `.rm-notes` put it above them and pushed the very button
-  // just clicked down the page. Moved before focus: relocating a node after
-  // focusing inside it blurs the field.
+  // The popover composes a MARGIN note, so it opens in the margin: anchored,
+  // beside its own passage; unanchored (`+ note`), in the FOOT band's margin,
+  // appended after whatever is already there — which is exactly the cell the
+  // note it saves lands in, one child up, in `.rm-notes`. The composer and
+  // every unanchored note it creates share ONE `.rm`, which is what keeps
+  // `renderDocMargin`'s wipe-and-renumber pass and the box the reviewer is
+  // typing in describing the same place.
+  //
+  // The invariant this used to guard — the button just clicked must not move —
+  // is now structural rather than positional. `+ note` lives in the same foot
+  // row, in the PROSE cell; a box appended to the margin cell beside it cannot
+  // displace it at all. Moved before focus: relocating a node after focusing
+  // inside it blurs the field.
   const row = anchor ? rowForAnchor(id, anchor.text, anchor.occurrence) : null;
-  const head = docHeadRow(id);
-  const host = row ? docNoteHost(id, row) : (head && docCell(head, 'rm'));
+  const foot = docFootRow(id);
+  const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));
   if (host && pop.parentElement !== host) host.appendChild(pop);
   pop.style.display = '';
   pop.classList.add('is-open');
   // Opening the box is what makes the margin non-empty; closing it (saved or
-  // cancelled) is what may let the column collapse again.
+  // cancelled) is what may let the column collapse again. This is also why the
+  // FOOT band needs no `.doc.no-margin` twin for the composer: the sequence
+  // above is synchronous and completes before paint, so `.rm .comment-popover
+  // .is-open` has already dropped `no-margin` by the time the textarea is laid
+  // out. (The twin that IS kept is for a gutter-bucket flag whose anchor
+  // resolved to nothing — `updateDocColumns` does not count those.)
   updateDocColumns();
 
   const ta        = pop.querySelector('.cmt-pop-note');
@@ -5114,7 +5389,13 @@ function openCommentPopover(id, { anchor, type } = {}) {
     const chip = pop.querySelector('.cmt-chip[data-type="' + type + '"]');
     if (chip) chip.click();
   }
-  ta.focus();
+  // `nearest`, not `center`: a popover taller than the viewport aligns to its
+  // top — where the type chips are — and a short one does not move the page at
+  // all, so the prose is never yanked out from under the reader. `preventScroll`
+  // on the focus, or the browser's own scroll-to-field undoes it and lands the
+  // viewport on the textarea with the chips and the quote above the fold.
+  ta.focus({ preventScroll: true });
+  pop.scrollIntoView({ block: 'nearest' });
   pop.querySelector('.cmt-save').onclick = () => {
     const text = ta.value.trim();
     // A suggestion ships on its wording: the same box the other types use for
@@ -5375,11 +5656,23 @@ function documentBalance() {
     atStart += (s.open_notes || []).length;
     (s.annotations || []).forEach(a => {
       if (!a) return;
+      // A doc-scope flag IS counted in `checks`/`checksDone` — that pair is the
+      // bar's document-level `checks D/T` readout, and a fact about the
+      // document is exactly what belongs in it. It is NOT counted in
+      // `atStart`, and the asymmetry is load-bearing rather than sloppy:
+      // `atStart` is the LEFT of the convergence arrow and `open` is the
+      // RIGHT, but `open` is a sum of `sectionBalance`, which skips doc-scope.
+      // Count it on one side only and a document carrying five unanswered
+      // `headings-present` flags and nothing else reads `convergence 5 → 0` on
+      // a round where nothing was closed. The two ends of the arrow answer the
+      // same question or the arrow lies.
       if (CHECK_KINDS.includes(a.kind)) {
         checks++;
-        if (a.result) checksDone++; else atStart++;
+        if (a.result) checksDone++;
+        else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;
         return;
       }
+      if (DOC_SCOPE_KINDS.includes(a.kind)) return;
       if (a.severity === 'warn' || a.severity === 'error') atStart++;
     });
   });
@@ -5650,23 +5943,30 @@ function buildQACard(q, index) {
     return `<button class="choice-chip" data-choice="${esc(c)}"><span class="chip-label">${esc(c)}</span>${badge}${cap}</button>`;
   }).join('');
 
+  // The disclosure head IS the question, printed once, wrapping, numbered like
+  // a catalog entry. The `<h2>` that used to restate it one line below is gone:
+  // the head was clamped and dimmed as "an index line" pointing at that
+  // heading, a mitigation that assumed the entry held something OTHER than the
+  // duplicate — and a free-text entry holds a hairline and nothing else. The
+  // number goes INSIDE `.card-title`: `.card-title-wrap` is `flex-direction:
+  // column`, so a sibling span would stack the digit above the question.
+  const choiceless = q.choices.length === 0;
   card.innerHTML = `
     <button type="button" class="card-head" aria-expanded="false" aria-controls="qbody-${q.id}">
       <span class="dot dot-idle" id="qdot-${q.id}"></span>
       <span class="card-title-wrap">
-        <span class="card-title">${esc(q.text)}</span>
+        <span class="card-title"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</span>
       </span>
       <span class="vbadge vbadge-approved" id="qbadge-${q.id}" style="display:none"></span>
     </button>
     <div class="card-body-wrap" id="qbody-${q.id}">
       <div class="card-body-inner">
         <div class="card-body">
-          <div class="row row-head">
-            <div class="rp">
-              <h2 class="doc-head" id="qhead-${q.id}"><span class="doc-num" aria-hidden="true">${index + 1} &middot;</span> ${esc(q.text)}</h2>
+          <div class="row row-head${choiceless ? ' is-choiceless' : ''}">
+            ${choiceless ? '' : `<div class="rp">
               <div class="rule-s"></div>
               <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
-            </div>
+            </div>`}
             <div class="rm">
               ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
               <div class="nt nt-compose">
@@ -5689,7 +5989,12 @@ function buildQACard(q, index) {
 
   card.querySelector('.card-head').addEventListener('click', () => toggleQACard(q.id));
 
-  card.querySelector('#qchoices-' + q.id).addEventListener('click', e => {
+  // Guarded: a choiceless question has no prose cell and therefore no chip
+  // list. Both readers of `#qchoices-` carry the guard — this one and
+  // `syncQACard`'s — or the one that does not throws on every sync of that
+  // card, on a surface no test can execute.
+  const ch = card.querySelector('#qchoices-' + q.id);
+  if (ch) ch.addEventListener('click', e => {
     const chip = e.target.closest('.choice-chip');
     if (!chip) return;
     e.stopPropagation();
@@ -5803,8 +6108,10 @@ function advanceQA(id) {
 function syncQACard(id) {
   const choice = qState.answers[id]?.choice || null;
 
-  // Chip selections
-  el('qchoices-' + id).querySelectorAll('.choice-chip').forEach(chip => {
+  // Chip selections. Guarded for the same reason buildQACard's wiring is: a
+  // choiceless question has no `#qchoices-` element at all.
+  const chEl = el('qchoices-' + id);
+  if (chEl) chEl.querySelectorAll('.choice-chip').forEach(chip => {
     chip.classList.toggle('selected', chip.dataset.choice === choice);
   });
 
@@ -7256,6 +7563,12 @@ Promise.all([
     # frontend would fail open the same silent way, in the surface that draws
     # `checks N/M`, so the frontend reads the registry itself.
     "__CHECK_KINDS__", json.dumps(list(schema.CHECK_KINDS))
+).replace(
+    # The scope registry, beside the check registry so the two read as one
+    # block. A doc-scope flag is about the DOCUMENT, not about the card its
+    # producer had to anchor it to; the frontend routes on this and would
+    # fail open the same silent way on a hand-kept copy.
+    "__DOC_SCOPE_KINDS__", json.dumps(list(schema.DOC_SCOPE_KINDS))
 ).replace(
     # The spoken grammar, injected for the same reason and in the same shape:
     # one table, in `_VOICE_RULES` above, already sorted longest-phrase-first so

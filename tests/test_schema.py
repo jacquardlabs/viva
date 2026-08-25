@@ -529,6 +529,40 @@ def test_check_kinds_covers_every_shipped_bundle_check():
     print("  ok  test_check_kinds_covers_every_shipped_bundle_check")
 
 
+def test_doc_scope_kinds_is_a_closed_set():
+    """`DOC_SCOPE_KINDS` is the scope registry: what a producer's flag is ABOUT.
+    `headings_present.py` and `checklist.py` both report a fact about the whole
+    DOCUMENT and both anchor it to `sections[0]["id"]`, because
+    `parse_sections.py`'s integrity check makes a card for an absent section
+    impossible and the first card is the only document-level handle either has.
+    A reader that takes the anchor literally prints five document facts in the
+    margin of section 1.
+
+    A DIFFERENT AXIS from `CHECK_KINDS`, which asks "does this gate a `checks`
+    round". `headings-present` is deliberately in both, and the two must not be
+    folded together: `checklist` in `CHECK_KINDS` would make a missing template
+    heading gate a `checks` round, which nothing has decided.
+    """
+    assert isinstance(schema.DOC_SCOPE_KINDS, tuple), "a vocabulary is a tuple"
+    scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+    # Read the producers rather than restating their strings.
+    hp_src = (scripts_dir / "headings_present.py").read_text(encoding="utf-8")
+    cl_src = (scripts_dir / "checklist.py").read_text(encoding="utf-8")
+    assert 'KIND = "headings-present"' in hp_src, "headings_present.py's KIND moved"
+    assert '"kind": "checklist"' in cl_src, "checklist.py's emitted kind moved"
+    assert set(schema.DOC_SCOPE_KINDS) == {"headings-present", "checklist"}, \
+        "the registry must name exactly the two document-level producers"
+    # The same mechanical mapping a bundle's `checks[]` uses.
+    for kind in schema.DOC_SCOPE_KINDS:
+        producer = scripts_dir / (kind.replace("-", "_") + ".py")
+        assert producer.exists(), f"{kind} names no producer at {producer}"
+    assert set(schema.DOC_SCOPE_KINDS) != set(schema.CHECK_KINDS), \
+        "scope and gating are different axes; collapsing them makes checklist gate a round"
+    assert "headings-present" in schema.DOC_SCOPE_KINDS, "it is doc-scope"
+    assert "headings-present" in schema.CHECK_KINDS, "...and it gates a checks round"
+    print("  ok  test_doc_scope_kinds_is_a_closed_set")
+
+
 def test_has_revision_history_is_anchored():
     """Substring matching is the defect this replaces: viva's own SKILL.md and
     DESIGN.md discuss the ledger by name, and a false positive takes `start`'s
@@ -570,8 +604,9 @@ def main():
     test_thread_statuses_and_a_declined_suggestion_still_holds_proof()
     test_no_pass_relaxes_the_all_approved_base()
     test_check_kinds_covers_every_shipped_bundle_check()
+    test_doc_scope_kinds_is_a_closed_set()
     test_has_revision_history_is_anchored()
-    print("OK (23 tests)")
+    print("OK (24 tests)")
 
 
 if __name__ == "__main__":
