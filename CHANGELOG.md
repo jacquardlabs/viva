@@ -2,6 +2,75 @@
 
 <!-- version list -->
 
+## v2.2.0 (2026-08-25)
+
+### Bug Fixes
+
+- A control that cannot act no longer looks like the one that can
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- A document flag has a surface in diff mode, and an unnumbered round has a number
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- A hunk shows the bytes it has, from a face this server serves
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- A malformed round is refused instead of bricking the tab
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- A round opens on what changed, and one decision prints once
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- A section's state stops pushing its own first paragraph down the page
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- An unreviewed section is an item, so the count stops growing as you work
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- The counts on the state bar agree with each other and say what they mean
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- The dispatch stamp keeps its line — the bar squeezes its counters instead
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- The recap's three-child actions row wraps instead of overflowing
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- **voice**: The router must carry every guard the keydown handler carries
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+### Documentation
+
+- Re-shoot the screenshots against the fixed UI
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- The interview entry is named by the button's content, not by aria-controls
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+### Features
+
+- The oral examination — voice input, and the 16 UI defects auditing it uncovered
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+- **voice**: The oral examination — speak the review, confirm what it heard
+  ([#205](https://github.com/jacquardlabs/viva/pull/205),
+  [`8c9fed8`](https://github.com/jacquardlabs/viva/commit/8c9fed88d338ace75589697fea7b35bc2cc0edaa))
+
+
 ## v2.1.0 (2026-08-09)
 
 ### Bug Fixes
