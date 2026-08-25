@@ -27,8 +27,8 @@ only by JSON files under `.viva/`:
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
-4. **`server.py` — the SPA host** (7,312 lines, of which the embedded
-   HTML/CSS/JS constant `HTML` — opened at line 75 — is the overwhelming
+4. **`server.py` — the SPA host** (7,926 lines, of which the embedded
+   HTML/CSS/JS constant `HTML` — opened at line 131 — is the overwhelming
    majority; the Python HTTP handler around it is small). The bulk being a
    frontend is intentional — one file, no build step, no npm. Don't "fix" the
    line count by splitting the constant out. Its one read outside `.viva/` is
@@ -38,6 +38,15 @@ only by JSON files under `.viva/`:
    version bump edits three places — the file, `_VENDOR_ASSETS`, and the URL in
    `HTML` — and `test_server_vendor_assets.py` compares the last two directly,
    because missing one 404s into the `md-raw` fallback with no error anywhere.
+   It also owns **`_VOICE_VERBS`/`_VOICE_RULES`** — the spoken grammar of the
+   voice layer, injected as `__VOICE_RULES__` the way `__CHECK_KINDS__` is, and
+   deliberately here rather than in `schema.py`: the browser is its only
+   consumer, so it is UI data, not the on-disk contract. Adding a
+   `COMMENT_TYPES` value fails `tests/test_voice_grammar.py` until it has
+   something a reviewer can say. The layer's own invariant — speech STAGES a
+   comment and never commits one, so nothing in it may call `addComment` — is
+   pinned by `tests/test_server_voice.py`; DESIGN.md says why that is
+   load-bearing rather than stylistic.
 5. **The `.viva/*.json` schema — the real contract.** See `scripts/schema.py`
    for the shapes.
 

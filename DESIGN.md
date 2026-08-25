@@ -1081,6 +1081,61 @@ In review/diff mode a ready click opens the recap overlay rather than
 submitting (see Recap overlay); Q&A's done → click submits directly.
 `btn-skip` submits directly in every mode.
 
+## Voice — the oral examination (input only)
+
+viva is named after the PhD oral, where the candidate submits *writing* and the
+examiner *speaks*. The written defence was already here; this is the examiner's
+half. Output stays silent — a synthesiser talking while the recogniser listens is
+an echo problem, and read-back deserves its own design.
+
+**The invariant: speech may command, it may never author.** A verb carrying no
+text (`approve`, `next`, `save`, `stop`) acts immediately — it is a button press,
+and every one of them is reversible on screen. A note, question or suggestion is
+*staged* in the comment composer, where the reviewer reads it and confirms.
+Nothing in the voice layer calls `addComment`; it drives `openCommentPopover` and
+stops. That is not a convention but the reason the layer is safe: a ledger this
+system promises is verbatim must not carry a sentence the human never read.
+A spoken "save" is both the last word of the comment and the confirm of it, which
+is defensible for the same reason — the staged text is on screen, unedited, at
+the moment the reviewer chooses to say the word.
+
+**The modal rule, one sentence:** a focused note field makes speech dictation;
+nothing focused makes it grammar. `save`, `cancel` and `stop` work from inside a
+field anyway, or the microphone is hot with the caret in a textarea and no spoken
+word gets you out. <kbd>Esc</kbd> sits ahead of the `TEXTAREA`/`INPUT` guard for
+the same reason ⌘K does, and never over the prefs panel or the recap gate.
+
+**The grammar lives in `server.py`'s `_VOICE_RULES`**, injected into the page the
+way `__CHECK_KINDS__` is — one table, checked by a test, rather than a hand-kept
+copy in JS that drifts silently. It is *not* in `scripts/schema.py`: the browser
+is its only consumer, and that module is the on-disk contract. Two verb classes,
+and the split is the safety rule — a bare verb matches only the WHOLE normalized
+utterance ("improve this section" matches nothing), a carrying verb matches at the
+start and the remainder is the reviewer's text. Rules are sorted longest-phrase
+first because the browser takes the first match and stops.
+
+**`submit` is an alias for the recap, never for submitting.** Ending the round is
+the one action already gated behind an overlay and a confirm click, and a spoken
+word does not get to skip a gate the mouse cannot.
+
+Ink: the toggle and the `dictate` button are cobalt (`--acc`) *only while live* —
+speech is the reviewer's party, and an idle control is not doing anything yet.
+The strip prints every utterance with the reading it got, including the ones that
+matched no verb: a reviewer who cannot tell "heard nothing" from "heard something
+and ignored it" cannot trust the layer at all. Interim results show, dimmed and
+`aria-hidden`, so the live region announces readings and not partial guesses.
+
+The three session controls (learned prefs, voice, theme) sit in `.bar-controls`
+and wrap as one cluster. `margin-left: auto` used to sit on the theme toggle
+alone; with a third control the stats row no longer fits on one line at ordinary
+widths, and an auto margin on a single item strands that item on a line of its own.
+
+Off by default, drawn only where the browser has a recogniser, and no recogniser
+is constructed at load — PRODUCT.md principle 4, the same as every other layer.
+The browser's recogniser is a **network service** (Chrome sends audio to Google);
+viva stays keyless and keeps no recording, but the audio leaves the machine, and
+the page discloses that once before it first listens.
+
 ## Accessibility requirements
 
 1. Every interactive element must be a native `<button>` or `<a>` — never a `<div>` with onclick.
@@ -1092,6 +1147,8 @@ submitting (see Recap overlay); Q&A's done → click submits directly.
 7. Design system tokens must be used for all colors — no hardcoded hex in component styles.
 8. A `<main>` landmark must wrap the scrollable shell.
 9. Entrance, stamp, and between-rounds pulse animations must be suppressed under `prefers-reduced-motion: reduce`.
+10. A control whose label states its current mode (`theme: system`, `voice: off`) must carry an `aria-label` saying what activating it DOES — otherwise a screen reader hears a state and cannot tell it from an action.
+11. Live-region content that updates continuously (voice interim results) must be `aria-hidden`; only the settled reading announces.
 
 ## API conventions
 

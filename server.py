@@ -72,6 +72,62 @@ _VENDOR_ASSETS = (
 )
 _VENDOR_ROUTES = {"/vendor/" + name: (name, ctype) for name, ctype in _VENDOR_ASSETS}
 
+# ── The spoken grammar (viva voce) ───────────────────────────────────────────
+# In a viva the candidate submits writing and the examiner SPEAKS. viva already
+# has the written defence; this is the examiner's voice, and it is input only.
+#
+# The grammar lives here rather than in `scripts/schema.py` because the browser
+# is its only consumer — nothing outside the page reads a spoken phrase, and
+# schema.py is the on-disk contract. It lives here rather than inline in the JS
+# for the reason `__CHECK_KINDS__` is injected: one table, checked by a test,
+# instead of a hand-kept copy that drifts. `tests/test_voice_grammar.py` pins it
+# to `schema.COMMENT_TYPES` and `schema.VERDICTS`, so adding a comment type
+# fails until it has something a reviewer can say.
+#
+# Two classes of verb, and the split is the safety rule:
+#
+#   carries=False — matches ONLY when the WHOLE normalized utterance is the
+#                   phrase. "improve this section" matches nothing; "approve"
+#                   matches. These act immediately, because a verb with no text
+#                   is a button press: there is nothing a recognizer can
+#                   mis-transcribe INTO THE RECORD.
+#   carries=True  — matches at the START; the remainder is the reviewer's text.
+#                   These never act. They STAGE the text in the comment
+#                   composer, where the reviewer reads it and confirms — which
+#                   is what keeps PRODUCT.md's "verbatim, not summarized" true
+#                   of a ledger built from speech.
+#
+# `submit` is deliberately an alias for `recap`, not for submitting: ending the
+# round is the one action the page already gates behind the recap overlay and a
+# confirm click, and a spoken word does not get to skip a gate the mouse can't.
+_VOICE_VERBS = (
+    # Carrying verbs — one per COMMENT_TYPES value.
+    {"act": "comment", "type": "changes", "carries": True,
+     "phrases": ("request changes", "changes", "change")},
+    {"act": "comment", "type": "info", "carries": True,
+     "phrases": ("need info", "question", "info")},
+    {"act": "comment", "type": schema.SUGGESTION, "carries": True,
+     "phrases": ("suggest wording", "suggest", "replace with")},
+    # Bare verbs — whole-utterance only.
+    {"act": "approve", "carries": False, "phrases": ("approve", "approved", "pass")},
+    {"act": "next", "carries": False, "phrases": ("next", "skip", "move on")},
+    {"act": "back", "carries": False, "phrases": ("back", "previous", "go back")},
+    {"act": "save", "carries": False, "phrases": ("save", "done", "commit")},
+    {"act": "cancel", "carries": False, "phrases": ("cancel", "scratch that", "never mind")},
+    {"act": "recap", "carries": False, "phrases": ("recap", "submit", "submit all")},
+    {"act": "stop", "carries": False, "phrases": ("stop listening", "stop")},
+)
+
+# Flattened one-rule-per-phrase and sorted LONGEST PHRASE FIRST, so the browser
+# can take the first match and be right: "request changes …" must never be read
+# as the verb `changes` carrying the word "request". Sorting here rather than in
+# JS keeps the ordering rule in the same file as the table it orders.
+_VOICE_RULES = tuple(sorted(
+    (dict(phrase=phrase, act=verb["act"], carries=verb["carries"],
+          **({"type": verb["type"]} if "type" in verb else {}))
+     for verb in _VOICE_VERBS for phrase in verb["phrases"]),
+    key=lambda rule: -len(rule["phrase"])))
+
 HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -609,9 +665,78 @@ body {
   border: 1px solid var(--rule);
   border-radius: 0;
   background: none;
+}
+
+/* The session controls — learned prefs, voice, theme — as ONE unit.
+   `margin-left: auto` used to sit on the theme toggle alone, which right-aligned
+   it inside the wrapping stats row. With voice beside it the row no longer fits
+   on one line at ordinary widths, and an auto margin on a single item wraps that
+   item by itself: the theme control printed on a line of its own under
+   everything else. They are one cluster, so they wrap as one. */
+.bar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 .theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ─── Voice — the oral examination ───────────────────────────
+   The toggle wears the theme toggle's grammar and states its mode in words
+   for the same reason: a microphone glyph makes the reader guess whether it
+   names the state or the action. Cobalt only while listening — speech is the
+   reviewer's party, and an idle control is not doing anything yet. */
+.voice-toggle {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--soft);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+}
+.voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
+.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
+
+/* The strip is the transcript, and it exists so nothing is ever swallowed in
+   silence: every utterance prints here with the reading it got, INCLUDING the
+   ones that matched no verb. A reviewer who cannot tell "heard nothing" from
+   "heard something and ignored it" cannot trust the layer at all. */
+.voice-strip {
+  max-width: 1240px;
+  margin: 0 auto 8px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.voice-strip .vs-state { color: var(--acc); font-weight: 600; text-transform: uppercase; }
+.voice-strip .vs-heard { color: var(--text); }
+.voice-strip .vs-read  { color: var(--text3); }
+/* Interim results are the recognizer still deciding — shown so the reviewer
+   can see it is hearing them, dimmed so it never reads as the record. */
+.voice-strip .vs-interim { color: var(--text3); font-style: italic; }
+.voice-notice { color: var(--text2); }
+.voice-notice button {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--acc);
+  background: none;
+  border: 1px solid var(--acc);
+  border-radius: 0;
+  padding: 3px 9px;
+  margin-left: 8px;
+}
 
 /* A section is a run of the print, not a box on it. The card kept a 1px
    border and a filled panel from the era when it was a drawing pinned to a
@@ -1761,7 +1886,7 @@ body {
    a border instead of a gradient stack. Registering --c keeps the recolor
    animatable; without @property support it snaps. */
 @property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
-.choice-chip, .attach-btn, .cmt-chip, .cmt-save, .cmt-cancel {
+.choice-chip, .attach-btn, .mic-btn, .cmt-chip, .cmt-save, .cmt-cancel {
   --c: var(--rule);
   border: 1px solid var(--c);
   background: var(--paper);
@@ -1858,6 +1983,24 @@ body {
   padding: 5px 10px;
 }
 .attach-btn:hover { --c: var(--text3); color: var(--text); }
+/* The composer's second secondary control — same grammar as attach, same
+   `--c` edge, because it does the same kind of job: it fills the box beside
+   it and never decides anything. Cobalt while live: speech is the reviewer's
+   party, and a control that is currently doing something is the one place the
+   accent belongs. */
+.mic-btn {
+  margin-top: 6px;
+  margin-left: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.mic-btn:hover { --c: var(--text3); color: var(--text); }
+.mic-btn.is-live { --c: var(--accent); color: var(--accent); }
 /* neutral active highlight for a drop zone — teal stays reserved for approve */
 .card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
 
@@ -2141,6 +2284,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .annot-jump:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
 .theme-toggle:focus-visible, .pal-hint:focus-visible,
+.voice-toggle:focus-visible, .mic-btn:focus-visible, .voice-notice button:focus-visible,
 .btn-skip:focus-visible, .btn-submit:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
@@ -2745,6 +2889,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
+      <dt><kbd>v</kbd></dt><dd>voice &mdash; the oral examination; Escape stops listening from anywhere</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
     </dl>
@@ -2760,6 +2905,11 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
      review mode only, since a diff or Q&A round has no document balance. -->
 <div class="bottom-bar" id="bottom-bar-el">
   <div class="foot-seg" id="foot-seg" style="display:none"></div>
+  <!-- The voice transcript. Its own aria-live region rather than a cell inside
+       #stats-area's: the counters announce a count, this announces a sentence,
+       and one region cannot pace both. Ships hidden — nothing about this page
+       changes until a reviewer turns the microphone on. -->
+  <div class="voice-strip" id="voice-strip" aria-live="polite" style="display:none"></div>
   <div class="bottom-inner">
     <div class="stats" id="stats-area" aria-live="polite">
       <span class="stat-approved" id="stat-approved"></span>
@@ -2771,9 +2921,15 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
            the last same-origin request this page made. -->
       <span class="stat-conv" id="stat-conv" style="display:none"></span>
       <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
-      <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
-      <button type="button" class="theme-toggle" id="theme-toggle"
-              title="Cycle theme: follow system, light, dark">theme: system</button>
+      <div class="bar-controls">
+        <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
+        <!-- Ships hidden and stays hidden where the browser has no recognizer:
+             a control that cannot work is worse than no control. `initVoice`
+             reveals it. -->
+        <button type="button" class="voice-toggle" id="voice-toggle" style="display:none">voice: off</button>
+        <button type="button" class="theme-toggle" id="theme-toggle"
+                title="Cycle theme: follow system, light, dark">theme: system</button>
+      </div>
     </div>
     <div class="btn-group">
       <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
@@ -4893,6 +5049,9 @@ function openCommentPopover(id, { anchor, type } = {}) {
     + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
     + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
+    + (voiceSupported()
+        ? '<button type="button" class="mic-btn"><span aria-hidden="true">&#127908;</span> dictate</button>'
+        : '')
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
     +   '<button type="button" class="cmt-cancel">cancel</button></div>';
@@ -4972,6 +5131,16 @@ function openCommentPopover(id, { anchor, type } = {}) {
     closeCommentPopover(id);
   };
   pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
+  // Dictation is the same act as typing here: it fills THIS box, and the save
+  // above is still the only thing that makes a comment. The button turns the
+  // microphone on and puts the caret back — from there the modal rule takes
+  // over, because a focused note field is what makes speech dictation.
+  const mic = pop.querySelector('.mic-btn');
+  if (mic) {
+    // Built after paintVoiceToggle last ran, so it paints its own live state.
+    mic.classList.toggle('is-live', voiceIsOn());
+    mic.onclick = () => startVoice(() => ta.focus());
+  }
 }
 
 function closeCommentPopover(id) {
@@ -5315,6 +5484,7 @@ function qaPaletteCommands() {
                                         && q.id !== qState.active);
   if (next) cmds.push({ label: 'Jump to next unanswered', key: 'j',
                         run: () => activateQACard(next.id) });
+  if (voiceSupported()) cmds.push(voicePaletteCommand());
   cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
   return cmds;
 }
@@ -5341,8 +5511,16 @@ function reviewPaletteCommands() {
     if (p && p.style.display !== 'none') { p.classList.remove('is-collapsed'); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   } });
   cmds.push({ label: 'Open recap and submit', key: 'o', run: () => openRecap() });
+  if (voiceSupported()) cmds.push(voicePaletteCommand());
   cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
   return cmds;
+}
+
+// One entry, both directories — the palette is a directory of the keyboard
+// layer, and `v` means the same thing on the review page and in the interview.
+function voicePaletteCommand() {
+  return { label: voiceIsOn() ? 'Stop listening' : 'Start the oral examination (voice)',
+           key: 'v', run: () => toggleVoice() };
 }
 
 // The next section carrying live business, from the live section forward and
@@ -5493,6 +5671,7 @@ function buildQACard(q, index) {
                 <textarea class="note-field" id="qnote-${q.id}" placeholder="Optional — or paste a screenshot"></textarea>
                 <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
                 <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
+                ${voiceSupported() ? `<button type="button" class="mic-btn" id="qmic-${q.id}"><span aria-hidden="true">&#127908;</span> dictate</button>` : ''}
                 <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
               </div>
               <div class="nt-acts doc-acts">
@@ -5529,6 +5708,14 @@ function buildQACard(q, index) {
 
   card.querySelector('#qconfirm-' + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
   card.querySelector('#qskip-'   + q.id).addEventListener('click', e => { e.stopPropagation(); advanceQA(q.id); });
+
+  // Same contract as the review composer's mic: turn the microphone on, put
+  // the caret in this box, and let the modal rule do the rest.
+  const qmic = card.querySelector('#qmic-' + q.id);
+  if (qmic) {
+    qmic.classList.toggle('is-live', voiceIsOn());
+    qmic.addEventListener('click', e => { e.stopPropagation(); startVoice(() => qta.focus()); });
+  }
 
   wireCapture(
     () => (qState.answers[q.id] ||= {}),
@@ -6104,6 +6291,410 @@ function cycleTheme() {
 el('theme-toggle').addEventListener('click', cycleTheme);
 paintThemeToggle();
 
+/* ═══ Voice — the oral examination (input only) ══════════════════════════
+   viva is named after the PhD oral: the candidate submits WRITING and the
+   examiner SPEAKS. The written defence is already here — the doc, the
+   rewrites, the ledger. This is the examiner's half, and it is input only.
+
+   THE INVARIANT: speech may command, it may never author.
+
+     A verb carrying no text (approve, next, save, stop) acts immediately. It
+     is a button press; there is nothing a recognizer can mis-transcribe into
+     the record, and every one of them is reversible on screen.
+
+     A note, question, or suggestion is STAGED in the comment composer, where
+     the reviewer reads it and confirms. Nothing below calls `addComment`.
+     That is not a convention, it is the reason the layer is safe: a ledger
+     PRODUCT.md promises is verbatim must not carry a sentence the human never
+     read. `tests/test_server_voice.py` holds the line.
+
+   A spoken "save" is both the last word of the comment and the confirm of it.
+   That is deliberate and it is not a hole: the staged text is on the screen,
+   unedited, at the moment the reviewer chooses to say the word.
+
+   THE MODAL RULE, one sentence: a focused note field makes speech dictation;
+   nothing focused makes it grammar. `save`, `cancel` and `stop` work from
+   inside a field anyway, or the microphone is hot with the caret in a textarea
+   and no spoken word gets you out.
+
+   Nothing here runs until a reviewer turns it on: no recognizer is
+   constructed at load, and the control is not even drawn where the browser
+   has none. PRODUCT.md principle 4, the same as every other layer. ══════ */
+
+// Injected from server.py's `_VOICE_RULES`, longest phrase first — see the
+// table there for the two verb classes. Injected rather than restated for the
+// reason `__CHECK_KINDS__` is: a second copy in JS drifts, silently.
+const VOICE_RULES = __VOICE_RULES__;
+
+const VoiceCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const VOICE_ACK_KEY = 'viva-voice';
+// The three verbs that must still work while a note field holds the caret.
+const VOICE_ESCAPES = ['save', 'cancel', 'stop'];
+
+let _rec = null;          // constructed on first start, never at load
+let _voiceOn = false;     // the reviewer's switch, not the recognizer's state
+let _voiceRestarts = 0;
+// The card a spoken verb last applied to. See `voiceReopen` — this is the way
+// back out of the state where nothing is open.
+let _voiceLastCard = null;
+
+function voiceSupported() { return Boolean(VoiceCtor); }
+function voiceIsOn() { return _voiceOn; }
+
+/* Lowercase, punctuation to spaces, whitespace collapsed — the form every
+   phrase in the table is already written in. Known limitation: a hyphen
+   INSIDE one of the first words of an utterance splits it in two here but not
+   in the raw text, so the remainder handed to a carrying verb would drop a
+   word. Recognizers emit commas and terminal stops, not mid-phrase hyphens,
+   so this has never been observed; it is written down rather than guarded. */
+function normalizeUtterance(raw) {
+  return String(raw || '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ')
+                          .replace(/\s+/g, ' ').trim();
+}
+
+// First match wins, and the table is sorted longest-first, so "request
+// changes …" can never be read as the verb `changes` carrying "request".
+function matchVoiceRule(norm) {
+  for (let i = 0; i < VOICE_RULES.length; i++) {
+    const r = VOICE_RULES[i];
+    if (norm === r.phrase || (r.carries && norm.indexOf(r.phrase + ' ') === 0)) {
+      return { rule: r, words: r.phrase.split(' ').length };
+    }
+  }
+  return null;
+}
+
+// The reviewer's own text, in their own casing — taken off the RAW utterance,
+// never the normalized one, because the note is what goes on the record.
+function remainderOf(raw, words) {
+  return String(raw).trim().split(/\s+/).slice(words).join(' ')
+                    .replace(/^[\s,:;.!?-]+/, '');
+}
+
+function activeNoteField() {
+  const a = document.activeElement;
+  return a && a.classList && a.classList.contains('note-field') ? a : null;
+}
+
+function blurNoteField() { const f = activeNoteField(); if (f) f.blur(); }
+
+// Land dictated text at the caret rather than replacing the box: a reviewer
+// who typed half a sentence and finished it out loud keeps both halves.
+function insertDictation(field, text) {
+  const cur = field.value;
+  const at = field.selectionStart == null ? cur.length : field.selectionStart;
+  const before = cur.slice(0, at), after = cur.slice(at);
+  const sep = before && !/\s$/.test(before) ? ' ' : '';
+  field.value = before + sep + text + after;
+  const pos = (before + sep + text).length;
+  try { field.setSelectionRange(pos, pos); } catch (e) { /* detached field */ }
+  // The Q&A note wires its state off `input`; the review composer reads
+  // `.value` at save time. Firing the event serves the first and is inert for
+  // the second, so one line covers both surfaces.
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* ─── The strip ───────────────────────────────────────────
+   The transcript exists so nothing is ever swallowed in silence: every
+   utterance prints here with the reading it got, INCLUDING the ones that
+   matched no verb. A reviewer who cannot tell "heard nothing" from "heard
+   something and ignored it" cannot trust the layer at all. */
+function voiceSay(state, heard, read) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">' + esc(state) + '</span>'
+    + (heard ? '<span class="vs-heard">&ldquo;' + esc(String(heard).trim()) + '&rdquo;</span>' : '')
+    + (read  ? '<span class="vs-read">' + esc(read) + '</span>' : '');
+}
+
+// Interim results are the recognizer still deciding. Shown so the reviewer can
+// see it is hearing them — and `aria-hidden` so it is not ANNOUNCED, because a
+// live region reading every partial guess aloud is unusable. The final
+// reading, through voiceSay above, is what announces.
+function voiceInterim(text) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">listening</span>'
+    + '<span class="vs-interim" aria-hidden="true">' + esc(text) + '</span>';
+}
+
+function hideVoiceStrip() {
+  const s = el('voice-strip');
+  if (s) { s.style.display = 'none'; s.innerHTML = ''; }
+}
+
+/* ─── Routing one utterance ───────────────────────────────── */
+function handleUtterance(raw) {
+  const norm = normalizeUtterance(raw);
+  if (!norm) return;
+  const hit = norm ? matchVoiceRule(norm) : null;
+  const field = activeNoteField();
+  if (field) {
+    if (hit && norm === hit.rule.phrase && VOICE_ESCAPES.indexOf(hit.rule.act) >= 0) {
+      voiceSay('heard', raw, runVoiceAct(hit.rule, ''));
+      return;
+    }
+    insertDictation(field, String(raw).trim());
+    voiceSay('dictated', raw, 'into the open note');
+    return;
+  }
+  if (!hit) {
+    // Named in the vocabulary of the page actually on screen: an interview has
+    // no sections to approve, and offering the review's verbs there teaches the
+    // reviewer the wrong three words.
+    voiceSay('heard', raw, REVIEW_DATA
+      ? 'no command — try "approve", "request changes …", "next"'
+      : 'no command — try "question …", "next", or press dictate to answer aloud');
+    return;
+  }
+  voiceSay('heard', raw, runVoiceAct(hit.rule, remainderOf(raw, hit.words)));
+}
+
+// Every branch RETURNS what it did, in the reviewer's words, and the strip
+// prints it. A verb that acted silently would be indistinguishable from one
+// that was misheard.
+function runVoiceAct(rule, rest) {
+  if (rule.act === 'stop') { stopVoice('you said so'); return 'stopped listening'; }
+  const pop = document.querySelector('.comment-popover.is-open');
+  if (rule.act === 'save') {
+    if (pop) { pop.querySelector('.cmt-save').click(); return 'saved the comment'; }
+    blurNoteField(); return 'nothing staged — closed the note';
+  }
+  if (rule.act === 'cancel') {
+    if (pop) { pop.querySelector('.cmt-cancel').click(); return 'discarded the comment'; }
+    blurNoteField(); return 'nothing staged — closed the note';
+  }
+  if (REVIEW_DATA) return runReviewVoiceAct(rule, rest);
+  if (QA_DATA)     return runQAVoiceAct(rule, rest);
+  return 'nothing on screen to command';
+}
+
+function runReviewVoiceAct(rule, rest) {
+  /* "submit" is an alias for the RECAP, never for submitting. Ending the round
+     is the one action this page already gates behind an overlay and a confirm
+     click, and a spoken word does not get to skip a gate the mouse cannot. */
+  if (rule.act === 'recap') { openRecap(); return 'opened the recap — confirm there to submit'; }
+  const secs = REVIEW_DATA.sections;
+  const id = rState.active;
+  /* Approving or skipping the LAST open card leaves nothing active, and every
+     verb below needs a card. On a keyboard that is a shrug — you click one. A
+     reviewer working hands-free has no click, so without this the answer to
+     every remaining utterance is "no section is open", forever, including the
+     verb they would say to get out. So the first verb spoken into that state
+     REOPENS where they were and does nothing else: an ambiguous target is
+     worth a second utterance, and approving a card nobody can see is not. */
+  if (!id) return voiceReopen();
+  _voiceLastCard = id;
+  const n = secs.findIndex(s => s.id === id) + 1;
+  if (rule.act === 'approve') {
+    // Same refusal the approve button carries, said out loud: a section
+    // holding live comments is not one anybody can sign off.
+    if (activeComments(id).length) return 'section ' + n + ' has open comments — settle them first';
+    approveSection(id);
+    return 'approved section ' + n;
+  }
+  if (rule.act === 'next') { skipReviewCard(id); return 'moved on from section ' + n; }
+  if (rule.act === 'back') {
+    const prev = secs[(secs.findIndex(s => s.id === id) - 1 + secs.length) % secs.length];
+    activateReviewCard(prev.id);
+    return 'back to section ' + (secs.indexOf(prev) + 1);
+  }
+  if (rule.act === 'comment') return stageVoiceComment(id, rule.type, rest);
+  return 'no command';
+}
+
+// Reopen the last card a spoken verb touched — or the first one, when speech
+// has not touched any yet. Carried sections have no accordion to open, so this
+// walks forward to one that does rather than reporting success on a card that
+// never appears.
+function voiceReopen() {
+  const secs = REVIEW_DATA.sections;
+  const start = Math.max(0, secs.findIndex(s => s.id === _voiceLastCard));
+  const order = [...secs.slice(start), ...secs.slice(0, start)];
+  const hit = order.find(s => {
+    const card = el('rcard-' + s.id);
+    return card && !card.classList.contains('is-carried');
+  });
+  if (!hit) return 'nothing left open — use the recap to submit';
+  _voiceLastCard = hit.id;
+  activateReviewCard(hit.id);
+  return 'reopened section ' + (secs.indexOf(hit) + 1) + ' — say the verb again';
+}
+
+/* The load-bearing half. Opens the composer, drops the transcript in its box,
+   leaves the caret there — and stops. The reviewer reads what the recognizer
+   heard and says "save" (or clicks it) to make it a comment. */
+function stageVoiceComment(id, type, rest) {
+  openCommentPopover(id, { type });
+  const pop = el('rpop-' + id);
+  const ta = pop && pop.querySelector('.cmt-pop-note');
+  if (!ta) return 'could not open the composer';
+  // Report what the box actually BECAME, not what was asked for: `suggest
+  // wording` has no chip in diff mode, so the composer stays on `changes` and
+  // saying otherwise would be a lie about the record being written.
+  const became = pop.dataset.type;
+  if (rest) insertDictation(ta, rest);
+  ta.focus();
+  return 'staged ' + (/^[aeiou]/.test(became) ? 'an ' : 'a ') + became
+       + ' comment — say "save" to keep it';
+}
+
+function runQAVoiceAct(rule, rest) {
+  if (rule.act === 'recap') return 'the interview has no recap gate';
+  const qs = QA_DATA.questions;
+  const id = qState.active;
+  // Confirming the last question closes everything, the same dead end
+  // `voiceReopen` exists for on the review page — and the same way out.
+  if (!id) {
+    const start = Math.max(0, qs.findIndex(q => q.id === _voiceLastCard));
+    _voiceLastCard = qs[start].id;
+    activateQACard(qs[start].id);
+    return 'reopened question ' + (start + 1) + ' — say the verb again';
+  }
+  _voiceLastCard = id;
+  const n = qs.findIndex(q => q.id === id) + 1;
+  // The interview's own verb for "I am done here" is confirm, and it is the
+  // same move as skip — `advanceQA` is what both buttons call.
+  if (rule.act === 'next' || rule.act === 'approve') { advanceQA(id); return 'moved on from question ' + n; }
+  if (rule.act === 'back') {
+    const prev = qs[(qs.findIndex(q => q.id === id) - 1 + qs.length) % qs.length];
+    activateQACard(prev.id);
+    return 'back to question ' + (qs.indexOf(prev) + 1);
+  }
+  if (rule.act === 'comment') {
+    const ta = el('qnote-' + id);
+    if (!ta) return 'this question has no note field';
+    if (rest) insertDictation(ta, rest);
+    ta.focus();
+    return 'added to question ' + n + '’s note';
+  }
+  return 'no command in the interview';
+}
+
+/* ─── The switch ──────────────────────────────────────────── */
+function voiceAcknowledged() {
+  try { return localStorage.getItem(VOICE_ACK_KEY) === 'ack'; } catch (e) { return false; }
+}
+
+/* Disclosed once, and disclosed rather than buried. The browser's recognizer
+   is a network service: viva itself stays keyless, hosts nothing and stores no
+   audio, but the audio does leave the machine, and "local" is a promise this
+   page makes. The reviewer decides with the fact in front of them. */
+function showVoiceNotice(after) {
+  const strip = el('voice-strip');
+  if (!strip) return;
+  strip.style.display = '';
+  strip.innerHTML = '<span class="vs-state">voice</span>'
+    + '<span class="voice-notice">Your browser’s speech recognition sends audio to its vendor '
+    + '(Google, in Chrome). viva itself stays keyless and keeps no recording.'
+    + '<button type="button" id="voice-ack">start listening</button>'
+    + '<button type="button" id="voice-nack">not now</button></span>';
+  el('voice-ack').onclick = () => {
+    try { localStorage.setItem(VOICE_ACK_KEY, 'ack'); } catch (e) { /* holds for this tab */ }
+    beginVoice(after);
+  };
+  el('voice-nack').onclick = () => hideVoiceStrip();
+  el('voice-ack').focus();
+}
+
+function startVoice(after) {
+  if (!voiceSupported()) return;
+  if (_voiceOn) { if (after) after(); return; }
+  if (!voiceAcknowledged()) { showVoiceNotice(after); return; }
+  beginVoice(after);
+}
+
+function beginVoice(after) {
+  _voiceOn = true;
+  _voiceRestarts = 0;
+  paintVoiceToggle();
+  ensureRecognizer();
+  try { _rec.start(); } catch (e) { /* already starting; onstart still fires */ }
+  voiceSay('listening', '', 'say "approve", "request changes …", "next" — Escape or "stop" to end');
+  if (after) after();
+}
+
+function stopVoice(why) {
+  const wasOn = _voiceOn;
+  _voiceOn = false;                       // read by onend — set BEFORE stop()
+  paintVoiceToggle();
+  if (_rec) { try { _rec.stop(); } catch (e) { /* never started */ } }
+  if (wasOn) voiceSay('off', '', why || 'microphone off');
+}
+
+function toggleVoice() {
+  if (_voiceOn) stopVoice('you turned it off'); else startVoice();
+}
+
+function ensureRecognizer() {
+  if (_rec) return;
+  _rec = new VoiceCtor();
+  _rec.continuous = true;
+  _rec.interimResults = true;
+  _rec.lang = document.documentElement.lang || 'en-US';
+
+  _rec.onresult = e => {
+    _voiceRestarts = 0;                   // real speech: the storm guard resets
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) handleUtterance(r[0].transcript);
+      else interim += r[0].transcript;
+    }
+    if (interim.trim()) voiceInterim(interim.trim());
+  };
+
+  _rec.onerror = ev => {
+    // A refused microphone is terminal — restarting just re-refuses. Everything
+    // else (`no-speech`, `aborted`, `network`) is transient and `onend`, which
+    // always follows, is the one place that decides whether to come back.
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      stopVoice('the browser refused microphone access');
+    }
+  };
+
+  _rec.onend = () => {
+    if (!_voiceOn) return;                // the reviewer's switch wins
+    /* A "continuous" recognizer is really a restarted one — Chrome ends the
+       session on its own after a silence. The counter is the storm guard: a
+       recognizer that cannot stay up ends immediately every time, and without
+       a ceiling that is an invisible infinite loop. It resets on every result,
+       so a long review with real speech in it never reaches the ceiling. */
+    if (_voiceRestarts >= 8) { stopVoice('the recognizer kept dropping'); return; }
+    _voiceRestarts++;
+    setTimeout(() => { if (_voiceOn) { try { _rec.start(); } catch (e) {} } }, 250);
+  };
+}
+
+function paintVoiceToggle() {
+  const btn = el('voice-toggle');
+  if (!btn) return;
+  btn.textContent = 'voice: ' + (_voiceOn ? 'listening' : 'off');
+  btn.classList.toggle('is-live', _voiceOn);
+  /* The label states which state is ON, so the accessible name has to say what
+     the button DOES — the same rule the theme toggle follows, for the same
+     reason: otherwise a screen reader hears a state and cannot tell it from an
+     action. */
+  btn.setAttribute('aria-label', _voiceOn
+    ? 'Voice input is listening. Activate to stop listening.'
+    : 'Voice input is off. Activate to start the oral examination.');
+  document.querySelectorAll('.mic-btn').forEach(m => m.classList.toggle('is-live', _voiceOn));
+}
+
+function initVoice() {
+  // No control where there is no recognizer: a button that cannot work is
+  // worse than no button, and every caller already asks `voiceSupported()`
+  // before drawing its own.
+  if (!voiceSupported()) return;
+  el('voice-toggle').style.display = '';
+  paintVoiceToggle();
+  el('voice-toggle').addEventListener('click', () => toggleVoice());
+}
+initVoice();
+/* ═══ End voice ══════════════════════════════════════════════════════════ */
+
 el('prefs-toggle').addEventListener('click', () => openPrefsPanel(el('prefs-toggle')));
 el('prefs-close').addEventListener('click', closePrefsPanel);
 el('prefs-overlay').addEventListener('click', e => {
@@ -6368,6 +6959,16 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  /* Escape stops listening from ANYWHERE, and like ⌘K it sits ahead of the
+     TEXTAREA/INPUT guard on purpose — that is the whole point of it. Staging a
+     spoken comment puts the caret in a textarea, so every key below this line
+     is unreachable exactly when the microphone is hot and the reviewer most
+     wants it off. Never over the two modals that own Escape themselves. */
+  if (e.key === 'Escape' && voiceIsOn()
+      && !prefsIsOpen() && !(REVIEW_DATA && recapIsOpen())) {
+    e.preventDefault(); stopVoice('you pressed Escape'); return;
+  }
+
   const tag = document.activeElement?.tagName;
   if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
@@ -6382,6 +6983,14 @@ document.addEventListener('keydown', e => {
   // .pref-row — neither TEXTAREA nor INPUT — so the guard above this block
   // doesn't catch it either; this is the only thing that does.
   if (prefsIsOpen()) return;
+
+  /* `v` is a MODE toggle, so it belongs in the theme/palette tier rather than
+     with `a`/`c`/`i`: it is not about the card under the reader, it works in
+     the interview as well as the review, and gating it on `rState.active`
+     would make it dead on a page with nothing expanded. */
+  if (e.key === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey && voiceSupported()) {
+    e.preventDefault(); toggleVoice(); return;
+  }
 
   if (REVIEW_DATA) {
     if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
@@ -6568,6 +7177,11 @@ Promise.all([
     # frontend would fail open the same silent way, in the surface that draws
     # `checks N/M`, so the frontend reads the registry itself.
     "__CHECK_KINDS__", json.dumps(list(schema.CHECK_KINDS))
+).replace(
+    # The spoken grammar, injected for the same reason and in the same shape:
+    # one table, in `_VOICE_RULES` above, already sorted longest-phrase-first so
+    # the browser can take the first match and be right.
+    "__VOICE_RULES__", json.dumps(list(_VOICE_RULES))
 )
 
 _HTML_BYTES = HTML.encode()
