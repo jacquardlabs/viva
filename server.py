@@ -109,7 +109,10 @@ _VOICE_VERBS = (
     {"act": "comment", "type": schema.SUGGESTION, "carries": True,
      "phrases": ("suggest wording", "suggest", "replace with")},
     # Bare verbs — whole-utterance only.
-    {"act": "approve", "carries": False, "phrases": ("approve", "approved", "pass")},
+    # No "pass": in review vocabulary it is ambiguous in the wrong direction —
+    # "I'll pass on this section" means skip, not sign off — and this is the one
+    # bare verb that writes a verdict.
+    {"act": "approve", "carries": False, "phrases": ("approve", "approved")},
     {"act": "next", "carries": False, "phrases": ("next", "skip", "move on")},
     {"act": "back", "carries": False, "phrases": ("back", "previous", "go back")},
     {"act": "save", "carries": False, "phrases": ("save", "done", "commit")},
@@ -6426,9 +6429,41 @@ function hideVoiceStrip() {
 }
 
 /* ─── Routing one utterance ───────────────────────────────── */
+// Is there still a round on screen to command? The processing and complete
+// views leave `REVIEW_DATA` set and `rState.active` null, which is exactly the
+// state `voiceReopen` treats as "reopen where you were" — so without this a
+// spoken verb walks last round's cards while the page reads "Claude is
+// revising…".
+function voiceRoundIsLive() {
+  const shown = id => { const n = el(id); return n && n.style.display !== 'none'; };
+  return !shown('processing-view') && !shown('complete-view');
+}
+
 function handleUtterance(raw) {
   const norm = normalizeUtterance(raw);
   if (!norm) return;
+  /* The terminal and modal guards, in the keydown handler's own order and for
+     its reason (#174). Speech is a SECOND input path into the same verdict
+     state, so every guard that stops a keystroke has to stop an utterance too
+     or the hole it closed is open again through the microphone. The two
+     TERMINAL states also turn the microphone off, at their own source — a hot
+     mic with nothing left to command is worse than an unresponsive one.
+     Between rounds is not terminal: the next round lands in this same tab, so
+     the utterance is refused and the microphone stays on rather than making
+     the reviewer re-arm it every round. */
+  if (deadSessionIsOpen()) { stopVoice('the session ended'); return; }
+  if (!voiceRoundIsLive()) {
+    voiceSay('heard', raw, 'no round on screen yet — nothing to command');
+    return;
+  }
+  if (prefsIsOpen()) {
+    voiceSay('heard', raw, 'the preferences panel is open — close it first');
+    return;
+  }
+  if (REVIEW_DATA && recapIsOpen()) {
+    voiceSay('heard', raw, 'the recap is open — confirm or close it by hand');
+    return;
+  }
   const hit = norm ? matchVoiceRule(norm) : null;
   const field = activeNoteField();
   if (field) {
@@ -6767,6 +6802,11 @@ function showDeadSession() {
   closeRecap();
   closePrefsPanel();
   closePalette();
+  // And the microphone. `inert` on #paper takes the pointer and Tab away from
+  // the voice toggle, and the document keydown listener returns above the
+  // Escape-stop branch — so a mic left hot here is one the reviewer cannot
+  // reach any control to turn off.
+  stopVoice('the session ended');
   // The one command this tab can honestly name. `doc_file` is a real target
   // only in review mode — parse_diff.py writes review_target.py's LABEL there
   // ("PR #187", "working tree"), and a qa payload has no doc at all — so
@@ -6878,6 +6918,7 @@ function connectSSE() {
     es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
     closePrefsPanel();  // no full-screen backdrop survives into complete-view
+    stopVoice('the review is signed off');  // nothing left to command
     el('processing-view').style.display = 'none';
     clearProcessingTimer();
     el('review-view').style.display     = 'none';

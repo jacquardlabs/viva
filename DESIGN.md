@@ -1105,6 +1105,15 @@ field anyway, or the microphone is hot with the caret in a textarea and no spoke
 word gets you out. <kbd>Esc</kbd> sits ahead of the `TEXTAREA`/`INPUT` guard for
 the same reason ⌘K does, and never over the prefs panel or the recap gate.
 
+**Guard parity is a standing obligation.** Speech is a *second* input path into
+the same verdict state, and it does not go through the `keydown` handler — so
+every guard added there has to be repeated at the top of `handleUtterance`, in
+the same order, or the hole it closed reopens through the microphone. Today that
+is the dead-session swallow (#174), the prefs panel, the recap gate, and the
+processing/complete views. The two terminal states also call `stopVoice` at their
+own source: with `#paper` inert and the keydown handler returning early, a
+microphone left hot there is one no control can reach.
+
 **The grammar lives in `server.py`'s `_VOICE_RULES`**, injected into the page the
 way `__CHECK_KINDS__` is — one table, checked by a test, rather than a hand-kept
 copy in JS that drifts silently. It is *not* in `scripts/schema.py`: the browser

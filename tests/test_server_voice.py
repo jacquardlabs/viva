@@ -148,6 +148,37 @@ def test_escape_reaches_the_switch_from_inside_a_textarea():
     print("  ok  test_escape_reaches_the_switch_from_inside_a_textarea")
 
 
+def test_the_router_carries_the_keydown_handler_s_guards():
+    """Speech is a SECOND input path into the same verdict state.
+
+    `keydown` opens with `if (deadSessionIsOpen()) return;` and swallows every
+    card shortcut under the prefs panel and the recap gate (#174). Utterances do
+    not go through that handler, so each of those guards has to be repeated here
+    or the hole it closed is open again through the microphone: "approve" under
+    a full-screen scrim, or a spoken verb walking last round's cards while the
+    page reads "Claude is revising…".
+    """
+    block = _voice_block()
+    route = block.index("const hit = norm ? matchVoiceRule(norm) : null;")
+    for guard in ("deadSessionIsOpen()", "voiceRoundIsLive()", "prefsIsOpen()",
+                  "recapIsOpen()"):
+        at = block.index(guard)
+        assert at < route, (
+            "%s must be checked BEFORE an utterance is routed, the way the "
+            "keydown handler checks it before a keystroke" % guard)
+    # The two TERMINAL states turn the microphone off at their own source: with
+    # #paper inert and the keydown handler returning early, a mic left hot there
+    # is one no control can reach.
+    assert "stopVoice('the session ended');" in HTML
+    assert "stopVoice('the review is signed off');" in HTML
+    dead = HTML.index("function showDeadSession()")
+    assert HTML.index("stopVoice('the session ended');", dead) < HTML.index("\n}\n", dead) + 400
+    # Between rounds is NOT terminal — the next round lands in this same tab, so
+    # the utterance is refused and the microphone stays on.
+    assert "voiceSay('heard', raw, 'no round on screen yet — nothing to command');" in block
+    print("  ok  test_the_router_carries_the_keydown_handler_s_guards")
+
+
 def test_v_is_a_mode_toggle_not_a_card_shortcut():
     handler = HTML[HTML.index("document.addEventListener('keydown'"):]
     v = handler.index("e.key === 'v'")
@@ -228,6 +259,7 @@ def main():
     test_nothing_starts_until_the_reviewer_starts_it()
     test_audio_leaving_the_machine_is_disclosed_once()
     test_escape_reaches_the_switch_from_inside_a_textarea()
+    test_the_router_carries_the_keydown_handler_s_guards()
     test_v_is_a_mode_toggle_not_a_card_shortcut()
     test_the_strip_announces_readings_but_not_partial_guesses()
     test_controls_meet_the_page_s_own_a11y_rules()
