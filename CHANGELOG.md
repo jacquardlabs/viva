@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v2.8.0 (2026-09-04)
+
+### Bug Fixes
+
+- /next-round refuses a round whose mode disagrees with the launch mode
+  ([#219](https://github.com/jacquardlabs/viva/pull/219),
+  [`fd23e5d`](https://github.com/jacquardlabs/viva/commit/fd23e5d4797a338a541988502ed8c08a27b1ee7f))
+
+- **diff**: An approval survives a line shift above it
+  ([#220](https://github.com/jacquardlabs/viva/pull/220),
+  [`84eea4d`](https://github.com/jacquardlabs/viva/commit/84eea4de462d68718349bec5e33ae8480ea007d5))
+
+### Features
+
+- Loop.py drives the interview and the hand-off
+  ([#221](https://github.com/jacquardlabs/viva/pull/221),
+  [`c942095`](https://github.com/jacquardlabs/viva/commit/c9420953ef000836ccdc3bb3b18bee6570dc34ac))
+
+
 ## v2.7.0 (2026-09-04)
 
 ### Documentation
