@@ -407,6 +407,27 @@ reviewer reached a hunk carrying a note. `docNotes` reads `rState`, so a
 comment made a moment ago still counts, which is the property the DOM read was
 there for.
 
+**A margin cell taller than its prose is correct, not a bug (#191).** Each
+markdown block is its own single-row grid with `align-items: start`; when
+`.rm` outgrows `.rp`, the row's height is `.rm`'s, and `.doc .row + .row`'s
+10px margin starts the next paragraph below that stretched row — a visible
+gap in the prose column. Adjacency beats density: the note sits beside the
+exact sentence it questions, which is the whole reason comments live in the
+margin rather than below the passage, and the gap is the price of that
+contract. It is also the same **per-round, not per-row** collapse discipline
+the wasted-space rule already keeps — the row's height is fixed once, from
+the round's content, and never renegotiated against what the prose column has
+room for as the reader scrolls past it. Two shapes were rejected. Letting the
+prose flow under a tall `.rm` — starting the next paragraph as soon as the
+prose column has room, independent of the margin — breaks the strict row
+alignment the segmented rule and the check gutter both key on: both address a
+row by its position in the grid, and a prose column that outruns its margin
+desyncs that address. Capping `.rm` with an internal scroll is rejected
+outright, not weighed: #186 removed the nested scroll inside `.section-content`
+on purpose, and `tests/_server_harness.py`'s `assert_catalog_ground` asserts
+the old `max-height: 60vh` rule stays gone. A scrolling margin cell is that
+same shape back, in a different selector.
+
 The 28px alley rides in `.rg`'s `padding-right` and `.rm`'s `padding-left`,
 never in `column-gap`, because a gap is drawn between zero-width tracks too.
 With the margin collapsed, `.doc.no-margin .row-head` drops to two tracks at
@@ -417,27 +438,6 @@ hosts. Below 920px the third column has no room to be a margin: notes fall
 under their passage and the gutter narrows to a 30px glyph rail. Every control
 grows to a 44px touch target there, and the bottom bar's row is allowed to
 wrap.
-
-**A margin cell taller than its prose is correct, not a bug (#191).** Each
-markdown block is its own single-row grid with `align-items: start`; when
-`.rm` outgrows `.rp`, the row's height is `.rm`'s, and `.doc .row + .row`'s
-10px margin starts the next paragraph below that stretched row — a visible
-gap in the prose column. Rule it correct. Adjacency beats density: the note
-sits beside the exact sentence it questions, which is the whole reason
-comments live in the margin rather than below the passage, and the gap is
-the price of that contract. It is also the same **per-round, not per-row**
-collapse discipline the wasted-space rule already keeps — the row's height is
-fixed once, from the round's content, and never renegotiated against what the
-prose column has room for as the reader scrolls past it. Two shapes were
-rejected. Letting the prose flow under a tall `.rm` — starting the next
-paragraph as soon as the prose column has room, independent of the margin —
-breaks the strict row alignment the segmented rule and the check gutter both
-key on: both address a row by its position in the grid, and a prose column
-that outruns its margin desyncs that address. Capping `.rm` with an internal
-scroll is rejected outright, not weighed: #186 removed the nested scroll
-inside `.section-content` on purpose, and `tests/_server_harness.py`'s
-`assert_catalog_ground` asserts the old `max-height: 60vh` rule stays gone.
-A scrolling margin cell is that same shape back, in a different selector.
 
 Q&A sets both classes as **constants** rather than computing them: a question
 carries no producer flags to rail, and the margin always holds its verbs.
