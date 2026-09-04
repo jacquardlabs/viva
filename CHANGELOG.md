@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.9.0 (2026-09-04)
+
+### Features
+
+- Loop.py drives hunk review, and the diff finish is gated
+  ([#222](https://github.com/jacquardlabs/viva/pull/222),
+  [`427361d`](https://github.com/jacquardlabs/viva/commit/427361d9ac0f01173f5bfbea9a2c6d9fcb7d4d2f))
+
+
 ## v2.8.0 (2026-09-04)
 
 ### Bug Fixes
