@@ -1,28 +1,13 @@
 #!/usr/bin/env python3
-"""Integration test: per-section cumulative revision count (issue #141).
+"""Integration test: per-section cumulative revision count (#141).
 
-Server-side, wire-only derivation — `GET /input` and the `round` SSE event
-(both routed through `server._with_revision_counts`) attach `revision_count`
-to a section only once its cumulative revision count this session reaches
-2+, the threshold `.rev-tri`'s `.rev-mult` multiplier renders at. A section
-revised exactly once keeps the plain `△ NN` triangle, no count. Computed by
-re-reading `.viva/review-input-r{N}.json` round files already on disk (plus
-the just-arrived round's own in-hand data); never written back to any round
-file or added to `ReviewSection` — this test's "no new persisted state"
-check is the acceptance criterion turned into an assertion.
+`GET /input` and the `round` SSE event attach `revision_count` to a section
+only once its cumulative count this session reaches 2+ (the `.rev-mult`
+threshold); computed by re-reading round files on disk, never persisted.
 
-A historical round file this session can't actually read (missing,
-unparseable JSON, or valid JSON with a non-list `sections`) makes the
-returned count a lower bound, not silently zero: every section with a
-`diff` this round also gets `revision_count_partial: True` — not only ones
-whose count clears the 2+ threshold, since the unreadable round could just
-as easily have been the one that would have pushed a below-threshold
-section over it. The client renders the at-threshold case as "≥N revisions,
-partial history" and the below-threshold case as a number-free "partial
-history, revision count unavailable", so a possible undercount is never
-silently unsignaled either way (corrupt-round-file-silent-undercount). The
-non-list-`sections` shape additionally must not crash the request that
-serves it (historical-round-sections-nonlist-crash).
+An unreadable historical round file (missing, corrupt JSON, or non-list
+`sections`) makes the count a lower bound rather than silently zero — every
+section revised this round gets `revision_count_partial: True`, and must not crash.
 """
 import json
 import sys
@@ -76,9 +61,7 @@ def _test_cumulative_and_sse() -> None:
         assert all("revision_count" not in s for s in data["sections"]), \
             f"round 1 must carry no revision_count: {data['sections']}"
 
-        # Round 2: s1 gets its first diff (cumulative 1). Acceptance
-        # criterion: a section revised once shows the plain triangle, no
-        # count — so revision_count must stay absent.
+        # Round 2: s1 gets its first diff (cumulative 1) — plain triangle, no count.
         r2_sections = [
             {"id": "s1", "title": "Goals", "content": "goals v2",
              "diff": [{"op": "+", "text": "goals v2"}]},
@@ -91,8 +74,7 @@ def _test_cumulative_and_sse() -> None:
         s1 = by_id(data, "s1")
         assert "revision_count" not in s1, f"cumulative 1 must show no count: {s1}"
 
-        # Round 3: s1 gets a second diff (cumulative 2) — the multiplier
-        # threshold. s2 has never been revised and must stay uncounted.
+        # Round 3: s1 gets a second diff (cumulative 2) — the multiplier threshold.
         r3_sections = [
             {"id": "s1", "title": "Goals", "content": "goals v3",
              "diff": [{"op": "+", "text": "goals v3"}]},
@@ -108,34 +90,20 @@ def _test_cumulative_and_sse() -> None:
         assert "revision_count" not in s2, \
             f"never-revised section must carry no count: {s2}"
 
-        # No new persisted state: every round file on disk is byte-identical
-        # to what was written — the server never writes revision_count (or
-        # anything else) back to a round file.
+        # No new persisted state: round files stay byte-identical to what was written.
         assert (viva / "review-input-r1.json").read_text() == r1_text
         assert (viva / "review-input-r2.json").read_text() == r2_text
         assert (viva / "review-input-r3.json").read_text() == r3_text
 
-        # Missing/corrupt historical round file contributes zero to the
-        # count rather than raising — but the result is a lower bound, not
-        # asserted as exact: corrupt round 2's file, then serve round 4.
-        # Without the corruption, cumulative would be 3 (r2's diff + r3's
-        # diff + r4's diff); with it, round 2 contributes nothing toward the
-        # number, and the server flags that number as incomplete
-        # (corrupt-round-file-silent-undercount) rather than presenting the
-        # deflated 2 as fact.
+        # A corrupt historical round file contributes zero rather than raising,
+        # but the resulting count is flagged as a lower bound, not asserted exact.
         (viva / "review-input-r2.json").write_text("{not json")
         r4_sections = [
             {"id": "s1", "title": "Goals", "content": "goals v4",
              "diff": [{"op": "+", "text": "goals v4"}]},
             {"id": "s2", "title": "Error Handling", "content": "errors v1"},
-            # s3's *first* diff lands in this same partial-history round —
-            # its cumulative count is only 1, below the multiplier
-            # threshold. The corrupted round (r2) could just as easily have
-            # been the round that pushed a section like this over 2, so it
-            # must still carry the partial flag even though it carries no
-            # `revision_count` — otherwise the multiplier vanishing
-            # entirely, with no signal at all, is the worse half of
-            # corrupt-round-file-silent-undercount this fix leaves open.
+            # s3's first diff lands here, below threshold, but must still
+            # carry the partial flag — the corrupted round could have pushed it over.
             {"id": "s3", "title": "Appendix", "content": "appendix v2",
              "diff": [{"op": "+", "text": "appendix v2"}]},
         ]
@@ -154,17 +122,11 @@ def _test_cumulative_and_sse() -> None:
         assert "revision_count" not in s3, \
             f"a section's first diff still shows no count below the 2+ threshold: {s3}"
         assert s3.get("revision_count_partial") is True, \
-            "a section below the count threshold must still flag partial history " \
-            f"when a historical round couldn't be read, or the multiplier's " \
-            f"disappearance goes unsignaled entirely: {s3}"
+            f"a section below threshold must still flag partial history: {s3}"
 
-        # The browser only fetches GET /input once at boot — every round
-        # after the first reaches it exclusively via the 'round' SSE event
-        # (`REVIEW_DATA = data` in the event handler, no refetch). The count
-        # has to ride that push too, or it silently vanishes on every round
-        # but the first. Connect before POSTing so this client is registered
-        # as an SSE listener (`_push_sse` only writes to already-connected
-        # clients) by the time the push fires.
+        # GET /input is only fetched once at boot; every round after reaches
+        # the client via the 'round' SSE event, so the count must ride that
+        # push too. Connect before POSTing so this client is already registered.
         stream = urllib.request.urlopen(base + "/events", timeout=5)
         time.sleep(0.05)  # let the handler thread finish registering us
         r5_sections = [
@@ -193,47 +155,31 @@ def _test_cumulative_and_sse() -> None:
         assert s1.get("revision_count_partial") is True, \
             f"SSE round push must carry the partial-history flag too: {s1}"
 
-        # Styling acceptance criteria: label convention (Fragment Mono size
-        # inherited, var(--text3), not the triangle's own orange) and no
-        # hardcoded hex (DESIGN.md Accessibility req #7).
+        # Styling: label uses var(--text3), not the triangle's orange; no hardcoded hex.
         page = get_text(base, "/")
         for needle in ('.rev-tri .rev-mult', 'class="rev-mult"',
                        'font-size: 9px; color: var(--text3)', '&times;'):
             assert needle in page, f"page missing: {needle}"
 
-        # The `2×` multiplier's only affordance is the `.rev-tri` title
-        # attribute, so it must name the cumulative count too, not just the
-        # round (rev-tri-tooltip-omits-count). Must not reuse the bare "N
-        # revisions" wording the sign-off stamp already uses for
-        # `rounds_total` (a different quantity) — assert the exact phrase
-        # rather than a substring that word would also satisfy.
+        # The `.rev-tri` title must name the cumulative count, distinct from
+        # the sign-off stamp's "N revisions" wording for rounds_total.
         assert 'content revisions this session' in page, \
             "rev-tri title must name the cumulative count, distinct from rounds_total's wording"
 
-        # When the server flags a section's count as a lower bound
-        # (`revision_count_partial`), the shipped client must be able to
-        # render that instead of asserting the deflated number as fact
-        # (corrupt-round-file-silent-undercount).
+        # The client must render the partial-history flag rather than
+        # asserting a deflated count as fact.
         assert 'revision_count_partial' in page, \
             "page must ship the client-side check for the partial-history flag"
         assert '≥${section.revision_count} revisions, partial history' in page, \
-            "rev-tri title must be able to render the partial-history signal, not just a bare count"
-        # A section below the 2+ threshold that still carries the partial
-        # flag (this test's s3) has no number to name — the client must
-        # still be able to say the history is incomplete rather than
-        # rendering a bare, uncaveated `△ NN`.
+            "rev-tri title must be able to render the partial-history signal"
+        # Below the 2+ threshold, there's no number to name — must still flag incomplete.
         assert 'partial history, revision count unavailable' in page, \
             "rev-tri title must be able to flag partial history even with no count to name"
 
 
 def _test_duplicate_titles_dedupe_per_round() -> None:
-    """duplicate-title-inflates-revision-count: two sections whose titles
-    normalize to the same `schema.section_key` (two `## Notes`) both carrying
-    a `diff` in the same round must count as ONE revision that round, not
-    two. `parse_sections.py` assigns `id` positionally with no title
-    uniquification, so this is a real, reachable shape — not a synthetic
-    edge case. Fresh server/tempdir, independent of `main()`'s history so
-    the expected counts don't depend on that suite's round sequence."""
+    """Two sections keying to the same `schema.section_key` (two `## Notes`)
+    revised in one round must count as ONE revision, not two."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -247,9 +193,7 @@ def _test_duplicate_titles_dedupe_per_round() -> None:
     with launch_server(viva / "review-input-r1.json", viva / "review-r1.json",
                        cwd=tmp) as base:
 
-        # Round 2: both same-keyed sections get a diff in the same round.
-        # A per-occurrence counter would double this to 2 (multiplier
-        # threshold); the correct per-round count is 1 (no multiplier yet).
+        # Round 2: both same-keyed sections get a diff — must count as 1, not 2.
         r2_sections = [
             {"id": "s1", "title": "Notes", "content": "notes v2 a",
              "diff": [{"op": "+", "text": "notes v2 a"}]},
@@ -266,8 +210,7 @@ def _test_duplicate_titles_dedupe_per_round() -> None:
         assert "revision_count" not in s2, \
             f"one round's duplicate-titled diffs must count as 1, not 2: {s2}"
 
-        # Round 3: same pair revised again in a second round. Cumulative
-        # must be 2 (one per round), not 4 (one per occurrence per round).
+        # Round 3: same pair revised again — cumulative must be 2, not 4.
         r3_sections = [
             {"id": "s1", "title": "Notes", "content": "notes v3 a",
              "diff": [{"op": "+", "text": "notes v3 a"}]},
@@ -286,15 +229,9 @@ def _test_duplicate_titles_dedupe_per_round() -> None:
 
 
 def _test_null_sections_history_does_not_crash() -> None:
-    """historical-round-sections-nonlist-crash: a historical round file that
-    parses as valid JSON but whose `sections` key is `null` (or any non-list)
-    is a different failure shape than a missing file or invalid JSON —
-    `hist.get("sections", [])` returns the `None` the key actually holds,
-    not the `[]` default, and iterating that raised `TypeError`, uncaught by
-    `_revision_counts`'s `except (OSError, ValueError)`, breaking the
-    request that served it rather than degrading. Treated the same as a
-    missing/corrupt file: contributes zero to the count and flags the
-    result as partial."""
+    """A historical round file with `sections: null` (valid JSON, wrong
+    shape) must not crash the request — `.get("sections", [])` returns the
+    stored `None`, not the default, and iterating it raised uncaught TypeError."""
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()
@@ -314,9 +251,7 @@ def _test_null_sections_history_does_not_crash() -> None:
         write_round(viva, 3, r3_sections)
         next_round(base, viva, 3, r3_sections)
 
-        # Round 2's file now parses fine as JSON, but its "sections" is
-        # null — valid JSON, not a parse failure, so this is the shape
-        # `except (OSError, ValueError)` alone cannot catch.
+        # Valid JSON, but "sections" is null — not caught by except (OSError, ValueError) alone.
         (viva / "review-input-r2.json").write_text(json.dumps({
             "mode": "review", "doc_file": "doc.md", "round": 2,
             "approved_ids": [], "sections": None,

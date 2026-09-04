@@ -1,30 +1,12 @@
 #!/usr/bin/env python3
 """Behavioral guard for the $VIVA_DIR resolve pipeline (#101 / #139).
 
-`tests/test_skill_registration.py` checks the file-layout invariants
-discovery depends on; it never executes the bash resolve block itself.
-This file does — it extracts the pipeline from all three source copies
-(both SKILL.md files plus README.md), asserts they're identical (so the
-hand-maintained copies can't silently drift), then runs the extracted
-pipeline via a real subprocess against constructed fixture directories.
-
-Three behaviors are under test, one per gap #139 closed:
-
-1. The `-path` glob is anchored to `*/jacquardlabs-marketplace/viva/*`.
-   The old `*/viva/*` matched any cached plugin carrying a `viva/` path
-   segment — not hypothetical: a `temp_git_*` checkout in the real cache
-   holds `.claude/skills/viva/SKILL.md` today.
-2. Selection is by **version**, not mtime. `ls -t` ties break by name, so
-   two cached versions stamped with the same mtime resolved to the
-   lexicographically smaller one — 1.24.0 over 2.0.2. Zero-padding each
-   dotted component and reverse-sorting also fixes the plain-lexical trap
-   in the other direction (1.24.0 must beat 1.9.0).
-3. The fail-loud hint names both install steps, not just the second.
-
-The pipeline is also required to produce nothing on an empty search root.
-It has no `xargs` left to mishandle empty stdin (the bug 31f90ea fixed with
-`xargs -0 -r`), but "resolves to empty rather than to some unrelated
-directory" is the invariant that mattered, so it stays pinned.
+Extracts the pipeline from all three source copies (both SKILL.md files
+plus README.md), asserts they're identical, then runs it via a real
+subprocess against constructed fixture directories. Covers #139's three
+gaps: an unanchored `-path` glob, mtime-based tie-breaking instead of
+version, and an incomplete fail-loud hint — plus resolving to nothing
+(not some unrelated directory) on an empty search root.
 """
 from __future__ import annotations
 
@@ -43,11 +25,8 @@ RESOLVE_SOURCES = [
     ROOT / "README.md",
 ]
 
-# Starts at the rationale comment on purpose: without it the next reader
-# "simplifies" the awk key back to `ls -t` and reopens #139's gap 2.
-# The discriminating tokens — the anchored -path, the awk split, `sort -r`,
-# `cut -f2-` — are all inside the span, so a copy that drifts on either the
-# anchor or the ordering fails test_all_copies_identical.
+# Starts at the rationale comment so a "simplified" `ls -t` reopens #139
+# gap 2 as a match failure, not silently.
 RESOLVE_RE = re.compile(
     r"# Highest version wins, not newest mtime.*?\n"
     r"# mtime, and `ls -t` then breaks the tie by name.*?\n"
@@ -118,10 +97,8 @@ def _run_resolve(search_root: Path) -> str:
 
 
 def _install(cache_root: Path, marketplace: str, version: str, mtime=None) -> Path:
-    """Write a fixture matching the real on-disk shape, confirmed against
-    ~/.claude/plugins/cache: <cache>/<marketplace>/viva/<version>/server.py.
-    The awk key reads the version off `$(NF-1)`, so a fixture with an extra
-    nesting level would pass for the wrong reason."""
+    """Write a fixture matching the real cache shape:
+    <cache>/<marketplace>/viva/<version>/server.py."""
     version_dir = cache_root / marketplace / "viva" / version
     version_dir.mkdir(parents=True)
     server = version_dir / "server.py"

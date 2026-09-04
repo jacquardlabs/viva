@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
 """Theme toggle — the reader's override of `prefers-color-scheme`.
 
-viva followed the OS and nothing else until the catalog ground landed, which
-made the question live: light is now the primary theme, so a reader on a
-dark-mode machine saw the derived side of the design with no way to reach the
-one it was drawn on.
-
-The toggle cycles system → light → dark → system, where "system" is the
-*absence* of `data-theme` rather than a third value, so an untouched page keeps
-behaving exactly as it did before this existed.
-
-The load-bearing test here is `test_dark_palettes_are_identical`. The dark
-palette is written twice — once under the media query, once under
-`[data-theme="dark"]` — because CSS cannot name a palette and apply it from two
-selectors without a preprocessor, and viva ships no build step. That duplication
-is only safe if something checks it, so this file parses both blocks and fails
-on a single drifted value. Everything else here guards the pieces that are easy
-to break silently: specificity (the override must beat the media query in BOTH
-directions), the pre-paint script (its absence is a flash, not an error), and
-the accessible name (which must say what the button does, not what it shows).
+Cycles system -> light -> dark -> system, where "system" is the *absence*
+of `data-theme`, not a third value. Dark is written twice (media query and
+`[data-theme="dark"]`, since CSS can't share a palette across selectors
+without a build step); `test_dark_palettes_are_identical` guards the two
+from drifting.
 """
 from __future__ import annotations
 
@@ -48,10 +35,8 @@ def _block_after(text: str, selector: str) -> str:
 def test_dark_palettes_are_identical() -> None:
     """The two dark blocks must declare the same tokens with the same values.
 
-    This is the test that licenses the duplication. If someone tunes the dark
-    ground in one place — the likeliest edit in this file — the toggle would
-    silently produce a different dark than the OS does, and only a reader who
-    used both paths would ever notice."""
+    Catches a dark palette tuned in only one place, which would make the
+    toggle silently produce a different dark than the OS does."""
     media = _tokens(_block_after(HTML, ':root:not([data-theme="light"])'))
     explicit = _tokens(_block_after(HTML, ':root[data-theme="dark"]'))
     assert media, "no tokens found in the prefers-color-scheme dark block"
@@ -69,12 +54,8 @@ def test_dark_palettes_are_identical() -> None:
 def test_override_beats_the_media_query_both_ways() -> None:
     """`[data-theme]` must win over `prefers-color-scheme`, in both directions.
 
-    Dark-on-light-OS works by specificity alone. Light-on-dark-OS does not:
-    the media block would still match, so it is scoped
-    `:not([data-theme="light"])` to stand down when the reader has chosen.
-    Without that `:not`, the toggle would appear to do nothing for exactly the
-    reader who most needs it — someone on a dark-mode machine trying to see the
-    primary theme."""
+    Light-on-dark-OS needs `:not([data-theme="light"])` on the media block;
+    without it the toggle would appear to do nothing on a dark-mode machine."""
     assert ':root:not([data-theme="light"])' in HTML, \
         "the dark media block must stand down when light is chosen explicitly"
     assert ':root[data-theme="dark"]' in HTML, \
@@ -89,10 +70,8 @@ def test_override_beats_the_media_query_both_ways() -> None:
 def test_theme_applies_before_first_paint() -> None:
     """The stored choice is read in <head>, ahead of the stylesheet.
 
-    A theme restored after the body renders paints the OS theme first and then
-    flips — the exact flash the toggle exists to remove. That failure is
-    invisible to every other test in this suite, so it is pinned by position:
-    the script must appear before the <style> block."""
+    A theme applied after the body renders paints OS-then-flips; pinned by
+    position since no other test in this suite would catch it."""
     head = HTML[:HTML.index('<style>')]
     assert "localStorage.getItem('viva-theme')" in head, \
         "the stored theme must be applied before first paint, in <head>"
@@ -106,9 +85,8 @@ def test_theme_applies_before_first_paint() -> None:
 def test_system_is_the_absence_of_the_attribute() -> None:
     """Cycling back to "system" removes the attribute and the stored key.
 
-    If "system" were stored as a third value, a reader who returned to it would
-    still be pinned to whatever the attribute said — following the OS means
-    having no opinion recorded at all."""
+    Storing "system" as a third value would leave a returning reader
+    pinned to whatever the attribute last said."""
     assert 'const THEME_CYCLE = [null, ' in HTML, \
         "the cycle must start from null (system), not a string"
     assert "delete document.documentElement.dataset.theme" in HTML, \
@@ -121,9 +99,8 @@ def test_system_is_the_absence_of_the_attribute() -> None:
 def test_toggle_is_reachable_and_labelled() -> None:
     """Keyboard-reachable, focus-visible, and named for what it does.
 
-    The visible label states the current theme; an accessible name that merely
-    repeated it would leave a screen-reader user unable to tell state from
-    action, so the name spells out the switch."""
+    The name must spell out the switch, not repeat the visible current-state
+    label, or a screen-reader user can't tell state from action."""
     assert 'id="theme-toggle"' in HTML, "no theme toggle in the markup"
     assert re.search(r'<button type="button" class="theme-toggle"', HTML), \
         "the toggle must be a real button — a div is not keyboard-reachable"

@@ -2,22 +2,12 @@
 """The register is reached at both steps that write prose, and stops where the
 reviewer's own wording starts.
 
-A `/viva-write` draft came back with the interview narrated in the doc text
-("(interview: yes, and track that it was used)", "decided this session"), the
-brief restated as a preamble, and a justification paragraph under every bullet
-— 2,400 words carrying 1,400 words of facts. Nothing in the flow said otherwise:
-step 4 asked for "where each fact came from" and the model read the interview
-as a source. `references/style.md` is the fix, and this file pins the seams
-that make it load-bearing rather than a file nobody is handed:
-
-  1. the draft step reads it and says the interview is not a source;
-  2. both rewrite steps read it — `loop.py wait` prints the path on a
-     `has-work` round, and each skill's rewrite step names it;
-  3. the register never overrides a `suggestion`'s verbatim wording, in its own
-     text and in the rewrite step that applies it.
-
-Static, like `test_server_orchestration.check_references_are_reachable`: the
-runtime half (the printed path exists on disk) is asserted there.
+`references/style.md` fixed a draft that narrated the interview in doc text,
+restated the brief as a preamble, and justified every bullet. Pins that the
+draft step reads it and disowns the interview as a source, both rewrite steps
+read it, and it never overrides a `suggestion`'s verbatim wording. Static —
+`test_server_orchestration.check_references_are_reachable` covers the runtime
+half (the printed path exists on disk).
 """
 from __future__ import annotations
 

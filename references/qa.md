@@ -160,9 +160,5 @@ review round's `/submit` both write to whatever `output` names; reusing the qa
 output path lets the first review `/submit` silently overwrite the answers just
 read.
 
-The server has no field marking a round as qa-originated — `ReviewInput`'s shape
-is unchanged by this hand-off. A server started `--mode qa` prints a distinct
-`viva · hand-off qa → review · <url>` stdout line the first time it receives a
-`sections`-shaped `/next-round`, which is the signal a terminal-watching caller
-has for "this is that session type." `docs/headless-contract.md` §7 is the full
-account.
+See `docs/headless-contract.md` §7 for the full wire-level account of this
+hand-off (the stdout signal, the absent qa-origin field).

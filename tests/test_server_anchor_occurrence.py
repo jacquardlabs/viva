@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
 """Anchor resolution is ordinal-aware, not first-match (#95).
 
-`offsetInSource` used to return `src.indexOf(text)` — the first occurrence in
-the section's markdown source, whatever the reviewer actually selected. A
-comment on a repeated phrase pointed at the wrong span; applied to a verbatim
-replacement (the suggested-edit story that builds on this) it is a wrong edit.
+`offsetInSource` used to return `src.indexOf(text)`, pointing a comment on a
+repeated phrase at the wrong span. The browser now counts the occurrence
+ordinal in the rendered HTML and resolves that same ordinal against the
+source, since markdown syntax the renderer strips can make the two diverge.
 
-The selection exists only in the rendered HTML, so the browser reads the
-occurrence ordinal there and resolves the *same* ordinal against the source.
-That ordinal rides out on the anchor as `occurrence` — a RENDERED ordinal, not
-a source one; the two sequences can diverge over markdown syntax the renderer
-strips, which is why `offset` can be -1 while `anchor.text` is still present in
-the source. The ordinal is what makes the on-screen highlight and the stored
-offset name one span.
-
-There is no JS harness in this repo, so this follows the precedent of
-`test_server_a11y.py` / `test_frontend_v2_phase1.py`: string-needle assertions
-against the shipped `server.HTML` constant. One needle pins each mirrored line
-of JS — the two helpers' loop bodies and `offsetInSource`'s fallback branch —
-and the Python mirrors below carry the behavioral cases. An edit to any of the
-three breaks its needle, which is the signal to update the mirror; without that
-pinning the cases would keep passing against JS they no longer describe.
+No JS harness in this repo, so this follows `test_server_a11y.py`'s
+string-needle pattern against `server.HTML`: one needle pins each mirrored
+JS loop/branch, and the Python mirrors below carry the behavioral cases — an
+edit to the JS breaks its needle, the signal to update the mirror.
 """
 import sys
 from pathlib import Path
@@ -36,10 +25,9 @@ HTML = server.HTML
 # the ordinal names a different span in the source than it did on screen.
 JS_COUNT_LOOP = "while (i >= 0 && i < limit) { n++; i = hay.indexOf(needle, i + 1); }"
 JS_NTH_LOOP = "while (i >= 0 && n > 0) { i = hay.indexOf(needle, i + 1); n--; }"
-# The narrowing the mirror's third function carries: an overrun ordinal falls
-# back only when the source holds exactly one match, never onto the first of
-# several. Pinned too — without it this branch could be deleted from the JS and
-# every behavioral case below would still pass against a stale mirror.
+# An overrun ordinal falls back only when the source holds exactly one
+# match, never onto the first of several. Pinned so this branch can't be
+# deleted from the JS without breaking a mirrored case below.
 JS_FALLBACK = (
     "if (at < 0 && n > 0 && nthIndexOf(src, text, 1) < 0) return nthIndexOf(src, text, 0);"
 )
@@ -108,10 +96,8 @@ def test_selection_reads_the_ordinal_from_the_rendered_content():
     # getRangeAt(0), not anchorNode/focusNode: a backwards drag reports its
     # endpoints reversed, which would count the prefix past the selection.
     assert "!sel.rangeCount" in HTML, "the handler must bail when there is no range to read"
-    # One scope, the section's own content. The prefix count used to be scoped
-    # to the diff pane the selection began in, because side-by-side's facing
-    # pane repeated every line; unified renders one column and there is no
-    # facing pane to scope out.
+    # One scope, the section's own content — unified rendering has no facing
+    # pane left to scope out.
     assert "if (!root.contains || !root.contains(range.startContainer)) return 0;" in HTML
     print("  ok  test_selection_reads_the_ordinal_from_the_rendered_content")
 
@@ -122,11 +108,8 @@ def test_highlight_follows_the_same_ordinal():
     # by the anchor's own occurrence.
     assert "function wrapFirst(" not in HTML, "wrapFirst must not remain"
     assert "function wrapNth(root, needle, cls, n)" in HTML
-    # One marking pass, not two. `renderHighlights` wrapped the anchors and
-    # `markAndPin` wrapped them again to hang the numbers, and two passes can
-    # disagree about which span is note 3; with the margin on every surface the
-    # first pass has no caller left. The ordinal contract is unchanged — it is
-    # `markAndPin` that carries it through to wrapNth now.
+    # One marking pass, not two — two passes could disagree on which span is
+    # note 3. markAndPin now carries the ordinal through to wrapNth alone.
     assert "function renderHighlights(" not in HTML, \
         "the second marking pass must not come back"
     assert ("const mark = wrapNth(content, a.text, 'cmt-hl-' + type, "

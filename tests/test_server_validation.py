@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
 """Integration test: the server validates at both caller-facing round boundaries.
 
-/submit: schema.validate_verdicts is wired into the POST /submit handler (gated
-on a `sections` payload so Q&A is unaffected). A structurally invalid verdict
-must be rejected with 400 before it can corrupt the ledger or output; a valid
-one passes.
-
-/next-round: schema.validate_review_input runs on EVERY body. It used to be
-gated on the body carrying a `sections` key, which meant a round nested one
-level deep (`{"round": {...}, "output": …}`) — an easy mistake for an agent
-driving the loop — was answered `{"ok":true}`, replaced the served round, and
-pushed a sections-less `round` SSE event that threw inside the client's
-initReview, leaving the tab permanently stuck on "the agent is revising" with no
-error surfaced on either side. Refusing it is only half the repair: the refused
-body must also leave the served round untouched, which is what this asserts.
+/submit: an invalid verdict is rejected 400 before it can corrupt the ledger
+or output. /next-round: validation runs on EVERY body (previously gated on a
+`sections` key, which let a nested round through and bricked the tab silently)
+and a refused body must leave the served round untouched.
 """
 import json
 import re
@@ -58,16 +49,13 @@ def _integration() -> None:
         assert post_status(base, "/next-round", nested) == 400, \
             "a round nested one level deep must be refused, not served"
 
-        # ...and the refusal must not have replaced the served round. This is
-        # the half that matters: a 400 is worthless if _input_data moved anyway.
+        # A 400 is worthless if _input_data moved anyway.
         served = get(base, "/input")
         assert served["round"] == 1, \
             "a refused /next-round must leave the served round untouched: %r" % (served,)
         assert [s["id"] for s in served["sections"]] == ["s1"], served["sections"]
 
-        # /next-round is review-shaped ONLY. A qa-shaped body bricked the tab
-        # identically (the `round` SSE handler does `REVIEW_DATA = data;
-        # QA_DATA = null` unconditionally), so it is refused here too.
+        # /next-round is review-shaped ONLY; a qa-shaped body bricked the tab too.
         assert post_status(base, "/next-round",
                            {"questions": [], "output": out2}) == 400, \
             "a questions-shaped body must be refused at /next-round"
@@ -79,19 +67,15 @@ def _integration() -> None:
         assert get(base, "/input")["round"] == 2, "the accepted round is served"
 
         # ── `round` at the read boundary: normalized, not required ──────────
-        # Absence is legal on the wire (the contract has always documented it
-        # optional) but is not harmless in the browser: it renders as the
-        # literal "REV undefined" and turns the author-answered freshness test
-        # into a NaN comparison that never matches. So the boundary DEFAULTS it
-        # rather than refusing a round the caller was entitled to send.
+        # Absent is legal on the wire; the boundary defaults it to 1 rather
+        # than refusing a round the caller was entitled to send.
         roundless = {k: v for k, v in r1.items() if k != "round"}
         assert post_status(base, "/next-round", dict(roundless, output=out2)) == 200, \
             "an unnumbered round is legal and must still be accepted"
         assert get(base, "/input")["round"] == 1, \
             "an absent round must be served as 1, never as null or missing"
 
-        # ...and a present-but-malformed one is still a hard failure, so the
-        # normalizer can never quietly paper over a typo'd value.
+        # A present-but-malformed round is still a hard failure.
         for bad in (None, "2", 0, True):
             assert post_status(base, "/next-round",
                                dict(r1, round=bad, output=out2)) == 400, \
@@ -99,8 +83,7 @@ def _integration() -> None:
         assert get(base, "/input")["round"] == 1, "and must not have replaced the round"
 
         # ── `mode` at /next-round: must agree with the launch mode (#126) ──
-        # Absent is legal and reads as "review", the browser's own default —
-        # so a review server still accepts a modeless round.
+        # Absent is legal and reads as "review".
         modeless = {k: v for k, v in r1.items() if k != "mode"}
         assert post_status(base, "/next-round",
                            dict(modeless, round=3, output=out2)) == 200, \
@@ -122,12 +105,9 @@ def _integration() -> None:
 
 
 def test_the_round_handler_guards_before_it_routes():
-    """The client's second half: no JS engine here, so this is a needle.
-
-    The server refusing at `/next-round` is the boundary. This asserts the
-    strand backstop behind it — the SSE `round` handler turns away a payload it
-    cannot render BEFORE it overwrites REVIEW_DATA, instead of throwing inside
-    initReview and freezing the tab on the processing view.
+    """No JS engine here, so this is a source needle: the SSE `round` handler
+    must turn away a payload with no sections[] BEFORE it overwrites
+    REVIEW_DATA, instead of throwing inside initReview and freezing the tab.
     """
     import server  # noqa: E402  (repo root is on sys.path)
     page = server.HTML

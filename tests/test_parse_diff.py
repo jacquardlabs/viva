@@ -272,16 +272,9 @@ def test_carry_forward_round_3_preserves_round_1_approvals():
 
 
 def test_summary_carries_only_onto_an_unchanged_hunk():
-    """The agent writes a hunk's one-line summary between parsing and arming
-    (#188), so round 2 must not make it re-write the ones that did not move —
-    and must not keep the one that did.
-
-    Both directions in one run: TWO_HUNK_DIFF's second hunk is edited between
-    rounds, the first is not. Byte-identical content is what makes it the same
-    hunk, so s1 keeps its summary and s2 arrives with no `summary` key at all —
-    absent, not stale, because a description of the previous edit under the new
-    lines is worse than no description.
-    """
+    """The agent writes a hunk's summary between parsing and arming (#188);
+    round 2 must keep it only on the unchanged hunk (s1), and drop it — not
+    leave it stale — on the one that was edited (s2)."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         patch = tmp / "diff.patch"
@@ -373,15 +366,9 @@ def _round_pair(tmp: Path, r1_patch: str, r1_edit, r1_verdicts: dict, r2_patch: 
 
 
 def test_carry_forward_survives_a_line_shift_above():
-    """#103 item 4b. The `@@` header is line 1 of a hunk's content, and it
-    moves whenever an earlier hunk in the file grows — so comparing whole
-    content dropped hunk 2's approval the moment hunk 1 gained a line, and the
-    human re-approved a change they had already approved, with no notice.
-
-    Round 1: s1 `changes`, s2 approved. The agent adds a line to hunk 1. Round
-    2: s2's body is byte-identical under a shifted header and must carry; s1's
-    body changed and must not.
-    """
+    """#103 item 4b: a `@@` header shift from an earlier hunk growing must not
+    drop an unrelated hunk's carried approval. s2's body is unchanged and must
+    carry; s1's body changed and must not."""
     with tempfile.TemporaryDirectory() as tmp:
         r2 = _round_pair(
             Path(tmp), TWO_HUNK_DIFF, lambda r1: None,

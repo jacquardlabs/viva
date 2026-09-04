@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
-"""viva's review-loop driver — the bookkeeping half of the launch → wait → act
-→ rewrite loop, so SKILL.md can carry judgment work only.
+"""viva's review-loop driver — bookkeeping for launch → wait → act → rewrite,
+so SKILL.md carries only judgment work.
 
 Nine subcommands: `interview`, `start`, `annotate`, `summarize`, `arm`, `wait`,
-`rearm`, `finish`, `abandon`. Issues: #104, #102, #103, #125, #177, #179.
-
-Two review modes, one driver. A doc (`start --doc`) is parsed by
-`parse_sections.py` and served `--mode review`; a diff (`start --target <pr|ref>`
-or `--kind worktree`) is captured by the argv `review_target.py` prints, parsed by
-`parse_diff.py`, and served `--mode diff`. Every subcommand after `start` reads
-the mode off the round file — the agent types neither a mode nor a round.
-
-Three rules this file exists to keep:
-  * The agent never types a round number. Every subcommand derives it from disk.
-  * The agent never waits on a server that is already gone — or on a round that
-    was parsed but never armed.
-  * The producer seam stays open. `start --parse-only`, `start` with a standing
-    preference, and `rearm --parse-only` all stop after parsing so the agent can
-    run its LLM pass; `annotate` then merges the flags and `arm` ships the round.
-    That order is load-bearing — the server reads the round file once, when it
-    is armed.
+`rearm`, `finish`, `abandon` (#104, #102, #103, #125, #177, #179). A doc
+(`--doc`) is parsed by `parse_sections.py` and served `--mode review`; a diff
+(`--target`/`--kind`) is captured and parsed by `parse_diff.py`, served
+`--mode diff`. Every subcommand after `start` derives the round and reads the
+mode off the round file — never typed.
 """
 import argparse
 import json
@@ -30,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
@@ -37,29 +26,24 @@ from typing import Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import schema  # noqa: E402  — the one permitted sibling import (CLAUDE.md)
 
-# `loop.py` lives in <plugin-root>/scripts/, so the plugin root is its parent's
-# parent. Everything else — sibling scripts, server.py, the reference files the
-# slim SKILL.md points at — is resolved from here rather than from a caller's
-# $VIVA_DIR, which is how the agent stops needing one.
+# Resolved from __file__, not a caller's $VIVA_DIR — the plugin root is this
+# file's grandparent.
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = PLUGIN_ROOT / "scripts"
 SERVER = PLUGIN_ROOT / "server.py"
-# Shared by both skills and printed by this driver, so they sit at the plugin
-# root rather than inside either one — `/viva-write` needing `producers.md` must
-# not mean reaching into `/viva-review`'s directory.
+# Shared by both skills, so it sits at the plugin root rather than inside
+# either one.
 REFERENCES = PLUGIN_ROOT / "references"
 
 _POLL_TRIES = 100        # × _POLL_INTERVAL ≈ 10s, for a server coming up or going down
 _POLL_INTERVAL = 0.1
 _WAIT_INTERVAL = 0.3     # verdict poll — human review time, not computation
 _HTTP_TIMEOUT = 10
-# `start`'s pre-flight probe only asks "is anyone home", and the answer comes
-# off loopback or not at all. Ten seconds of it would stall every start behind
+# Short: a pre-flight probe for "is anyone home" must not stall a start behind
 # a `server.url` whose process is long gone.
 _PREFLIGHT_TIMEOUT = 2
-# A diff round above this many hunks stops at a seam until every hunk carries a
-# one-line `summary` (`loop.py summarize`): below it the collapsed list is
-# already navigable, and the summaries are not worth the tokens (#188).
+# Above this many hunks, a diff round stops until every hunk carries a
+# one-line `summary` (`loop.py summarize`) — below it, not worth it (#188).
 SUMMARY_THRESHOLD = 10
 
 
@@ -77,17 +61,14 @@ def run(cmd, **kw) -> subprocess.CompletedProcess:
 
 
 def run_or_die(cmd, what: str, recovery: str = "") -> None:
-    """Every sibling call is checked. An unchecked one turns a failed ledger
-    write into a clean exit code, which is the failure mode this driver exists
-    to remove rather than relocate."""
+    """Every sibling call is checked, so a failed write can't exit clean."""
     if run(cmd).returncode != 0:
         tail = f" {recovery}" if recovery else ""
         die(f"{what} failed: {' '.join(str(c) for c in cmd)}.{tail}")
 
 
 def run_stdin_or_die(cmd, text: str, what: str, recovery: str = "") -> str:
-    """`run_or_die` for a sibling that reads its input on stdin and answers on
-    stdout — a bundle into a check, a sidecar into `annotate.py`."""
+    """`run_or_die` for a sibling reading stdin, answering on stdout."""
     proc = run(cmd, input=text, capture_output=True, text=True)
     if proc.returncode != 0:
         err = (proc.stderr or "").strip()
@@ -101,14 +82,13 @@ def run_stdin_or_die(cmd, text: str, what: str, recovery: str = "") -> str:
 def current_round(viva: Path) -> int:
     """Highest *parsed* round on disk — not necessarily the armed one; `wait`
     reconciles the two against the server. 0 when none."""
-    rounds = [int(p.stem[len("review-input-r"):])
-              for p in viva.glob("review-input-r*.json")
-              if p.stem[len("review-input-r"):].isdigit()]
-    return max(rounds, default=0)
+    rounds = [schema.parse_round_input_stem(p.stem)
+              for p in viva.glob(schema.round_input_glob())]
+    return max((n for n in rounds if n is not None), default=0)
 
 
 def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
-    return viva / f"review-input-r{n}.json", viva / f"review-r{n}.json"
+    return schema.round_file_paths(viva, n)
 
 
 def load_json(p: Path) -> dict:
@@ -118,16 +98,26 @@ def load_json(p: Path) -> dict:
 
 # ── liveness — probed, not stat'ed ────────────────────────────────────────────
 def server_url(viva: Path) -> Optional[str]:
+    """`.viva/server.url` is repo-supplied state, so its host is constrained to
+    loopback (mirrors `server.py`'s own Origin guard) — a repo committing a
+    `server.url` naming an attacker's host must not turn a probe or POST into
+    an SSRF against it."""
     f = viva / "server.url"
     if not f.exists():
         return None
-    return f.read_text().strip() or None
+    url = f.read_text().strip()
+    if not url:
+        return None
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+        die(f"{f} names {url!r}, which is not a loopback address. Refusing to "
+            f"contact it — delete the file and re-run `loop.py start`.")
+    return url
 
 
 def _request(req: urllib.request.Request, what: str, recovery: str) -> bytes:
-    """One error shape for every HTTP call. `HTTPError` is a `URLError`
-    subclass, so the server's own `{"error": ...}` body — which carries the
-    count the guard computed — reaches the agent instead of a traceback."""
+    """One error shape for every HTTP call — the server's `{"error": ...}`
+    body reaches the agent instead of a traceback."""
     try:
         with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
             return resp.read()
@@ -154,37 +144,31 @@ def post(base: str, path: str, payload: dict, what: str, recovery: str = "") -> 
 
 
 def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> Optional[dict]:
-    """The payload the server at `base` is serving, or None if nothing is
-    answering there. File existence proves neither liveness nor armed-ness:
-    SIGKILL, SIGHUP, and an OOM kill all skip the `finally` that unlinks
-    `server.url`.
-
-    This is the liveness question — is anyone home — and it is deliberately
-    separate from `probe_round` below, which asks what round they are serving.
-    A live *qa* server answers `/input` with an interview payload that has no
-    `round` key at all (the `/viva-write` seam, CLAUDE.md), so "no round" and
-    "no server" are different answers and only this one may be read as dead."""
+    """The payload the server at `base` is serving, or None if nothing answers.
+    File existence proves neither liveness nor armed-ness (a killed process
+    skips the `finally` that unlinks `server.url`). This is the liveness
+    question, deliberately distinct from `probe_round`: a live qa server
+    answers `/input` with no `round` key, so only this one may be read as dead."""
     try:
         with urllib.request.urlopen(base + "/input", timeout=timeout) as resp:
             payload = json.loads(resp.read())
     except (urllib.error.URLError, OSError, ValueError):
         return None
-    # A non-dict body is a server answering something that is not ours; it is
-    # alive, but no caller may `.get()` it.
+    # Alive but not ours: a non-dict body must not be `.get()`-ed by a caller.
     return payload if isinstance(payload, dict) else {}
 
 
 def probe_round(base: str) -> Optional[int]:
-    """The round the server is actually serving, or None if it is not answering
-    — or is answering with no round (a qa payload)."""
+    """The round actually being served, or None if not answering — or
+    answering with no round (a qa payload)."""
     payload = probe_input(base)
     return payload.get("round") if payload is not None else None
 
 
 def standing_preferences(viva: Path) -> list:
-    """`[]` means this reviewer has no standing preferences. A store that exists
-    but will not read is a different fact and says so on stderr — otherwise the
-    preference producer silently disengages for the whole session."""
+    """`[]` means no standing preferences. A store that exists but won't read
+    is a different fact and says so on stderr, rather than silently
+    disengaging the preference producer for the session."""
     store = viva / "preferences.json"
     if not store.exists():
         return []
@@ -208,18 +192,11 @@ def standing_preferences(viva: Path) -> list:
 
 
 def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
-    """Resolve a type name to its bundle. The name enters the system here.
-
-    A subprocess, not an import — `doc_types.py` is a sibling and `schema.py`
-    stays the one cross-import (CLAUDE.md). `--type` resolves before `start`
-    clears any state, so an unknown one costs nothing: recording a name that
-    resolves to nothing would strand the round's whole check set silently.
-
-    `fatal=False` is the resume path, where the name comes from the prior round
-    file rather than the command line. It warns instead: by then the scratch
-    carry-forward pair is already on disk, and a repo that dropped a
-    `.viva-types/` bundle between sessions must still be able to resume.
-    """
+    """Resolve a type name to its bundle — the name enters the system here.
+    A subprocess, not an import: `schema.py` stays the one cross-import
+    (CLAUDE.md). `fatal=False` is the resume path (name from the prior round
+    file, not the CLI): it warns instead, so a repo that dropped its
+    `.viva-types/` bundle between sessions can still resume."""
     proc = run([sys.executable, SCRIPTS / "doc_types.py", name],
                capture_output=True, text=True)
     if proc.returncode != 0:
@@ -237,20 +214,14 @@ def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
 
 
 def _is_interview(payload: dict) -> bool:
-    """A qa server serves `questions` and never `sections` — the one shape
-    `start --handoff` may push a round into."""
+    """A qa server serves `questions`, never `sections`."""
     return "questions" in payload
 
 
 def _preflight_no_live_session(viva: Path) -> None:
-    """Refuse to clear over a session that may still be live.
-
-    Two cases wear one file, and they take opposite recoveries — so ask the
-    server rather than guessing from the stat. Live: the human already has the
-    tab, and telling them to delete the file that points at it is how a running
-    review (or the interview `/viva-write` left open) gets orphaned. Not
-    answering: the `finally` that unlinks this never ran, and deleting it is
-    exactly right."""
+    """Refuse to clear over a session that may still be live. Two cases wear
+    one file with opposite recoveries, so ask the server rather than guessing
+    from the stat: live means don't touch it, dead means delete it."""
     if not (viva / "server.url").exists():
         return
     base = server_url(viva)
@@ -274,13 +245,10 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
                  include_answers: bool = False,
                  include_attachments: bool = True) -> None:
     """The session state clear (CLAUDE.md, State lifecycle). `preferences.json`
-    is the one survivor. `start` runs it whole. `start --handoff` keeps
-    `server.url` — the interview server that will receive the round owns it —
-    and `attachments/`, because the interview's answers may cite files there.
-    `interview` adds `answers.json`, which `start` must never touch: a hand-off
-    `start` runs while the draft written from those answers is still the
-    agent's source."""
-    for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
+    is the one survivor. `start --handoff` keeps `server.url` (the interview
+    server) and `attachments/` (the answers may cite files there); `interview`
+    adds `answers.json`, which `start` must never touch."""
+    for p in list(viva.glob(schema.round_input_glob())) + list(viva.glob(schema.round_output_glob())):
         p.unlink()
     names = ["open-notes.json", "target.json", "diff.patch"]
     if not keep_server_url:
@@ -291,16 +259,14 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
         (viva / name).unlink(missing_ok=True)
     if include_attachments:
         # Attachment filenames are deterministic, so a surviving directory
-        # silently re-points a prior ledger's citations at a later session's
-        # images.
+        # silently re-points a prior ledger's citations at a later session.
         shutil.rmtree(viva / "attachments", ignore_errors=True)
 
 
 def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
-    """Launch `server.py` detached and return its base URL once `server.url`
-    appears. Both of the child's streams go to `.viva/server.log`: an inherited
-    stdout is held open by the grandchild, so a caller piping this driver would
-    hang in `communicate()` until the server itself exited."""
+    """Launch `server.py` detached; return its base URL once `server.url`
+    appears. Streams go to `.viva/server.log`, not inherited stdout — an
+    inherited pipe would hang a caller until the grandchild exits."""
     log = viva / "server.log"
     with log.open("wb") as logfh:
         proc = subprocess.Popen(
@@ -312,8 +278,7 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
         if (viva / "server.url").exists():
             break
         if proc.poll() is not None:
-            # The headless contract documents a one-line startup error shape;
-            # discarding it made every launch failure look alike.
+            # Last line of the log: the headless contract's one-line error shape.
             tail = log.read_text().strip().splitlines()
             why = tail[-1] if tail else "no output"
             die(f"server exited during startup ({why}). Full log: {log}")
@@ -325,10 +290,8 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
     return base
 
 
-# A bundle's `checks[]` name producers by the mechanical mapping
-# `<name with - as _>.py` (CLAUDE.md, headings_present.py). A repo-committed
-# `.viva-types/` bundle is caller input that becomes a path, so the name is
-# shape-checked before it is joined to anything.
+# A repo-committed `.viva-types/` bundle names checks that become a path
+# (CLAUDE.md), so the name is shape-checked before it is joined to anything.
 _CHECK_NAME = re.compile(r"^[a-z0-9-]+$")
 
 
@@ -338,9 +301,8 @@ def _check_script(name: str) -> Path:
 
 def _validate_checks(bundle: dict, fatal: bool = True) -> None:
     """Every check a bundle names must be a script this plugin ships — refused
-    beside `resolve_doc_type`, before any state is cleared, for the same reason
-    an unknown type is: a name that resolves to nothing would run the round at
-    a depth whose checks never ran, silently."""
+    before any state is cleared, so a bad name never runs the round silently
+    at a depth whose checks never ran."""
     for name in bundle.get("checks") or []:
         if not isinstance(name, str) or not _CHECK_NAME.match(name):
             why = f"type {bundle.get('name')!r} names an unusable check {name!r}"
@@ -356,13 +318,9 @@ def _validate_checks(bundle: dict, fatal: bool = True) -> None:
 
 
 def _run_bundle_checks(bundle: dict, round_file: Path) -> int:
-    """Run the type's mechanical checks and merge their flags; return the count.
-
-    Pre-arm by construction — this runs inside `start`, between the parse and
-    every branch that could arm, so `annotate`'s already-armed guard has nothing
-    to protect here and `annotate.py` is called directly. The producer seam that
-    follows is for the judgment producers (confidence, preferences), which are
-    the agent's to run."""
+    """Run the type's mechanical checks and merge their flags; return the
+    count. Pre-arm by construction (runs inside `start`, before any arm
+    branch), so `annotate.py` is called directly rather than through `annotate`."""
     flags = []
     for name in bundle.get("checks") or []:
         script = _check_script(name)
@@ -394,16 +352,13 @@ def _seam_stop(round_no: int, round_file: Path, why: str,
                diff: bool = False) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
     if diff:
-        # A diff seam is for the hunk summaries, not a producer — there is no
-        # producer contract to point at, and the merge verb is `summarize`.
+        # A diff seam is for hunk summaries, not a producer; merge verb is `summarize`.
         print("viva-loop: write one line per hunk, then `loop.py summarize "
               "--map <path|->` and `loop.py arm`.")
     else:
         print("viva-loop: run your producer, then `loop.py annotate --sidecar "
               "<path>` and `loop.py arm`.")
-    # Named, not templated: a producer reading `--input` needs this path, and
-    # computing `review-input-r{N}.json` is the counter this file exists to stop
-    # the agent holding.
+    # Named, not templated: a producer needs this path without computing it.
     print(f"viva-loop: round file → {round_file}")
     if not diff:
         print(f"viva-loop: producer contract → {REFERENCES / 'producers.md'}")
@@ -412,9 +367,8 @@ def _seam_stop(round_no: int, round_file: Path, why: str,
 
 # ── diff review: the target record and the capture ───────────────────────────
 def _classify(target: Optional[str], kind: Optional[str]) -> dict:
-    """One target → one dispatch record, from `review_target.py` — a subprocess,
-    so `schema` stays the one cross-import. It runs before the pre-flight and
-    before any clear, so a bad target costs nothing."""
+    """One target → one dispatch record, from `review_target.py`. Runs before
+    the pre-flight and any clear, so a bad target costs nothing."""
     argv = [sys.executable, SCRIPTS / "review_target.py"]
     if target is not None:
         argv.append(target)
@@ -431,7 +385,7 @@ def _classify(target: Optional[str], kind: Optional[str]) -> dict:
 
 
 def _target_record(viva: Path) -> Tuple[dict, Path]:
-    """The record `start` saved, and the directory its capture must run in."""
+    """The record `start` saved, and the directory its capture runs in."""
     path = viva / "target.json"
     if not path.exists():
         die(f"{path} is gone — the capture argv is not recoverable. "
@@ -441,13 +395,10 @@ def _target_record(viva: Path) -> Tuple[dict, Path]:
 
 
 def _capture(record: dict, dest: Path, cwd: Path) -> int:
-    """Run the record's `capture` argv with stdout into `dest`; return the size.
-
-    A failed capture must never leave a patch behind: a 0-byte or partial
-    `diff.patch` is read by every caller as "no changes", and a session whose
-    `gh` call 403'd (the wrong account active) would sign off as fully resolved
-    with nothing reviewed. So on any failure the file is removed and the argv
-    and its stderr are the error."""
+    """Run the record's `capture` argv with stdout into `dest`; return the
+    size. A failed capture must never leave a patch behind — every caller
+    reads a 0-byte/partial `diff.patch` as "no changes" — so on any failure
+    the file is removed and the argv/stderr become the error."""
     argv = [str(c) for c in record.get("capture") or []]
     if not argv:
         die(f"{record.get('label')!r} has no capture argv — a doc is not a diff")
@@ -477,8 +428,7 @@ def _needs_summaries(data: dict) -> bool:
 
 def _relaunch_hint(viva: Path) -> str:
     """The `start` that would recreate this diff session, rebuilt from the
-    record — the label (`PR #187 (o/r)`, `working tree`) is not a legal
-    target."""
+    record — the label (`PR #187 (o/r)`) is not itself a legal target."""
     try:
         record = load_json(viva / "target.json")
     except (OSError, ValueError):
@@ -511,8 +461,8 @@ def _diff_seam_or_arm(args, round_no: int, round_file: Path, data: dict) -> int:
 # ── subcommands ───────────────────────────────────────────────────────────────
 def cmd_interview(args) -> int:
     """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`, block
-    for the answers, print them. Never `/complete` — the hand-off reuses this
-    process, and `start --handoff` + `arm` is what ends the interview."""
+    for answers, print them. Never `/complete` — `start --handoff` + `arm`
+    ends the interview instead."""
     viva = Path(args.viva_dir)
     qa_in = Path(args.input)
     if not qa_in.exists():
@@ -520,12 +470,10 @@ def cmd_interview(args) -> int:
     _preflight_no_live_session(viva)
     viva.mkdir(parents=True, exist_ok=True)
     answers = viva / "answers.json"
-    # `start`'s clear plus the answers: a stale `answers.json` would satisfy the
-    # wait below before the human typed a word.
+    # A stale `answers.json` would satisfy the wait below with no answer.
     _clear_state(viva, include_answers=True)
     base = _launch_server(viva, "qa", qa_in, answers)
-    # Flushed: this process now blocks on human time, and whoever launched it
-    # needs the URL before that, not after.
+    # Flushed: this process now blocks on human time.
     print(f"viva-loop: interview open · {base}", flush=True)
 
     # Same liveness contract as `wait`: never block on a server that is gone.
@@ -541,9 +489,8 @@ def cmd_interview(args) -> int:
                 f"`loop.py interview --input {qa_in}`.", 2)
         time.sleep(_WAIT_INTERVAL)
 
-    # The answers verbatim (the server writes them atomically, so existence is
-    # completeness), then one classification line LAST — the agent routes on
-    # the token, never on its own scan.
+    # Answers verbatim, then a classification line LAST — the agent routes on
+    # the token, never its own scan.
     text = answers.read_text()
     print(text, end="" if text.endswith("\n") else "\n")
     try:
@@ -571,8 +518,8 @@ def cmd_start(args) -> int:
         record = _classify(args.target, args.kind)
         if record.get("kind") != "doc":
             return _start_diff(args, viva, record)
-        # A `--target` naming a markdown file is the doc form spelled the other
-        # way — filesystem first, then shape (review_target.py).
+        # A `--target` naming a markdown file is the doc form spelled the
+        # other way — filesystem first, then shape (review_target.py).
         args.doc = record["doc"]
     return _start_doc(args, viva)
 
@@ -588,9 +535,8 @@ def _start_diff(args, viva: Path, record: dict) -> int:
     # No resume branch and no preference seam: neither has hunk semantics.
     _clear_state(viva)
     cwd = Path.cwd().resolve()
-    # The record verbatim plus the one thing it lacks — where its capture
-    # runs. `rearm` and `finish` re-capture from a later shell whose cwd this
-    # driver does not control.
+    # Record plus its cwd: `rearm`/`finish` re-capture from a later shell
+    # whose cwd this driver does not control.
     (viva / "target.json").write_text(
         json.dumps(dict(record, cwd=str(cwd)), indent=2) + "\n")
     size = _capture(record, viva / "diff.patch", cwd)
@@ -598,8 +544,8 @@ def _start_diff(args, viva: Path, record: dict) -> int:
         print(f"viva-loop: no changes to review — {record.get('label')}")
         return 0
     round_file = viva / "review-input-r1.json"
-    # A non-empty patch with no hunks is a real failure, not an empty diff:
-    # `parse_diff.py` exits 1 on it and this dies rather than completing.
+    # A non-empty patch with no hunks is a real failure: `parse_diff.py`
+    # exits 1 on it and this dies rather than completing.
     run_or_die([sys.executable, SCRIPTS / "parse_diff.py", viva / "diff.patch",
                 "--output", round_file, "--round", "1",
                 "--doc-file", record.get("label") or "working tree"],
@@ -619,16 +565,11 @@ def _start_doc(args, viva: Path) -> int:
     if bundle:
         _validate_checks(bundle)
 
-    # Pre-flight guard. `cmd_start`'s own clear below deletes the round files
-    # and `server.url`; without this check it would do that to a *live* session,
-    # orphaning a running server with the reviewer's tab still attached. The
-    # dependency is file-local — the clear is forty lines down, not in prose.
-    #
-    # `--handoff` inverts it: the live server is the point. It is the interview
-    # `/viva-write` ran, and the round parsed here is armed INTO that process so
-    # the same tab reflows from Q&A cards to section cards. Explicit, never
-    # inferred from the payload — an abandoned interview must not quietly become
-    # the next `/viva-review`'s tab.
+    # Pre-flight guard: without it, the clear below would orphan a live
+    # session's server. `--handoff` inverts it — the live interview server is
+    # the target the parsed round arms INTO, so the tab reflows from Q&A to
+    # section cards; never inferred, so an abandoned interview can't quietly
+    # become the next `/viva-review`'s tab.
     if args.handoff:
         base = server_url(viva)
         if not base:
@@ -649,12 +590,11 @@ def _start_doc(args, viva: Path) -> int:
 
     viva.mkdir(parents=True, exist_ok=True)
 
-    # Resume branch: a doc that already carries a sign-off ledger, with the
-    # prior session's finishing round still on disk. Protect that pair OUTSIDE
-    # the clear glob before clearing, or carry-forward dies with it. Never under
-    # `--handoff`: the doc was drafted minutes ago in this same session, so a
-    # ledger heading in it is a false positive, and any round files on disk
-    # belong to the interview's session, not to a prior sign-off.
+    # Resume branch: a doc with a sign-off ledger and the prior session's
+    # finishing round still on disk. Copy that pair OUTSIDE the clear glob
+    # before clearing, or carry-forward dies with it. Never under `--handoff`
+    # — the doc was drafted minutes ago in this session, so a ledger heading
+    # is a false positive.
     prior_in = prior_out = None
     prior_split_on = prior_doc_type = None
     if not args.handoff and schema.has_revision_history(doc.read_text()):
@@ -666,43 +606,36 @@ def _start_doc(args, viva: Path) -> int:
                 prior_out = viva / "prior-review-verdicts.json"
                 prior_in.write_bytes(src_in.read_bytes())
                 prior_out.write_bytes(src_out.read_bytes())
-                # The prior round records the pattern it was split with. Reading
-                # it back is what `rearm` already does between rounds; a resume
-                # is the same question one session later, and re-deciding it by
-                # auto-detection changes every section's identity and silently
-                # carries forward nothing.
+                # The prior round records its split pattern; read it back the
+                # way `rearm` does between rounds, or re-detection silently
+                # changes every section's identity.
                 prior_round = load_json(prior_in)
                 prior_split_on = prior_round.get("split_on")
-                # The type is round state on the same terms: a resume that
-                # re-decided it would silently drop the prior session's check
-                # set, so it is read back here and overridden only by an
-                # explicit `--type`.
+                # Type is round state on the same terms — read back here,
+                # overridden only by an explicit `--type`, or a resume
+                # silently drops the prior session's check set.
                 prior_doc_type = prior_round.get("doc_type")
-                # The `pass` is deliberately NOT read back. Split pattern and
-                # type are session identity — re-deciding either changes section
-                # identity or drops the check set. Depth is a per-round decision,
-                # and a resumed round 1 inheriting the prior session's finishing
-                # `final` pass would add a conjunct nobody asked for. Name it
-                # again with `--pass` if the new session wants it.
+                # `pass` is deliberately NOT read back — it's a per-round
+                # decision, and inheriting the prior session's finishing
+                # `final` pass would add a conjunct nobody asked for.
 
-    # Everything under .viva/ except preferences.json is disposable and reset
-    # each session (CLAUDE.md). A hand-off keeps the two things the interview
-    # still owns: its `server.url` and the attachments its answers cite.
+    # Everything under .viva/ but preferences.json resets each session
+    # (CLAUDE.md); a hand-off keeps what the interview still owns.
     _clear_state(viva, keep_server_url=args.handoff,
                  include_attachments=not args.handoff)
 
     split_on = args.split_on if args.split_on is not None else prior_split_on
     doc_type = args.doc_type if args.doc_type is not None else prior_doc_type
     if bundle is None and doc_type is not None:
-        # A resume carries the type without an explicit `--type`, so resolve it
-        # here too — otherwise a resumed typed session names no check set and
-        # the producers nobody is told about never run. Non-fatal: the scratch
-        # pair above is already on disk, and dying here would strand it.
+        # A resume carries the type without an explicit `--type`; resolve it
+        # here too or its check set silently never runs. Non-fatal: the
+        # scratch pair above is already on disk.
         bundle = resolve_doc_type(doc_type, fatal=False)
         if bundle:
             _validate_checks(bundle, fatal=False)
+    round1_input, _ = schema.round_file_paths(viva, 1)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
-           "--output", viva / "review-input-r1.json", "--round", "1",
+           "--output", round1_input, "--round", "1",
            "--doc-file", args.doc]
     if split_on is not None:
         cmd += ["--split-on", split_on]
@@ -711,9 +644,8 @@ def _start_doc(args, viva: Path) -> int:
     if args.pass_kind is not None:
         cmd += ["--pass", args.pass_kind]
     if args.posture is not None:
-        # Handed over even without `--pass`, so `parse_sections.py` — the
-        # boundary — refuses a posture on no pass instead of this driver
-        # silently dropping it.
+        # Passed even without `--pass`, so the boundary (`parse_sections.py`)
+        # refuses a posture on no pass instead of it being silently dropped.
         cmd += ["--posture", args.posture]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
@@ -721,18 +653,15 @@ def _start_doc(args, viva: Path) -> int:
         if run(cmd).returncode != 0:
             die("parse failed")
     finally:
-        # One resume, nothing persists past it — including down the failure
-        # path, or the next `start` reads a two-sessions-old pair.
+        # One resume only — else the next `start` reads a stale pair.
         if prior_in:
             prior_in.unlink(missing_ok=True)
             prior_out.unlink(missing_ok=True)
 
-    round_file = viva / "review-input-r1.json"
+    round_file = round1_input
     if bundle:
-        # The type's check set, named once where it is resolved — and RUN here,
-        # before any branch that could arm. A check nobody is told about never
-        # runs; a check the driver owns cannot be forgotten, and a typed round
-        # with no flags to answer would otherwise close on the base alone.
+        # The type's check set is RUN here, before any branch that could arm
+        # — a check the driver doesn't run here never runs.
         checks = ", ".join(bundle.get("checks") or []) or "none"
         print(f"viva-loop: doc type {bundle['name']} · checks: {checks}")
         if bundle.get("checks"):
@@ -741,9 +670,8 @@ def _start_doc(args, viva: Path) -> int:
 
     if args.parse_only:
         return _seam_stop(1, round_file, "--parse-only")
-    # The producer seam. A standing preference means the preference producer
-    # auto-engages, and that producer is an LLM pass — the agent's judgment
-    # work, not the driver's.
+    # A standing preference auto-engages the preference producer, an LLM
+    # pass — the agent's work, not the driver's.
     prefs = standing_preferences(viva)
     if prefs and not args.arm_anyway:
         return _seam_stop(1, round_file,
@@ -757,22 +685,16 @@ def cmd_annotate(args) -> int:
     if not n:
         die("no round to annotate — run `loop.py start` first")
     inp, _ = round_files(viva, n)
-    # Annotate is a PRE-ARM step. The server loads its round once and replaces
-    # it only from `/next-round`, so annotating the round it is already serving
-    # writes a file nobody re-reads: `loop.py finish` would pass its own gate off
-    # disk, append the ledger, and then be refused by `/complete` reading the
-    # stale copy. Loud here rather than silent there. Every real seam passes —
-    # round 1 annotates before any server exists, and `rearm --parse-only` leaves
-    # the server on round n-1 while this writes round n.
+    # Annotate is PRE-ARM only: the server loads its round once from
+    # `/next-round`, so annotating an already-armed round writes a file
+    # nobody re-reads (loud failure here beats a silent one at `/complete`).
     base = server_url(viva)
     if base and probe_round(base) == n:
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Annotate before arming: "
             f"finish or `rearm --parse-only` this round, annotate the next one, "
             f"then `loop.py arm`.")
-    # The producer seam's driver end: the agent names its sidecar, the driver
-    # names the file. `annotate.py` reads '-' from stdin, and stdin is inherited
-    # here, so a piped producer works unchanged.
+    # The agent names its sidecar, the driver names the file; '-' reads stdin.
     run_or_die([sys.executable, SCRIPTS / "annotate.py",
                 "--input", inp, "--annotations", args.sidecar],
                "annotate",
@@ -788,16 +710,11 @@ def cmd_arm(args) -> int:
         die("no round to arm — run `loop.py start` first")
     inp, out = round_files(viva, n)
 
-    # Branch on liveness, not on the round number. A round-1 `arm` re-run after
-    # a slow start would otherwise launch a second server, see the *existing*
-    # server.url on the first poll tick, and print a stale base while the new
-    # process binds another port — the orphaned-server failure `start`'s guard
-    # exists to prevent, reintroduced one subcommand over.
-    #
-    # Liveness is `probe_input`, never `probe_round`: a live qa server answers
-    # `/input` with an interview payload that has no `round` key, and reading
-    # that as "nothing is answering" is what kept `arm` from handing a round to
-    # the interview `/viva-write` left open (#179).
+    # Branch on liveness, not the round number — a re-run after a slow start
+    # would otherwise launch a second orphaned server.
+    # Liveness is `probe_input`, never `probe_round`: a live qa server has no
+    # `round` key, and reading that as dead broke handing a round to an open
+    # `/viva-write` interview (#179).
     base = server_url(viva)
     if base and probe_input(base) is not None:
         payload = load_json(inp)
@@ -811,8 +728,7 @@ def cmd_arm(args) -> int:
         die(f"{viva}/server.url names {base}, but nothing is answering there. "
             f"Delete the stale file, then `loop.py start`.")
 
-    # The mode is round state, written by the parser that produced the round,
-    # never typed: `parse_sections.py` writes `review`, `parse_diff.py` `diff`.
+    # Mode is round state, never typed — the parser wrote it.
     mode = load_json(inp).get("mode") or "review"
     if mode not in ("review", "diff"):
         die(f"round {n}'s input carries mode {mode!r} — expected review or diff")
@@ -823,7 +739,7 @@ def cmd_arm(args) -> int:
 
 def cmd_summarize(args) -> int:
     """Merge a `{id: one-line summary}` map into the current round's hunks —
-    the diff seam's driver end, the way `annotate` is the producer seam's."""
+    the diff seam's driver end, like `annotate` for producers."""
     viva = Path(args.viva_dir)
     n = current_round(viva)
     if not n:
@@ -891,9 +807,8 @@ def cmd_wait(args) -> int:
                 f"returned verdicts. Delete {viva}/server.url, then relaunch. "
                 f"{relaunch}", 2)
         if served != n:
-            # Parsed but never armed — `rearm --parse-only` wrote round n while
-            # the server still serves round `served`, and nothing will ever
-            # write this round's verdicts.
+            # Parsed but never armed: `rearm --parse-only` wrote round n while
+            # the server still serves `served`, so no verdicts will ever land.
             die(f"round {n} is parsed but not armed — the server is still "
                 f"serving round {served}. Run `loop.py arm` (after "
                 f"`loop.py annotate` if a producer is pending).", 2)
@@ -908,10 +823,9 @@ def cmd_wait(args) -> int:
     print("=== standing preferences ===")
     print(json.dumps(standing_preferences(viva)))
 
-    # The classification line — the third destination #102(1) has no routing
-    # rule for today. The agent branches on this token, never on its own scan.
-    # `submitted_early` is tested first deliberately: a paused round is paused
-    # even when everything submitted so far was approved.
+    # The classification line the agent branches on, never its own scan (#102).
+    # `submitted_early` is checked first: a paused round is paused even when
+    # everything submitted so far was approved.
     if verdicts.get("submitted_early"):
         klass = "submitted-early"
     elif schema.round_is_complete(input_data, verdicts):
@@ -921,13 +835,9 @@ def cmd_wait(args) -> int:
     print(f"=== round {n}: {klass} ===")
     # A diff round has no threads and no prose, so neither rail applies.
     if klass in ("has-work", "submitted-early") and not diff:
-        # The next step is the rewrite, and the rule it turns on — act on each
-        # thread's *latest* reviewer turn — is documented, not obvious. A paused
-        # round can carry comments too, so it needs the same pointer.
+        # Act on each thread's *latest* reviewer turn — not obvious, so named.
         print(f"viva-loop: thread rules for the rewrite → "
               f"{REFERENCES / 'open-notes.md'}")
-        # The register is the other half of the rewrite: a section rewritten
-        # loose re-presents with the same filler the reviewer just flagged.
         print(f"viva-loop: register for the rewrite → "
               f"{REFERENCES / 'style.md'}")
     return 0
@@ -942,11 +852,9 @@ def cmd_rearm(args) -> int:
     if not out.exists():
         die(f"round {n} has no verdicts yet — run `loop.py wait` first")
 
-    # The doc travels in the round file the parser wrote, so the agent names
-    # neither the round nor the path it already handed `start`. The split
-    # pattern travels the same way: `parse_sections.py` records it on every
-    # round it parses, so re-reading it here is what keeps round N+1 splitting
-    # the way round 1 did. Absent key → auto-detection, unchanged.
+    # Doc, split pattern, and type travel in the round file the parser wrote,
+    # so the agent names none of them again — round N+1 splits the way round
+    # 1 did. Absent key → auto-detection, unchanged.
     round_data = load_json(inp)
     if round_data.get("mode") == "diff":
         return _rearm_diff(args, viva, n, inp, out, round_data)
@@ -960,11 +868,9 @@ def cmd_rearm(args) -> int:
         die(f"doc not found: {doc} (recorded as doc_file in {inp}). Re-run from "
             f"the directory the review was started in.")
 
-    # The pass carries within the session the way the pattern and the type do —
-    # round N+1 runs at round N's depth unless this call names another. It is
-    # the one of the three the agent is expected to change mid-session (round 1
-    # structural, round 2 line, a later one checks), so `rearm` takes the
-    # override the other two have no use for.
+    # `pass` carries within the session like the pattern and type do — round
+    # N+1 runs at round N's depth unless overridden here, since depth is the
+    # one of the three expected to change mid-session.
     if args.pass_kind is not None:
         next_pass = {"kind": args.pass_kind}
         if args.posture is not None:
@@ -985,9 +891,9 @@ def cmd_rearm(args) -> int:
            "--store", store, "--round", str(n), "--verdicts", out, "--input", inp]
     for response in args.response:
         cmd += ["--response", response]
-    # The author's other move. `open_notes.py` owns the rule a decline can break
-    # — one per thread, because insisting wins — and refuses a second one, which
-    # `run_or_die` turns into a stopped round rather than a silent overwrite.
+    # The author's other move: `open_notes.py` refuses a second decline on
+    # the same thread (insisting wins), and `run_or_die` stops the round
+    # rather than silently overwriting it.
     for decline in args.decline:
         cmd += ["--decline", decline]
     run_or_die(cmd, "open-note update",
@@ -999,9 +905,8 @@ def cmd_rearm(args) -> int:
            "--output", nxt_in, "--round", str(n + 1), "--doc-file", doc,
            "--prior-input", inp, "--prior-verdicts", out,
            "--open-notes", store]
-    # `is not None`, not truthiness, at both ends: the driver hands the pattern
-    # back exactly as recorded and lets `parse_sections.py` own what it means,
-    # so no round can be split by a rule a later round quietly re-decides.
+    # `is not None`, not truthiness: hand the pattern back exactly as
+    # recorded rather than letting a later round quietly re-decide it.
     if split_on is not None:
         cmd += ["--split-on", split_on]
     if doc_type is not None:
@@ -1012,9 +917,8 @@ def cmd_rearm(args) -> int:
             cmd += ["--posture", next_pass["posture"]]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
 
-    # The round 2+ producer seam — the same stop-after-parse `start` takes on
-    # its own when a standing preference is in play. Order is load-bearing: the
-    # flags must be merged before the round is shipped to the running server.
+    # Round 2+ producer seam. Order is load-bearing: flags must merge before
+    # the round ships to the running server.
     if args.parse_only:
         return _seam_stop(n + 1, nxt_in, "--parse-only")
     return cmd_arm(args)
@@ -1027,13 +931,11 @@ def _rearm_diff(args, viva: Path, n: int, inp: Path, out: Path,
         die("a diff round carries no threads and no pass — --response, "
             "--decline, --pass, and --posture apply to doc review only")
     record, cwd = _target_record(viva)
-    # The SAME capture as round 1, never a different one: a `git diff`
-    # substituted on round 2 of a PR review reviews the working tree instead,
-    # which reads as a shrinking diff rather than as an error.
+    # The SAME capture as round 1, never a substitute — else a later round of
+    # a PR review would silently review the working tree instead.
     size = _capture(record, viva / "diff.patch", cwd)
     if size == 0:
-        # Not a sign-off: `finish` owns `/complete` in every mode, and it
-        # re-captures for itself rather than trusting this line.
+        # Not a sign-off: `finish` re-captures for itself before completing.
         print("viva-loop: diff is empty after re-capture — nothing to re-arm; "
               "`loop.py finish` signs it off")
         return 0
@@ -1063,25 +965,22 @@ def cmd_finish(args) -> int:
         by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
         pending = [s.get("title") for s in input_data.get("sections", [])
                    if (by_id.get(s.get("id")) or {}).get("verdict") != "approved"]
-        # `round_is_complete` is the gate; this text is only its detail. A pass
-        # ADDS a conjunct, so a round can be refused with everything approved —
-        # printing "0 of N not approved" there would send the agent to re-present
-        # a round the reviewer already signed.
+        # `round_is_complete` is the gate; this text is only its detail. A
+        # pass ADDS a conjunct, so a round can be refused with everything
+        # approved — "0 of N not approved" would be misleading here.
         spec = input_data.get("pass")
         kind = spec.get("kind") if isinstance(spec, dict) else None
         if not input_data.get("sections"):
-            # Tested before the pass: an empty round is refused by the base rule,
-            # and naming a conjunct here would blame a `architecture`/`line` pass
-            # that adds none.
+            # Tested before the pass: an empty round fails the base rule, not
+            # a conjunct an `architecture`/`line` pass doesn't even add.
             why = "the round carries no sections to approve"
         elif pending:
             why = (f"{len(pending)} of {len(input_data.get('sections', []))} "
                    f"section(s) not approved — "
                    f"{', '.join(repr(t) for t in pending[:5])}")
         elif kind:
-            # The recovery is the round loop, not a mid-round annotate: the
-            # server holds this round in memory, so a merge into the file it was
-            # armed from is one `/complete` never sees.
+            # Recovery is the round loop, not a mid-round annotate: the
+            # server holds this round in memory and won't see the merge.
             why = (f"every section is approved, but the {kind} pass is not "
                    f"satisfied — a checks round holds until every check "
                    f"flag carries a result, a final round until no suggested "
@@ -1093,10 +992,8 @@ def cmd_finish(args) -> int:
         die(f"refusing to finish: {why}. Nothing is auto-accepted; "
             f"re-present the round or abandon it.")
 
-    # The doc comes off the round file, the way `rearm` reads it — a
-    # caller-supplied `--doc` is how this step fails from a different cwd, and
-    # by then `/complete` has already torn the server down. `--doc` stays as an
-    # override for a doc that legitimately moved.
+    # The doc comes off the round file, like `rearm` reads it — `--doc` stays
+    # only as an override for a doc that legitimately moved.
     doc = args.doc or input_data.get("doc_file")
     if not doc:
         die(f"round {n}'s input names no doc_file — pass --doc <path>")
@@ -1110,9 +1007,8 @@ def cmd_finish(args) -> int:
             f"are on disk; append the ledger by hand with `python3 "
             f"{SCRIPTS / 'revision_history.py'} --viva-dir {viva} --doc {doc}`.")
 
-    # Everything fallible runs BEFORE the irreversible POST. `/complete` starts
-    # the server's shutdown timer, so a failure after it is unrecoverable in
-    # place — a second `finish` dies at "no live server".
+    # Everything fallible runs BEFORE the irreversible POST: `/complete`
+    # starts the server's shutdown timer, so a failure after it is stuck.
     run_or_die([sys.executable, SCRIPTS / "open_notes.py", "update",
                 "--store", viva / "open-notes.json", "--round", str(n),
                 "--verdicts", out, "--input", inp],
@@ -1134,8 +1030,7 @@ def cmd_finish(args) -> int:
          f"`loop.py abandon`.")
     print(f"viva-loop: signed off — {n} round(s), "
           f"{len(input_data.get('sections', []))} section(s)")
-    # Only a signed-off session learns, so this is the one place the record
-    # step can be named — and the clustering it asks for is judgment work.
+    # Only a signed-off session learns; the clustering asked for is judgment work.
     print(f"viva-loop: record this session's recurring critiques → "
           f"{REFERENCES / 'preferences.md'}")
     return 0
@@ -1144,14 +1039,9 @@ def cmd_finish(args) -> int:
 def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
                  input_data: dict, verdicts: dict) -> int:
     """The diff finish, decided from a FRESH capture, never from memory.
-
-    Three outcomes. The capture is empty: every hunk was applied or reverted at
-    the reviewer's request, so there is nothing left to approve — `/complete`
-    is sent `resolved: "empty"`, the one signal the server's diff gate honors
-    (#177). The capture equals round n and round n is all-approved: the normal
-    finish. Anything else — a hunk changed since the human approved it, or one
-    reverted without the rest being re-presented — is a `rearm`, because the
-    server's gate would (rightly) refuse it and the human has not seen it."""
+    Three outcomes: empty capture sends `/complete` `resolved: "empty"`
+    (#177); capture matches an all-approved round n is the normal finish;
+    anything else (a hunk changed or reverted unevenly) is a `rearm`."""
     if args.doc:
         die("--doc is a doc-review override; a diff session records its target "
             "in target.json")
@@ -1187,11 +1077,9 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
         die(f"refusing to finish: {why}. Nothing is auto-accepted; re-present "
             f"the round or abandon it.")
 
-    # Freshness: the diff as it stands must be the diff the human approved.
-    # `parse_diff.py` with round n as prior carries an approval only onto a hunk
-    # whose title and body match, so a hunk edited, added, or dropped since the
-    # sign-off falls out of `approved_ids`. The scratch name must not match
-    # `current_round`'s `review-input-r*.json` glob.
+    # Freshness: the diff must still be the one the human approved. A hunk
+    # edited, added, or dropped since falls out of `approved_ids`. The scratch
+    # name must not match `current_round`'s `review-input-r*.json` glob.
     scratch = viva / "finish-check.json"
     try:
         run_or_die([sys.executable, SCRIPTS / "parse_diff.py",
@@ -1224,7 +1112,7 @@ def cmd_abandon(args) -> int:
         die(f"no live session to abandon (no {viva}/server.url)")
 
     # Over HTTP, not by signal: `start` detaches the server, so this process
-    # holds no child handle, and `server.url` carries a URL and nothing else.
+    # holds no child handle.
     post(base, "/abandon", {}, "abandoning the session",
          f"If it is already stopped, delete {viva}/server.url to unblock the "
          f"next `loop.py start`.")

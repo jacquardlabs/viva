@@ -65,10 +65,9 @@ def test_legacy_section_without_comments_is_noop():
 
 
 def test_escalated_reply_appends_changes_exchange():
-    """A reply that escalates an info thread to `request changes` arrives as a
-    comment on the SAME cid with type "changes"; open_notes.update appends it as
-    a new exchange whose verdict is "changes" — the per-turn record the hybrid
-    rewrite rule reads to decide whether to edit the section."""
+    """An escalating reply arrives as a comment on the same cid with type
+    "changes"; open_notes.update appends it as a new exchange rather than
+    overwriting the prior one."""
     store = {"s1-c1": {"cid": "s1-c1", "title": "Goals", "quote": "x",
                        "status": "open", "exchanges": [
                            {"round": 1, "verdict": "info", "note": "why?", "response": "because"}]}}
@@ -84,14 +83,9 @@ def test_escalated_reply_appends_changes_exchange():
 
 
 def test_suggestion_thread_carries_its_replacement():
-    """A suggestion threads like any other comment, and the WORDING rides along.
-
-    Without `replacement` on the exchange, round N+1 re-presents the thread with
-    the rationale and the wording stripped — and "apply verbatim" has nothing
-    left to apply. `schema.round_is_complete`'s `final` conjunct also reads the
-    latest exchange's `verdict`, so an unthreaded suggestion would silently stop
-    holding the round (#166).
-    """
+    """A suggestion threads like any comment, and its `replacement` wording
+    rides along on the exchange — without it, round N+1 can't re-present
+    "apply verbatim" (#166)."""
     wording = "Ship the core in one round."
     verdicts = {"sections": [{"id": "s1", "verdict": "changes", "comments": [
         {"cid": "s1-c1", "type": "suggestion", "note": "too vague",
@@ -123,12 +117,8 @@ def _declined_store():
 
 
 def test_decline_records_grounds_and_holds_the_thread():
-    """A decline is a THREAD status, not a verdict (#167).
-
-    It rides on the same exchange the reviewer's turn created, and it resolves
-    nothing: the thread is unresolved, so `parse_sections` re-presents it and
-    the section stays held until the reviewer settles or insists.
-    """
+    """A decline is a THREAD status, not a verdict (#167) — it resolves
+    nothing, so the section stays held until settled or insisted on."""
     out = _declined_store()
     assert out["s1-c1"]["status"] == "declined", out["s1-c1"]
     assert out["s1-c1"]["exchanges"][0] == {

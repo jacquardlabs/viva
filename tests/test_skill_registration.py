@@ -16,13 +16,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / ".claude" / "skills"
-# Two skills, split by intent: am I making a thing, or judging one (#170). The
-# mechanism-named trio (`viva`, `viva-qa`, `viva-diff`) is gone — `viva-review`
-# absorbed doc and hunk review behind one target dispatch, and the Q&A gate is a
-# reference contract (`references/qa.md`) rather than a skill you must find.
+# Two skills, split by intent: make a thing vs. judge one (#170).
 EXPECTED_SKILLS = {"viva-write", "viva-review"}
-# Names that must NOT come back as directories: a stale copy alongside the new
-# set would register a second skill for the same job, and the older one can win.
+# Must NOT come back as directories — a stale copy would register a second
+# skill for the same job, and the older one can win.
 RETIRED_SKILLS = {"viva", "viva-qa", "viva-diff"}
 
 
@@ -110,9 +107,8 @@ def test_retired_skills_are_gone():
 
 
 def test_shared_references_live_at_the_plugin_root():
-    """Both skills read them and `loop.py` prints their paths, so they belong to
-    the driver, not to either skill — `/viva-write` needing `producers.md` must
-    not mean reaching into `/viva-review`'s directory."""
+    """Both skills read them and `loop.py` prints their paths, so they belong
+    to the driver, not to either skill."""
     references = ROOT / "references"
     expected = {"producers.md", "open-notes.md", "preferences.md", "qa.md",
                 "style.md"}

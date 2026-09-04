@@ -9,7 +9,7 @@ or pre-flagged before the human re-types it.
 
 The store lives at `.viva/preferences.json`. `scripts/preferences.py` is its
 primary writer; the running server's `POST /preferences/mute` route is a second,
-narrower one — it only ever flips an existing preference to `muted`, from an
+narrower one — it only flips an existing preference to `muted`, from an
 in-page panel the reviewer opens without leaving the tab. It never creates a
 preference or promotes one. Unlike the round files, the store is **not** cleared
 by `loop.py start`, so it persists across sessions; it is gitignored, so learned
@@ -41,8 +41,8 @@ the standing set costs nothing. `loop.py wait` already printed it under
 **Pre-flag — round 1, automatic.** A fresh incoming doc has no verdict yet, so
 the only way to surface a learned critique without the human typing it is the
 preference producer (`producers.md`). `loop.py start` stops after parsing
-whenever the store holds a standing preference, which is the round-1 doc read
-paid deliberately — and only once the reviewer has earned it.
+whenever the store holds a standing preference — the round-1 doc read paid
+deliberately, and only once the reviewer has earned it.
 
 **Record — at sign-off.** Cluster this session's `changes`/`info` notes into
 distinct critiques, list the existing preferences to see which ones they match,

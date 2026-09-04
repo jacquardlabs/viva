@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
 """open_notes.py maintains the round-to-round open-note store (issue #16).
 
-Rewrote for the comments[]/cid model (Tasks 1/9). The store is keyed by
-comment cid — one thread per inline comment, not one per section. The old
-title-keyed tests are superseded by this rewrite and by test_open_notes_unit.py.
-
-Lifecycle:
-  - comments[] with type changes/info + open:true → create/update a thread
-  - settled:true on a comment                     → mark that thread settled
-  - approved verdict on section                   → settle all its open threads
-  - section with no `comments` key                → no-op (legacy round files safe)
+Store is keyed by comment cid — one thread per inline comment, not per
+section. See also test_open_notes_unit.py.
 """
 import json
 import subprocess

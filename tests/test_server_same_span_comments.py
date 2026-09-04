@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Integration test: two comments anchored to the SAME span (offset disambiguation).
 
-A reviewer can leave more than one comment on the exact same selected text — e.g.
-"this number is wrong" (changes) AND "where's this measured?" (info) on the same
-phrase. The two are distinct threads (distinct cids); the server's /submit pipe
-must preserve BOTH verbatim, each with its own anchor, type, and cid. The derived
-section verdict is `changes` because at least one comment is a changes comment.
+Distinct cids on the same selected text must both survive /submit verbatim,
+each with its own anchor and type.
 """
 import json
 import sys

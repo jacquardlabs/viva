@@ -1,32 +1,11 @@
 #!/usr/bin/env python3
 """The spoken grammar's own invariants — `server._VOICE_VERBS` / `_VOICE_RULES`.
 
-viva is named after the PhD oral: the candidate submits writing and the examiner
-speaks. The grammar is the examiner's half, and it is a CLOSED vocabulary like
-every other vocabulary in this system — so it gets the treatment `COMMENT_TYPES`
-and `VERDICTS` get: one table, and a test that fails when a value is added at a
-call site instead of in the table.
-
-What is pinned here:
-
-1. **Coverage.** Every `schema.COMMENT_TYPES` value has something a reviewer can
-   say, and the `approved` verdict does too. Adding a comment type fails until
-   it is speakable — which is the whole point of keeping the table beside the
-   vocabulary it serves rather than inline in the JS.
-2. **No ambiguity.** No phrase is claimed by two verbs. A phrase in two rows
-   would resolve by table order, which is sorted by LENGTH, so which verb won
-   would depend on nothing.
-3. **Longest first.** `_VOICE_RULES` is sorted longest-phrase-first, because the
-   browser takes the first match and stops. Out of order, "request changes the
-   retry claim is wrong" reads as the verb `changes` carrying the word
-   "request" — a comment attributed to the right type with the wrong first word,
-   which is exactly the kind of silent corruption speech input must not have.
-4. **Already normalized.** Every phrase is in the form `normalizeUtterance`
-   produces (lowercase, no punctuation, single spaces). A phrase carrying a
-   capital or a comma can never match anything, and would fail silently.
-5. **Every act has a handler.** The acts in the table are the acts the router
-   in the page switches on. A new verb with no branch is a word that does
-   nothing and reports nothing.
+A closed vocabulary like `COMMENT_TYPES`/`VERDICTS`: one table, and a test
+that fails when a value is added at a call site instead of in the table.
+Pins coverage (every `COMMENT_TYPES` value is speakable), no ambiguous or
+out-of-order phrase claims, phrases already normalized, and every act
+having a router branch.
 """
 import re
 import sys

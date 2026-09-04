@@ -45,8 +45,10 @@ def main() -> None:
     text = doc.read_text()
     assert text.count("## Revision History") == 1
     assert "Signed off via viva review — 2 rounds, 2 sections, 2 with comments. 2026-06-09" in text
-    assert "| 1 | Goals | changes | Use 30s \\| not 60s |" in text
-    assert "| 2 | Error Handling | info | DLQ retention? |" in text
+    # Curly-quoted, matching the live web ledger's rendering — the two
+    # records of one note read with the same typographic quoting.
+    assert "| 1 | Goals | changes | “Use 30s \\| not 60s” |" in text
+    assert "| 2 | Error Handling | info | “DLQ retention?” |" in text
 
     # Second sign-off session appends its own block under the same heading
     run(viva, doc)
@@ -140,10 +142,8 @@ def main() -> None:
     # Zero-regression: no open-notes.json → no Open notes section.
     assert "### Open notes" not in doc.read_text()
 
-    # Multi-comment session (#68): the output section carries `comments[]` and
-    # no top-level `note`. The ledger table must show the comments joined with
-    # " · " — pre-schema-consolidation this read `s.get("note")` and the Note
-    # column went blank for every multi-comment section (regression for #26).
+    # Multi-comment session (#68): comments[] join with " · " in the ledger
+    # table; regression guard for #26 (Note column going blank).
     viva7 = tmp / ".viva7"
     viva7.mkdir()
     doc7 = tmp / "doc7.md"
@@ -160,19 +160,16 @@ def main() -> None:
         ]}))
     run(viva7, doc7)
     text7 = doc7.read_text()
-    assert "| 1 | Goals | changes | tighten the intro \\u00b7 drop the aside |".replace(
+    assert "| 1 | Goals | changes | “tighten the intro \\u00b7 drop the aside” |".replace(
         "\\u00b7", "·") in text7, text7
     # One commented section, two comments on it: the count is sections, and the
     # singular form of the row is pinned here.
     assert ("Signed off via viva review — 1 round, 2 sections, 1 with comments. "
             "2026-06-09") in text7, text7
 
-    # Rewritten between sessions (#178): a doc signed off, materially rewritten
-    # outside viva, then re-reviewed and approved on sight. `.viva/` was cleared
-    # at `start`, so this session's rounds hold no feedback and the count is 0 —
-    # correct, but "0 revised" claimed the doc had not changed since the row
-    # above it, which is exactly the case where it had. The pin is the absence:
-    # the row may not assert anything about the doc's state.
+    # Rewritten between sessions (#178): a doc rewritten outside viva then
+    # re-approved with 0 feedback must not claim "0 revised" — the pin is
+    # that the row asserts nothing about the doc's own state.
     viva8 = tmp / ".viva8"
     viva8.mkdir()
     doc8 = tmp / "doc8.md"

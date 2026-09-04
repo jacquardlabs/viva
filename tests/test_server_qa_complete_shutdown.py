@@ -1,40 +1,11 @@
 #!/usr/bin/env python3
 """Integration test: how a live server session ends — the finish guard that
-decides whether it *may* end, and the three routes that actually end it.
+decides whether it may end, and the three routes (`/complete`, `/abandon`,
+SIGTERM) that actually end it. Review and diff are gated on approvals;
+Q&A is exempt by shape; diff has one escape hatch, `resolved: "empty"` (#177).
 
-`POST /complete`'s guard runs first, because a refused finish never reaches a
-shutdown. "Nothing is auto-accepted" is a hard product line, and a guard that
-lives only in `loop.py finish` is a norm the next caller can walk around; this
-is the check the server performs on its own. Three sessions, two answers:
-
-- **review** — gated. No verdicts submitted yet and not-all-approved are two
-  different agent recoveries, so they get two distinct 4xx.
-- **Q&A** — exempt by shape (`questions`, no `sections`).
-- **diff** — gated like review, with one signal (#177). `parse_diff.py` emits
-  `sections`, so a diff session is review-shaped and holds until every hunk is
-  approved — unless the caller asserts `resolved: "empty"`, `loop.py finish`'s
-  word that the re-capture came back empty (every hunk applied or reverted at
-  the reviewer's request). Honored on a `--mode diff` launch only; any other
-  `resolved`, or one on a review server, is a `400`.
-
-Then the shutdown routes — three routes, three scenarios:
-
-- `POST /complete` — the standalone qa-mode finish sequence (#112). Before that
-  fix, `references/qa.md`'s finish steps read `.viva/answers.json` and
-  stopped; nothing ever called `POST /complete`, so the server process (and its
-  2-second shutdown timer, which only starts inside that handler) ran forever.
-- `POST /abandon` — the loop driver's abandon route. `loop.py abandon` is a
-  different process holding no child handle (the server is launched detached)
-  and `server.url` carries a URL and nothing else, so abandon reaches the server
-  over HTTP. It sets `_shutdown` directly, carrying none of `/complete`'s
-  sign-off meaning and none of its 2-second grace.
-- `SIGTERM` — the headless-parent teardown (#125). `proc.terminate()` is the
-  standard way a parent ends a subprocess it owns; unhandled, it exits `-15` and
-  skips the `finally` that unlinks `server.url`, leaking the file into the next
-  launch's guard.
-
-Each scenario gets its own tmpdir: sharing one lets `wait_for_url` read a stale
-`server.url` from an already-dead port and pass for the wrong reason.
+Each scenario gets its own tmpdir, so `wait_for_url` never reads a stale
+`server.url` from an already-dead port.
 """
 import json
 import signal
@@ -107,17 +78,13 @@ def _cleanup(proc) -> None:
 
 def check_review_complete_gate() -> None:
     """A review session may not sign off on sections the human never approved.
-
-    Four calls against one server, in the order a real session hits them, so the
-    snapshot the guard reads is proved to track the live round rather than being
-    written once at the first submit.
-    """
+    Four calls against one server, in session order, to prove the guard tracks
+    the live round rather than a snapshot taken at first submit."""
     proc, viva, out = _launch("review", REVIEW_INPUT)
     try:
         base = wait_for_url(out)
 
-        # (a) No round has been submitted at all. Its own 4xx, distinct from
-        # (b): the recovery is "present the round", not "re-present it".
+        # (a) No round submitted yet — distinct 4xx from (b).
         status, body = post_result(base, "/complete", {})
         assert status == 400, \
             "/complete before any /submit must be refused — got %d" % status
@@ -136,9 +103,7 @@ def check_review_complete_gate() -> None:
         assert "1 of 2" in body.get("error", ""), \
             "the refusal must name how many sections are not approved: %r" % (body,)
 
-        # (c) Round 2 opens with no verdicts of its own. The snapshot belongs to
-        # the round that produced it — carrying round 1's forward would let an
-        # all-approved earlier round sign off a later one nobody has seen.
+        # (c) Round 2 opens with no verdicts of its own — round 1's must not carry forward.
         out2 = viva / "review-r2.json"
         post(base, "/next-round",
              dict(REVIEW_INPUT, round=2, output=str(out2)))
@@ -163,14 +128,8 @@ def check_review_complete_gate() -> None:
 
 
 def check_diff_complete_is_gated_unless_resolved_empty() -> None:
-    """#177. A diff session with a `changes` verdict on record is refused a
-    plain finish exactly as a review session is — the blanket mode exemption
-    let a `--mode diff` server sign off ANY verdicts. It signs off only when the
-    caller asserts the re-capture came back empty: the hunk was reverted or
-    dropped at the reviewer's request, so there is nothing left to approve.
-    `loop.py finish` derives that assertion from a fresh capture, never from
-    memory. A round nobody has submitted is still refused first.
-    """
+    """#177: a diff session with a `changes` verdict is refused a plain finish
+    like review, and signs off only when the caller asserts `resolved: "empty"`."""
     proc, viva, out = _launch("diff", DIFF_INPUT)
     try:
         base = wait_for_url(out)
@@ -211,9 +170,7 @@ def check_diff_complete_is_gated_unless_resolved_empty() -> None:
 
 
 def check_review_complete_refuses_a_resolved_signal() -> None:
-    """A doc cannot go empty. `resolved` on a review server is a caller bug —
-    refused rather than silently ignored, the way every other malformed field
-    in this codebase is."""
+    """`resolved` on a review server is a caller bug — refused, not ignored."""
     proc, viva, out = _launch("review", REVIEW_INPUT)
     try:
         base = wait_for_url(out)
@@ -234,14 +191,8 @@ def check_review_complete_refuses_a_resolved_signal() -> None:
 
 
 def _sse_events(base: str, seen: list) -> threading.Thread:
-    """Subscribe to /events and record every event name that arrives.
-
-    This is what makes "abandon carries no sign-off meaning" checkable. The
-    assertion it replaces — `not out.exists()` — could not fail under any
-    implementation, because `/complete` never writes that file either (`/submit`
-    does, and neither abandon scenario posts one). Adding `_push_sse("complete")`
-    to the /abandon branch left both tests green; it does not now.
-    """
+    """Subscribe to /events and record every event name that arrives — makes
+    "abandon carries no sign-off meaning" actually checkable."""
     def run():
         try:
             with urllib.request.urlopen(base + "/events", timeout=10) as r:
@@ -271,20 +222,15 @@ def check_complete_shutdown() -> None:
         })
         assert poll_for(out), "answers.json never written"
 
-        # Mirrors references/qa.md's fixed finish step: /complete once
-        # answers.json exists (standalone finish, no hand-off).
-        # Also the finish guard's shape exemption: this input carries
-        # `questions` and no `sections`, and `round_is_complete` returns False
-        # for an empty section list — so a 200 here is proof it was never
-        # consulted, not proof it was satisfied.
+        # Shape exemption: `questions`/no `sections` means round_is_complete
+        # is never consulted, so a 200 here proves that, not that it passed.
         status, body = post_result(
             base, "/complete", {"questions_total": 1, "questions_answered": 1})
         assert (status, body) == (200, {"ok": True}), \
             "a Q&A session must never meet the review finish guard — got %d %r" \
             % (status, body)
 
-        # Server shuts down ~2 seconds after /complete (same timer review-
-        # and diff-mode already rely on).
+        # Server shuts down ~2 seconds after /complete.
         assert _await_exit(proc), \
             "qa-mode server should exit after /complete — orphaned process (#112)"
         assert not (viva / "server.url").exists(), \
@@ -305,9 +251,7 @@ def check_abandon_shutdown() -> None:
             "/abandon must ack before it shuts the server down"
         assert _await_exit(proc), \
             "review server should exit on /abandon — abandon has no other reach"
-        # Discriminates "no 2-second grace" from a copy of /complete's timer:
-        # observed exit is ~0.5-0.7s (the accept loop's 0.5s wake plus teardown),
-        # a timer path could not land under 2.0s.
+        # Observed exit ~0.5-0.7s; a copy of /complete's timer couldn't land under 2.0s.
         assert time.monotonic() - t0 < 1.8, \
             "/abandon must set _shutdown directly — no /complete-style 2s timer"
         assert not (viva / "server.url").exists(), \
@@ -320,13 +264,8 @@ def check_abandon_shutdown() -> None:
 
 
 def check_loop_abandon_shutdown() -> None:
-    """`loop.py abandon` ends a live session and reports it unfinished.
-
-    The driver's own route to `/abandon`, asserted independently of the two
-    signal paths: nothing here sends a signal, and `returncode == 0` proves the
-    shutdown `finally` ran normally rather than a `-15`/`-2` killing the
-    process out from under it.
-    """
+    """`loop.py abandon` ends a live session and reports it unfinished; no
+    signal is sent, so `returncode == 0` proves the shutdown `finally` ran normally."""
     proc, viva, out = _launch("review", REVIEW_INPUT)
     try:
         base = wait_for_url(out)
@@ -359,9 +298,7 @@ def check_sigterm_shutdown() -> None:
         wait_for_url(out)
         proc.send_signal(signal.SIGTERM)  # what proc.terminate() sends on POSIX
         assert _await_exit(proc), "SIGTERM must end the server process"
-        # The discriminating assertion: an *unhandled* SIGTERM also ends the
-        # process, but at -15 and without running the `finally`. Exit 0 means
-        # the handler set _shutdown and the accept loop wound down normally.
+        # An unhandled SIGTERM exits at -15 without running the `finally`.
         assert proc.returncode == 0, \
             "SIGTERM must be handled, not fatal — got returncode %r (#125)" \
             % (proc.returncode,)

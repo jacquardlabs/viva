@@ -15,10 +15,9 @@ The product is the set of **human checkpoints across an agent's artifact
 lifecycle** — today the review checkpoint (section-by-section doc review), a
 brainstorm checkpoint (batch Q&A before the doc exists), a diff checkpoint
 (hunk-by-hunk code review before a commit), and an intake checkpoint (the
-residual interview before a doc is drafted). Every feature either is one of those
-checkpoints or makes one cheaper to reach the right decision faster. A new
-feature earns its place by serving a checkpoint; one that fits neither belongs to
-a different product.
+residual interview before a doc is drafted). A feature earns its place by
+serving a checkpoint or making one cheaper to reach; one that fits neither
+belongs to a different product.
 
 ## Personas
 
@@ -26,9 +25,7 @@ a different product.
    spec, ADR, runbook, or design doc. It needs to hand the doc to a human for
    sign-off without burning context: parse without reading the doc, wait
    without polling cost, rewrite only flagged sections, and learn what this
-   reviewer always wants. The skill is tuned so the agent never makes the human
-   wait on a tool round-trip and never loads the doc into context until a
-   rewrite needs it.
+   reviewer always wants.
 
 2. **The reviewing human (primary).** A developer who must sign off on a doc an
    agent produced and refuses to rubber-stamp it. Wants to see each section
@@ -56,29 +53,34 @@ a different product.
    a product feature, not an implementation detail.
 6. **Local and keyless.** A single stdlib-only Python server, one browser tab,
    no API key, no hosted service. The reviewer's data and learned preferences
-   stay on their machine (preferences are gitignored, per-clone).
+   stay on their machine (preferences are gitignored, per-clone). The one
+   documented exception: dictating a comment through the browser's voice input
+   sends audio to the browser vendor's speech-recognition service, off by
+   default and disclosed in-page before first use (see README, "Voice — the
+   oral examination").
 
 ## What we are NOT building
 
 - **Not a linter or CI gate.** Producers (checklist, drift, grounding) flag;
-  they never fail a build or block sign-off. A human always decides.
-- **Not autonomous review.** viva does not approve its own work. The human gate
-  is the product; "nothing is auto-accepted" is a hard line.
+  they never decide a verdict, and a human always chooses whether a flag
+  matters. A `checks` pass (principle 1) can hold `/complete` on an unanswered
+  flag, but the human still answers it — viva never calls the round done
+  silently.
+- **Not autonomous review.** viva does not approve its own work. "Nothing is
+  auto-accepted" is a hard line.
 - **Not multi-user or hosted.** No accounts, no shared server, no cloud sync.
-  One reviewer, one local tab, one clone. Learned preferences are per-clone, not
-  shared.
-- **Not a general document editor.** viva reviews and signs off; it provides no
-  free editing surface. A reviewer may supply exact replacement wording for a
-  span they selected — a comment with a payload, applied by the author and
-  recorded in the ledger — but there is no cursor in the document.
-- **Not a writing assistant.** `/viva-write` drafts, but only within rails: the
-  type's grammar fixes the sections, the register (`references/style.md`) fixes
-  the density, the attachments fix the facts, the interview covers the residue,
-  and the human gate decides. The checkpoints are the contribution, not the
-  prose. The register is a rail because it says what a doc may not carry —
-  provenance, preamble, filler — not how to make its case. Craft advice — how
-  to write a good design doc — belongs in a different product; its appearance
-  in a skill file is the tell that this one has drifted.
+  One reviewer, one local tab, one clone; preferences are per-clone. A team
+  sharing preferences or reviews does it through the repo — a committed seed
+  file, `git clone` — never a hosted workspace; see #86, #189.
+- **Not a general document editor.** viva reviews and signs off, with no free
+  editing surface. A reviewer may supply exact replacement wording for a span
+  they selected — a comment with a payload, applied by the author and recorded
+  in the ledger — but there is no cursor in the document.
+- **Not a writing assistant.** `/viva-write` drafts within rails: the type's
+  grammar fixes the sections, the register (`references/style.md`) fixes the
+  density, the attachments fix the facts, and the human gate decides. The
+  register says what a doc may not carry, not how to make its case; craft
+  advice belongs to a different product.
 - **Not a heavyweight dependency.** stdlib-only server; no runtime packages.
 
 ## Surface
@@ -93,10 +95,21 @@ than by mechanism:
 
 The Q&A gate is a documented contract (`references/qa.md`) any caller can drive,
 not a third command. Naming the surface by mechanism — `/viva`, `/viva-qa`,
-`/viva-diff` — made a reviewer learn viva's internals to find the checkpoint they
-wanted.
+`/viva-diff` — made a reviewer learn viva's internals to find the checkpoint
+they wanted.
+
+`scripts/docket.py` is a third, CLI-only entry point: a read-only status line
+across every `.viva/` session on disk, for a reviewer or agent juggling more
+than one review. It is deliberately outside the two-command surface — never
+wired into `server.py` (see its own docstring) — so it's named here rather
+than counted as a checkpoint.
 
 ## Feature map
+
+Illustrative, not authoritative — GitHub Issues (below) is the backlog of
+record and the place a specific feature's status is current. This map is
+refreshed opportunistically, not on every merge, so treat a shipped feature's
+absence here as the map lagging, not as the feature not existing.
 
 The core loop (parse → review → rewrite → loop → sign off with ledger) plus
 opt-in layers that all funnel through the section card:
@@ -123,12 +136,22 @@ opt-in layers that all funnel through the section card:
   issue refs, files, URLs) starts the flow; the interview covers only what the
   attachments could not answer, and the draft reaches editorial rounds in the
   same tab without a second server launch
+- Voice input — dictate a comment via the browser's speech recognizer, off by
+  default and disclosed before first use
+- Grounds-classed recommendations in the Q&A interview — sourced / inferred /
+  taste
+- Editorial pass depth and declines — a suggestion can be kept as-is by the
+  author, recorded rather than silently dropped
+- A named tab and turn-state favicon, so a reviewer juggling several reviews
+  can tell them apart at a glance
+- `scripts/docket.py` — a cross-session status line across every `.viva/`
+  session on disk (see Surface, above)
 
 ## Known problems
 
-- **README trails the deeper layers.** It now covers both commands, intake, doc
-  types, verdicts, and pass depth, but confidence triage and the producer
-  contract are still documented only in `references/` and `CLAUDE.md`.
+- **README trails one deeper layer.** It now covers both commands, intake, doc
+  types, verdicts, pass depth, and the producer contract, but confidence
+  triage is still documented only in `references/` and `CLAUDE.md`.
 - **Stamps are prose, not bundle data.** A type bundle carries no `stamp` field,
   so `/viva-write`'s per-type consequence (commit vs. `gh pr edit`) lives in the
   skill's table rather than in the type it belongs to.

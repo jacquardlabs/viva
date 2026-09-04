@@ -1,38 +1,9 @@
 #!/usr/bin/env python3
-"""The doc + margin restructure (issue #186) — served-page integration tests.
+"""The doc + margin restructure (#186) — served-page integration tests.
 
-#185 shipped the catalog's materials on the old accordion. This suite guards
-its STRUCTURE: review mode prints the document continuously as a run of
-`check gutter | prose | margin` rows, commentary sits beside the passage it
-annotates, and the per-section action row is gone.
-
-What each test group holds:
-
-  * **The seam.** The restructure is TWO things. `.doc` is the GRAMMAR —
-    three-column rows, margin notes with pins, the glyph rail, the spec table,
-    per-note verbs — and every surface that renders a section wears it.
-    `.print` is CONTINUOUS PRINT — all sections open at once, a settled one
-    dimming in place — and review wears it alone, because a 200-hunk changeset
-    read as one print is a worse surface than one hunk at a time. They shipped
-    conflated behind one class and one `isDocMode()`, which is exactly why the
-    restructure reached review mode only. These are the assertions that catch
-    someone re-fusing them.
-  * **Reading order.** Nothing secondary may sit between the reader and the
-    prose. The round diff — the widest object on the page, and what a round-2
-    run found stacked at full width above the text — ships collapsed.
-  * **The wasted-space rule.** Both side columns collapse to zero. This is the
-    thing most likely to be lost, because the composite it was drawn from
-    reserves both columns on every row.
-  * **The schema contract.** `CHECK_KINDS` is injected from `scripts/schema.py`,
-    never restated in JS. The registry fails open — an unregistered kind is
-    silently invisible — so a hand-kept second copy would fail open in the very
-    surface that draws `checks N/M`.
-  * **Keyboard reach.** With the action row gone, a section carrying no notes
-    would hold no focusable element at all. Approve stays on every section.
-
-Rendered layout is out of scope here, same as the rest of the suite: these are
-markup, CSS-rule and wire-format checks against the page the server actually
-serves.
+Guards the STRUCTURE: review mode prints the document continuously as
+`check gutter | prose | margin` rows, commentary beside its anchor, no
+per-section action row. Markup/CSS-rule/wire-format checks only.
 """
 import json
 import re
@@ -79,9 +50,8 @@ REVIEW_INPUT_R2 = {
 
 
 def test_review_mode_prints_the_document(page: str, data: dict) -> None:
-    """Cap: review mode routes to the doc builder and renders every section up
-    front. Continuous print has nothing to open, so there is nothing to render
-    lazily — a reader of a document review is reading the document."""
+    """Cap: review mode routes to the doc builder and renders every section
+    up front — continuous print has nothing to open lazily."""
     assert data["mode"] == "review" and data["round"] == 2, data
     assert "const asDoc = isContinuousPrint();" in page, \
         "the print must be gated on the predicate, not on a re-derived mode test"
@@ -94,15 +64,9 @@ def test_review_mode_prints_the_document(page: str, data: dict) -> None:
 
 
 def test_the_grammar_is_not_the_print(page: str) -> None:
-    """Cap: the seam. `.doc` arms the grammar and every card container that
-    renders sections gets it; `.print` arms continuous print and only review
-    does. Anything print-only is keyed on `.doc-section`, which no other
-    surface builds.
-
-    There is deliberately no companion `usesMargin()` predicate: every place
-    `isDocMode()` used to branch is reached only from a surface that renders
-    sections, and all of them wear the margin, so the honest form of that
-    question is no condition at all."""
+    """Cap: the seam. `.doc` arms the grammar (every section container);
+    `.print` arms continuous print (review only). No `usesMargin()`
+    predicate exists — every caller wears the margin already."""
     assert ("function isContinuousPrint() { return !!(REVIEW_DATA && "
             "REVIEW_DATA.mode === 'review'); }") in page, \
         "the print needs one predicate with one definition"
@@ -119,18 +83,9 @@ def test_the_grammar_is_not_the_print(page: str) -> None:
 
 
 def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
-    """Cap: what survives in diff mode and what does not.
-
-    SURVIVES — the ACCORDION. One hunk open at a time, a real <button> head
-    with aria-expanded, the animating body region, the carried gate. 52 hunks
-    printed at once is a worse surface than one at a time, which is the half of
-    the original scoping call that was right.
-
-    DOES NOT — the accordion's CHROME. The annotation strip, the stacked thread
-    list, the add-a-note row and the action row all stacked commentary on top
-    of the hunk it was about: the same reading-order inversion the print fixed,
-    in a narrower frame. They are margin objects now, on both surfaces, and
-    they are deleted rather than hidden."""
+    """Cap: SURVIVES — the accordion (one hunk open at a time, disclosure
+    button, animating body, carried gate). DOES NOT — its chrome (annotation
+    strip, thread list, action row): margin objects now, deleted not hidden."""
     assert ('<button type="button" class="card-head" aria-expanded="false" '
             'aria-controls="rbody-${section.id}">') in page, \
         "diff mode's accordion head must stay a disclosure button"
@@ -143,11 +98,8 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
                  'class="comment-list"', 'function renderCommentList(',
                  'function openThreadHTML(', 'function renderHighlights('):
         assert dead not in page, f"accordion chrome must be deleted, not hidden: {dead}"
-    # The open hunk is a row grid with a margin, from the SAME two band builders
-    # the print uses — one copy each, so a verb added to a document review
-    # cannot go missing from a diff review. The head row carries orientation in
-    # ONE track and has no margin cell at all; the section's state and its verbs
-    # are the foot band's.
+    # The open hunk shares the print's head/foot band builders (one copy each),
+    # so a verb added to document review can't go missing from diff review.
     assert "function docHeadRowHTML(id, proseHTML)" in page, \
         "both builders must raise the head row from one function"
     assert "function docFootRowHTML(id, title, opts)" in page, \
@@ -159,40 +111,29 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
     # `skip` is the accordion's alone: with one hunk open at a time, "not this
     # one, not now" is a real move; in the print it is just reading on.
     assert "const skip = !!(opts && opts.skip);" in page
-    # The hunk never borrows the margin's track. `:has()` there would make the
-    # first comment on a hunk a 328px re-layout of the lines being commented on.
-    # ...and only a CODE row takes it: a table reflows to the measure.
+    # The hunk never borrows the margin's track — a first comment must not
+    # re-layout the lines being commented on. Only a CODE row takes it.
     assert ".doc.print .row.wide:not(:has(> .rm)):has(> .rp > pre, > .rp > .d2h-wrapper) .rp" in page, \
         "the break-out rule belongs to the print, where a wide row is one of many, and to code"
-    # A pin on a code line LEADS the line and sticks: prose wraps, a diff line
-    # scrolls, and a pin set after its anchor was measured at x=1052 inside a
-    # 445px pane — nowhere the reviewer will ever see it.
+    # A pin on a code line leads the line and sticks: a diff line scrolls
+    # horizontally, so a pin fixed to the anchor's offset would go offscreen.
     assert "tail.closest('.d2h-code-line')" in page, \
         "a diff pin must attach to the line, not to the character offset"
     assert re.search(r'\.pin-line\s*\{[^}]*position:\s*sticky', page), \
         "a diff pin must survive a horizontal scroll of its own pane"
-    # ...and a carried suggestion on a diff line takes the margin's fence, for
-    # the same reason a code block does: a del/ins pair spliced into a `+` line
-    # reads as neither version of anything.
+    # A carried suggestion on a diff line takes the margin's fence too: a
+    # del/ins pair spliced into a `+` line reads as neither version.
     assert "mark.closest('pre, .d2h-code-line')" in page, \
         "a rendered diff line is a code well too"
-    # An anchor that straddles hljs token spans is re-inserted where it came
-    # FROM. `extractContents` can remove the nodes the range's start boundary
-    # points into, collapsing the range up to their parent — measured on a diff
-    # line as an emptied 506px `.d2h-code-line-ctn` followed by the text 506px
-    # to its right. It compounds: `markAndPin`'s teardown flattens a mark into
-    # whatever parent it currently has, so once the text is a sibling of the
-    # code container it stays one for the rest of the session.
+    # An anchor spanning hljs token spans must be re-inserted where its content
+    # came from — `extractContents` can otherwise collapse the range up to its
+    # parent, and a flattened mark then stays a sibling of the code container.
     assert "const slot = document.createTextNode('');" in page and \
         "slot.parentNode.replaceChild(mark, slot);" in page, \
         "a spanning mark must be re-inserted where its content came from"
-    # A CARRIED card is the one thing that renders section content WITHOUT
-    # wearing the grammar: a read-only reveal of a hunk already signed off,
-    # with nothing to annotate and — because buildCarriedCard never builds one
-    # — no `.row-head` for an unanchored thread to fall back to. Dropping the
-    # old mode guard from `_ensureRendered` sent that thread straight through
-    # `docCell(null, 'rm')`; reproduced in a browser as `TypeError: Cannot
-    # read properties of null (reading 'querySelector')` on the reveal.
+    # A carried card renders content without the grammar (read-only, nothing
+    # to annotate) and has no `.row-head` — dropping the mode guard here sent
+    # an unanchored thread through `docCell(null, 'rm')`, a null-deref TypeError.
     assert "const carried = !!(card && card.classList.contains('is-carried'));" in page, \
         "the reveal must be recognised before anything is placed into it"
     assert "if (carried) return;" in page, \
@@ -201,22 +142,18 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
         "...on the md-raw fallback path too"
     assert "const host = row || docFootRow(id);" in page and "if (!host) return;" in page, \
         "placeDocThreads must carry the same missing-host guard as its siblings"
-    # `docHeadRow` got the carried-card refusal for free — buildCarriedCard
-    # builds no `.row-head`. `docFootRow` must keep it for the same structural
-    # reason, which is only true while it stays a QUERY: build the band on
-    # demand from a `.section-content` a carried card DOES have and the guard
-    # above stops guarding, and this TypeError comes straight back.
+    # `docFootRow` must stay a QUERY, never build the band on demand — a
+    # carried card has no `.row-head`, and building on demand reopens the
+    # same null-deref this guards against.
     assert "function docFootRow(id)" in page and "sec.querySelector('.row-foot')" in page, \
         "the foot band must be found, never created — that is what keeps a carried reveal null"
     print("test_diff_keeps_the_accordion_and_loses_its_chrome: OK")
 
 
 def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
-    """Cap: the reading-order fix. A round-2 run put the transmittal slip, the
-    carried row, two open threads with reply boxes and a 25-line round diff
-    above the paragraph all of it was about. Threads and flags now sit BESIDE
-    their anchor, and the diff — the widest object on the page — ships
-    collapsed above it, never expanded."""
+    """Cap: the reading-order fix. Threads and flags now sit BESIDE their
+    anchor, not stacked above it, and the round diff — the widest object on
+    the page — ships collapsed, never expanded."""
     # The round diff lives in the head row's prose cell, collapsed — one mono
     # line, filling the space the spec table opens beside the heading (88px of
     # dead prose column, measured in a browser, before it moved there).
@@ -251,18 +188,12 @@ def test_nothing_sits_between_the_reader_and_the_prose(page: str) -> None:
 
 
 def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str) -> None:
-    """Cap: the wasted-space rule this story owns. The composite reserves 70px
-    of gutter and 300px of margin on every row; production must not. The
-    decision is read off the DOM (so a comment made a moment ago counts like a
-    thread that shipped with the round) and made once per document — a per-row
-    or per-section decision jogs the prose column sideways as you read it."""
+    """Cap: the wasted-space rule. Both side columns must collapse to zero
+    when the round has nothing for them, decided once per document — a
+    per-row or per-section decision jogs the prose column as you read."""
     assert "function updateDocColumns()" in page, "page missing the collapse rule"
-    # Read off the ROUND, not the DOM. The accordion renders a section's rows
-    # only when that section is opened, so a DOM read would see an empty margin
-    # until the reviewer reached the first hunk carrying a note and then jog
-    # every hunk sideways mid-review — the per-navigation decision this rule
-    # exists to avoid. `docNotes` reads rState, so a comment made a moment ago
-    # still counts, which is the property the DOM read was there for.
+    # Read off the ROUND, not the DOM: the accordion only renders an opened
+    # section's rows, so a DOM read would jog columns sideways mid-review.
     assert "const gutter = sections.some(s => docFlagSplit(s).gutter.length);" in page, \
         "the gutter decision must be read off the round"
     assert ("const margin = sections.some(s => docFlagSplit(s).margin.length "
@@ -270,10 +201,8 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         "margin flags, carried threads and this round's comments all hold the margin"
     assert "doc.classList.toggle('no-gutter', !gutter);" in page, \
         "the gutter must collapse when nothing in the round carries a flag"
-    # The PRINT keeps its margin even when nothing is in it: an empty margin
-    # is still the measure, and collapsing it put the prose at 967px (~150
-    # characters a line) on every note-less round, then rewrapped the whole
-    # document when the first composer opened. The accordion still collapses.
+    # The PRINT keeps its margin even when empty — collapsing it would
+    # rewrap the whole document the moment the first composer opened.
     assert "doc.classList.toggle('no-margin', !margin && !isContinuousPrint());" in page, \
         "the margin collapses only in the accordion; the print holds the measure"
     # The HEAD row has no margin cell in any state, so it needs no
@@ -281,15 +210,9 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
     # rule that reappears is a head row that grew a margin back.
     assert ".doc.no-margin .row-head" not in page, \
         "the head row is one track; a collapse exemption for it is a margin cell returning"
-    # The FOOT band keeps the twin, and only for one reader: `updateDocColumns`
-    # counts `docFlagSplit(s).margin` and `docNotes(s)` but NOT `split.gutter`,
-    # so a section-scope non-jumping flag whose anchor resolves to no row falls
-    # back to the foot band and renders its words into what would otherwise be
-    # a 0px track. (The composer needs no rule — `.rm .comment-popover.is-open`
-    # drops `no-margin` synchronously before paint.)
-    # `1fr`, not `72ch` — the last `ch` in a grid template, and the one
-    # invariant #5 was written against: it resolves against the row's own
-    # font-size, so the band would come out narrower than every prose row.
+    # The FOOT band keeps the twin so an unanchored flag still renders.
+    # `1fr`, not `72ch`: a `ch` unit resolves against the row's own
+    # font-size and would come out narrower than the prose rows (#5).
     assert re.search(r'\.doc\.no-margin \.row-foot\s*\{[^}]*grid-template-columns:\s*'
                      r'var\(--gutter-w\)\s+minmax\(0,\s*1fr\)', page), \
         "a collapsed margin must drop the foot band to two tracks, at the rows' own measure"
@@ -298,12 +221,9 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         assert "ch)" not in line, f"no `ch` may appear in a grid template: {line}"
     assert re.search(r'\.doc\.no-margin \.row-foot \.rm\s*\{[^}]*grid-column:\s*2', page), \
         "the foot band's margin must reflow under the prose, not disappear"
-    # An OPEN compose popover holds the margin as surely as a saved note does.
-    # Without this the FIRST anchored comment on a bare document — precisely
-    # the document the collapse rule exists for — mounts its textarea into a
-    # 0px track. The head row is immune (it reflows under the heading), which
-    # is why the `+ note` path hides the failure and only the select-to-comment
-    # path on a clean round 1 hits it.
+    # An OPEN compose popover holds the margin as surely as a saved note does —
+    # without this, the first anchored comment on a bare document mounts its
+    # textarea into a 0px track.
     assert ".rm .comment-popover.is-open" in page, \
         "an open compose popover must count as margin content"
     assert "pop.classList.add('is-open');" in page and "pop.classList.remove('is-open')" in page, \
@@ -314,25 +234,31 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
 
 
 def test_check_kinds_is_injected_never_restated(page: str) -> None:
-    """Cap: the frontend reads scripts/schema.py's registry rather than keeping
-    a copy. CHECK_KINDS fails open by design — an unregistered kind raises
-    nowhere, it just becomes invisible — so a second, hand-kept copy would fail
-    open the same silent way in the one surface that draws `checks N/M`."""
+    """Cap: the frontend reads scripts/schema.py's registry rather than
+    keeping a copy — CHECK_KINDS fails open, so a hand-kept copy would fail
+    open the same silent way in the surface that draws `checks N/M`."""
     expected = "const CHECK_KINDS = " + json.dumps(list(schema.CHECK_KINDS)) + ";"
     assert expected in page, f"CHECK_KINDS must be injected from schema.py, got neither {expected!r}"
     assert "__CHECK_KINDS__" not in page, "the injection placeholder must be substituted"
     # And it is the registry the spec table and the segmented rule ask.
     assert "CHECK_KINDS.includes(a.kind)" in page, \
         "the checks row and the balance must both read the injected registry"
+    # THREAD_STATUS_LABELS is injected the same way: a broken `.replace()`
+    # chain leaves the placeholder in place and bricks the tab with no
+    # server-side error.
+    expected_labels = ("const THREAD_STATUS_LABELS = "
+                       + json.dumps(dict(schema.THREAD_STATUS_LABELS)) + ";")
+    assert expected_labels in page, \
+        f"THREAD_STATUS_LABELS must be injected from schema.py, got neither {expected_labels!r}"
+    assert "__THREAD_STATUS_LABELS__" not in page, \
+        "the injection placeholder must be substituted"
     print("test_check_kinds_is_injected_never_restated: OK")
 
 
 def test_every_section_keeps_a_focusable_control(page: str) -> None:
-    """Cap: keyboard reach survives the action row's removal. Sections no longer
-    collapse, so the head is a heading and not a disclosure button — which
-    leaves a section carrying zero notes with zero focusable elements unless
-    approve stays. It stays, in the margin, and the palette is a second path to
-    the same verb rather than the only one."""
+    """Cap: keyboard reach survives the action row's removal. Sections no
+    longer collapse, so a note-less section would have zero focusable
+    elements unless approve stays — it stays, in the margin."""
     assert '<button type="button" class="nt-btn is-pri" id="rbtn-primary-\' + id + \'">' in page, \
         "every section must keep its own approve control, on every surface"
     assert '<button type="button" class="nt-btn is-quiet" id="rcmtnote-\' + id + \'">' in page, \
@@ -357,26 +283,20 @@ def test_every_section_keeps_a_focusable_control(page: str) -> None:
 
 def test_segmented_rule_states_its_counts(page: str) -> None:
     """Cap: honest proportions, auditable. One function owns the denominator,
-    the order is fixed (judgment -> facts -> settled) as the colorblind-safe
-    second encoding, and the raw counts ride out in the aria-label so the claim
-    can be checked rather than taken on faith. A section with nothing open gets
-    the thin hairline: a state bar there is decoration."""
+    order is fixed (judgment -> facts -> settled) as the colorblind-safe
+    encoding, and raw counts ride in the aria-label so the claim is checkable."""
     assert "function sectionBalance(section)" in page, "page missing the balance function"
     assert "return { judgment, facts, settled, signoff };" in page
     # A section's own sign-off is an item in BOTH states — pending as well as
-    # settled. It used to count only once approved, so a fresh eight-section
-    # round printed `0 items · 0 open` while its own legend defined an item as
-    # "… or a section's own sign-off": the total measured decisions already
-    # made and GREW as the reviewer worked.
+    # settled. It used to count only once approved, so a fresh round printed
+    # `0 items · 0 open` despite the legend defining sign-off as an item.
     assert "const signoff = deriveVerdict(id) === 'approved' ? 0 : 1;" in page, \
         "a pending sign-off must count as an item, not only a settled one"
     assert "if (!signoff) settled++;" in page, \
         "an approved section's sign-off stays in `settled`"
-    # ...and it rides out as its OWN field rather than folding into `judgment`,
-    # because the segmented rule must not paint it. Folded in, every unreviewed
-    # section of every round 1 would take a 100%-wide cobalt slab — finding 09
-    # in a different ink. segHTML's denominator is the proof: it sums three
-    # fields, not four.
+    # It rides out as its OWN field rather than folding into `judgment`,
+    # because the segmented rule must not paint it — segHTML's denominator
+    # sums three fields, not four.
     assert "const total = bal.judgment + bal.facts + bal.settled;" in page, \
         "segHTML must exclude `signoff` — a pending sign-off is not a painted segment"
     # Fixed order, in the markup the reader gets.
@@ -387,22 +307,15 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
         "the segmented rule must state its raw counts in the aria-label"
     assert "if (!bal.judgment && !bal.facts) return '<div class=\"rule-s\"></div>';" in page, \
         "a section with nothing open takes the thin settled hairline, not a bar"
-    # Finding 09. A PLAIN producer flag is advisory — `.mflag` takes no border
-    # and no actions, and nothing the reviewer can do closes it — so it is not
-    # an open item. Counting it as one gave a section whose only annotation was
-    # one warn flag a 100%-wide amber bar (four on the first screen, measured),
-    # making `--fact` the most-printed ink on a page where it is the scarce
-    # machine-flagged-open-fact ink, and it held `N open` off zero on a round
-    # where every section was approved. The ink was never wrong; the arithmetic
-    # was. A section carrying only producer flags now draws NO rule at all —
-    # segHTML's `if (!total) return ''` fires before the hairline branch.
+    # Finding 09. A PLAIN producer flag is advisory — nothing the reviewer
+    # can do closes it — so it must not count as an open item; a section
+    # with only producer flags now draws NO rule at all.
     sec_balance = page[page.index("function sectionBalance(section)"):]
     sec_balance = sec_balance[:sec_balance.index("\n}")]
     assert "a.severity" not in sec_balance, \
         "an advisory producer flag must not be counted as an open item"
-    # ...and the deletion must not be over-applied to a check. An unanswered
-    # CHECK_KIND is ANSWERABLE via `result` and it gates a `checks` round, so
-    # it stays a fact until it carries one.
+    # The deletion above must not over-apply to a check: an unanswered
+    # CHECK_KIND is answerable via `result` and gates a `checks` round.
     assert ("if (CHECK_KINDS.includes(a.kind)) { if (a.result) settled++; "
             "else facts++; return; }") in sec_balance, \
         "an answerable check stays an open fact until it carries a result"
@@ -418,10 +331,9 @@ def test_segmented_rule_states_its_counts(page: str) -> None:
 
 
 def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
-    """Cap: the pin in the text and the note in the margin carry the same
-    number, because ONE pass assigns both — two passes could disagree about
-    which span is note 3. Notes order by the row their anchor lands in, so the
-    numbering runs down the page the way the reader reads."""
+    """Cap: the pin and its margin note carry the same number because ONE
+    pass assigns both — two passes could disagree about which span is note 3.
+    Notes order by the row their anchor lands in."""
     assert "function markAndPin(id, ordered)" in page, "page missing the mark+pin pass"
     assert "function renderHighlights(" not in page, \
         "the second marking pass had no surface left to serve and must stay gone"
@@ -440,25 +352,9 @@ def test_margin_notes_and_pins_are_numbered_together(page: str) -> None:
 
 
 def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
-    """Cap: the margin lives INSIDE `#rcontent-<id>` now, and every margin note
-    echoes the wording it annotates (`.nt-quote`, `.open-thread-quote`). Three
-    paths would otherwise count or mark that echo as if it were the document:
-
-      * `occurrenceInRendered` counts over the container to pick which
-        occurrence the reviewer selected — an echo inflates the ordinal, and
-        `offsetInSource` then addresses a different span in the markdown, or
-        none. That is the #95 bug, except the margin manufactures the repeat:
-        comment on a phrase in the first paragraph, then on the same phrase in
-        the third, and the second capture counts the first note's quote too.
-      * `wrapNth` walks the container to place the mark, so it could highlight
-        inside the commentary.
-      * the mouseup handler's `.section-content` test used to mean "inside the
-        document" because the popover was a sibling; now a drag across your own
-        prior note would open a popover anchored to text that is not in the doc.
-
-    One filter (`proseWalker`) answers all three. It is inert in the accordion —
-    nothing there matches those classes inside `.section-content` — so both
-    surfaces run the same walk rather than branching."""
+    """Cap: the margin echoes the wording it annotates, so occurrence-
+    counting, mark placement, and the comment handler must all exclude that
+    echo (the #95-shaped bug). One filter, `proseWalker`, answers all three."""
     assert "function proseWalker(root)" in page, "page missing the prose-only walker"
     assert ("if (c && (c.contains('rm') || c.contains('rg') || c.contains('comment-popover')\n"
             "                  || c.contains('sug-ins')))" in page), \
@@ -482,18 +378,14 @@ def test_anchoring_reads_the_document_not_the_commentary(page: str) -> None:
 
 
 def test_anchored_span_wears_the_reviewers_touch(page: str) -> None:
-    """Cap: the ink discipline, applied to the restructure. `--touch` is the
-    reviewer's touch ON THE TEXT and nothing else, so in the doc print an
-    anchored span is catalog yellow and the PIN — not the highlight — carries
-    whose note it is and what kind. Red and green stay confined to the
-    suggestion fence, where diff semantics already own them."""
+    """Cap: `--touch` is the reviewer's touch on the text and nothing else —
+    an anchored span is catalog yellow and the PIN, not the highlight, carries
+    whose note it is. Red/green stay confined to the suggestion fence."""
     assert re.search(r'\.doc mark\[class\^="cmt-hl-"\]\s*\{\s*background:\s*var\(--touch\);\s*'
                      r'border-bottom:\s*1\.5px solid var\(--touch-edge\)', page), \
         "an anchored span must wear catalog yellow plus the theme's edge"
-    # --touch on charcoal is a 22% wash — about a 5% luminance lift, and the
-    # composite has no dark rendering to check it against (its `.cf` block
-    # hardcodes the white ground). The edge is what keeps the mark readable
-    # there; in light the fill is already the mark, so it stays transparent.
+    # The edge keeps the mark readable on charcoal, where the yellow wash is
+    # subtle; in light the fill is already the mark, so it stays transparent.
     assert page.count('--touch-edge:') == 3, \
         "--touch-edge must be defined once per theme block"
     assert '--touch-edge: transparent;' in page and page.count('--touch-edge: #ffec8f;') == 2, \
@@ -510,10 +402,9 @@ def test_anchored_span_wears_the_reviewers_touch(page: str) -> None:
 
 
 def test_settled_token_defined_once_per_theme_block(page: str) -> None:
-    """Cap: the segmented rule's settled ink is a real token in all three theme
-    blocks. The composite's `#e3e4e2` is nearly white on charcoal, so the dark
-    side needs its own value rather than the light one carried across — the
-    same rule every party ink already follows."""
+    """Cap: the segmented rule's settled ink is a real token in all three
+    theme blocks — the light value is nearly white on charcoal, so the dark
+    side needs its own value rather than one carried across."""
     assert page.count('--settled:') == 3, \
         "--settled must be defined once per theme block (light, media dark, explicit dark)"
     assert re.search(r'--settled:\s+#e3e4e2;', page), "light --settled missing"
@@ -523,12 +414,9 @@ def test_settled_token_defined_once_per_theme_block(page: str) -> None:
 
 
 def test_a_suggestion_is_shown_applied(page: str) -> None:
-    """Cap: a suggestion renders IN THE PROSE — the wording it replaces struck
-    in the faint ink, the replacement on the same catalog yellow the anchor
-    wears. Without it the reviewer reads a note *about* a sentence and never
-    the sentence, which is the whole difference between a suggestion and a
-    comment. Not in code: a struck line inside a code well reads as broken
-    syntax, so a code suggestion falls back to the margin's −/+ fence."""
+    """Cap: a suggestion renders IN THE PROSE — struck wording plus the
+    replacement in catalog yellow. Not in code: a struck line there reads as
+    broken syntax, so a code suggestion falls back to the margin's −/+ fence."""
     assert "sug.className = 'sug';" in page and "was.className = 'sug-del';" in page \
         and "now.className = 'sug-ins';" in page, "page missing the inline apply"
     assert re.search(r'\.sug-del\s*\{[^}]*text-decoration:\s*line-through', page), \
@@ -551,15 +439,9 @@ def test_a_suggestion_is_shown_applied(page: str) -> None:
 
 
 def test_an_anchor_that_crosses_elements_still_marks(page: str) -> None:
-    """Cap: a code anchor. highlight.js splits `time.sleep(0.3)` into six token
-    spans, so the phrase the reviewer selected lives in no single text node —
-    wrapNth's walk marked nothing at all, and a suggestion on a line of code
-    drew neither highlight nor pin. The Range fallback spans elements.
-
-    Kept as a FALLBACK, not the primary: surroundContents splits partially
-    selected elements, and diff mode's marks land inside diff2html's table
-    markup where that is not a trade worth making unless the alternative is no
-    mark at all."""
+    """Cap: a code anchor. highlight.js splits a code line into token spans,
+    so a selected phrase can span no single text node — the Range fallback
+    handles it, kept as a FALLBACK since `surroundContents` splits elements."""
     assert "function wrapSpanning(root, needle, cls, n)" in page, "page missing the Range fallback"
     assert "return wrapSpanning(root, needle, cls, n);" in page, \
         "wrapNth must fall through to it, never lead with it"
@@ -571,13 +453,8 @@ def test_an_anchor_that_crosses_elements_still_marks(page: str) -> None:
 
 def test_each_note_carries_its_own_verb(page: str) -> None:
     """Cap: one verb per note, with its keycap, instead of a permanently-open
-    reply box under two type chips — ~120px of controls on every carried
-    thread whether or not the reviewer meant to say anything, which is
-    affordable at the foot of an accordion card and not in a 253px margin.
-
-    The verbs are viva's actual moves. A declined thread is waiting on
-    accept-or-insist, so it leads with `Accept` (settle: the decline stands)
-    against `Change anyway` (reply: an insisting reply is binding)."""
+    reply box — too much chrome for the margin. A declined thread leads with
+    `Accept` (settle) against `Change anyway` (reply, which is binding)."""
     assert "declined ? 'Accept' : 'Settle'" in page and "declined ? 'y' : 's'" in page
     assert "declined ? 'Change anyway' : 'Reply'" in page and "declined ? 'n' : 'r'" in page
     assert "(declined ? settle('is-pri') + reply() : reply() + settle('is-quiet'))" in page, \
@@ -597,34 +474,24 @@ def test_each_note_carries_its_own_verb(page: str) -> None:
 
 
 def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
-    """Cap: the bar and the footer answer the same question with the same
-    number. `documentBalance` is the single source — items, open, checks, and
-    the baseline convergence measures against — so `7 items · 5 open` in the
-    bar can never disagree with `blocked · 5 open` below it.
-
-    `convergence` compares open items when the round was ARMED against open
-    items now. Both ends are counted, never estimated: the baseline reads only
-    round data (carried threads, unanswered checks, flags) and never live
-    reviewer state, which is what makes it a baseline."""
+    """Cap: the bar and footer answer off one source, `documentBalance`, so
+    they can never disagree. `convergence` compares open items at ARM time
+    vs. now, reading only round data — never live reviewer state."""
     assert "function documentBalance()" in page, "page missing the one arithmetic"
     assert "atStart += (s.open_notes || []).length;" in page, \
         "the baseline counts carried threads, which all arrive unsettled"
     assert "open: judgment + facts + signoff" in page
     assert "total: judgment + facts + settled + signoff" in page
-    # Both ends of the convergence arrow count the sign-off, or the arrow lies.
-    # `open` includes every pending one, so a baseline that skipped them would
-    # read `convergence 0 → 8` on a round where the reviewer has done nothing.
-    # The baseline asks `approved_ids` — the static field the round shipped
-    # with — never the live verdict, which is the thing it is measured against.
+    # Both ends of the convergence arrow count the sign-off, or the arrow
+    # lies. The baseline asks `approved_ids` — the static field the round
+    # shipped with — never the live verdict it's measured against.
     assert "const armedApproved = new Set(REVIEW_DATA.approved_ids || []);" in page, \
         "the baseline must read the round as armed, not as it stands now"
     assert "if (!armedApproved.has(s.id)) atStart++;" in page, \
         "a section that arrived owing a sign-off is open at the arrow's left"
     assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
-    # The stamp is named for what it does to the document, on every surface
-    # that dispatches one.
-    # ...and names its action only: the count beside it in `#stat-pending`
-    # is the one place the blocking number prints.
+    # The stamp names its action only — `#stat-pending` is the one place
+    # the blocking count prints.
     assert "sub.textContent = 'approve — dispatch';" in page, \
         "the footer carries one consequential stamp, with no restated count"
     # A measured latency, never a claimed one.
@@ -638,28 +505,18 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
         "the document's closed mass is drawn in ink"
     assert re.search(r'\.foot-seg\s*\{[^}]*height:\s*6px', page), \
         "the footer's rule is heavier than a section's"
-    # Finding 08. Every aggregate on the page either states what it counts or
-    # it is gone.
-    #
-    # (a) The cell LABELLED `approved` prints approved. It printed `reviewed`
-    #     (approved + withFeedback), which is how a measured session read
-    #     `approved 8 / 8` beside `3 with feedback`. DESIGN.md already
-    #     specified `approved N/M`; this is the code catching up to the doc.
+    # Finding 08: every aggregate either states what it counts or is gone.
+    # (a) the cell LABELLED `approved` prints approved, not `reviewed`
+    # (approved + withFeedback, per DESIGN.md's `approved N/M`).
     assert "el('r-progress-label').textContent = `${approved} / ${total}`;" in page, \
         "the cell labelled `approved` must print approved, never reviewed"
-    # (b) `N approved` / `N with feedback` are DELETED, not hidden. They were
-    #     set and then hidden on every path, and the feedback cell's
-    #     else-branch hid without clearing, so `#stats-area` — an aria-live
-    #     region — kept a stale `3 with feedback` in the DOM forever. Assert
-    #     the CALL SITES are gone as well as the markup: leaving
-    #     `updateQAStats`'s two `.style.display` lines behind the deleted
-    #     markup throws on every Q&A round, and nothing here runs JS.
+    # (b) `N approved` / `N with feedback` are DELETED, not hidden — a hidden
+    # aria-live element left a stale `3 with feedback` in the DOM forever.
     for dead in ("el('stat-approved')", "el('stat-feedback')",
                  'id="stat-approved"', 'id="stat-feedback"',
                  ".stat-approved {", ".stat-feedback {"):
         assert dead not in page, f"the retired aggregate still ships: {dead}"
-    # (c) The survivors define themselves, in the page, in the reader's reach.
-    #     A `title` is hover-only; this list is the definition.
+    # (c) the survivors define themselves, in the page, in the reader's reach.
     legend = page[page.index('<details class="kbd-legend">'):]
     legend = legend[:legend.index("</details>")]
     for term in ("<dt>item</dt>", "<dt>open</dt>", "<dt>convergence</dt>",
@@ -669,44 +526,32 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
 
 
 def test_activation_costs_no_layout(page: str) -> None:
-    """Cap: pointing at a section must not move the page. Continuous print puts
-    every control on screen at once, so anything that relayouts on activation
-    moves a control out from under the hand reaching for it — measured at 57px
-    of section jump and 17px of button slide when the spec table was gated on
-    `rState.active` and hopped from one head row to another.
-
-    Two rules keep it still: the spec is drawn for every section that has
-    something to state (never only the live one), and the live section is
-    marked at its heading with a border plus a compensating negative margin,
-    which occupies no space at all."""
+    """Cap: pointing at a section must not move the page. The spec draws for
+    every section with something to state; the live marker is a border plus
+    a compensating negative margin, so it occupies no space."""
     assert "mount.innerHTML = specHTML(section);" in page, \
         "the spec must not be gated on which section is live"
     assert "rState.active === id ? specHTML" not in page, \
         "the live-only gate is what made activation a layout change"
-    # A spec with nothing to say renders nothing, so a clean section's head row
-    # is short whether or not it is live.
+    # A spec with nothing to say renders nothing, so a clean section's head
+    # row is short whether or not it is live.
     assert "if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';" in page, \
         "an all-zero spec is not a state readout"
     # The live marker is a border with a compensating negative margin.
     assert re.search(r'\.doc-section\.is-active \.doc-head\s*\{\s*border-left:\s*2px solid var\(--ink\);'
                      r'\s*margin-left:\s*-10px;\s*padding-left:\s*8px', page), \
         "the live marker must occupy no space"
-    # And the unanchored compose box opens in the FOOT band's margin cell. The
-    # invariant is the one it always was — the button just clicked must not
-    # move — and the foot band satisfies it structurally rather than
-    # positionally: `+ note` is in the same row, one cell to the left, so a box
-    # appended to the margin beside it cannot displace it at all. (Mounting in
-    # the head row's `.rm` merely put the box below the button; the button was
-    # still in the pile that made the head row 400px tall.)
+    # The unanchored compose box opens in the FOOT band's margin cell:
+    # `+ note` is in the same row, one cell over, so the box can't displace
+    # the button that opened it — mounting in the head row's `.rm` did.
     assert "const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));" in page, \
         "`+ note` must mount its box in the foot band's margin, beside its own button"
-    # What supplies the proximity the head mount gave. Without these two the
-    # test passes on a change that opens a composer the reviewer cannot see.
+    # Without these two, the test would pass on a change that opens a
+    # composer the reviewer cannot see.
     composer = page[page.index("function openCommentPopover(") :
                     page.index("function closeCommentPopover(")]
-    # `revealWithinBars`, not `scrollIntoView({ block: 'nearest' })`: Chrome
-    # ignores `scroll-padding` for a smooth scrollIntoView, so the box read
-    # both paddings itself and the save/cancel sat under the fixed bar.
+    # `revealWithinBars`, not `scrollIntoView({block:'nearest'})`: Chrome
+    # ignores `scroll-padding` for a smooth scrollIntoView.
     assert "revealWithinBars(pop);" in composer, \
         "the composer must bring itself into view, clear of the fixed bar"
     assert "ta.focus({ preventScroll: true });" in composer, \
@@ -721,10 +566,9 @@ def test_activation_costs_no_layout(page: str) -> None:
 
 
 def test_the_slip_ships_collapsed(page: str) -> None:
-    """Cap: #186's reading-order finding applies to the slip too. It is the
-    round's cover note, not the round's content — above the print but
-    COLLAPSED, so what a reader meets first is the document rather than a
-    bordered index of it."""
+    """Cap: #186's reading-order finding applies to the slip too — it is the
+    round's cover note, above the print but COLLAPSED, so a reader meets the
+    document first."""
     assert 'class="transmittal-head" id="transmittal-head" aria-expanded="false"' in page, \
         "the slip's head must be a disclosure, closed"
     assert '<div class="transmittal-rows" id="transmittal-rows" hidden>' in page, \
@@ -735,30 +579,14 @@ def test_the_slip_ships_collapsed(page: str) -> None:
 
 
 def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
-    """Cap: the interview is a first-class surface on the same ground, and it
-    takes the grammar without the print.
-
-    GRAMMAR — the question numbered like a catalog entry in the prose column
-    with its choices under it, the machine's hint and the reviewer's own note
-    in the margin, verbs in the note grammar with their keycaps, the
-    composite's bar and footer. NOT THE PRINT — one question at a time is the
-    point of an interview, so the accordion stays.
-
-    Both side columns are constants rather than a computed collapse: a
-    question carries no producer flags to rail, and the margin always holds
-    this question's verbs, so neither can change mid-session.
-
-    One thing stays in the prose column on purpose — the recommended-choice
-    badge. It is advice ABOUT A CONTROL, and a reviewer should not read the
-    margin, look back, and hunt for the chip it meant."""
+    """Cap: the interview takes the `.doc` grammar without continuous print
+    — one question at a time keeps the accordion. Side columns are constants
+    rather than a computed collapse, since neither can change mid-session."""
     assert "container.className = 'cards doc no-gutter';" in page, \
         "Q&A must wear the grammar and not the print"
-    # The DISCLOSURE HEAD is the question, printed once, numbered like a
-    # catalog entry. It used to be an index line — clamped and dimmed — above
-    # an `<h2>` that restated the same sentence one line below it; that
-    # mitigation assumed the entry held something OTHER than the duplicate, and
-    # a free-text entry holds a hairline and nothing else. The number goes
-    # INSIDE `.card-title` because `.card-title-wrap` is a column flex.
+    # The disclosure head is the question, printed once, numbered like a
+    # catalog entry — not a dimmed index line above a restated `<h2>`. The
+    # number goes INSIDE `.card-title` because `.card-title-wrap` is a column flex.
     assert ('<span class="card-title"><span class="doc-num" aria-hidden="true">'
             '${index + 1} &middot;</span> ${esc(q.text)}</span>') in page, \
         "the disclosure head is the question, numbered"
@@ -768,10 +596,8 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
         "the reviewer's context and its attachments live in one margin note"
     assert '<span class="chip-badge"' in page, \
         "the recommendation stays beside the control it recommends"
-    # One choice per line. Wrapped into a ragged row they read as a grid and
-    # the digit that picks an option lands somewhere different on every row;
-    # stacked, the labels start on one left edge and the keycaps end on one
-    # right edge — `.pal-row`'s shape, for `.pal-row`'s job.
+    # One choice per line: wrapped into a ragged row, the picking digit
+    # lands differently on every row; stacked, labels and keycaps line up.
     assert re.search(r'\.choices \{[^}]*flex-direction:\s*column', page), \
         "choices must stack one per line"
     assert '<span class="chip-label">' in page and re.search(r'\.chip-label \{[^}]*flex:\s*1', page), \
@@ -797,17 +623,9 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
 
 
 def test_the_head_row_is_one_track(page: str) -> None:
-    """Finding 01, at its root. The head row's margin cell held the section's
-    state table, its verbs, every unanchored comment, every carried thread and
-    the `+ note` composer — beside a prose cell holding one line, the title.
-    Measured: prose 40px against margin 400px with three unanchored comments
-    (360px of blank page between a heading and its own first paragraph, and the
-    section's own text pushed 400px down), 40 against 327 on an H1 carrying
-    five doc-level flags, 40 against 101 on the state-table-plus-approve case
-    that fires on EVERY annotated section.
-
-    The cell is deleted, not shrunk. A one-track row cannot have a void — its
-    height is its prose's height, and margin-minus-prose is not expressible."""
+    """Finding 01, at its root. The head row's margin cell held the state
+    table, verbs, and unanchored comments beside a title-only prose cell.
+    It's deleted, not shrunk: a one-track row's height is its prose's."""
     assert "function docHeadRowHTML(id, proseHTML)" in page, \
         "the head row takes prose and nothing else — no `opts`, no margin cell"
     builder = page[page.index("function docHeadRowHTML(id, proseHTML)"):]
@@ -816,25 +634,19 @@ def test_the_head_row_is_one_track(page: str) -> None:
         "a margin cell in the head row is the void returning"
     assert "docHeadRow(" not in page, \
         "the head-row query has no callers left; it must be deleted, not kept"
-    # The three collapsed-margin exemptions the head row needed are gone with
-    # it, and neither media-query selector list names it any more.
+    # The head row's collapsed-margin exemptions are gone with it.
     assert ".doc.no-margin .row-head" not in page and ".spec {" not in page, \
         "three special cases deleted for a row that has no margin in any state"
     print("test_the_head_row_is_one_track: OK")
 
 
 def test_a_whole_section_note_sits_at_the_section_foot(page: str) -> None:
-    """Where everything the head margin held went. A note that points at a
-    passage sitting beside it keeps its row's margin; everything ABOUT the
-    whole section — its state, its verbs, an unanchored comment, an unanchored
-    carried thread, a flag whose anchor resolved to no row, the `+ note`
-    composer — moves to a foot band under the prose, which is where a catalog
-    puts an entry's spec block and its order line."""
+    """Where everything the head margin held went: a note beside its own
+    passage keeps its row's margin; everything ABOUT the whole section moves
+    to a foot band under the prose."""
     # Static markup from both builders, emitted AFTER the content and as a
-    # SIBLING of it. `docRows` is `#rcontent-<id> > .row`, so a foot row inside
-    # it would be a row `rowForAnchor` can return, `docNotesOrdered` can index
-    # and `markAndPin` walks — the margin's own echo re-entering the document
-    # walk, which is the #95 failure this grid already fought once.
+    # SIBLING of it — a foot row nested inside would re-enter the document
+    # walk (the #95-shaped failure).
     for content, foot in (('<div class="section-content" id="rcontent-${section.id}"></div>',
                            "docFootRowHTML(section.id, section.title, { skip: true })"),
                           ('<div class="section-content" id="rcontent-${id}"></div>',
@@ -847,9 +659,8 @@ def test_a_whole_section_note_sits_at_the_section_foot(page: str) -> None:
     assert "const key = row || docFootRow(id);" in page, "placeDocFlags"
     assert "const host = row ? docNoteHost(id, row) : (foot && docCell(foot, 'rm'));" in page, \
         "the composer"
-    # An unanchored note sorts LAST — past every real index — because a
-    # whole-section note is read after the section, not before it. `rows.length`
-    # rather than a comparator change: the comparator is pinned verbatim above.
+    # An unanchored note sorts LAST — a whole-section note is read after the
+    # section, not before it.
     assert "row: r ? rows.indexOf(r) : rows.length" in page, \
         "an unanchored note sorts to the foot, not to the head"
     assert "const host = docNoteHost(id, docRows(id)[n.row] || null);" in page, \
@@ -862,12 +673,10 @@ def test_a_whole_section_note_sits_at_the_section_foot(page: str) -> None:
 
 def test_the_foot_band_states_and_acts(page: str) -> None:
     """The band's own grammar. The state is a horizontal RUN at the reading
-    measure, not a five-row table in a 328px column; the verbs lead it so
-    `approve` sits on the left edge the reader has been reading down whether or
-    not the section has state to print."""
-    # The deleted `<table>`'s `<caption>` named the state readout. `role=group`
-    # with an explicit label is what replaces it — a band removed AND unnamed
-    # would be an a11y regression nothing else in the suite catches.
+    measure, not a five-row table in a side column; verbs lead so `approve`
+    stays on the left edge the reader has been reading down."""
+    # The deleted `<table>`'s `<caption>` named the state readout; `role=group`
+    # with an explicit label replaces it so the band stays announced.
     assert 'class="doc-apparatus" role="group" aria-label="' in page, \
         "the band must be announced by name, as the spec table's caption was"
     assert '<table class="spec">' not in page, "the table is gone; the caption with it"
@@ -880,10 +689,8 @@ def test_the_foot_band_states_and_acts(page: str) -> None:
         "the band takes the reading measure, or diff mode strands approve 1200px away"
     assert re.search(r'\.doc \.row-foot\s*\{[^}]*margin-top:', page), \
         "the band closes a section; `.doc .row + .row` never reaches it"
-    # The prose dims on approval and the band that lets you take it back does
-    # not. Specificity 0,4,0 — it TIES the hover rule, so its position AFTER it
-    # is the whole mechanism, and this only misbehaves once something is
-    # approved, which nothing else would notice.
+    # The prose dims on approval; the withdraw band does not. Its selector
+    # ties the hover rule's specificity, so source order AFTER it is what wins.
     assert page.index(".doc-section.is-approved:hover .rp") \
         < page.index(".doc-section.is-approved .row-foot .rp { opacity: 1; }"), \
         "the withdraw control must not dim; source order is what wins the tie"
@@ -895,14 +702,9 @@ def test_the_foot_band_states_and_acts(page: str) -> None:
 
 
 def test_document_flags_leave_the_first_section(page: str) -> None:
-    """Finding 02. `headings_present.py` and `checklist.py` both anchor a fact
-    about the WHOLE DOCUMENT to `sections[0]["id"]`, because
-    `parse_sections.py`'s integrity check makes a card for an absent section
-    impossible and the first card is the only document-level handle either has.
-    Taking that literally opened every typed round-1 review on five amber
-    "missing expected design-doc section" lines in the margin of section 1,
-    with roughly zero pixels of document prose in the first viewport — on a
-    surface whose stated principle is verbatim, not summarized."""
+    """Finding 02. Whole-document producer flags anchor to `sections[0]`
+    (the only document-level handle available), which used to open every
+    round-1 review on five amber lines and near-zero visible prose."""
     # Injected, never restated — the same anti-drift pair CHECK_KINDS carries.
     assert ("const DOC_SCOPE_KINDS = " + json.dumps(list(schema.DOC_SCOPE_KINDS)) + ";") in page, \
         "the scope registry must be injected from scripts/schema.py"
@@ -919,20 +721,16 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "the slip mounts after the transmittal and above the print"
     assert 'id="doc-slip-rows"' in page and "const open = flags.some(a => a.severity === 'error');" in page, \
         "collapsed like the transmittal — unless the document carries an error"
-    # EVERY mode that renders sections, not review alone. `docFlagSplit` routes
-    # a doc-scope flag out of both columns unconditionally, so a mode gate on
-    # the slip is not "the slip is a review feature" — it is the flag rendering
-    # NOWHERE. A diff round carrying one showed `checks 0/1` in the bar with
-    # `round_is_complete` still enforcing the gate in Python and no surface
-    # saying what the check was.
+    # EVERY mode that renders sections, not review alone — a mode gate on the
+    # slip means the flag renders NOWHERE, while `round_is_complete` still
+    # enforces the gate in Python with no surface to show it.
     slip_fn = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
     assert "REVIEW_DATA.mode !== 'review'" not in slip_fn, \
         "a doc-scope flag must have a surface in diff mode too, not vanish"
     assert "if (!REVIEW_DATA) return '';" in slip_fn, \
         "the slip still needs a round to read"
-    # ...and the accessible name matches what the rows actually are. Only
-    # `headings-present` is also a CHECK_KIND; a `checklist` row is not a check,
-    # and the visible head already says "Document · N flags".
+    # The accessible name must not claim every row is a check — a
+    # `checklist` row isn't one, only `headings-present` is.
     assert 'id="doc-slip" aria-label="Document-level flags"' in page, \
         "the slip's accessible name must not claim every row is a check"
     # The three readers whose denominator is one section skip doc-scope...
@@ -942,39 +740,26 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "sectionBalance's annotation loop"
     assert ".filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))" in page, \
         "flagRank — or a round-2 slip brands section 1 flagged for a document fact"
-    # ...and `documentBalance` splits the difference, because it computes BOTH
-    # ends of the convergence arrow. It still counts a doc-scope flag in
-    # `checks`/`checksDone` — that pair is the bar's document-level `checks D/T`
-    # readout, and a document fact belongs in it. It must NOT count one in
-    # `atStart`: `atStart` is the arrow's left and `open` is its right, but
-    # `open` is a sum of `sectionBalance`, which skips doc-scope. Counted on one
-    # side only, a document carrying five unanswered `headings-present` flags
-    # and nothing else reads `convergence 5 → 0` on a round where nothing was
-    # closed. The two ends answer the same question or the arrow lies.
+    # `documentBalance` still counts a doc-scope flag in `checks`/`checksDone`
+    # (the bar's readout) but must NOT count one in `atStart`, since `open`
+    # sums `sectionBalance`, which skips doc-scope entirely.
     doc_balance = page[page.index("function documentBalance()"):]
     doc_balance = doc_balance[:doc_balance.index("\n}")]
     assert "checks++;" in doc_balance and "if (a.result) checksDone++;" in doc_balance, \
         "documentBalance still tallies doc-scope checks — that is the bar's readout"
     assert "else if (!DOC_SCOPE_KINDS.includes(a.kind)) atStart++;" in doc_balance, \
         "an unanswered document check must not sit at the left of the arrow alone"
-    # The doc-scope warn/error guard that used to stand here guarded a line
-    # that no longer exists: a plain producer flag is advisory and is counted
-    # at NEITHER end of the arrow now (finding 09), so `CHECK_KINDS` is the
-    # only annotation branch left. Assert that directly — it is the stronger
-    # claim, and it is what keeps a future branch from being added below the
-    # check without an `atStart` decision.
+    # A plain producer flag is advisory and counted at NEITHER end of the
+    # arrow (finding 09) — `CHECK_KINDS` is the only annotation branch left.
     assert "a.severity" not in doc_balance, \
         "an advisory producer flag is not an item at either end of the arrow"
     print("test_document_flags_leave_the_first_section: OK")
 
 
 def test_a_free_text_question_prints_its_question_once(page: str) -> None:
-    """Finding 04. `buildQACard`'s `.card-title` printed the question and the
-    `<h2 class="doc-head">` inside the entry printed it AGAIN, one line below.
-    DESIGN.md anticipated it and clamped/dimmed the head as an index line —
-    a mitigation that assumed the entry held something other than the
-    duplicate. A free-text question's entry holds a hairline and nothing
-    else."""
+    """Finding 04. `.card-title` printed the question, and the entry's
+    `<h2>` printed it AGAIN one line below — the old clamped index-line
+    mitigation in DESIGN.md no longer applies."""
     card = page[page.index("function buildQACard(q, index)"):]
     card = card[:card.index("\nfunction ")]
     assert card.count("${esc(q.text)}") == 1, \
@@ -988,16 +773,14 @@ def test_a_free_text_question_prints_its_question_once(page: str) -> None:
     # two-track mechanism the collapsed margin used.
     assert "#qa-cards .row-head.is-choiceless { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }" in page
     assert "const choiceless = q.choices.length === 0;" in page
-    # Both readers of `#qchoices-` are guarded, not just the wiring. Unguarded,
-    # syncQACard throws on EVERY sync of a choiceless card — and no test in this
-    # repo runs JS, so the suite would stay green over it.
+    # Both readers of `#qchoices-` are guarded, not just the wiring —
+    # unguarded, syncQACard throws on every sync of a choiceless card.
     assert "const ch = card.querySelector('#qchoices-' + q.id);\n  if (ch) ch.addEventListener" in page, \
         "buildQACard's chip wiring must survive a missing chip list"
     assert "const chEl = el('qchoices-' + id);\n  if (chEl) chEl.querySelectorAll" in page, \
         "syncQACard must too — this is the site a partial edit leaves throwing"
-    # Bounded, not un-stretched: `stretch` is what puts every label on one left
-    # edge and every keycap on one right edge, which is `.pal-row`'s shape and
-    # the whole reason the chips stack. `flex-start` would trade that away.
+    # Bounded, not un-stretched: `stretch` lines up labels and keycaps on
+    # their edges; `flex-start` would trade that away.
     assert re.search(r'\.choices \{[^}]*flex-direction:\s*column[^}]*max-width:\s*328px', page), \
         "the choice run is bounded to 328px while staying stretched"
     assert re.search(r'\.chip-label \{[^}]*flex:\s*1', page)
@@ -1005,18 +788,9 @@ def test_a_free_text_question_prints_its_question_once(page: str) -> None:
 
 
 def test_the_stamp_never_prints_a_count_it_was_not_given(page: str) -> None:
-    """Finding 10. The `complete` summary is caller-supplied and unvalidated —
-    `summary = json.loads(body) if body.strip() else {}` under a bare except —
-    and a real caller already omits `sections_total`
-    (tests/test_server_pass.py POSTs `/complete` with `{"rounds_total": 1}`
-    alone). The handler filled the gap with a literal `'?'`, so the APPROVED
-    stamp could read `? sheets · 1 revision`: the product's one uninterrupted
-    moment, degraded.
-
-    Absent counts DROP the line. Both counts or neither — a half-known
-    `3 sheets · ? revisions` is the same defect — and `display:none` as well as
-    an empty string, because `.stamp-sub` carries `margin-top: 2px` and an
-    empty div would still spend it."""
+    """Finding 10. A caller can omit `sections_total`; the handler used to
+    fill the gap with a literal `'?'`, degrading the APPROVED stamp. Absent
+    counts now DROP the line entirely, `display:none` included."""
     handler = page[page.index("es.addEventListener('complete'"):]
     handler = handler[:handler.index("\n  });")]
     assert "const counted = typeof r === 'number' && typeof s === 'number';" in handler, \
@@ -1029,16 +803,9 @@ def test_the_stamp_never_prints_a_count_it_was_not_given(page: str) -> None:
 
 
 def test_round2_lands_on_what_changed(page: str) -> None:
-    """Finding 03. `parse_sections._carry_annotations` copies a prior round's
-    annotations onto a byte-identical section, so a round-2 print opens on the
-    identical flag wall round 1 opened on — while the author's answers to the
-    reviewer's OWN notes, the whole reason a round 2 exists, sit further down.
-
-    On round >= 2 in the continuous print, the landing prefers the first
-    section carrying something NEW: a revision, else a thread the author
-    answered. Round 1 and diff mode are byte-identical in behaviour, and a
-    round with nothing new falls back to the first unapproved section exactly
-    as before."""
+    """Finding 03. Carried annotations mean round 2 opens on the same flag
+    wall round 1 did. On round >= 2, the landing prefers the first section
+    with something NEW; else falls back to the first unapproved section."""
     assert "const newBusiness = (isContinuousPrint() && REVIEW_DATA.round > 1)" in page, \
         "the new landing must be gated to round >= 2 in the print"
     assert "const landing = newBusiness || firstPending || REVIEW_DATA.sections[0];" in page, \
@@ -1053,18 +820,12 @@ def test_round2_lands_on_what_changed(page: str) -> None:
     assert "return Boolean(last.response) || last.grounds !== undefined;" in page, \
         "a decline is an answer, and `grounds` is keyed on PRESENCE — a decline " \
         "with no grounds is still a decline, the same rule `openNotesHTML` states"
-    # An exact count, deliberately: grounds-presence has exactly two homes, and
-    # a third would be a second reading of the same rule. `openNotesHTML` is
-    # the other — a change there fires this, which is the point.
+    # An exact count, deliberately: grounds-presence has exactly two homes
+    # (this predicate and `openNotesHTML`) — a third would be a drifted copy.
     assert page.count(".grounds !== undefined") == 2, \
         "grounds-presence lives in openNotesHTML and the predicate, nowhere else"
-    # FRESHNESS. `open_notes.py` appends an exchange only when the REVIEWER
-    # takes a turn, and an unsettled thread carries forward untouched — so a
-    # thread answered in round 1 and then left alone still reads "answered" in
-    # round 3. Without this the fix re-presents a two-round-old answer as this
-    # round's news, which is the defect it exists to close. `- 1` because an
-    # exchange is stamped with the round the reviewer's turn was made in and
-    # the author's response to it lands in the round after.
+    # FRESHNESS: without this, a two-round-old answer re-presents as news.
+    # `- 1` because the response lands the round after the exchange.
     assert "if (Number(last.round) !== round - 1) return false;" in page, \
         "an answer is news for exactly one round"
     assert "sectionAnswered(s, data.round)" in page, \
@@ -1075,17 +836,9 @@ def test_round2_lands_on_what_changed(page: str) -> None:
 
 
 def test_one_decision_prints_once(page: str) -> None:
-    """Finding 03. A `checks` round answers several flags with one sentence:
-    five check flags on one section each printed the SAME one-line `result`
-    verbatim — one decision, five times. Every flag's message still prints; a
-    `result` already printed in the pass is dropped.
-
-    Two invariants carry the whole edit. The Set is per-invocation, never
-    module scope (`placeDocFlags` is idempotent by contract — a shared Set
-    would look right on first paint and blank every result on the first
-    re-sync). And the annotation is COPIED, never mutated: `a.result` is what
-    `specHTML`'s `checksDone`, `sectionBalance`'s `settled`, `documentBalance`
-    and the slip's own head tally all count."""
+    """Finding 03. A `checks` round used to print the SAME `result` verbatim
+    on every flag it answered. A repeated `result` is now dropped, and the
+    annotation is COPIED, never mutated, since `a.result` feeds counters."""
     assert "function dedupeResults(list, seen) {" in page, \
         "the Set is a parameter, so no caller can share one"
     assert "if (seen.has(r)) return Object.assign({}, a, { result: undefined });" in page, \
@@ -1093,9 +846,8 @@ def test_one_decision_prints_once(page: str) -> None:
         "number with no error anywhere"
     assert "const seen" not in page[:page.index("function dedupeResults(")], \
         "no module-level dedupe Set may exist above the helper"
-    # The site that actually closes the finding. `docFlagSplit` routes every
-    # DOC_SCOPE kind to the slip and `headings-present` is the only CHECK_KIND,
-    # so today no annotation carrying a `result` reaches `placeDocFlags` at all.
+    # The site that actually closes the finding — the slip, since
+    # `docFlagSplit` routes every check-kind flag there today.
     slip = page[page.index("function docSlipHTML() {"):page.index("function renderDocSlip() {")]
     assert "dedupeResults(flags, new Set()).map(marginFlagHTML).join('')" in slip, \
         "the document slip's rows are where the repeated result wall now lives"
@@ -1126,12 +878,9 @@ def test_one_decision_prints_once(page: str) -> None:
 
 
 def test_the_voice_composer_stays_where_it_opened(page: str) -> None:
-    """Finding 14, second half. `openCommentPopover` scrolls the whole popover
-    into view and focuses with `preventScroll` (pinned in
-    test_activation_costs_no_layout). `stageVoiceComment` re-focuses the field
-    afterwards — a bare `focus()` there scrolls back to the textarea and undoes
-    it, landing the viewport with the type chips and the quote above the
-    fold."""
+    """Finding 14, second half. `stageVoiceComment` re-focuses the field
+    after `openCommentPopover` scrolls it into view — a bare `focus()` there
+    would undo that scroll and land the type chips above the fold."""
     voice = page[page.index("function stageVoiceComment(id, type, rest) {"):]
     voice = voice[:voice.index("function runQAVoiceAct(")]
     assert "ta.focus({ preventScroll: true });" in voice, \
@@ -1142,15 +891,9 @@ def test_the_voice_composer_stays_where_it_opened(page: str) -> None:
 
 
 def test_every_choice_has_a_keyboard_path(page: str) -> None:
-    """Finding 15. The palette is the directory of the keyboard layer, and it
-    truncated itself at nine — choices 10 and 11 appeared in it nowhere, so
-    they had no ⌘K path and no keycap.
-
-    The digit handler binds 1-9 (one keypress, `parseInt(e.key)`), so a tenth
-    choice legitimately carries no cap; the printed cap and the bound key must
-    agree. Note `.choice-chip` is a plain `<button>` with no `tabindex` — Tab
-    already reaches choices 10 and 11 — so nobody should answer this by
-    binding `0` or a letter."""
+    """Finding 15. The palette used to truncate at nine, leaving choices 10
+    and 11 with no ⌘K path or keycap. The digit handler binds 1-9 only, so
+    a tenth choice legitimately carries no cap — Tab reaches it instead."""
     palette = page[page.index("function qaPaletteCommands() {"):]
     palette = palette[:palette.index("\n}\n")]
     assert "live.choices.forEach((c, i) => {" in palette, \
@@ -1167,11 +910,9 @@ def test_every_choice_has_a_keyboard_path(page: str) -> None:
 
 
 def test_the_dispatch_controls_never_wrap(page: str) -> None:
-    """Finding 16, cosmetic. At a 780px viewport `.mode-diff` caps the bar at
-    95vw and the two flex children shared 741px; `.btn-group` carried a flex
-    item's default `flex-shrink: 1`, so `skip rest & submit` broke onto three
-    lines. `.stats` already wraps and absorbs the width instead. The content
-    columns reflow well and are deliberately untouched."""
+    """Finding 16, cosmetic. `.btn-group`'s default `flex-shrink: 1` broke
+    `skip rest & submit` onto three lines at narrow viewports; `.stats`
+    wraps and absorbs the width instead."""
     assert re.search(r"\.btn-group \{[^}]*flex:\s*0 0 auto", page), \
         "the dispatch group is one unit and does not shrink"
     assert re.search(r"\.btn-group \{[^}]*display:\s*flex", page), \
@@ -1181,19 +922,15 @@ def test_the_dispatch_controls_never_wrap(page: str) -> None:
         "a button narrower than its label must not break the label"
     assert re.search(r"\.btn-submit \{[^}]*white-space:\s*nowrap", page), \
         "...and its sibling takes the same rule"
-    # The bar's own row does NOT wrap, and that is the whole mechanism. A flex
-    # container breaks its line BEFORE it shrinks anything, so `wrap` here
-    # meant the row never attempted the shrink that would have let it fit: at
-    # doc mode's own 1054px cap, 613px of counters against a 450px stamp is
-    # 1063, and the stamp dropped to a line of its own over nine pixels — the
-    # same defect this test defends against, one container up.
+    # The bar's own row does NOT wrap — a flex container breaks its line
+    # BEFORE it shrinks anything, so `wrap` here would skip the shrink
+    # that lets the row fit.
     assert re.search(r"\.bottom-inner \{[^}]*flex-wrap:\s*nowrap", page), \
         "the bar's row must squeeze `.stats` rather than break its own line"
     assert re.search(r"\.stats \{[^}]*flex-wrap:\s*wrap", page), \
         "`.stats` is the item that absorbs the width now the buttons will not"
-    # ...which it can only do if it is allowed to shrink below its content
-    # width. `0 1 auto`, never `1 1 auto`: grow made the counters claim the
-    # whole row and push the stamp off it just as surely as no shrink at all.
+    # `.stats` needs to shrink below its content width to do that.
+    # `0 1 auto`, never `1 1 auto` — grow would push the stamp off the row.
     assert re.search(r"\.stats \{[^}]*flex:\s*0 1 auto", page), \
         "`.stats` must shrink and never grow"
     assert re.search(r"\.stats \{[^}]*min-width:\s*0", page), \
@@ -1202,9 +939,8 @@ def test_the_dispatch_controls_never_wrap(page: str) -> None:
 
 
 def test_round2_wire_shape_unchanged(base: str) -> None:
-    """Hold: no schema change. The restructure is a rendering change over the
-    shapes #184 already ships — GET /input serves the same round, the same
-    per-section `diff`/`open_notes`/`annotations`, and the same `approved_ids`
+    """Hold: no schema change. The restructure is a rendering change over
+    the shapes #184 already ships — `GET /input` serves the same round data
     the accordion read."""
     data = get(base, "/input")
     by_id = {s["id"]: s for s in data["sections"]}

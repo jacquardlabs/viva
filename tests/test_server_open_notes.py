@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""Integration test: open notes carried across rounds (issue #16).
+"""Integration test: open notes carried across rounds (#16).
 
-The server is a pipe for the open-note thread: parse_sections attaches an
-`open_notes` array (cid-keyed threads) to a section, the server re-presents it
-on the card, and the reviewer's settle actions ride back on the verdict through
-/submit as a comment with settled:True. Contract:
-
-  - GET /input preserves the `open_notes` array verbatim.
-  - The page ships the thread renderer and settle action.
-  - /submit preserves comments (incl. settled flag) on a verdict.
-  - A section with no open_notes and a verdict with no comments are byte-identical
-    to today (no open_notes / comments keys appear).
+The server passes `open_notes` through verbatim, ships the thread renderer
+and settle action, and preserves comments' settled flag through /submit.
 """
 import json
 import sys
@@ -28,9 +20,7 @@ def main():
     open_notes = [
         {"cid": "s1-c1", "quote": "intro", "status": "open",
          "exchanges": [{"round": 1, "verdict": "changes", "note": "tighten intro", "response": "Shortened."}]},
-        # A thread the author declined (#167): unresolved like an open one, so
-        # it carries here with the grounds the reviewer must read to accept it
-        # or insist.
+        # A declined thread (#167) is unresolved like an open one; carries its grounds.
         {"cid": "s1-c2", "quote": "in most cases", "status": "declined",
          "exchanges": [{"round": 1, "verdict": "changes", "note": "cut the caveat",
                         "response": "", "grounds": "round 1 ruled it load-bearing"}]},
@@ -56,9 +46,7 @@ def main():
         page = get_text(base, "/")
         for needle in ("openNotesHTML", "open-thread", "settleOpenNotes",
                        "section.open_notes", "renderDocMargin",
-                       # A declined thread renders its grounds and says so in
-                       # the head; it keeps the settle button and reply box,
-                       # since accepting or insisting is the reviewer's move.
+                       # Declined thread renders its grounds, keeps settle/reply.
                        "const declined = t.status === 'declined';",
                        "'<div class=\"exchange-d\">declined: '",
                        ".open-thread.is-declined"):

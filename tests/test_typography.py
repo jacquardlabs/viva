@@ -1,25 +1,9 @@
 #!/usr/bin/env python3
-"""The page's faces: verbatim glyphs, local files, two families.
+"""The page's faces: verbatim glyphs, local files, two families (#79).
 
-Three repairs meet here, and each one fails silently without an assertion:
-
-  1. LIGATURES. Fragment Mono substitutes `>=` to a single U+2265 and `->` to
-     U+2192. A reviewer approving a hunk cannot tell a substituted glyph from a
-     character actually in the source — on a surface that promises byte-for-byte
-     display. `font-variant-ligatures: none` on `body` turns it off for every
-     mono surface at once, including the DOM diff2html injects.
-  2. THE FACES ARE LOCAL. Both faces came from fonts.googleapis.com until now
-     (#79 scoped Google Fonts out of the vendoring work). Offline, the whole
-     typographic identity fell back with no error anywhere.
-  3. TWO FAMILIES. `'Bricolage Grotesque', sans-serif` was declared on three
-     rules and named in neither DESIGN.md family. Offline those three surfaces
-     did not even fall back to the page's own grotesque — `sans-serif` is the
-     next stack entry, not `'Helvetica Neue'`.
-
-String needles against `server.HTML`: there is no JS engine and no browser
-harness in this repo, so a needle proves the page SAYS this, never that it
-paints it. `tests/test_server_vendor_assets.py` carries the other half — that
-every `/vendor/` URL named below actually has a route and a file behind it.
+String needles against `server.HTML` — no JS engine or browser harness here,
+so a needle proves the page SAYS this, not that it paints it.
+`tests/test_server_vendor_assets.py` checks the `/vendor/` routes exist.
 """
 import re
 import sys
@@ -38,8 +22,7 @@ def test_no_glyph_the_source_did_not_contain() -> None:
     assert HTML.count("font-variant-ligatures") == 1, \
         ("declared once, on the ground, and inherited — a per-surface rule is "
          "the one the next mono surface forgets")
-    # Anchored `\nbody {`: a bare `body {` is a substring of `.thread-body {`
-    # and friends, so an unanchored index can pass while pointing elsewhere.
+    # Anchored `\nbody {` — a bare `body {` also matches `.thread-body {`.
     body_open = HTML.index("\nbody {")
     body_close = HTML.index("\n}", body_open)
     assert body_open < HTML.index("font-variant-ligatures") < body_close, \

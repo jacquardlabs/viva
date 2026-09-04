@@ -1,13 +1,9 @@
 """Shared harness for the server integration tests — launch, poll, HTTP.
 
-Every `test_server_*.py` that drives a live server duplicated the same ~40 lines:
-`post`/`get` helpers, a `subprocess.Popen` launch, a `server.url` poll loop, and
-a `try/finally` teardown. That lives here now.
-
-Named with a leading underscore on purpose: the CI runner is
-`for f in tests/test_*.py; do python3 "$f"; done`, so this module is imported by
-the tests, never executed as one. This is NOT a pytest `conftest.py` — the
-project has no pytest dependency and runs each test file as a plain script.
+Leading underscore on purpose: the CI runner is
+`for f in tests/test_*.py; do python3 "$f"; done`, so this module is only
+ever imported, never executed as a test itself. Not a pytest `conftest.py` —
+the project has no pytest dependency.
 
 Usage:
 
@@ -35,23 +31,12 @@ SERVER = ROOT / "server.py"
 
 def assert_catalog_ground(text: str) -> None:
     """Shared catalog-ground needle checks — the single owner of the ground
-    contract, so a chrome change edits one place (was duplicated verbatim
-    across test_server_a11y and this suite).
-
-    Replaces `assert_sheet_ground`: the drafting sheet on a flat table gave way
-    to the catalog page, so the needles moved from the sheet's edge and corner
-    marks to the party inks and the reading measure. CSS-rule checks are
-    whitespace-tolerant regexes — the values are the design contract, the
-    source alignment is not. Structural markup and aria literals stay exact.
-    `text` is the served page or the HTML constant (byte-identical: the server
-    serves HTML.encode())."""
-    # The four party inks, each defined once per theme block. Three blocks
-    # carry the palette: light `:root`, the `prefers-color-scheme: dark`
-    # override, and the explicit `[data-theme="dark"]` the toggle sets. The two
-    # dark blocks hold the same values by construction — `test_theme_toggle`
-    # owns that invariant and fails on any drift; here we only pin the count,
-    # so a fourth definition appearing anywhere is caught as a new source of
-    # truth rather than a duplicate.
+    contract, so a chrome change edits one place. CSS-rule checks are
+    whitespace-tolerant regexes; structural markup and aria literals stay
+    exact. `text` is the served page or the HTML constant."""
+    # The four party inks, each defined once per theme block (light `:root`,
+    # media dark, explicit `[data-theme="dark"]`); `test_theme_toggle` owns
+    # the two-dark-blocks-match invariant, here we only pin the count.
     for token, light in (('--paper', '#ffffff'), ('--touch', '#ffec8f'),
                          ('--acc', '#2946c4'), ('--machine', '#0c7f6b'),
                          ('--fact', '#a06a12')):
@@ -91,10 +76,8 @@ def assert_catalog_ground(text: str) -> None:
         r'\.doc \.row\s*\{[^}]*grid-template-columns:\s*var\(--gutter-w\)'
         r'\s+minmax\(0,\s*1fr\)\s+var\(--margin-w\)', text), \
         "the doc row must be `check gutter | prose | margin`"
-    # The margin is CAPPED and the PAGE holds the measure. Letting the margin
-    # absorb the shell's spare width put it at 515px against 540px of prose —
-    # commentary taking as much of the page as the document it annotates. The
-    # composite runs ~61:39 and it is right; the margin is secondary.
+    # Margin is CAPPED, page holds the measure — an uncapped margin absorbed
+    # the shell's spare width, putting commentary near parity with the prose.
     assert re.search(r'--margin-w:\s*minmax\(253px,\s*328px\);', text), \
         "the margin must stay capped so the prose dominates the page"
     # Both measure-plus-margin pages: the review print and the interview.
@@ -102,22 +85,16 @@ def assert_catalog_ground(text: str) -> None:
                      r'\.mode-qa\s+\.shell, \.mode-qa\s+\.bottom-inner\s*\{\s*max-width:\s*1054px',
                      text), \
         "a page of prose plus margin must be as wide as its columns and no wider"
-    # No `ch` anywhere in the template: it resolves against each row's own
-    # font-size, which put the head row's track ~99px wider than a prose row's.
+    # No `ch` in the template: it resolves against each row's own font-size,
+    # which put the head row's track ~99px wider than a prose row's.
     assert not re.search(r'\.doc \.rp\s*\{\s*max-width', text), \
         "the page holds the measure now; a cell cap would re-open the dead band"
-    # `ch` on a track resolves against the ROW's font-size, so one size for the
-    # whole print is what keeps the head row's track the same width as a prose
-    # row's — without it the spec table sat ~99px right of every note below it.
+    # One type size for the whole print, so `ch` means one thing per row.
     assert re.search(r'\.doc-section\s*\{\s*font-size:\s*13\.5px', text), \
         "one type size for the print, so `ch` means one thing in every row"
-    # Code takes the margin's room only where that room is actually going
-    # spare. `:has()` reads the row itself, so no JS has to remember.
-    # ...and only in the continuous PRINT. In the accordion the wide row IS
-    # the section — a hunk — and `:has()` would turn the first comment on it
-    # into a 328px re-layout of the very lines being commented on.
-    # ...and only CODE: a table reflows to the measure and keeps the prose's
-    # right edge, so it never takes the track.
+    # Code takes the margin's spare room, `:has()` reads the row so no JS
+    # tracks it — print only (the accordion's wide row IS the section) and
+    # code only (a table reflows to the measure instead).
     assert re.search(
         r'\.doc\.print \.row\.wide:not\(:has\(> \.rm\)\):has\(> \.rp > pre, > \.rp > \.d2h-wrapper\) \.rp'
         r'\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
@@ -129,17 +106,15 @@ def assert_catalog_ground(text: str) -> None:
         "the gutter column must collapse to 0 when nothing uses it"
     assert re.search(r'\.doc\.no-margin\s*\{\s*--margin-w:\s*0px;\s*\}', text), \
         "the margin column must collapse to 0 when nothing uses it"
-    # The 28px alley rides in the side cells, never in column-gap — a gap is
-    # drawn between zero-width tracks too, which would defeat the collapse.
+    # The 28px alley rides in the side cells, not column-gap, which would
+    # still draw between zero-width tracks and defeat the collapse.
     assert not re.search(r'\.doc \.row\s*\{[^}]*column-gap', text), \
         "the row must not use column-gap — a collapsed column would still cost its alley"
     for cell, edge, alley in (('rg', 'padding-right', 20), ('rm', 'padding-left', 28)):
         assert re.search(r'\.doc \.' + cell + r'\s*\{[^}]*' + edge + r':\s*' + str(alley) + 'px', text), \
             f".{cell} must carry its {alley}px alley itself"
-    # The gutter is a glyph RAIL, not a text column. 70px of 9px mono clamped
-    # `✓ §4 defines "cold start"` to `✓ §4 defines "cold`, which is worse than
-    # not showing it; the glyph says WHICH paragraph carries a flag and of what
-    # severity, and the words go to the margin where they can be read.
+    # The gutter is a glyph RAIL, not a text column — a 70px mono column
+    # clamped mid-word, worse than not showing it. Words go to the margin.
     assert re.search(r'--gutter-w:\s*34px;', text), \
         "the gutter is a 14px glyph plus its alley, not a text column"
     assert re.search(r'\.lflag\s*\{[^}]*font-size:\s*13px', text), \
@@ -159,10 +134,9 @@ def assert_catalog_ground(text: str) -> None:
 def assert_ink_discipline(text: str) -> None:
     """The syntax theme may not spend the reviewer's ink.
 
-    Catalog yellow means "the reviewer touched this text" and red/green belong
-    to the suggestion fence, where diff semantics already own them. A stock
-    highlight.js theme would violate both on its first line, so this guards the
-    boundary rather than the palette's taste."""
+    Catalog yellow means "the reviewer touched this text"; red/green belong
+    to the suggestion fence's diff semantics — a stock highlight.js theme
+    would violate both."""
     block = text[text.index('/* ─── Syntax highlighting'):text.index('</style>')]
     assert '--touch' not in block, \
         "syntax highlighting must not use catalog yellow — that is the reviewer's touch"
@@ -234,6 +208,19 @@ def post_result(base: str, path: str, payload: dict) -> tuple:
         return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
+
+
+def get_headers(base: str, path: str, headers: dict) -> "tuple[int, dict]":
+    """GET with extra request headers (e.g. a forged `Host`) merged in atop
+    the default set; return `(status, response_headers)` — for boundary
+    tests exercising the loopback-`Host` guard and pinning the fixed
+    security-header set every response carries."""
+    req = urllib.request.Request(base + path, headers=headers)
+    try:
+        r = urllib.request.urlopen(req, timeout=5)
+        return r.status, dict(r.headers.items())
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers.items())
 
 
 def post_headers(base: str, path: str, payload: dict, headers: dict) -> int:

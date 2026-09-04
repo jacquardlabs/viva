@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Integration test: HTTP API conventions — JSON errors, body-carried output.
 
-- #32: every error response is `application/json` with an `{"error": ...}` body,
-  so a client can parse any failure by content type (successes are already JSON).
-- #54: `/next-round` reads its output path from the JSON body like every other
-  POST; the legacy `?output=` query param still works as a fallback.
+#32: every error response is `application/json` with an `{"error": ...}` body.
+#54: `/next-round` reads its output path from the JSON body, not `?output=`.
 """
 import json
 import sys
@@ -80,17 +78,13 @@ def main() -> None:
         # Missing output entirely → JSON 400.
         st, ct, payload = raw(base, "/next-round", "POST", body=dict(r1, round=3))
         assert st == 400 and ct == "application/json" and "output" in payload["error"], payload
-        # ...and the missing-output refusal comes FIRST, ahead of the (now
-        # unconditional) review-input validation. A body that is both
-        # output-less and shape-invalid must still name `output`, so the caller
-        # is told about the field it can actually fix.
+        # Missing-output refusal comes first, ahead of review-input validation:
+        # a body that's both output-less and shape-invalid still names `output`.
         st, ct, payload = raw(base, "/next-round", "POST", body={"round": {"sections": []}})
         assert st == 400 and "output" in payload["error"], payload
 
     # ── #103: the legacy ?output= query param is gone — body only ───────────
-    # Its last sender was branch B's re-arm curl, which `loop.py rearm`
-    # replaced. A caller still sending it is told about the field it can fix.
-    # A separate .viva dir so this server's server.url can't collide with the
+    # Separate .viva dir so this server's server.url can't collide with the
     # first (both would otherwise write the same path in the same parent).
     viva2 = tmp / ".viva2"
     viva2.mkdir()

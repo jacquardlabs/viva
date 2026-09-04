@@ -7,9 +7,7 @@ facts. It says nothing about what to argue — that is the human's call at the
 gate, and a file that starts to is the drift `PRODUCT.md` warns about.
 
 The rules are the practitioner consensus (sources at the end), not one
-reviewer's taste: readers scan rather than read, and the same content at half
-the words tested 58% more usable, 124% with a scannable layout and objective
-language on top.
+reviewer's taste: readers scan rather than read (NN/g figures below).
 
 ## Lead with the point
 

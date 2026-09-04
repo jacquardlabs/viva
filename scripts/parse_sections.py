@@ -16,12 +16,8 @@ Round 2+:
 Optional:
   --doc-file PATH    Relative path shown in UI (defaults to the doc argument)
   --split-on REGEX   Split on any heading whose title matches this pattern
-                      (re.search, case-sensitive, any heading depth), instead
-                      of auto-detecting a split level. Replaces the level
-                      -counting heuristic entirely, including its >20-section
-                      coarsening fallback. Omit for today's unchanged
-                      auto-detect behavior. Zero matches is a hard error, not
-                      a silent fallback to auto-detection.
+                      (re.search, case-sensitive, any heading depth), replacing
+                      auto-detection entirely. Zero matches is a hard error.
   --doc-type NAME    Record the doc type this round was started with (a name
                       `scripts/doc_types.py` resolves). Recorded only, never
                       resolved here — the parser owns no type semantics.
@@ -90,7 +86,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
-    """Return (level, title, line_idx) for every ATX heading line."""
+    """(level, title, line_idx) for every ATX heading line."""
     result = []
     for i, line in enumerate(lines):
         m = re.match(r'^(#{1,6})\s+(.+)', line.rstrip("\r\n"))
@@ -101,11 +97,8 @@ def _heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
 
 
 def _find_split_level(headings: list[tuple[int, str, int]]) -> int | None:
-    """Find the heading level to split on per SKILL.md rules.
-
-    Picks the highest level (fewest #s) that occurs more than once.
-    If that level yields > 20 sections, falls back one level coarser
-    (fewer #s) to reduce section count.
+    """Highest level (fewest #s) that repeats. If that level has >20
+    sections, falls back one level coarser to reduce the count.
     """
     if not headings:
         return None
@@ -126,13 +119,10 @@ def _split_sections(
 ) -> tuple[list[dict], int | None]:
     """Split markdown into sections. Returns (sections, revision_history_line_idx).
 
-    split_on: optional regex (re.search, case-sensitive). When given, it is the
-    sole selection rule — a heading is a split point iff its title matches,
-    regardless of `#` depth — and replaces `_find_split_level`'s level-counting
-    heuristic entirely, including its >20-section coarsening fallback (an
-    explicit caller-supplied pattern isn't a heuristic guess that needs
-    protecting from over-splitting). When omitted, this runs exactly the
-    auto-detect path it always has — that branch is untouched.
+    split_on: optional regex (re.search, case-sensitive) — when given, a
+    heading is a split point iff its title matches, regardless of `#` depth,
+    replacing `_find_split_level` entirely (its >20-section coarsening
+    fallback included). Omitted runs the auto-detect path.
     """
     lines = text.splitlines(keepends=True)
     headings = _heading_lines(lines)
@@ -150,14 +140,10 @@ def _split_sections(
         if split_level is None:
             return [{"id": "s1", "title": Path(doc_path).stem, "content": text}], None
         split_headings = [(lv, t, idx) for lv, t, idx in headings if lv == split_level]
-        # Promote any heading coarser than the detected split level to a split
-        # point too, as long as it occurs after the first split-level heading
-        # (before that is preamble/title territory — see design doc's
-        # "Alternatives considered" #2 for why the idx guard matters). Per
-        # `_find_split_level`'s "coarsest repeater wins" contract, every level
-        # coarser than `split_level` occurs at most once in the whole
-        # document, so this can only ever add distinct, singleton headings —
-        # never re-trigger a coarsest-repeater ambiguity.
+        # Promote any coarser heading after the first split-level heading to a
+        # split point too (before that is preamble/title territory). Each such
+        # level occurs at most once per `_find_split_level`'s contract, so this
+        # only adds distinct singleton headings.
         first_split_idx = split_headings[0][2]
         coarser = [
             (lv, t, idx) for lv, t, idx in headings
@@ -206,7 +192,7 @@ def _split_sections(
 
 
 def _integrity_check(text: str, sections: list[dict], rev_line: int | None) -> None:
-    """Every non-exempt source char must appear in exactly one section."""
+    """Every source char (before Revision History) must appear in exactly one section."""
     lines = text.splitlines(keepends=True)
     end = rev_line if rev_line is not None else len(lines)
     source = "".join(lines[:end])
@@ -248,17 +234,11 @@ def _load_approved(
 ) -> list[str]:
     """Carry forward approved IDs by title+content equality.
 
-    A section is only kept approved if its title matches exactly (case-insensitive)
-    AND its content is byte-for-byte identical to the prior approved version.
-    Changed content requires re-review.
-
-    The prior round's verdict outranks the stamp it shipped with: an ID the
-    reviewer did not approve last round is dropped even when `approved_ids`
-    still lists it. Without that subtraction a withdrawn approval only sticks
-    while the section is also rewritten, so a section the reviewer reopened and
-    the author did not edit — a declined comment (#167), or a response with no
-    edit — comes back stamped APPROVED with its thread on a carried card that
-    renders none, and the round can be signed off over it.
+    A section stays approved only if its title matches (case-insensitive) and
+    content is byte-identical to the prior approved version. The prior round's
+    verdict outranks a carried `approved_ids` stamp: an ID not approved last
+    round is dropped even if still listed, so a reopened section with no edit
+    (e.g. a declined comment, #167) doesn't come back silently APPROVED.
     """
     if prior_in is None or prior_v is None:
         return []
@@ -272,11 +252,8 @@ def _load_approved(
         s["id"] for s in prior_v.get("sections", []) if s.get("verdict") == "approved"
     }
     # …and the ones it explicitly did NOT approve, which revoke a carried stamp.
-    # Truthy, not `is not None`: a row carrying no verdict at all decides
-    # nothing and leaves the stamp standing (a caller may write only the
-    # sections it acted on), while `pending` is a withdrawal the reviewer
-    # submitted without a note and drops it. Subtracting is monotone — this can
-    # only shrink `approved_ids`, never grow it, so completion never gets easier.
+    # Truthy check, not `is not None`: a row with no verdict decides nothing and
+    # leaves the stamp standing; `pending` is a withdrawal and drops it.
     withdrawn: set[str] = {
         s.get("id") for s in prior_v.get("sections", []) or []
         if s.get("id") and s.get("verdict") and s.get("verdict") != "approved"
@@ -303,11 +280,9 @@ def _carry_identical(
 ) -> None:
     """Copy one prior-round section field onto byte-identical new sections.
 
-    The shared mechanism behind `_carry_annotations` and `_carry_summaries`:
-    key on (normalized title, content) so a value only survives when the
-    section it describes did not move and did not change. Keying on the title
-    alone would carry onto a rewrite. A section with no prior match gains no
-    key at all — output stays byte-identical to a run where nothing carried.
+    Shared by `_carry_annotations` and `_carry_summaries`: keyed on
+    (normalized title, content) so a value survives only if the section it
+    describes is unchanged. Title alone would carry onto a rewrite.
     """
     if prior_in is None:
         return
@@ -327,12 +302,9 @@ def _carry_identical(
 def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
     """Carry prior annotations onto byte-identical new sections, in place.
 
-    Annotations are advisory flags from a pre-review pass. A flag is only still
-    valid if the section's title and content are unchanged; a rewritten section
-    may already have addressed the flag, so its annotations are dropped (the
-    next round's pre-review pass can re-flag). Sections that never carried
-    annotations gain no `annotations` key — output stays byte-identical to a
-    no-annotation run.
+    A flag survives only if the section's title and content are unchanged; a
+    rewritten section may have addressed it, so annotations drop and the next
+    pre-review pass can re-flag.
     """
     _carry_identical(prior_in, new_sections, "annotations")
 
@@ -340,10 +312,9 @@ def _carry_annotations(prior_in: dict | None, new_sections: list[dict]) -> None:
 def _carry_summaries(prior_in: dict | None, new_sections: list[dict]) -> None:
     """Carry prior one-line summaries onto byte-identical new sections, in place.
 
-    Same rule as the annotation carry, for the same reason: a summary describes
-    the content, so a rewritten section's summary is stale and drops rather
-    than lying under the new title. The drop is what re-summarizing keys on —
-    every section this round carrying a `diff` also carries no `summary` (#188).
+    Same rule as the annotation carry: a summary describes content, so a
+    rewritten section's summary is stale and drops. A section carrying a
+    `diff` this round therefore carries no `summary` (#188).
     """
     _carry_identical(prior_in, new_sections, "summary")
 
@@ -351,9 +322,8 @@ def _carry_summaries(prior_in: dict | None, new_sections: list[dict]) -> None:
 def _line_diff(prior: str, current: str) -> list[dict]:
     """Unified line diff prior→current as a list of {op, text} rows.
 
-    op ∈ '+' (added) | '-' (removed) | ' ' (context) | '@' (hunk header).
-    The leading `--- / +++` file headers are dropped — the card already names
-    the section. Trailing newlines are stripped per line for clean rendering.
+    op is '+' (added) | '-' (removed) | ' ' (context) | '@' (hunk header).
+    The `--- / +++` file headers are dropped — the card already names the section.
     """
     rows: list[dict] = []
     diff = difflib.unified_diff(
@@ -364,8 +334,8 @@ def _line_diff(prior: str, current: str) -> list[dict]:
         if line.startswith("@@"):
             seen_hunk = True
             rows.append({"op": "@", "text": line})
-        # The `--- / +++` file headers only appear before the first hunk; after
-        # that a `--`/`++`-prefixed line is real content, not a header.
+        # File headers only appear before the first hunk; after that a
+        # `--`/`++`-prefixed line is real content, not a header.
         elif not seen_hunk and (line.startswith("--- ") or line.startswith("+++ ")):
             continue
         elif line.startswith("+"):
@@ -381,9 +351,8 @@ def _compute_diffs(prior_in: dict | None, new_sections: list[dict]) -> None:
     """Attach a round-to-round `diff` onto rewritten sections, in place.
 
     A section gets a diff when a prior-round section shares its title
-    (case-insensitive) and the content differs. Byte-identical carried sections
-    and brand-new sections (no prior title match) get no `diff` key — output
-    stays byte-identical to a no-prior run for those.
+    (case-insensitive) and the content differs. Unchanged and brand-new
+    sections get no `diff` key.
     """
     if prior_in is None:
         return
@@ -400,14 +369,9 @@ def _compute_diffs(prior_in: dict | None, new_sections: list[dict]) -> None:
 def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) -> None:
     """Attach each open thread's exchanges onto the matching section, in place.
 
-    The open-note store (maintained by open_notes.py) is keyed by normalized
-    title. A thread the reviewer has not settled — `open`, or `declined` by the
-    author — re-presents on its section's card next round so the reviewer sees
-    the prior exchange and either settles it or insists; only a settled thread is
-    dropped. That single filter is the whole holding mechanism for a decline: it
-    is unresolved, so it carries, and its section comes back live. Sections with
-    no unresolved thread gain no `open_notes` key — output stays byte-identical
-    to a run without the store.
+    The store (open_notes.py) is keyed by normalized title. A thread not yet
+    `settled` (`open`, or `declined` by the author) re-presents on its section
+    next round; that filter is the whole holding mechanism for a decline.
     """
     if not open_notes_path:
         return
@@ -421,7 +385,7 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
     by_title: dict[str, list] = {}
     for t in store.values():
         if not schema.thread_is_unresolved(t.get("status")):
-            continue  # settled threads drop from later rounds
+            continue
         by_title.setdefault(schema.section_key(t.get("title")), []).append({
             "cid": t.get("cid"),
             "quote": t.get("quote", ""),
@@ -429,8 +393,7 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
             "exchanges": t.get("exchanges", []),
         })
     for threads in by_title.values():
-        # `or ""` (not a default arg): a thread whose cid is explicitly None
-        # would otherwise sort None against str and raise TypeError.
+        # `or ""`: a thread with cid explicitly None would sort None vs str.
         threads.sort(key=lambda t: t.get("cid") or "")
     for s in new_sections:
         key = schema.section_key(s.get("title"))
@@ -441,9 +404,7 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
 def main() -> None:
     args = _parse_args()
 
-    # A posture with no pass is a setting on nothing. Refused here, at the
-    # boundary, rather than dropped on write where the caller would never learn
-    # the round runs at a posture it asked for and did not get.
+    # A posture with no pass is a setting on nothing — refused at the boundary.
     if args.posture is not None and args.pass_kind is None:
         sys.exit("viva: --posture needs --pass — a posture is a setting on a "
                  "pass, not a round field of its own")
@@ -474,27 +435,16 @@ def main() -> None:
         "approved_ids": approved_ids,
         "sections": sections,
     }
-    # Recorded outside the literal, only when the flag was given: a session
-    # parsed by auto-detection writes no `split_on` key at all, so its round
-    # file stays byte-identical to what it was before this field existed. The
-    # pattern is round state — `loop.py rearm` reads it back to re-split round
-    # N+1 the same way, which is also why every round it parses carries it
-    # forward rather than only round 1.
+    # Written only when given: `loop.py rearm` reads `split_on` back to
+    # re-split every later round the same way.
     if args.split_on is not None:
         data["split_on"] = args.split_on
-    # Same rule for the type: recorded outside the literal and only when given,
-    # so an untyped session's round file stays byte-identical to what it was
-    # before this field existed. It is round state for the same reason the
-    # pattern is — `loop.py` reads it back to type round N+1 and a later resume
-    # identically, rather than asking the agent to re-name it.
+    # Same rule for doc_type: round state `loop.py` reads back across rounds
+    # and resumes.
     if args.doc_type is not None:
         data["doc_type"] = args.doc_type
-    # Same rule once more for the pass, and here it is load-bearing rather than
-    # tidy: a round that runs no pass must carry NO `pass` key, because absent
-    # is what makes `round_is_complete` fall through to the base rule. A written
-    # default would silently add a conjunct to every round in the repo.
-    # `posture` lives inside the object — a pass is one thing to carry and
-    # validate, not two fields that can disagree.
+    # A round with no pass must carry NO `pass` key — absence is what makes
+    # `round_is_complete` fall through to the base rule.
     if args.pass_kind is not None:
         pass_spec = {"kind": args.pass_kind}
         if args.posture is not None:

@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
-"""Integration test: confidence triage (issue #12).
-
-The generating agent self-annotates each section as sourced vs inferred plus a
-confidence level, riding the existing annotation channel (#8) with a
-`kind:"confidence"` entry carrying structured `basis`/`level` fields. The server
-surfaces the badge (free, via the annotation strip) and offers a weakest-first
-sort that reads basis/level off the annotation — no string-parsing. Contract:
-
-  - GET /input preserves the confidence annotation verbatim.
-  - The page ships the weakest-first sort machinery, keyed on basis/level.
-  - A doc with no confidence annotation keeps the toggle hidden and stays in
-    document order (zero-regression).
+"""Integration test: confidence triage (#12), via a `kind:"confidence"`
+annotation carrying `basis`/`level`. Contract: GET /input preserves it
+verbatim, and the page ships weakest-first sort keyed on those fields.
 """
 import json
 import sys

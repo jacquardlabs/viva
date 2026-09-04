@@ -1,27 +1,12 @@
 #!/usr/bin/env python3
 """Soft client-side timeout affordance on #processing-view (#119).
 
-`#processing-view` is the shared "Claude is revising…" spinner shown between
-the `processing` SSE event and whichever of `round`/`complete` arrives next
-(server.py's `connectSSE()`). It has two, materially different uses — an
-intra-loop revise bounded by an LLM turn in this process, and the
-`unified-session` (#109) qa→review hand-off, whose wait is bounded by an
-external caller's own synthesis step (docs/headless-contract.md §6/§7). The
-SSE connection stays open the whole time either way, so `es.onerror` cannot
-detect a merely-slow hand-off — before this story a stalled hand-off looked
-identical to a healthy revise: a spinner, silently, forever.
+A stalled hand-off can't be told apart from a healthy revise since `es.onerror`
+only fires on a dropped connection, not a slow one — this banner covers that
+gap, escalating to the dead-session overlay (#174) rather than stacking with it.
 
-The banner's escalation partner is now the dead-session overlay (#174), not a
-second banner: a dropped connection stops being a decoration at the top of the
-tab and becomes a block. The mutual-exclusion contract asserted here is
-unchanged — at most one signal, and the harder one wins.
-
-This repo has no JS/browser test harness (CLAUDE.md: stdlib-only, no
-npm/node), so — matching the established pattern in test_server_a11y.py and
-test_server_qa_review_handoff.py — these are string-needle assertions
-against the embedded HTML constant. The timed appearance/disappearance
-itself is verified manually in a browser (design doc's "Feasibility note on
-testing").
+String-needle assertions against the embedded HTML constant (no JS/browser
+harness in this repo); timed appearance is verified manually in a browser.
 """
 import re
 import sys
@@ -42,9 +27,7 @@ def _sse_client_slice() -> str:
 
 
 def test_timeout_constant_in_design_docs_range():
-    # Design doc: "a value in the neighborhood of 15-30 seconds is a
-    # reasonable starting point" — pin both the name and that the build
-    # phase picked a value inside that guidance range.
+    # Design doc's guidance range: 15-30 seconds.
     m = re.search(r"const PROCESSING_STILL_WAITING_MS\s*=\s*(\d+)\s*;", HTML)
     assert m, "expected a single named PROCESSING_STILL_WAITING_MS constant"
     ms = int(m.group(1))
@@ -60,8 +43,7 @@ def test_processing_listener_arms_timer():
     assert start != -1 and end != -1 and end > start
     handler = HTML[start:end]
     assert "el('processing-view').style.display = '';" in handler
-    # Re-arming clears any stale timer/banner first so a repeat 'processing'
-    # event can never leave two timers racing.
+    # Re-arming clears any stale timer first so repeats never race.
     assert "clearProcessingTimer();" in handler
     assert "processingTimer = setTimeout(showStillWaitingBanner, PROCESSING_STILL_WAITING_MS);" in handler
     print("  ok  test_processing_listener_arms_timer")
@@ -72,15 +54,14 @@ def test_round_and_complete_clear_timer():
     round_end = HTML.index("es.addEventListener('complete'")
     round_handler = HTML[round_start:round_end]
     assert "clearProcessingTimer();" in round_handler, (
-        "the 'round' handler must clear the soft timer so a late-arriving "
-        "round doesn't leave a stale still-waiting banner on screen"
+        "'round' handler must clear the soft timer to avoid a stale banner"
     )
 
     complete_start = round_end
     complete_end = HTML.index("es.onerror = () => {")
     complete_handler = HTML[complete_start:complete_end]
     assert "clearProcessingTimer();" in complete_handler, (
-        "the 'complete' handler must clear the soft timer for the same reason"
+        "'complete' handler must clear the soft timer for the same reason"
     )
     print("  ok  test_round_and_complete_clear_timer")
 
@@ -92,10 +73,7 @@ def test_banner_creation_function_and_mutual_exclusion():
     assert "Still waiting — check the terminal." in fn_body
     assert "b.id = 'processing-wait-banner';" in fn_body
     assert "b.className = 'error-banner banner-info';" in fn_body
-    # At most one signal at a time: skip creation if the connection has
-    # actually dropped — the dead-session overlay (#174) is the harder, more
-    # specific signal, and it is a full-screen scrim this banner's z-index
-    # would float above and contradict.
+    # At most one signal at a time: skip if the dead-session overlay (#174) is up.
     assert "if (deadSessionIsOpen()) return;" in fn_body
     print("  ok  test_banner_creation_function_and_mutual_exclusion")
 
@@ -110,10 +88,8 @@ def test_clear_processing_timer_removes_banner():
 
 
 def test_onerror_escalates_over_still_waiting_banner():
-    # If the connection actually drops after the soft timer already fired,
-    # onerror must remove any still-waiting banner it finds and escalate to
-    # the dead-session overlay (#174) — never a banner left floating over a
-    # full-screen scrim that contradicts it.
+    # A dropped connection must remove any still-waiting banner and escalate
+    # to the dead-session overlay (#174), never leave both showing.
     start = HTML.index("es.onerror = () => {")
     end = HTML.index("\n  };", start)
     assert end > start
@@ -127,12 +103,8 @@ def test_onerror_escalates_over_still_waiting_banner():
 
 
 def test_banner_info_css_uses_violet_not_orange():
-    # DESIGN.md: --violet/--violet-bg is the "Info / question" token pair,
-    # an appropriate weight for "no event yet, connection still open" as
-    # distinct from --orange's "Changes / error" weight used by the
-    # connection-lost banner. Structural rules (position, padding, font,
-    # z-index) stay on the shared .error-banner base — this is a modifier,
-    # not a second component.
+    # DESIGN.md: --violet is the "Info" token, distinct from --orange's
+    # "Changes / error" weight used by the connection-lost banner.
     start = HTML.index(".error-banner.banner-info {")
     end = HTML.index("}", start)
     rule = HTML[start:end]
@@ -143,8 +115,7 @@ def test_banner_info_css_uses_violet_not_orange():
 
 
 def test_sse_client_has_no_duplicate_timer_helpers():
-    # Sanity: exactly one definition of each new helper/constant, so a
-    # future edit can't accidentally fork the timer lifecycle.
+    # Exactly one definition of each helper/constant, so edits can't fork the lifecycle.
     assert HTML.count("function clearProcessingTimer()") == 1
     assert HTML.count("function showStillWaitingBanner()") == 1
     assert HTML.count("const PROCESSING_STILL_WAITING_MS") == 1

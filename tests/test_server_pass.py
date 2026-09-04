@@ -2,16 +2,7 @@
 """`POST /complete` under a round's `pass` (#168) — the conjunct at the wire.
 
 `tests/test_schema.py` pins the rule; this pins that the server actually asks
-it, from its own process, with a round that arrived over HTTP. Three sessions,
-identical but for the round file:
-
-  1. `checks` with an unanswered check flag → refused, every section
-     approved. The pass ADDS a condition; approvals alone no longer close it.
-  2. the same round with that flag answered → 200.
-  3. the same unanswered flag with NO `pass` → 200. Absent is today's behavior
-     exactly (PRODUCT.md principle 4), and this is the one place a regression
-     there would be silent: an existing caller that never asked for a pass would
-     start getting a 409 it cannot fix.
+it, over HTTP, with an unanswered check flag, an answered one, and no pass.
 """
 import json
 import subprocess
@@ -52,8 +43,7 @@ def round_input(pass_spec=None, result=None) -> dict:
 
 
 def complete_after_approving_everything(data: dict) -> tuple:
-    """Serve one round, approve every section, and try to sign off. Returns
-    `(status, body)` from `/complete`."""
+    """Serve one round, approve every section, and try to sign off via `/complete`."""
     with tempfile.TemporaryDirectory() as td:
         viva = Path(td) / ".viva"
         viva.mkdir()
@@ -96,10 +86,8 @@ def check_absent_pass_is_unchanged() -> None:
 
 
 def check_a_pass_never_signs_off_an_unapproved_round() -> None:
-    """The invariant, at the wire: a pass may only add conditions. A round with
-    a section still carrying `changes` is refused under every kind, with the
-    section count the agent needs to recover. Enumerated from `PASS_KINDS`, so a
-    fifth kind is covered here the day it lands."""
+    """A pass may only add conditions: an unapproved section is refused under
+    every kind. Enumerated from `PASS_KINDS` so a fifth kind is covered here."""
     for kind in schema.PASS_KINDS:
         with tempfile.TemporaryDirectory() as td:
             viva = Path(td) / ".viva"
@@ -120,8 +108,8 @@ def check_a_pass_never_signs_off_an_unapproved_round() -> None:
 
 
 def check_a_malformed_pass_is_refused_at_the_boundary() -> None:
-    """The server validates a `/next-round` payload on read. A bad `pass` is a
-    400 there rather than a round that quietly reverts to the base rule."""
+    """A bad `pass` is a 400 on `/next-round` rather than quietly reverting
+    to the base rule."""
     with tempfile.TemporaryDirectory() as td:
         viva = Path(td) / ".viva"
         viva.mkdir()
@@ -139,15 +127,9 @@ def check_a_malformed_pass_is_refused_at_the_boundary() -> None:
 
 
 def check_annotate_refuses_the_round_the_server_is_serving() -> None:
-    """A check flag is answered in the NEXT round, never in the armed one.
-
-    The server loads its round once and replaces it only from `/next-round`, so
-    a merge into the file it was armed from is invisible to `/complete`. Before
-    the pass work that divergence was inert — annotations gated nothing. Now it
-    is reachable and expensive: `loop.py finish` would pass its own gate reading
-    disk, append the Revision History to the doc, and only then be refused by a
-    server reading its stale copy. `annotate` refuses instead.
-    """
+    """A check flag is answered in the NEXT round, never the armed one — a
+    merge into the armed round's file is invisible to `/complete`, so
+    `annotate` refuses it outright."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"

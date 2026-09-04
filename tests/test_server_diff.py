@@ -209,9 +209,8 @@ def test_diff_mode_next_round() -> None:
 
 
 def test_review_round_refused_by_a_diff_server() -> None:
-    """#126, the symmetric half: a `--mode diff` server serves diff rounds and
-    nothing else. A `mode: "review"` body — or one with no `mode` at all, which
-    reads as review — is refused `400` and leaves round 1 served."""
+    """#126: a `--mode diff` server refuses a `mode: "review"` (or absent-mode)
+    body with 400 and leaves round 1 served."""
     with tempfile.TemporaryDirectory() as tmp:
         proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
         try:
@@ -259,13 +258,9 @@ def test_diff_mode_complete_shuts_down() -> None:
 
 
 def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
-    """/viva-review branch B's empty-diff re-arm (#116): the human requests a
-    `changes` edit that fully resolves the diff before every hunk is
-    individually approved, so the loop reaches `/complete` straight from
-    B4 instead of B5 — never calling `/next-round` for that round. Since #177
-    that finish carries `resolved: "empty"`, the caller's word that the
-    re-capture came back empty; without it the `changes` verdict on record is
-    refused (`test_server_qa_complete_shutdown.py` pins the refusal)."""
+    """Empty-diff re-arm (#116): a `changes` edit that fully resolves the diff
+    goes straight to `/complete` with `resolved: "empty"` (#177), skipping
+    `/next-round`."""
     with tempfile.TemporaryDirectory() as tmp:
         proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
         try:
@@ -276,9 +271,7 @@ def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
                     {"id": "s2", "verdict": "approved"},
                 ],
             })
-            # Step 4: re-diff comes back empty (the requested edit reverted
-            # the only outstanding hunk) — go straight to /complete, no
-            # /next-round in between, asserting why.
+            # Re-diff came back empty; go straight to /complete, no /next-round.
             post(base, "/complete", {
                 "resolved": "empty",
                 "rounds_total": 1, "sections_total": 2, "sections_revised": 1
@@ -297,10 +290,8 @@ def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
 
 
 def test_page_captions_a_resolved_diff() -> None:
-    """Wiring check only (no JS harness — stdlib Python): the `complete` SSE
-    handler reads `resolved` off the payload `loop.py finish` sent and captions
-    the stamp as a resolved diff rather than counting sections that no longer
-    exist. The stamp itself (`stamp-sub`) is untouched — DESIGN.md's contract."""
+    """Wiring check (no JS harness): `complete` SSE handler captions a
+    resolved diff rather than counting sections that no longer exist."""
     sys.path.insert(0, str(ROOT))
     import server  # noqa: E402
     page = server.HTML

@@ -137,14 +137,11 @@ No display face. A catalog page earns its character from density and rules, not
 from a headline font. `font-variant-numeric: tabular-nums` is set on `body`, so
 every column of digits aligns without per-rule opt-in.
 
-A third face had in fact reached three rules — `.note-field`,
-`.thread-reply-field` and `.complete-detail` each declared
-`'Bricolage Grotesque', sans-serif`, which is named in neither family above. It
-is gone, and those three surfaces inherit the grotesque like everything else.
-Worth recording so the removal is not rediscovered as a regression: the fallback
-in that declaration was generic `sans-serif`, so whenever the remote face failed
-to load, the composer and the reply box did not degrade to the page's own
-grotesque — they degraded past it.
+A third face once reached three rules — `.note-field`, `.thread-reply-field`,
+`.complete-detail` — declaring `'Bricolage Grotesque', sans-serif`, named in
+neither family above. It is gone; those three surfaces now inherit the
+grotesque like everything else. Its fallback was generic `sans-serif`, so a
+failed remote load degraded past the page's own grotesque, not to it.
 
 ### Verbatim glyphs
 
@@ -158,21 +155,16 @@ per-surface rule is the one the next mono surface forgets.
 
 ### The faces are local
 
-Both faces were served from Google Fonts until this change — #79 vendored the
-third-party JS and CSS and scoped the fonts out, so every review still made a
-per-session request to Google, and offline the faces silently fell back. That
-scope decision is reversed. Fragment Mono is vendored under `assets/vendor/` as
-four woff2 subsets (latin and latin-ext, roman and italic) and declared as
-`@font-face` rules against `/vendor/` routes; Cyrillic falls back to the system
-mono rather than shipping a sub-kilobyte subset. The page now issues zero
-cross-origin requests, which is what PRODUCT.md's "local and keyless" principle
-already claimed on its behalf.
-
-Precisely what vendoring bought: the rules spelled `'Fragment Mono', monospace`
-are the ones that fell back offline. The rules spelled `ui-monospace, 'SF Mono',
-'Fragment Mono', Menlo, monospace` resolve to a system face first on macOS and
-never depended on Google at all — the typographic identity was partly remote,
-not wholly.
+Both faces were served from Google Fonts until #79 vendored the third-party
+JS and CSS but scoped the fonts out; that scope decision is now reversed.
+Fragment Mono is vendored under `assets/vendor/` as four woff2 subsets (latin
+and latin-ext, roman and italic) and declared as `@font-face` rules against
+`/vendor/` routes. Cyrillic falls back to the system mono rather than
+shipping a sub-kilobyte subset. The page now issues zero cross-origin
+requests, matching PRODUCT.md's "local and keyless" principle. Rules spelled
+`ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace` already resolved
+to a system face first on macOS — only the bare `'Fragment Mono', monospace`
+rules ever depended on Google.
 
 Label convention: 8–10px, `letter-spacing: 0.08–0.16em`, `text-transform: uppercase`, `color: var(--soft)`.
 
@@ -184,10 +176,10 @@ margin conversation, never to longer lines. Wide content — code blocks, tables
 escapes the measure and scrolls inside its own container, so the page body
 never scrolls sideways.
 
-`.section-content` carries **no nested scroll**. An earlier `max-height: 60vh;
-overflow-y: auto` put a second scrollbar inside every long section: the reader
-scrolled a viewport to reach content already on screen, and the page scrollbar
-lied about how much was left. The page is the only scroll.
+`.section-content` carries **no nested scroll**. A second scrollbar inside a
+long section makes the reader scroll a viewport to reach content already on
+screen while the page scrollbar lies about what's left. The page is the only
+scroll.
 
 ### Syntax highlighting
 
@@ -315,11 +307,9 @@ annotates rather than beside the section.
 | margin (`.rm`) | threads and notes that point at the row's own passage | `--margin-w: minmax(253px, 328px)` |
 
 The margin holds what points at the passage beside it, and nothing else. A
-section's own state and its own verbs point at the *section*; they have no
-passage to sit beside, and in the head row's margin they were paid for in blank
-page — 101px of margin against a 40px title on every annotated section, 400px
-once unanchored notes joined the pile, which rendered as 360px of white between
-a heading and its own first paragraph. They moved to the **foot band** (below).
+section's own state and its own verbs point at the *section*, with no passage
+to sit beside — in the head row's margin they cost 101–400px of blank page
+against a 40px title. They moved to the **foot band** (below).
 
 Each section is therefore three bands: a **head row** (`.row-head`, ONE track —
 heading, number, summary, segmented rule, collapsed round diff, and no margin
@@ -461,16 +451,14 @@ verdict going back to pending.
 **This overturns their LOCATION, not their grammar.** They lived in the head
 row's margin cell, and #186's own reading-order argument was about material
 *above* the prose — the annotation strip, the stacked thread list — which a
-foot band is not. What the head-margin position cost was 61px of blank page
-between every annotated heading and its own first paragraph, on every section,
-permanently, because "activation costs no layout" requires the state be drawn
-whether or not a section is live. This is a per-section action row again, below
-the content, and saying otherwise would be a dodge: what survives is *one
-control, one grammar, one label rule*, and what changed is where a
-whole-section object is allowed to sit. `docHeadRowHTML` no longer emits a
-margin cell at all, which is why `.doc.no-margin`'s three head-row exemptions
-and their media-query terms are **deleted** rather than twinned for a second
-row.
+foot band is not. The head-margin position cost 61px of blank page between
+every annotated heading and its own first paragraph, on every section,
+because "activation costs no layout" requires the state be drawn whether or
+not a section is live. What survives is *one control, one grammar, one label
+rule*; what changed is where a whole-section object is allowed to sit.
+`docHeadRowHTML` no longer emits a margin cell at all, which is why
+`.doc.no-margin`'s three head-row exemptions and their media-query terms are
+**deleted** rather than twinned for a second row.
 
 The verbs **lead** the band and the state run **trails** it, right-aligned:
 `approve` sits on the same left edge the reader has been reading down and is in
@@ -562,19 +550,18 @@ verb and carries a keycap, and both would be lost.
 by creation order. An unanchored note — or one whose anchor resolves to no row
 — sorts **last**, past every real index (`rows.length`), and renders in the
 section's **foot band**: a whole-section note is read after the section, not
-before it. It sorted first, to the section head, until that put 400px of margin
-beside a one-line title and started the section's own first paragraph 400px down
-the page. `markAndPin` assigns the number and writes **both** ends in one pass —
-the pin in the text and the note in the margin can never disagree about which
-span is note 3. The pin is a button and jumps to its own note.
+before it (it sorted first, to the section head, until that put 400px of
+margin beside a one-line title). `markAndPin` assigns the number and writes
+**both** ends in one pass — the pin in the text and the note in the margin can
+never disagree about which span is note 3. The pin is a button and jumps to
+its own note.
 
 `rowForAnchor` reads a row's concatenated prose text, so it matches across
-element boundaries; `wrapNth` needs the needle inside a single text node and is
-strictly stricter. A `rowForAnchor` failure therefore implies a `wrapNth`
+element boundaries; `wrapNth` needs the needle inside a single text node and
+is strictly stricter. A `rowForAnchor` failure therefore implies a `wrapNth`
 failure: the note lands at the foot with its quote echo, takes the highest
-ordinal, and carries **no pin**. That is the honest degrade, and at the foot it
-reads as a whole-section note instead of disappearing into a pile above the
-prose.
+ordinal, and carries **no pin** — reading as a whole-section note instead of
+disappearing into a pile above the prose.
 
 **Ink.** An anchored span in the doc print wears `var(--touch)` plus a 1.5px
 `var(--touch-edge)`, per the ink discipline ("the reviewer's touch ON THE
@@ -585,18 +572,17 @@ fill is already the mark, and `#ffec8f` on charcoal, where `--touch` is a 22%
 wash worth about a 5% luminance lift. The composite settles nothing here: its
 specimen hardcodes the white ground and has no dark rendering at all.
 
-**Flags.** `docFlagSplit` has **three** routes, not two. A flag whose kind is in
-`schema.DOC_SCOPE_KINDS` is about the **document** and goes to neither column:
-it goes to the document slip. Both producers that emit one
+**Flags.** `docFlagSplit` has **three** routes, not two. A flag whose kind is
+in `schema.DOC_SCOPE_KINDS` is about the **document** and goes to neither
+column — it goes to the document slip. Both producers that emit one
 (`headings_present.py`, `checklist.py`) anchor it to `sections[0]["id"]` only
 because `parse_sections.py`'s integrity check makes a card for a section the
-document does not have impossible, so the first card is the only document-level
-handle either has. Taking that literally opened every typed round-1 review on
-five amber *"missing expected design-doc section"* lines in the margin of
-section 1, with roughly zero pixels of document prose in the first viewport — on
-a surface whose stated principle is *verbatim, not summarized*. One consequence
-worth stating: a document whose only flags are doc-scope now collapses the glyph
-rail, which is the wasted-space rule finally applying to that shape.
+document does not have impossible, so the first card is the only
+document-level handle either has; taken literally that opened every typed
+round-1 review on five amber *"missing expected design-doc section"* lines in
+section 1's margin, against the *verbatim, not summarized* principle. A
+document whose only flags are doc-scope now collapses the glyph rail — the
+wasted-space rule applying to that shape.
 
 The remaining routes are unchanged. `docFlagSplit` sends plain severity and check flags to the rail +
 margin pair described under *The gutter is a glyph rail* below, and any flag
@@ -619,13 +605,9 @@ except the margin manufactures the repeat. The filter is inert in the accordion
 serves both surfaces.
 
 **The round diff** sits in the **head row's prose cell**, under the segmented
-rule, **shipped collapsed** — one mono line. It is what a round-2 run found
-stacked at full width between the reader and the text, and collapsed-above is
-the one place it fits without becoming the page. (It once also filled dead
-prose column that the spec table opened beside the heading — 88px, measured.
-That space no longer exists: the head row is a single track and the state run
-prints in the foot band, so the diff earns its place on reading order alone.)
-Expanded, it stays at the reading measure
+rule, **shipped collapsed** — one mono line. A round-2 run found it stacked at
+full width between the reader and the text; collapsed-above is the one place
+it fits without becoming the page. Expanded, it stays at the reading measure
 rather than breaking out: a prose diff wraps, and a diff wide enough to need
 its own row was the problem.
 
@@ -809,18 +791,17 @@ measured session read `approved 8/8` on a round with three sections still
 holding open changes. The fix is the code catching up to the doc, not a new
 decision.
 
-**Footer**: four things, like the composite's, because at the doc page's width
-seven wrapped the stamp onto a second line. Everything it keeps is about
+**Footer**: four things, like the composite's — at the doc page's width seven
+wrapped the stamp onto a second line. Everything it keeps is about
 **dispatching** — `blocked · N unreviewed` (or `N open` with the `⌘⏎` keycap
-once nothing is unreviewed), `convergence N → M`, `round trip N ms`, and the one
-consequential stamp `approve — dispatch`, named for what it does to the document
-rather than for the HTTP verb behind it and never restating the count printed
-beside it. `convergence` prints only once its two ends differ — a fresh round
-compared with itself teaches nothing — and `round trip` only from 200 ms, the
-point at which a number in the reviewer's bar is worth acting on. `approved N/M` and the item counts live
-in the bar and are not repeated here. The round trip is a **measurement** —
+once nothing is unreviewed), `convergence N → M`, `round trip N ms`, and the
+one consequential stamp `approve — dispatch`, named for what it does to the
+document rather than the HTTP verb behind it. `convergence` prints only once
+its two ends differ, and `round trip` only from 200 ms, the point at which
+the number is worth acting on; `approved N/M` and the item counts live in the
+bar and are not repeated here. The round trip is a **measurement** —
 `timedFetch` times the page's own `/input` request, and the line stays hidden
-until one has been observed. Nothing in the footer is a number copied off a mock.
+until one has been observed.
 
 `convergence` compares open items when the round was **armed** against open
 items **now** — the question a multi-round review actually asks. The baseline
@@ -995,20 +976,15 @@ One question at a time is the point of an interview, so the accordion stays.
   every row; stacked, the `.chip-label` takes the row (`flex: 1`) so the labels
   start on one left edge and the badges and keycaps end on one right edge. That
   is `.pal-row`'s shape, for `.pal-row`'s job.
-- **What this overturns.** The head was an index line — clamped to one line and
-  dropped to `var(--soft)` once its entry was open — pointing at an
-  `<h2 class="doc-head">` that restated the question below it. The mitigation
-  assumed the entry held something other than the duplicate; a free-text entry
-  holds a hairline and nothing else, so the head and the heading printed the
-  same sentence one line apart with nothing between them. The `<h2>` is deleted,
-  and the clamp goes with it — ellipsizing a question now printed nowhere else
-  leaves it readable nowhere. A `<button>`'s content cannot be a heading, so the
-  interview loses one `<h2>` per entry; this matches `buildReviewCard`, whose
-  accordion head has never carried one. The entry is still named, by the
-  button's **own content** — the question text itself — which is where a
-  control's accessible name comes from. Not by `aria-controls`, which points at
-  the region a control expands and confers no name on anything; the attribute is
-  here for the disclosure relationship (a11y requirement 2), and nothing else.
+- **What this overturns.** The head was an index line — clamped to one line,
+  dimmed once open — pointing at an `<h2 class="doc-head">` that restated the
+  same question below it; a free-text entry holds a hairline and nothing else,
+  so the two printed the same sentence one line apart. The `<h2>` is deleted,
+  and the clamp goes with it, matching `buildReviewCard`'s accordion head,
+  which never carried one. The entry is named by the button's **own
+  content** — the question text — which is where a control's accessible name
+  comes from, not `aria-controls` (here only for the disclosure relationship,
+  a11y requirement 2).
 - **The choices are bounded to 328px** — `--margin-w`'s maximum, the width every
   other pick-list-shaped object here takes. `align-items: stretch` stays: it is
   what puts every label on one left edge and every keycap on one right edge.
@@ -1115,27 +1091,24 @@ the same question and the two must never disagree.
 **An answer is news for exactly one round.** The predicate takes the round and
 requires the last exchange to be the prior one (`last.round === round - 1`).
 `open_notes.py` appends an exchange only when the *reviewer* takes a turn on
-that thread, and an unsettled thread carries forward untouched — so without the
-freshness test, a thread answered in round 1 that the reviewer then neither
-settled nor replied to would row as `answered, not revised` in rounds 3, 4 and
-5, and would keep claiming the landing. That is finding 03's own complaint,
-reintroduced by its fix. The offset is `- 1` because an exchange is stamped
-with the round the reviewer's turn was made in, and the author's response to it
-lands in the round after. A stale answer falls through to `flagRank` exactly as
-it did before, so a section carrying both an old answer and a producer flag
-keeps its flag row; only a fresh answer outranks one.
+that thread, and an unsettled thread carries forward untouched — so without
+the freshness test, a thread answered in round 1 that the reviewer then
+neither settled nor replied to would keep rowing as `answered, not revised` in
+rounds 3, 4 and 5, claiming the landing each time. The offset is `- 1` because
+an exchange is stamped with the round the reviewer's turn was made in, and the
+author's response lands the round after. A stale answer falls through to
+`flagRank` as before, so a section carrying both an old answer and a producer
+flag keeps its flag row; only a fresh answer outranks one.
 
-**Where round ≥ 2 lands.** In the continuous print at round ≥ 2, the boot
+**Where round ≥ 2 lands.** In the continuous print at round ≥ 2, boot
 activation prefers the first section carrying new business — a `diff`, else a
-thread the author answered — falling back to the first unapproved section
-exactly as round 1 does. The cause: `parse_sections._carry_annotations` copies
-a prior round's flags onto a byte-identical section, so landing on the first
-unapproved section walked a round-2 reader straight back onto the flag wall
-they had already read in round 1, while the answers to their own notes sat
-further down the print. This does **not** overturn the collapsed-slip rule
-above: the slip is an index of what changed, the landing puts the reader on the
-change itself, and expanding a bordered index above the print is precisely the
-chrome #186 measured out.
+thread the author answered — falling back to the first unapproved section as
+round 1 does. Cause: `parse_sections._carry_annotations` copies a prior
+round's flags onto a byte-identical section, so landing on the first
+unapproved section walked a round-2 reader back onto the flag wall they had
+already read in round 1, while answers to their own notes sat further down.
+This does **not** overturn the collapsed-slip rule above: the slip is an
+index of what changed, the landing puts the reader on the change itself.
 
 Empty families drop; all families empty → no slip. Round 1 → no slip,
 unconditionally. Every row jump-activates its section through
@@ -1253,17 +1226,15 @@ centered.
 
 **The previous round's controls retire with its cards.** While the processing
 view is up the bar's `.btn-group` and the segmented footer rule are hidden and
-the stats line reads `submitted — the agent is revising`, the same words the
-heading uses. A dispatch button addressed to a round that no longer exists is
-stale; `skip rest & submit` is worse — it stays clickable and would POST a
-second submit for a round already in flight. The rest of the bar (theme,
-preferences, voice) stays usable. They come back from the `round` handler, the
-only way out of this view: it restores `.btn-group` explicitly, and
-`initReview` restores the rule and the stats line through
+the stats line reads `submitted — the agent is revising`. A dispatch button
+addressed to a round that no longer exists is stale; `skip rest & submit` is
+worse — it stays clickable and would POST a second submit for a round already
+in flight. The rest of the bar (theme, preferences, voice) stays usable. They
+come back only from the `round` handler: it restores `.btn-group` explicitly,
+and `initReview` restores the rule and stats line through
 `updateReviewStats → reviewFootSeg → renderFootSeg`. A round the tab refuses
 (below) returns before that restore, so the controls stay retired behind the
-banner — which is right: nothing in the bar is a legitimate action then, and
-the banner says where to look.
+banner — nothing in the bar is a legitimate action then.
 
 Those requests print as **notes**, in the margin's own grammar (`.nt` / `.nh` /
 `.nt-body`, `info` taking `.nt-fact`'s ink): they *are* the notes the reviewer
@@ -1282,15 +1253,14 @@ terminal.`) overlay this card exactly as they overlaid the old view.
 
 A third banner shares that surface: `A round arrived that this tab cannot
 render — check the terminal.`, in full `.error-banner` ink rather than
-`.banner-info`'s violet, because a broken payload is not a slow one. The `round`
-SSE handler refuses a payload carrying no `sections[]` before it overwrites any
-state, so the previous round stays whole on screen and the banner says why —
-where the throw it replaces was buried inside `initReview`, leaving the tab on
-`Claude is revising…` forever with nothing said anywhere. The server validates
-every `/next-round` body, so this is a backstop, not the boundary; it clears
-from the `processing` and `round` handlers, the two events that mean the session
-moved on, because a `position: fixed` banner with no removal path outlives what
-it describes.
+`.banner-info`'s violet, because a broken payload is not a slow one. The
+`round` SSE handler refuses a payload carrying no `sections[]` before it
+overwrites any state, so the previous round stays whole on screen and the
+banner says why — the throw it replaces was buried inside `initReview`,
+leaving the tab on `Claude is revising…` forever with nothing said. The
+server validates every `/next-round` body, so this is a backstop, not the
+boundary; it clears from the `processing` and `round` handlers, the two
+events that mean the session moved on.
 
 ## Multiple inline comments (#68, v1.10.0)
 
@@ -1391,27 +1361,22 @@ for anchors and carry-forward), and renders with `diffStyle: 'word'`
 viva), and `outputFormat: 'line-by-line'` — **unified, always**.
 
 Side-by-side splits the hunk into two panes, and a pane is not the window.
-Measured at a 1440px viewport: shell 1368 → hunk 892 → each pane 445, which is
-**53 visible characters** against the 962px a 104-character line needs. Both
-panes scroll, independently, so the reviewer drags twice to read one change.
-The same 892px unified shows **107 characters**, and a 100-column line fits
-whole. The rule this replaced measured `window.innerWidth`, which is the wrong
-quantity: the glyph rail and the margin take their share before the code gets
-any, so a wide window says nothing about whether a pane can hold a line. What
-changed *within* a line survives the format — `diffStyle: 'word'` marks it
-either way. **Pipeline order is load-bearing:** `Diff2Html.html`
-produces a string, `DOMPurify.sanitize` runs on the string, and only the
-sanitized result touches the DOM — the same sanitize-before-assign order
-as `renderMarkdown` (materializing first would let insertion-time payloads
-execute before removal). The whole render is try/caught, falling back to
-the fenced view rather than stranding a card. Line numbers get
-`aria-hidden` after render (screen readers would otherwise announce them
-before every code line). Fallback chain while an asset is still in flight —
-scripts, or the injected stylesheet, gated via `link.sheet`: fenced
-` ```diff ` via `renderMarkdown` (tagged `d2h-pending`, upgraded in place
-by load-retry listeners on all three assets) → `md-raw` plain text. Binary
-sections (parse_diff.py's plaintext sentinel, no fence) render as prose,
-unchanged.
+Measured at a 1440px viewport: shell 1368 → hunk 892 → each pane 445, which
+is **53 visible characters** against the 962px a 104-character line needs,
+and both panes scroll independently. The same 892px unified shows **107
+characters**, and a 100-column line fits whole. The rule this replaced
+measured `window.innerWidth`, the wrong quantity: the glyph rail and margin
+take their share before the code gets any. What changed *within* a line
+survives the format — `diffStyle: 'word'` marks it either way. **Pipeline
+order is load-bearing:** `Diff2Html.html` produces a string,
+`DOMPurify.sanitize` runs on the string, and only the sanitized result
+touches the DOM — the same sanitize-before-assign order as `renderMarkdown`.
+The whole render is try/caught, falling back to the fenced view rather than
+stranding a card. Line numbers get `aria-hidden` after render. Fallback
+chain while an asset is still in flight: fenced ` ```diff ` via
+`renderMarkdown` (tagged `d2h-pending`, upgraded in place by load-retry
+listeners on all three assets) → `md-raw` plain text. Binary sections
+(parse_diff.py's plaintext sentinel, no fence) render as prose, unchanged.
 
 viva-side guards on the diff2html DOM: surface theming maps d2h's own
 `--d2h-*` custom properties (light and dark families) to viva tokens
@@ -1479,18 +1444,16 @@ Submit button states:
   transparent`, so taking the outline costs no 2px.
 
 **The bar squeezes its counters first and wraps only under 920px; the buttons
-never shrink.** `.bottom-inner` is `nowrap` at ordinary widths — a flex row
-breaks its line *before* it shrinks anything, and at the print's 1054px cap
-that put the stamp on a line of its own — and takes `flex-wrap: wrap` under
-the 920px breakpoint, where `.stats` can no longer shrink and the dispatch
-controls would otherwise leave the viewport. `.btn-group` carries
-`flex: 0 0 auto`, so the two dispatch controls are one unit that never shrinks. `.stats` already wraps and is the item that absorbs
-the width instead. Both buttons also take `white-space: nowrap`: a flex item's
-default `flex-shrink: 1` broke `skip rest & submit` onto three lines at a 780px
+never shrink.** `.bottom-inner` is `nowrap` at ordinary widths and takes
+`flex-wrap: wrap` under the 920px breakpoint, where `.stats` can no longer
+shrink and the dispatch controls would otherwise leave the viewport.
+`.btn-group` carries `flex: 0 0 auto`, so the two dispatch controls are one
+unit that never shrinks; `.stats` is the item that absorbs the width instead.
+Both buttons also take `white-space: nowrap`: a flex item's default
+`flex-shrink: 1` broke `skip rest & submit` onto three lines at a 780px
 viewport, where `.mode-diff` caps the bar at 95vw. `.btn-group` keeps
-`display: flex` in the stylesheet, because the SSE `round` handler restores the
-group with `style.display = ''` and falls back to exactly that rule. The
-content columns reflow well at every width and are deliberately untouched.
+`display: flex` in the stylesheet, since the SSE `round` handler restores the
+group with `style.display = ''` and falls back to exactly that rule.
 
 ## Preferences panel (issue #142, unreleased)
 
@@ -1535,19 +1498,17 @@ change after a mute.
 
 **Muted-row copy.** Every `muted` row carries two static lines: that badges
 already shown this round stay as a record and nothing further is flagged or
-applied for that preference (no "next session" claim — `--status standing`
-has three SKILL.md readers, not one, including step 4's post-submit rewrite
-consult, so a mute during round N can still reach round N's own rewrite; the
-only true claim is "not retroactive to a badge already on screen") and the
-terminal command that reverses it. That command interpolates the server's
-own resolved path (`Path(__file__).resolve().parent / "scripts" /
-"preferences.py"`, `server.py:28-41`) rather than the shell variable
-`$VIVA_DIR` — that name is local to the `find` SKILL.md's own bash block
-computes it with (viva `SKILL.md`, Invocation) and is never
-exported, so a literal `"$VIVA_DIR/..."` pasted into a fresh terminal 404s —
-mute is one-way from this panel (decision prefs-inspector-1), so the
-recovery path has to be visible on the row, and runnable, not just known to
-exist.
+applied for that preference (not "next session" — `--status standing` has
+three SKILL.md readers, so a mute during round N can still reach round N's
+own rewrite; the only true claim is "not retroactive to a badge already on
+screen"), and the terminal command that reverses it. That command
+interpolates the server's own resolved path
+(`Path(__file__).resolve().parent / "scripts" / "preferences.py"`,
+`server.py:28-41`) rather than the shell variable `$VIVA_DIR`, which is
+local to SKILL.md's own bash block and never exported — a literal
+`"$VIVA_DIR/..."` pasted into a fresh terminal 404s. Mute is one-way from
+this panel (decision prefs-inspector-1), so the recovery path has to be
+visible on the row, and runnable.
 
 **Badge-to-entry link.** A `kind:"preference"` annotation's `.annot-jump`
 badge (the existing anchor-jump control, extended) grows a second variant
@@ -1593,14 +1554,14 @@ field anyway, or the microphone is hot with the caret in a textarea and no spoke
 word gets you out. <kbd>Esc</kbd> sits ahead of the `TEXTAREA`/`INPUT` guard for
 the same reason ⌘K does, and never over the prefs panel or the recap gate.
 
-**Guard parity is a standing obligation.** Speech is a *second* input path into
-the same verdict state, and it does not go through the `keydown` handler — so
-every guard added there has to be repeated at the top of `handleUtterance`, in
-the same order, or the hole it closed reopens through the microphone. Today that
-is the dead-session swallow (#174), the prefs panel, the recap gate, and the
-processing/complete views. The two terminal states also call `stopVoice` at their
-own source: with `#paper` inert and the keydown handler returning early, a
-microphone left hot there is one no control can reach.
+**Guard parity is a standing obligation.** Speech is a *second* input path
+into the same verdict state, and it does not go through the `keydown`
+handler — so every guard added there has to be repeated at the top of
+`handleUtterance`, in the same order, or the hole it closed reopens through
+the microphone. Today that is the dead-session swallow (#174), the prefs
+panel, the recap gate, and the processing/complete views. The two terminal
+states also call `stopVoice` at their own source, since a microphone left
+hot there with `#paper` inert is one no control can reach.
 
 **The grammar lives in `server.py`'s `_VOICE_RULES`**, injected into the page the
 way `__CHECK_KINDS__` is — one table, checked by a test, rather than a hand-kept
@@ -1646,6 +1607,30 @@ the page discloses that once before it first listens.
 9. Entrance, stamp, and between-rounds pulse animations must be suppressed under `prefers-reduced-motion: reduce`.
 10. A control whose label states its current mode (`theme: system`, `voice: off`) must carry an `aria-label` saying what activating it DOES — otherwise a screen reader hears a state and cannot tell it from an action.
 11. Live-region content that updates continuously (voice interim results) must be `aria-hidden`; only the settled reading announces.
+
+## Surfaces
+
+viva's user-facing surface, so a cross-surface consistency check has a fixed
+list to audit against rather than deriving one from source each time:
+
+- **Web** — the single-page app `server.py` serves (the embedded `HTML`
+  constant): accordion, print/doc, diff, Q&A, and the recap/complete views —
+  one file, several rendering modes within it.
+- **Report** — the markdown appended to the reviewed doc at sign-off
+  (`scripts/revision_history.py`'s Revision History block and Open notes
+  section).
+- **CLI / skill text** — `scripts/loop.py`'s stdout (the classification lines
+  and printed reference paths `wait` emits) and the two `SKILL.md` files. This
+  is legitimately user-facing: `PRODUCT.md` names the agent author as the
+  primary persona, and this is the surface it reads.
+
+No TUI, HTTP API-for-humans, or plugin UI exists — those are correctly absent
+from every review, not skipped. A concept that appears on more than one
+surface (a thread's status, a verdict, a pass depth) should read the same
+word in each; `scripts/schema.py`'s shared vocabulary tuples and label maps
+(`THREAD_STATUSES`, `THREAD_STATUS_LABELS`, `VERDICTS`, `PASS_KINDS`) are
+where a surface goes to agree with the others rather than hand-keeping its
+own copy.
 
 ## API conventions
 

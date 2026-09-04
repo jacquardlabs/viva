@@ -1,48 +1,8 @@
 #!/usr/bin/env python3
 """Frontend v2 phase 1 — served-page integration tests (sheet ground, carried
-approvals).
-
-This is the phase's shared test file: the review fixtures below and the
-subprocess + urllib boot are the harness later phase-1 tasks (recap,
-between-rounds) extend with their own page-ships checks. Task 1's
-coverage is the sheet ground: the served review page frames the shell in a
-bounded #paper sheet — edge border, 1px inner rule at 7px inset, aria-hidden
-coordinate/corner decoration — on a flat --table ground, the 24px drafting
-grid and the fixed .sheet-frame are gone at every layer, and diff mode widens
-the sheet in lockstep with the shell. Task 2 adds the carried-approval
-surface: round >= 2 `approved_ids` members collapse to head-only carried
-cards (mono APPROVED mini-stamp, read-only reveal, withdraw-to-pending), and
-the submit payload keeps recording them as `"verdict": "approved"`. Task 3
-adds the transmittal slip: a pure builder over the review-input, mounted
-between the ledger and #review-cards on round > 1 in review mode only,
-attributing each section — `revised to your note` (diff answering an open
-note), bare `revised` (silent diff), `flagged & unreviewed` (error before
-warn annotations), `approved & unchanged` (carried) — with every row
-jump-linking through activateReviewCard. Task 4 adds the recap overlay as
-the submit gate: a hidden dialog indexing every section (id, title, verdict
-dot + label, note count), toggled by `o`, closed by Escape, opened by
-btn-submit's ready click in review/diff mode; only its `confirm & submit`
-control calls submitReview(false), while btn-skip keeps submitReview(true)
-and Q&A keeps its direct submitQA(false) path. Task 5 replaces the spinner
-with the between-rounds card: submitReview snapshots the just-submitted
-changes/info rows ({sectionTitle, type, note}) from rState before the POST,
-the 'processing' SSE handler renders #processing-view as a pulsing dot over
-`REV 0N submitted — the agent is revising` plus those rows verbatim, and
-zero rows (or a qa submit, which never snapshots) fall back to the minimal
-processing line; the snapshot is deliberately in-memory only, so a tab
-reload during revision re-boots into the prior round exactly as before.
-Task 6 closes the phase with docs alignment: DESIGN.md documents the shipped
-surface (sheet ground values, transmittal row grammar + attribution rule,
-recap gate, between-rounds state, carried approvals) with zero grid-paper/
-sheet-frame/spinner residue, and the superseded draft plan is deleted so
-PLAN.md is the branch's only live plan artifact.
-
-These are wiring checks against the served page (the HTML constant is static,
-so one review-mode boot serves every mode's CSS/JS; GET /input carries the
-round data that drives which sections render carried); rendered layout is a
-browser check, not a subprocess + urllib one. The Task 6 checks are static
-file assertions — no server boot.
-"""
+approvals, transmittal slip, recap gate, between-rounds card, docs alignment).
+Wiring checks against the served page; rendered layout is a browser check,
+not this subprocess + urllib one. Docs-alignment checks read files directly."""
 import json
 import re
 import sys
@@ -68,11 +28,9 @@ REVIEW_INPUT_R1 = {
     ],
 }
 
-# Round-2 review fixture — the carried-card surface (Task 2) and the raw
-# material later tasks (transmittal slip jumps, recap labels) key on:
-# 3 carried approvals, 1 revision answering a reviewer note (diff +
-# open_notes), 1 silent revision (diff only), and 2 flagged sections
-# (annotations only).
+# Round-2 review fixture: 3 carried approvals, 1 revision answering a
+# reviewer note (diff + open_notes), 1 silent revision (diff only), and
+# 2 flagged sections (annotations only).
 REVIEW_INPUT_R2 = {
     "mode": "review",
     "doc_file": "docs/example.md",
@@ -103,11 +61,9 @@ REVIEW_INPUT_R2 = {
 
 
 def test_page_ships_catalog_ground(page: str) -> None:
-    """The served page ships the catalog ground: light as the primary theme,
-    the four party inks, #paper as a bare wrapper, and the 72ch reading
-    measure with no nested scroll. Shares the needle set (and the diff-mode
-    widening check) with test_server_a11y via assert_catalog_ground — one
-    owner for the ground contract, checked here against the wire-served page."""
+    """The served page ships the catalog ground: light theme, the four party
+    inks, #paper as a bare wrapper, 72ch measure, no nested scroll. Shares
+    the needle set with test_server_a11y via assert_catalog_ground."""
     assert_catalog_ground(page)
     assert_ink_discipline(page)
     print("test_page_ships_catalog_ground: OK")
@@ -122,13 +78,9 @@ def test_grid_gone_at_every_layer(page: str) -> None:
 
 
 def test_round2_serves_carried_markup(page: str, data: dict) -> None:
-    """Cap: the round-2 fixture serves the carried-card surface. GET /input
-    carries round 2 plus every `approved_ids` member (each resolving to a
-    served section), and the page ships the builder that renders exactly
-    those members as collapsed carried cards: `carried` head marker, mono
-    `APPROVED` mini-stamp, `unchanged since your stamp — show` reveal over a
-    hidden read-only body, and the withdraw-approval control that clears the
-    verdict back to pending."""
+    """The round-2 fixture serves the carried-card surface: GET /input carries
+    round 2 plus every `approved_ids` member, and the page renders those as
+    collapsed carried cards (head marker, stamp, withdraw control)."""
     # /input drives the carried rendering: round >= 2 and each carried member
     # is a served section.
     assert data["round"] == 2, data
@@ -136,20 +88,16 @@ def test_round2_serves_carried_markup(page: str, data: dict) -> None:
     served_ids = {s["id"] for s in data["sections"]}
     for sid in data["approved_ids"]:
         assert sid in served_ids, f"approved id {sid} has no served section"
-    # The fixture mix later tasks build on stays intact: one revision
-    # answering a note, one silent revision, two flagged sections.
+    # Fixture mix stays intact: one revision answering a note, one silent
+    # revision, two flagged sections.
     by_id = {s["id"]: s for s in data["sections"]}
     assert by_id["s4"].get("diff") and by_id["s4"].get("open_notes"), by_id["s4"]
     assert by_id["s5"].get("diff") and not by_id["s5"].get("open_notes"), by_id["s5"]
     assert by_id["s6"].get("annotations") and by_id["s7"].get("annotations")
 
-    # The page ships the carried builder, gated to round >= 2 members AND to
-    # the accordion. Premise changed in #186: review mode prints the document
-    # continuously, so a carried section dims in place with its prose on the
-    # page instead of collapsing to a head-only line — a reader of a document
-    # review is reading the document, and a carried section is part of it.
-    # buildCarriedCard is now the diff-mode path, where a carried hunk really
-    # does have nothing left to read.
+    # Carried builder is gated to round >= 2 AND to the accordion (#186:
+    # review mode prints continuously, so a carried section dims in place
+    # instead of collapsing; buildCarriedCard is now the diff-mode path).
     assert 'const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page, \
         "page missing the round >= 2 + accordion-only carried gate"
     assert 'isCarried ? buildCarriedCard(s) : buildReviewCard(s)' in page, \
@@ -168,25 +116,21 @@ def test_round2_serves_carried_markup(page: str, data: dict) -> None:
         "carried content must start hidden (head-only line)"
     assert '<span aria-hidden="true">&times;</span> withdraw approval' in page, \
         "carried head missing the withdraw-approval control"
-    # Withdraw clears the verdict back to pending and swaps in a normal
-    # accordion card, in place (document order is canonical).
+    # Withdraw clears the verdict to pending and swaps in a normal card, in place.
     assert 'function withdrawApproval(id)' in page, "page missing withdrawApproval"
     assert 'withdrawApproval(section.id)' in page, "withdraw control not wired"
     assert 'old.replaceWith(buildReviewCard(section));' in page, \
         "withdraw must swap the carried card for a normal accordion card in place"
-    # The carry-forward submit invariant's client half stays intact: prior
-    # approvals pre-populate rState so deriveVerdict submits them approved.
+    # Prior approvals pre-populate rState so deriveVerdict submits them approved.
     assert "rState.verdicts[id] = { verdict: 'approved', note: '' };" in page, \
         "prior-approval pre-population must survive the carried-card render"
     print("test_round2_serves_carried_markup: OK")
 
 
 def test_round2_submit_records_carried_approved(base: str, viva: Path) -> None:
-    """Cap: POST /submit for the round-2 fixture records carried sections as
-    `"verdict": "approved"` in the round output exactly as today's
-    carry-forward does — bare {id, verdict} entries, no comments. The payload
-    mirrors what submitReview derives client-side: carried sections stay
-    approved, revised/flagged ones carry their own verdicts."""
+    """POST /submit for the round-2 fixture records carried sections as bare
+    `{id, verdict: "approved"}` entries, matching what submitReview derives
+    client-side; revised/flagged sections carry their own verdicts."""
     payload = {"round": 2, "submitted_early": False, "sections": [
         {"id": "s1", "verdict": "approved"},
         {"id": "s2", "verdict": "approved"},
@@ -214,15 +158,9 @@ def test_round2_submit_records_carried_approved(base: str, viva: Path) -> None:
 
 
 def test_round2_serves_transmittal_slip(page: str, data: dict) -> None:
-    """Cap: the transmittal slip ships for the round-2 fixture. GET /input
-    carries the slip's raw material intact — per-section `diff`,
-    `open_notes`, `annotations`, and the top-level `approved_ids` — and the
-    page ships the pure builder with both attribution branches (`revised to
-    your note` for a diff answering an open note, bare `revised` for a
-    silent diff), flag rows partitioned error before warn, `approved &
-    unchanged` rows for carried members, and jump wiring routed through
-    activateReviewCard (whose carried branch scrolls + reveals rather than
-    activates)."""
+    """The transmittal slip ships for the round-2 fixture: GET /input carries
+    the raw material, and the builder ships both attribution branches, flag
+    rows partitioned error-before-warn, and jump wiring through activateReviewCard."""
     # /input carries the raw material for every attribution branch intact.
     by_id = {s["id"]: s for s in data["sections"]}
     fixture = {s["id"]: s for s in REVIEW_INPUT_R2["sections"]}
@@ -264,18 +202,9 @@ def test_round2_serves_transmittal_slip(page: str, data: dict) -> None:
 
 
 def test_an_answer_without_a_revision_gets_a_row(page: str) -> None:
-    """Finding 03. The dispatch was `diff → carried → flags`, and a section
-    with open notes, no diff, no error/warn flag and no carried stamp fell
-    through the whole `forEach` and was pushed nowhere — so it rendered no row
-    at all. That is a section where the author answered the reviewer's own note
-    and changed no text: a decline (#167), or a response that needed no edit.
-    The one thing a round 2 exists for was the one thing the slip could not
-    see.
-
-    The bucket sits AFTER the carried test on purpose — a section the reviewer
-    already signed off is settled business, not this round's news — and its
-    rows come BEFORE the flag rows, because an answer is the author's turn and
-    a flag is a producer's."""
+    """Finding 03: a section with open notes but no diff/flag/carried stamp
+    rendered no row — an author who answered without changing text (a
+    decline, #167) was invisible. Bucket sits after carried, before flags."""
     assert ("answered.map(s => row(s, 'tr-answered', '&#8627;', "
             "'answered, not revised'))") in page, \
         "an answer that revised nothing must still get a slip row"
@@ -322,32 +251,26 @@ def test_round1_zero_carried_markers(page: str, data: dict) -> None:
     gated to round >= 2 — and the accordion card markup is unchanged."""
     assert data["round"] == 1, data
     assert data.get("approved_ids") == [], data
-    # The only carried-render path is gated on round > 1 membership (and, since
-    # #186, on the accordion), so a round-1 boot can never produce a carried card.
+    # Gated on round > 1 membership and (#186) the accordion, so round-1
+    # never produces a carried card.
     assert 'const isCarried = !asDoc && REVIEW_DATA.round > 1 && priorApprovedSet.has(s.id);' in page
     # Unchanged accordion card markup (head button + body region + actions).
-    # These are DIFF MODE's surface now. #186 left buildReviewCard alone on
-    # purpose: a 200-hunk changeset read as one continuous print is a worse
-    # surface than one hunk at a time, so the restructure is additive and the
-    # accordion's contract is still the contract that governs it.
+    # This is diff mode's surface now; #186 left buildReviewCard alone.
     assert ('<button type="button" class="card-head" aria-expanded="false" '
             'aria-controls="rbody-${section.id}">') in page, \
         "round-1 accordion card head changed"
     assert '<div class="card-body-wrap" id="rbody-${section.id}">' in page, \
         "round-1 accordion card body changed"
-    # ...and its verbs, which live in the margin now — the accordion kept its
-    # disclosure and lost its chrome (see test_doc_grid).
+    # ...and its verbs, now in the margin (see test_doc_grid).
     assert '''<button type="button" class="nt-btn is-pri" id="rbtn-primary-' + id + '">''' in page, \
         "round-1 accordion approve action changed"
     print("test_round1_zero_carried_markers: OK")
 
 
 def test_page_ships_recap_overlay(page: str) -> None:
-    """Cap: the served page ships the recap overlay container — a hidden
-    dialog whose grid indexes every section (id, title, verdict dot + label,
-    note count) with a `confirm & submit` control — and the kbd legend gains
-    the `o` shortcut row, with `o`-toggle, Escape-close, and row
-    close-and-activate wiring shipped in the review keydown branch."""
+    """The served page ships the recap overlay: a hidden dialog indexing every
+    section with a `confirm & submit` control, an `o` kbd-legend row, and
+    `o`-toggle / Escape-close / row close-and-activate wiring."""
     # Static container: hidden dialog, empty grid mount, confirm control.
     assert ('<div class="recap-overlay" id="recap-overlay" role="dialog" '
             'aria-modal="true" aria-labelledby="recap-title" '
@@ -408,17 +331,13 @@ def test_page_ships_recap_overlay(page: str) -> None:
 
 
 def test_ready_submit_routes_through_recap(page: str) -> None:
-    """Cap: the ready-submit path routes through the recap — btn-submit's
-    review/diff click branch opens the overlay, and the overlay's confirm
-    control is the page's only submitReview(false) call site — while
-    btn-skip keeps calling submitReview(true) directly and the qa branch
-    keeps its direct submitQA(false) path (hold)."""
+    """The ready-submit path routes through the recap: btn-submit's
+    review/diff click opens the overlay, whose confirm is the only
+    submitReview(false) call site; btn-skip and qa keep their direct paths."""
     # btn-submit's class-gated click: review/diff opens the gate, qa submits.
     submit_handler = page.index("el('btn-submit').addEventListener('click'")
     open_call = page.index("if (REVIEW_DATA) openRecap();")
-    # Ordering by the bare call (not the whitespace-aligned `else … ` source
-    # form) — the contract is "the qa branch submits directly," not its
-    # indentation.
+    # Ordering by the bare call, not source indentation.
     qa_call = page.index("submitQA(false);")
     assert submit_handler < open_call < qa_call, \
         "btn-submit click must route review/diff to openRecap, qa to submitQA(false)"
@@ -430,10 +349,8 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
     close_wiring = page.index("el('recap-close').addEventListener('click', closeRecap);")
     assert confirm_handler < page.index("submitReview(false);") < close_wiring, \
         "the single submitReview(false) call site must be the recap confirm handler"
-    # The confirm control is class-gated like btn-submit, so a recap opened
-    # mid-review via `o` can't submit a round the bottom bar wouldn't. (Guard
-    # asserted as a substring so the in-flight `|| btn-submit.disabled` term
-    # test_recap_confirm_blocks_duplicate_submit pins doesn't break this check.)
+    # Class-gated like btn-submit, so a recap opened mid-review via `o` can't
+    # submit a round the bottom bar wouldn't.
     assert "el('recap-confirm').classList.contains('disabled')" in page, \
         "recap confirm must stay class-gated"
     assert "el('recap-confirm').className = 'btn-submit ' + (ready ? 'ready' : 'disabled');" in page, \
@@ -450,14 +367,9 @@ def test_ready_submit_routes_through_recap(page: str) -> None:
 
 
 def test_recap_confirm_blocks_duplicate_submit(page: str) -> None:
-    """Regression (audit Critical): the recap gate must not re-arm after a
-    submit. submitReview disables btn-submit via the `disabled` attribute but
-    never drops the `ready` class, so a readiness mirror keyed on the class
-    alone would let a recap reopened via `o` (before the 'processing'/'round'
-    events, or indefinitely if SSE dropped) fire a second POST /submit and
-    duplicate the ledger rows. The fix mirrors the in-flight `disabled`
-    attribute in both the open-time readiness computation and the confirm
-    handler's guard."""
+    """Regression: submitReview disables btn-submit but keeps its `ready`
+    class, so a readiness mirror keyed on the class alone let a reopened
+    recap fire a duplicate POST /submit. Both must also check `disabled`."""
     # openRecap's readiness must AND in the in-flight attribute, not the class
     # alone — a submit in flight renders the reopened confirm disabled.
     assert "const ready = el('btn-submit').classList.contains('ready') && !el('btn-submit').disabled;" in page, \
@@ -470,14 +382,9 @@ def test_recap_confirm_blocks_duplicate_submit(page: str) -> None:
 
 
 def test_submit_failure_reenables_bar(page: str) -> None:
-    """Regression (audit round-2 Critical): a failed /submit must re-enable the
-    bar so the reviewer can retry. fetch() doesn't reject on 4xx/5xx, so the
-    shared sendSubmit helper turns a non-2xx into a throw and its failure
-    handler clears the in-flight `disabled` signal on both buttons. Without
-    this, the recap confirm (gated on btn-submit.disabled) reopens permanently
-    disabled after a failed submit — a dead-end recoverable only by a reload
-    that loses the round's verdicts. Both submitReview and submitQA must route
-    through the one helper so neither swallows a non-2xx."""
+    """Regression: a failed /submit must re-enable the bar. fetch() doesn't
+    reject on 4xx/5xx, so sendSubmit throws on non-2xx and clears `disabled`
+    on both buttons; submitReview and submitQA both route through it."""
     fn = page.index("function sendSubmit(result)")
     nxt = page.index("function ", fn + 1)
     body = page[fn:nxt]
@@ -495,10 +402,9 @@ def test_submit_failure_reenables_bar(page: str) -> None:
 
 
 def test_close_recap_clears_inert_before_focus(page: str) -> None:
-    """Regression (audit round-2 Important): closeRecap must clear inert on the
-    background BEFORE restoring focus to btn-submit — btn-submit lives inside
-    the inert bottom-bar-el, and focus() on an element in an inert subtree is a
-    no-op, so focusing first would drop focus to <body> on every close."""
+    """Regression: closeRecap must clear inert before restoring focus to
+    btn-submit — focus() on an element in an inert subtree is a no-op, so
+    focusing first would drop focus to <body> on every close."""
     fn = page.index("function closeRecap()")
     nxt = page.index("function ", fn + 1)
     body = page[fn:nxt]
@@ -508,11 +414,9 @@ def test_close_recap_clears_inert_before_focus(page: str) -> None:
 
 
 def test_withdraw_refreshes_transmittal(page: str) -> None:
-    """Track fix: withdrawing a carried approval must drop it from the
-    transmittal slip. transmittalHTML keys the carried bucket on the live
-    rState verdict (not just the static approved_ids the round shipped with),
-    and withdrawApproval re-renders the slip — so a withdrawn section leaves
-    'approved & unchanged' (reappearing as flagged only if it has annotations)."""
+    """Withdrawing a carried approval must drop it from the transmittal slip.
+    transmittalHTML keys the carried bucket on the live rState verdict, not
+    just static approved_ids, and withdrawApproval re-renders the slip."""
     fn = page.index('function transmittalHTML(')
     nxt = page.index('function ', fn + 1)
     assert "rState.verdicts[id]?.verdict === 'approved'" in page[fn:nxt], \
@@ -525,13 +429,9 @@ def test_withdraw_refreshes_transmittal(page: str) -> None:
 
 
 def test_recap_modal_traps_focus(page: str) -> None:
-    """Audit Important (a11y): the recap is aria-modal, so it must trap focus
-    and block background interaction while open. openRecap marks the page
-    behind it inert (the sheet, the skip link, the bottom bar) and closeRecap
-    clears it — inert removes the whole background subtree from the tab order,
-    so the overlay's own controls are the only focusable region. The grid
-    contains its own scroll. All three background containers carry the ids the
-    inert helper toggles."""
+    """The recap is aria-modal, so it must trap focus: openRecap marks the
+    sheet, skip link, and bottom bar inert, closeRecap clears it, and the
+    grid contains its own scroll."""
     assert "function setBackgroundInert(on)" in page, "missing the inert focus-trap helper"
     assert "setBackgroundInert(true)" in page and "setBackgroundInert(false)" in page, \
         "openRecap must set inert on open and closeRecap must clear it"
@@ -543,12 +443,9 @@ def test_recap_modal_traps_focus(page: str) -> None:
 
 
 def test_activate_carried_scrolls_not_activates(page: str) -> None:
-    """Audit Important (coverage): a jump to a carried section (transmittal
-    row, annotation deep-link, all-carried resume) must reveal + scroll it, not
-    push a body-less carried card into rState.active. Pins the carried early
-    return inside activateReviewCard — dropping it would strand a jump on an
-    'under review' card with no accordion body, and every existing test would
-    still pass."""
+    """A jump to a carried section must reveal + scroll it, not push a
+    body-less carried card into rState.active. Pins the carried early return
+    inside activateReviewCard."""
     fn = page.index("function activateReviewCard(id, opts)")
     nxt = page.index("function ", fn + 1)
     body = page[fn:nxt]
@@ -562,15 +459,11 @@ def test_activate_carried_scrolls_not_activates(page: str) -> None:
 
 
 def test_recap_offers_the_action_that_works(page: str) -> None:
-    """Regression (finding 06): the recap opened focused on #recap-confirm even
-    when the round was not ready. That control renders as a primary filled
-    button, its click handler is class-gated, and the only control that DOES
-    work with pendings (btn-skip) sits behind the inert backdrop — so the
-    reviewer was focused on a large primary whose click and Enter were silent
-    no-ops, with nothing on screen saying why. The overlay now ships an
-    in-modal skip and a blocked line, and focuses whichever control can act."""
-    # The two new statics: an empty reason slot and a hidden in-modal skip
-    # wearing btn-skip's quiet outline grammar (no new class, no new <kbd>).
+    """Regression: the recap opened focused on #recap-confirm even when not
+    ready, with the only working control (btn-skip) behind the inert
+    backdrop. Now ships an in-modal skip and a blocked line."""
+    # An empty reason slot and a hidden in-modal skip wearing btn-skip's
+    # quiet outline grammar.
     assert '<span class="recap-blocked" id="recap-blocked"></span>' in page, \
         "recap actions must ship an empty blocked-reason slot"
     assert ('<button type="button" class="btn-skip" id="recap-skip" '
@@ -588,14 +481,13 @@ def test_recap_offers_the_action_that_works(page: str) -> None:
         "the in-modal skip must show only when it can act"
     assert "el('recap-blocked').textContent = inFlight ? " in page, \
         "the blocked reason must be printed, not inferred"
-    # The confirm carries an aria state beside its class stamp — but never the
-    # DOM `disabled` attribute, which already means IN FLIGHT.
+    # aria state beside the class stamp — never the DOM `disabled` attribute,
+    # which already means in flight.
     assert "el('recap-confirm').setAttribute('aria-disabled', ready ? 'false' : 'true');" in page, \
         "a dead confirm must announce itself as well as draw itself"
-    # Focus lands on the confirm when it can act and otherwise on the close —
-    # NEVER on the skip: `o` then Enter used to dispatch a round with every
-    # section unreviewed. And AFTER the display flips — focus() on a
-    # display:none node silently no-ops and no needle would catch it.
+    # Focus lands on confirm when it can act, else close — never skip (`o`
+    # then Enter must not dispatch with sections unreviewed) — and after the
+    # display flips, since focus() on a display:none node is a silent no-op.
     focus_line = "(ready ? el('recap-confirm') : el('recap-close')).focus();"
     assert focus_line in page, "the recap must open focused on confirm or close"
     assert "el('recap-skip').focus()" not in page and "el('recap-skip') : " not in page, \
@@ -606,8 +498,8 @@ def test_recap_offers_the_action_that_works(page: str) -> None:
             < page.index("el('recap-overlay').style.display = '';")
             < page.index(focus_line)), \
         "both display flips must precede the focus() or it no-ops"
-    # The handler: the same submitReview(true) escape hatch, with the same
-    # in-flight guard, wired after the recap-close wiring.
+    # Same submitReview(true) escape hatch, same in-flight guard, wired
+    # after the recap-close wiring.
     skip_wiring = page.index("el('recap-skip').addEventListener('click'")
     assert page.index("el('recap-close').addEventListener('click', closeRecap);") < skip_wiring, \
         "the recap-skip wiring must sit after the recap-close wiring"
@@ -619,11 +511,9 @@ def test_recap_offers_the_action_that_works(page: str) -> None:
 
 
 def test_not_ready_dispatch_is_not_the_primary(page: str) -> None:
-    """Regression (finding 07): `.btn-submit.disabled` kept the primary's
-    filled-block shape and painted it var(--border2) (an alias of --ink) on
-    var(--text3) (an alias of --faint), making the highest-contrast block on
-    the page the one control that cannot act. It now takes btn-skip's quiet
-    outline grammar, and both states share one box."""
+    """Regression: `.btn-submit.disabled` kept the primary's filled-block
+    shape at the page's highest contrast, on the one control that cannot
+    act. It now takes btn-skip's quiet outline grammar."""
     rule = re.search(r"\.btn-submit\.disabled \{[^}]*\}", page)
     assert rule, "page missing the .btn-submit.disabled rule"
     body = rule.group(0)
@@ -650,11 +540,9 @@ def test_not_ready_dispatch_is_not_the_primary(page: str) -> None:
 
 
 def test_processing_retires_the_previous_rounds_controls(page: str) -> None:
-    """Regression (finding 13): between rounds the bar kept the dead dispatch
-    button, the previous round's segmented rule and a still-clickable `skip
-    rest & submit` — controls addressed to a round that no longer exists. The
-    skip was the hazard: live, and a second POST for a round already in
-    flight."""
+    """Regression: between rounds the bar kept the dead dispatch button, the
+    previous round's segmented rule, and a still-clickable skip — a hazard:
+    a second POST for a round already in flight."""
     proc = page.index("es.addEventListener('processing'")
     rnd = page.index("es.addEventListener('round'")
     done = page.index("es.addEventListener('complete'")
@@ -681,10 +569,9 @@ def test_processing_retires_the_previous_rounds_controls(page: str) -> None:
 
 
 def test_page_ships_between_rounds_card(page: str) -> None:
-    """Cap: #processing-view ships as the between-rounds card — a pulsing dot
-    (the spinner is replaced, not accompanied), the `REV 0N submitted — the
-    agent is revising` heading template, and the verbatim request-row
-    template — with the minimal processing line as the zero-row fallback."""
+    """#processing-view ships as the between-rounds card: a pulsing dot
+    replacing the spinner, the `REV 0N submitted` heading template, and the
+    verbatim request-row template, with the minimal line as zero-row fallback."""
     # Static scaffold: pulsing dot, heading defaulting to the minimal line,
     # and an empty hidden rows mount.
     assert '<div class="processing-dot" aria-hidden="true"></div>' in page, \
@@ -708,10 +595,8 @@ def test_page_ships_between_rounds_card(page: str) -> None:
     assert ("'REV ' + String(betweenRounds.round).padStart(2, '0') "
             "+ ' submitted — the agent is revising'") in page, \
         "page missing the between-rounds heading template"
-    # The verbatim row template: type slot, section title, untruncated note —
-    # in the MARGIN's note grammar, because that is what these objects are:
-    # the notes the reviewer wrote a moment ago, echoed back. A second row
-    # vocabulary for the same thing is what `.pr-*` was.
+    # Verbatim row template uses the margin's note grammar (`.pr-*` was a
+    # second row vocabulary for the same thing, now deleted).
     assert "'<div class=\"nt' + (r.type === 'info' ? ' nt-fact' : '') + '\">'" in page, \
         "a request row must be a note, inked by whose business it is"
     assert "'<div class=\"nh\">' + esc(r.type)" in page, \
@@ -728,18 +613,11 @@ def test_page_ships_between_rounds_card(page: str) -> None:
 
 
 def test_between_rounds_snapshot_wiring(page: str) -> None:
-    """Cap: submitReview snapshots the changes/info rows from rState before
-    the POST, the 'processing' handler renders from the snapshot, the
-    'round' handler consumes it, and qa submits never snapshot — while the
-    snapshot stays in-memory only (a tab reload during revision re-boots
-    into the prior round, exactly as before)."""
-    # In-memory only: declared null, and never handed to web storage.
-    #
-    # This used to ban `localStorage` from the whole page, which proved the
-    # point when the page had no storage at all. The theme toggle introduced a
-    # legitimate use, so the check moved from "no storage exists" to "storage
-    # holds nothing but the theme" — a stricter guarantee, since it now pins
-    # which keys may exist rather than trusting that none do.
+    """submitReview snapshots changes/info rows before the POST, 'processing'
+    renders from it, 'round' consumes it, qa submits never snapshot, and it
+    stays in-memory only (a reload during revision re-boots as before)."""
+    # In-memory only: declared null, never handed to web storage. Storage may
+    # hold the theme key only — pins which keys may exist, not that none do.
     assert 'let betweenRounds = null;' in page, \
         "page missing the betweenRounds snapshot declaration"
     assert 'sessionStorage' not in page, "the snapshot must not reach sessionStorage"
@@ -749,18 +627,16 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
     for call in re.findall(r'(?:local|session)Storage\.\w+\([^)]*\)', page):
         assert 'betweenRounds' not in call, \
             f"the between-rounds snapshot must stay in memory: {call}"
-    # The snapshot is taken inside submitReview, before the POST — the POST is
-    # the sendSubmit(result) call at the tail (the fetch itself lives in the
-    # shared sendSubmit helper).
+    # The snapshot is taken inside submitReview, before the sendSubmit(result)
+    # POST call at the tail.
     fn = page.index('function submitReview(early)')
     snap = page.index('snapshotBetweenRounds();')
     post_idx = page.index('sendSubmit(result);', fn)
     assert fn < snap < post_idx, \
         "submitReview must snapshot rState before the POST"
-    # …and maps activeComments to verbatim {sectionTitle, type, note} rows —
-    # settled/empty comments (and approved sections) contribute nothing. A
-    # suggestion's note is optional, so its row falls back to the wording
-    # rather than rendering a bare section title (#166).
+    # Maps activeComments to verbatim {sectionTitle, type, note} rows; a
+    # suggestion's optional note falls back to the wording, not a bare
+    # section title (#166).
     assert ("activeComments(s.id).map(c => ({ sectionTitle: s.title, "
             "type: c.type, note: c.note || c.replacement || '' }))") \
         in " ".join(page.split()), \
@@ -787,14 +663,9 @@ def test_between_rounds_snapshot_wiring(page: str) -> None:
 
 
 def test_design_md_matches_shipped_surface() -> None:
-    """Cap: DESIGN.md documents the shipped surface. Every value it states for
-    the catalog ground is a literal the served HTML also carries (the party-ink
-    hexes, the 72ch measure, the diff-mode widening), the four phase-1 surfaces
-    (transmittal slip with its attribution rule, recap gate, between-rounds
-    state, carried approvals) each have their row grammar / gate strings
-    documented, and the retired constructs — grid paper, the fixed
-    .sheet-frame, the spinner, and now the whole blueprint sheet — leave zero
-    references behind."""
+    """DESIGN.md documents the shipped surface: catalog-ground values are
+    literals server.py also carries, the four phase-1 surfaces each have
+    their strings documented, and retired constructs leave no residue."""
     design = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
     html = (ROOT / "server.py").read_text(encoding="utf-8")
 
@@ -807,9 +678,8 @@ def test_design_md_matches_shipped_surface() -> None:
     assert "#paper" in design, "DESIGN.md missing the #paper wrapper"
     assert "Ink discipline" in design, "DESIGN.md missing the ink-discipline rule"
 
-    # The blueprint sheet is retired in the code. DESIGN.md may still NAME it —
-    # recording what was superseded is the doc's job — but must not ship it: the
-    # literals themselves are gone from server.py, and the doc says so.
+    # The blueprint sheet is retired in code; DESIGN.md may still name it as
+    # superseded, but the literals must be gone from server.py.
     for gone in ("inset: 7px", "pcoord", "paper-marks"):
         assert gone not in html, f"server.py still ships retired sheet chrome: {gone!r}"
     assert "Superseded" in design, \
@@ -841,14 +711,9 @@ def test_design_md_matches_shipped_surface() -> None:
 
 
 def test_draft_plan_superseded() -> None:
-    """Cap: the superseded draft plan for this story is deleted.
-
-    This no longer asserts PLAN.md's own presence — that was a point-in-time
-    fact true only while this story's own branch was still in flight.
-    PLAN.md is disposable, branch-local scaffolding: a story replaces or
-    removes it once the work ships, so this repo-wide test file must not fail
-    because a later story deleted the file this one left behind.
-    """
+    """The superseded draft plan for this story is deleted. Does not assert
+    PLAN.md's own presence — it's disposable, branch-local scaffolding a
+    later story may replace or remove."""
     draft = ROOT / "docs" / "superpowers" / "plans" / "2026-07-16-frontend-v2-phase1.md"
     assert not draft.exists(), f"superseded draft plan still on the branch: {draft}"
     print("test_draft_plan_superseded: OK")

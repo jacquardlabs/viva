@@ -1,27 +1,14 @@
 #!/usr/bin/env python3
-"""Regression: `c` / `i` cannot submit a verdict the payload doesn't carry (#156).
+"""Regression (#156): `c`/`i` used to call `setReviewVerdict`, writing a raw
+`verdict` field that `submitReview` never reads — it derives each section from
+`activeComments`, so a comment-less card silently derived `pending` and the
+reviewer's decision was lost.
 
-The bug: both keys called `setReviewVerdict`, which wrote a raw `verdict` field.
-`submitReview` never reads that field — it derives each section from
-`activeComments`, which on a comment-less card is empty, so `deriveVerdict`
-returned `pending`. The card badged `changes` and the payload carried nothing:
-a reviewer decision lost between the screen and the file, against PRODUCT.md's
-"nothing is auto-accepted".
-
-The fix routes both keys through the comment composer with the type preselected,
-so a `changes`/`info` verdict is only ever derived from an attached note. Three
-halves are pinned here, because fixing any two alone reopens the hole:
-
-1. the routing — `c` / `i` open the composer, and no raw-verdict setter survives;
-2. `deriveVerdict`'s comment-less rule — the rejected alternative was to make it
-   honour a bare raw verdict, which submits "changes requested" with no
-   instruction;
-3. the wire — what the composer produces round-trips as `changes` with its note,
-   and removing that note un-derives the verdict back to `pending`.
-
-There is no JS engine in this suite (stdlib only, no npm), so 1 and 2 are read
-off the page the server actually serves and 3 is driven over HTTP — the same
-split `test_server_a11y.py` and `test_server_suggestions.py` already use.
+The fix routes both keys through the comment composer instead, so a
+`changes`/`info` verdict is only ever derived from an attached note. Pins the
+routing, `deriveVerdict`'s comment-less rule, and the wire round-trip — fixing
+only two of the three reopens the hole. No JS engine in this suite, so 1-2 are
+read off the served page and 3 is driven over HTTP.
 """
 import json
 import sys
@@ -42,11 +29,8 @@ ROUND_1 = {
 
 def _review_branch(page: str) -> str:
     """The keydown handler's `if (REVIEW_DATA) {` block, up to the Q&A branch.
-
-    `e.key === 'c'` is not unique in the page — the interview binds it to
-    "confirm answer" — so every needle below is anchored inside the review
-    block rather than found by a bare `index`.
-    """
+    `e.key === 'c'` isn't unique in the page (the interview binds it too), so
+    needles below anchor inside this block."""
     start = page.index("if (REVIEW_DATA) {", page.index("document.addEventListener('keydown'"))
     end = page.index("if (!REVIEW_DATA && QA_DATA && qState.active)", start)
     return page[start:end]
@@ -63,19 +47,15 @@ def test_c_and_i_open_the_composer_not_a_raw_verdict():
         for key, ctype in (("c", "changes"), ("i", "info")):
             call = "openTypedComment(rState.active, '%s')" % ctype
             assert call in branch, "the '%s'-key branch must call %s" % (key, call)
-            # Bare `c` now opens a compose box; swallowing Cmd/Ctrl+C would
-            # cost the reviewer copy on a page that is mostly prose.
+            # Must not swallow Cmd/Ctrl+C — the reviewer still needs copy.
             line = next((ln for ln in branch.splitlines() if "e.key === '%s'" % key in ln), "")
             assert "!e.metaKey && !e.ctrlKey && !e.altKey" in line, \
                 "the '%s'-key branch must be guarded against Cmd/Ctrl/Alt: %s" % (key, line)
 
-        # The raw-verdict setter is gone outright — not just unwired. `(` in the
-        # needle so the two prose mentions explaining its removal don't match.
+        # `(` in the needle so prose mentioning the removed function doesn't match.
         assert "setReviewVerdict(" not in page, \
             "no raw-verdict setter may survive: a verdict the payload can't carry is the bug"
 
-        # The composer takes the type; `openTypedComment` picks a chip rather
-        # than reaching past it, so one path decides what the box means.
         assert "function openCommentPopover(id, { anchor, type } = {})" in page, \
             "openCommentPopover must accept a preselected comment type"
         opener = page[page.index("function openTypedComment(id, type)"):]
@@ -83,20 +63,16 @@ def test_c_and_i_open_the_composer_not_a_raw_verdict():
         assert "classList.contains('is-open')" in opener, \
             "an open composer must be retyped in place, never rebuilt over a half-typed note"
         assert "openCommentPopover(id, { type })" in opener
-        # The invariant, stated where a rename can't dodge it: this path writes
-        # comments and nothing else. A raw verdict written here is the bug.
+        # This path writes comments only; a raw verdict written here is the bug.
         assert "rState.verdicts" not in opener, \
             "the c/i path must not touch the raw verdict field"
         print("  ok  test_c_and_i_open_the_composer_not_a_raw_verdict")
 
 
 def test_a_saved_comment_carries_its_own_undo():
-    # `setReviewVerdict`'s same-key toggle-off was the only in-round keyboard
-    # undo, and it went with the function. The replacement is the comment's own
-    # remove control: every margin note ships one, it is wired to
-    # `removeComment`, and that repaints through `syncCard` — which reads
-    # `deriveVerdict`, so dropping the last comment drops the verdict with it.
-    # (#157 tracks the undo that is still missing.)
+    # The comment's own remove control replaces the old toggle-off undo:
+    # wired to removeComment, which repaints via syncCard/deriveVerdict.
+    # #157 tracks the undo still missing.
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"; viva.mkdir()
     (viva / "in1.json").write_text(json.dumps(ROUND_1))
@@ -114,11 +90,8 @@ def test_a_saved_comment_carries_its_own_undo():
 
 
 def test_derive_verdict_still_ignores_a_bare_raw_verdict():
-    # The rejected alternative to this fix was teaching deriveVerdict to honour
-    # `rState.verdicts[id].verdict` when there are no comments — which submits
-    # "changes requested" with nothing for the revise loop to act on. With no
-    # active comments the only two answers stay `approved` (the reviewer
-    # stamped it) and `pending`.
+    # Rejected fix: honour a bare raw verdict with no comments, which submits
+    # "changes requested" with nothing for the revise loop to act on.
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"; viva.mkdir()
     (viva / "in1.json").write_text(json.dumps(ROUND_1))
@@ -132,10 +105,8 @@ def test_derive_verdict_still_ignores_a_bare_raw_verdict():
 
 
 def test_a_typed_comment_carries_the_verdict_and_removing_it_takes_it_back():
-    # The wire half: what the composer saves is a comment, and the comment is
-    # what makes the section `changes` — in the verdicts file and in the ledger.
-    # Submitting the same section with that comment removed derives `pending`
-    # again, which is the undo the toggle-off used to be (#157 tracks the rest).
+    # The wire half: a saved comment makes the section `changes` in both the
+    # verdicts file and the ledger; removing it derives `pending` again (#157).
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"; viva.mkdir()
     (viva / "in1.json").write_text(json.dumps(ROUND_1))
@@ -151,8 +122,7 @@ def test_a_typed_comment_carries_the_verdict_and_removing_it_takes_it_back():
         assert s1["verdict"] == "changes", s1
         assert s1["comments"][0]["note"] == "5x not 3x", s1
 
-        # The instruction reaches the ledger — the thing the keypress used to
-        # drop on the floor.
+        # The instruction reaches the ledger, not dropped on the floor.
         r2 = dict(ROUND_1, round=2)
         post(base, "/next-round", dict(r2, output=str(viva / "out2.json")))
         ledger = get(base, "/input")["ledger"]
@@ -173,8 +143,7 @@ def test_a_typed_comment_carries_the_verdict_and_removing_it_takes_it_back():
 
 
 def test_legend_states_what_the_keys_now_do():
-    # A keycap hint that outlives its behaviour is the same class of bug as the
-    # one being fixed: the screen saying one thing and the code doing another.
+    # A stale keycap hint is the same class of bug: screen says one thing, code another.
     from _server_harness import SERVER  # noqa: E402
     text = SERVER.read_text(encoding="utf-8")
     assert ("<dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) "

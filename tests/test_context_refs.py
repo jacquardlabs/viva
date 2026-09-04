@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
-"""Attached-context resolution for `/viva-write` intake (#170).
-
-`context_refs.py` classifies a pile of attachments and bounds what a directory
-ref expands to. Its two load-bearing properties are tested here:
-
-  1. **It never fetches.** An issue entry carries an argv LIST built from a
-     `\\d+` number and a strictly-matched `owner/repo` — so no ref can carry a
-     shell metacharacter into a `gh` invocation, and no test run needs network
-     or a credential (#165 guard 3, keyless).
-  2. **It never truncates silently.** Everything a cap excludes lands in
-     `dropped[]` with its reason. A manifest that quietly stopped reading looks
-     exactly like a repo with nothing else in it, and the draft built from it
-     would be missing facts nobody knows are missing.
-"""
+"""Tests for scripts/context_refs.py — attachment classification and directory
+expansion for `/viva-write` intake (#170). Covers two invariants: it never
+fetches (argv-only, keyless, #165 guard 3) and never truncates silently
+(cap drops land in `dropped[]` with a reason)."""
 from __future__ import annotations
 
 import json

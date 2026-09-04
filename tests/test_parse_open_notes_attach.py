@@ -28,10 +28,8 @@ def test_attaches_open_threads_grouped_by_title():
 
 
 def test_declined_thread_attaches_and_holds_its_section():
-    """A decline resolves nothing, so the thread carries exactly as an open one
-    does — the single filter here is the whole holding mechanism (#167). If it
-    dropped, the author's refusal would silently close the reviewer's request.
-    """
+    """A decline resolves nothing, so the thread attaches exactly as an open
+    one does — the filter here is the whole holding mechanism (#167)."""
     tmp = Path(tempfile.mkdtemp())
     store = {
         "s1-c1": {"cid": "s1-c1", "title": "Goals", "quote": "in most cases",

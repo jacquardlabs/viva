@@ -46,7 +46,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _extract_filepath(file_block: str) -> str | None:
-    """Extract the target filepath from a single file-level diff block."""
+    """Target filepath from a single file-level diff block."""
     # "+++ b/path" — covers modified and new files
     m = re.search(r'^\+\+\+ b/(.+)$', file_block, re.MULTILINE)
     if m:
@@ -111,19 +111,13 @@ def parse_diff(text: str) -> list[dict]:
 
 
 def _hunk_body(content: str) -> str:
-    """The hunk with its `@@ -a,b +c,d @@` header line removed — the identity
-    the carry rules compare on.
+    """The hunk with its `@@ -a,b +c,d @@` header removed — the identity the
+    carry rules compare on.
 
-    The header is line 1 of every hunk's content (`_parse_hunks` keeps the
-    delimiter), and it moves whenever an EARLIER hunk in the same file grows or
-    shrinks: `@@ -10,3 +10,3 @@` becomes `@@ -10,3 +11,3 @@` with not one line
-    of the hunk itself touched. Comparing whole content made that shift drop
-    the later hunk's approval and summary with no notice — the human re-approved
-    a change they had already approved (#103). The body is what they approved;
-    the header is where it landed. Rendering still shows the header: this is
-    the comparison key only, never what is served.
-
-    A binary sentinel has no header and is returned unchanged.
+    The header shifts whenever an earlier hunk in the same file grows or
+    shrinks, with no line of this hunk touched; comparing whole content made
+    that drop approval/summary with no notice (#103). Header still renders —
+    this is the comparison key only. A binary sentinel has no header.
     """
     if not content.startswith("```diff\n@@ "):
         return content
@@ -138,11 +132,10 @@ def _carry_forward(
 ) -> list[str]:
     """Return ids of sections approved in the prior round with an identical body.
 
-    A section carries forward as approved only when its normalized title matches
-    a prior section AND that prior section was approved AND the hunk body
-    (`_hunk_body`: the content minus its `@@` header line) is byte-for-byte
-    identical. This is parse_sections.py's rule with the one diff-specific
-    allowance: a header-only line shift is not a change.
+    Carries forward only when normalized title matches a prior approved
+    section AND the hunk body (`_hunk_body`, header stripped) is identical —
+    parse_sections.py's rule, with the diff-specific allowance that a
+    header-only line shift is not a change.
     """
     if not prior_input or not prior_verdicts:
         return []
@@ -176,16 +169,11 @@ def _carry_forward(
 def _carry_summaries(sections: list[dict], prior_input: dict | None) -> None:
     """Carry each prior hunk's one-line summary onto its unchanged twin, in place.
 
-    A summary is written by the agent between parsing and arming (#188); this
-    keeps a round-1 summary from having to be rewritten every round. Keyed on
-    (normalized title, hunk body) — the same identity `_carry_forward` uses, so
-    the two carries agree: a hunk whose BODY is byte-identical is the same
-    hunk, and a hunk whose body changed arrives with no summary, so the next
-    pass writes it a fresh one instead of describing the previous edit. A
-    header-only line shift (an earlier hunk grew) keeps the summary, because
-    the change it describes did not move. Hunk *numbering* alone is not
-    identity — a hunk added above shifts every later `hunk N` title, and that
-    renumbering still drops both carries (#196).
+    Summaries are written by the agent between parsing and arming (#188).
+    Keyed on (normalized title, hunk body) — the same identity `_carry_forward`
+    uses, so a changed body drops the summary for a fresh one. Hunk numbering
+    alone is not identity: an added hunk shifts later `hunk N` titles, which
+    still drops both carries (#196).
     """
     if not prior_input:
         return

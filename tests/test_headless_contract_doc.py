@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 """Drift guard for docs/headless-contract.md (#111).
 
-Not a schema-conformance suite — a cheap check that a handful of load-bearing
-facts the doc states in prose stay true: `server.py`'s `--mode` choices match
-the doc's Invocation table, the doc carries a parseable `Contract version:`
-marker, and the `/submit` body-size cap the doc quotes matches the constant
-`server.py` actually enforces. If any of these drift, the doc is wrong and
-should be updated (and the Contract version bumped if the drift is a
-breaking one — see CLAUDE.md's "boundary validator" principle applied to a
-doc instead of a JSON store).
+Checks load-bearing facts the doc states in prose against server.py: --mode
+choices, the Contract version marker, and the /submit size cap.
 """
 import re
 import subprocess

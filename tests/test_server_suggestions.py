@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""Integration test: a suggested edit round-trips /submit and reaches the ledger.
-
-A suggestion is the third comment type (#166) — a directive with the wording
-attached. This drives the surface a caller and the agent actually see: the
-verdicts file the browser writes, the live `/input` ledger, the `400` a
-suggestion with no wording earns at the boundary, and the page's own affordances
-(the third chip, the typed highlight, the derivation that keeps such a section
-out of `approved`).
+"""Integration test: a suggested edit (#166) round-trips /submit and reaches
+the ledger, verbatim wording included, and the page ships its affordances.
 """
 import json
 import sys
@@ -45,16 +39,14 @@ def test_suggestion_round_trips_and_lands_in_the_ledger() -> None:
             "anchor": {"text": "ship it eventually", "offset": 0, "occurrence": 0},
             "open": True, "settled": False,
         }
-        # The section verdict is `changes` — a suggestion is a directive, so the
-        # browser's derivation never lets a section holding one read `approved`.
+        # A suggestion is a directive, so its section verdict must be `changes`.
         post(base, "/submit", {"round": 1, "submitted_early": False, "sections": [
             {"id": "s1", "verdict": "changes", "comments": [suggestion]},
             {"id": "s2", "verdict": "approved"},
         ]})
         assert poll_for(viva / "out1.json"), "server never wrote the verdicts file"
         written = json.loads((viva / "out1.json").read_text())
-        # Verbatim on disk: the payload the agent applies survives the round-trip
-        # with its anchor, byte for byte.
+        # The payload survives the round-trip verbatim, anchor included.
         assert written["sections"][0]["comments"][0] == suggestion, written
 
         post(base, "/next-round", dict(_round(2), output=str(viva / "out2.json")))
@@ -64,9 +56,8 @@ def test_suggestion_round_trips_and_lands_in_the_ledger() -> None:
                            "note": "too vague — suggested: " + WORDING}], ledger
         assert WORDING in ledger[0]["note"], "the wording must be recorded verbatim"
 
-        # A suggestion with no wording is unappliable — refused where it is
-        # written, not silently at apply time. Gated on the TYPE, so a plain
-        # changes comment with no replacement still passes.
+        # A suggestion with no wording is refused at write time. Gated on the
+        # TYPE, so a plain changes comment with no replacement still passes.
         status, body = post_result(base, "/submit", {
             "round": 2, "submitted_early": False, "sections": [
                 {"id": "s1", "verdict": "changes", "comments": [
@@ -90,21 +81,14 @@ def test_page_ships_the_suggestion_affordances() -> None:
     with launch_server(viva / "in1.json", viva / "out1.json", cwd=tmp) as base:
         page = get_text(base, "/")
 
-    # The chip, the shared note field, and the typed highlight.
-    #
-    # There is deliberately no second textarea. `suggest wording` used to
-    # reveal a `.cmt-pop-repl` box beneath the note, asking the reviewer to
-    # fill two fields to say one thing; the type chips now change what the
-    # single `.note-field` MEANS, and its placeholder says which.
+    # The chip, the shared note field, and the typed highlight. One field, not
+    # two: the type chips change what `.note-field` means, no second textarea.
     for needle in (
         'class="cmt-chip cmt-chip-suggestion" data-type="suggestion" aria-pressed="false">suggest wording',
         'class="note-field cmt-pop-note"',
         "suggestion: 'Replacement wording — applied verbatim'",
         "mark.cmt-hl-suggestion",
         ".cmt-chip-suggestion.is-on",
-        # The stacked comment list is gone — a comment lives in its own margin
-        # note now — so `.v-suggestion .cmt-type` went with it. `.cmt-repl`
-        # stays: a carried thread's exchange still prints the wording.
         ".cmt-repl",
         "function suggestionFenceHTML(c)",
     ):
@@ -114,25 +98,19 @@ def test_page_ships_the_suggestion_affordances() -> None:
     assert "note: isSuggestion ? '' : text" in page, \
         "a suggestion's text must be saved as the replacement, not as the note"
 
-    # Derivation: a suggestion is a directive, so it lands with `changes`, and a
-    # section holding one cannot be approved.
+    # A suggestion is a directive, so it derives to `changes`, never `approved`.
     assert ("return active.some(c => c.type === 'changes' || c.type === 'suggestion') "
             "? 'changes' : 'info';") in page, "deriveVerdict must treat a suggestion as a directive"
     # Its note is optional — the wording alone keeps the comment active.
     assert "filter(c => !c.settled && (c.note || c.replacement))" in page, \
         "activeComments must count a suggestion carrying only its wording"
-    # Stale marks: the re-render clears every typed highlight it can create.
-    # One prefix selector rather than three names — `markAndPin` is now the
-    # only pass that creates them, and it is the only one that has to clear
-    # them, so a fourth type can never be forgotten in the teardown.
+    # The re-render must clear every typed highlight it can create.
     assert '''content.querySelectorAll('mark[class^="cmt-hl-"]').forEach(m =>''' in page, \
         "the mark+pin pass must clear every typed highlight it can create"
-    # Review-mode only: a diff hunk's suggestion would be a verbatim code edit,
-    # which /viva-review branch B carries no instruction to apply (#166 scopes it out).
+    # Diff-mode suggestions are out of scope (#166) — a hunk edit needs no instruction to apply.
     assert "const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';" in page, \
         "the suggestion chip must be gated out of diff mode"
-    # A reply to a carried suggestion thread continues as `changes`: the reply
-    # box collects prose, and a suggestion with no `replacement` is a 400.
+    # A reply to a carried suggestion thread continues as `changes`, not an empty suggestion.
     assert "const type = (last === 'changes' || last === 'suggestion') ? 'changes' : 'info';" in page, \
         "a suggestion thread's reply must not re-post as an empty suggestion"
     print("  ok  test_page_ships_the_suggestion_affordances")

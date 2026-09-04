@@ -1,39 +1,14 @@
 #!/usr/bin/env python3
-"""Attached-context resolution — the mechanical half of `/viva-write` intake (#170).
-
-Doc-first intake starts from a type and a pile of *attachments*: the repo, an
-issue, a related doc, a URL. This filter turns that pile into one manifest the
-skill can act on, and bounds it:
+"""Resolve `/viva-write` attachments (issue refs, URLs, files, directories)
+into one bounded manifest (#170).
 
   python3 context_refs.py '#170' docs/ PRODUCT.md https://example.com/spec
   python3 context_refs.py '#170' --max-files 5 --max-bytes 20000
 
-  {"refs": [{"ref": "#170", "kind": "issue", ...}, ...],
-   "dropped": [{"ref": "docs/", "path": "docs/big.md", "reason": "byte cap"}],
-   "budget": {"max_files": 20, "max_bytes": 120000, "files": 3, "bytes": 4211,
-              "over": false}}
-
-**It classifies and bounds; it never fetches.** An issue entry carries `fetch`,
-the exact `gh` argv the caller runs — an argv LIST, never a shell string, and
-built only from a `\\d+` number and a strictly-matched `owner/repo`, so a ref can
-carry no shell metacharacter into it. A url entry carries only its url; a file
-entry only its path. That split is what keeps this script a stdlib-only,
-network-free, independently testable filter (CLAUDE.md part 3) while the fetching
-— `gh`, `Read`, `WebFetch` — stays the skill's job, and it is what keeps intake
-keyless (#165 guard 3): no SDK, no credential, no network in a test run.
-
-The budget is the answer to "read the repo" being unbounded. A **directory** ref
-expands under the caps and everything past them lands in `dropped[]` — never a
-silent truncation, because a manifest that quietly stops reading looks exactly
-like a repo with nothing else in it. An **explicit file** ref is a deliberate
-choice and is never dropped; its bytes still count, so naming three big files
-shrinks what a directory beside them expands to, and `budget.over` says so.
-
-Every failure is loud and exits non-zero — a ref that resolves to nothing must
-never reach the drafting step as silence, which is the guessed-intent failure
-the interview exists to prevent.
-
-Imports no sibling: it needs no shared vocabulary, so it takes none.
+Classifies and bounds; never fetches — an issue entry carries `fetch`, the
+`gh` argv (a list, never a shell string) to run. A directory expansion past
+the caps lands in `dropped[]` rather than truncating silently. A ref that
+resolves to nothing is a loud, non-zero exit.
 """
 from __future__ import annotations
 
@@ -44,8 +19,8 @@ import re
 import sys
 from pathlib import Path
 
-# `owner/repo#123`, `#123`. The repo half is matched strictly because it is
-# interpolated into an argv element handed to `gh`.
+# `owner/repo#123`, `#123`. Repo half matched strictly — interpolated into
+# an argv element handed to `gh`.
 ISSUE_RE = re.compile(r"^(?:(?P<repo>[A-Za-z0-9._-]+/[A-Za-z0-9._-]+))?#(?P<number>\d+)$")
 # A GitHub issue/PR permalink — the form pasted out of a browser.
 GH_URL_RE = re.compile(
@@ -54,23 +29,19 @@ GH_URL_RE = re.compile(
     r"(?P<target>issues|pull)/(?P<number>\d+)(?:[/?#].*)?$")
 URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
-# What a directory expansion never walks into. Everything else dotted is skipped
-# by the dot rule below; these are the undotted ones that are still noise.
+# Undotted directories a walk skips as noise (dotted ones are skipped below).
 DENY_DIRS = frozenset({
     "node_modules", "__pycache__", "venv", "dist", "build", "target",
     "vendor", "site-packages",
 })
 
-# Enough of a file to tell text from binary. A UTF-8 decode failure in the first
-# chunk is the test — a suffix allow-list goes stale the first time a repo
-# commits a `.mdx`, and dropping a real doc is worse than reading a stray one.
+# Bytes sniffed to tell text from binary — a decode, not a suffix allow-list.
 SNIFF_BYTES = 4096
 
 DEFAULT_MAX_FILES = 20
 DEFAULT_MAX_BYTES = 120_000
 
-# The JSON fields worth pulling for a draft: what the issue asks for, who said
-# what about it, and a link the draft can cite.
+# Issue/PR fields worth pulling for a draft.
 ISSUE_FIELDS = "number,title,body,url,state,comments"
 
 
@@ -95,13 +66,9 @@ def is_text(path: Path) -> bool:
 
 
 def walk_dir(root: Path) -> list:
-    """Every candidate text file under `root`, sorted — deterministic, so the
-    same attachment expands the same way on every run and a `dropped[]` entry
-    means the same thing twice.
-
-    The dot rule and `DENY_DIRS` apply to DESCENDANTS only: a caller who names
-    `.github/workflows` outright meant it, and refusing the ref they typed would
-    be this filter overruling the attachment rather than bounding it.
+    """Every candidate text file under `root`, sorted for deterministic
+    expansion. The dot rule and `DENY_DIRS` apply to descendants only — a
+    caller who names `.github/workflows` outright meant it.
     """
     found = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
@@ -118,9 +85,8 @@ def walk_dir(root: Path) -> list:
 
 
 class Budget:
-    """The caps, and the running total they bound. Global across every ref and
-    spent in ref order, so a directory named after three big files gets what is
-    left rather than its own fresh allowance."""
+    """The caps and the running total they bound, global across every ref
+    and spent in ref order."""
 
     def __init__(self, max_files: int, max_bytes: int):
         self.max_files = max_files
@@ -135,7 +101,8 @@ class Budget:
         self.bytes += size
 
     def offer(self, ref: str, path: str, size: int) -> bool:
-        """Spend only if it fits — a directory expansion. Records the refusal."""
+        """Spend only if it fits — a directory expansion — and record the
+        refusal otherwise."""
         if self.files >= self.max_files:
             self.dropped.append({"ref": ref, "path": path, "reason": "file cap"})
             return False
@@ -152,12 +119,9 @@ class Budget:
 
 
 def issue_entry(ref: str, repo, number: str, target: str) -> dict:
-    """One issue/PR attachment, carrying the argv that fetches it.
-
-    `fetch` is a list and stays one: `gh` is invoked with arguments, never
-    through a shell, so neither `repo` nor `number` — both already
-    regex-constrained above — can become anything but one argument each.
-    """
+    """One issue/PR attachment, carrying the `gh` argv that fetches it.
+    `fetch` is a list, never a shell string, since `repo`/`number` are
+    already regex-constrained above but not shell-escaped."""
     kind = "pr" if target == "pull" else "issue"
     fetch = ["gh", kind, "view", number, "--json", ISSUE_FIELDS]
     if repo:
@@ -168,8 +132,7 @@ def issue_entry(ref: str, repo, number: str, target: str) -> dict:
 
 def resolve(ref: str, root: Path, budget: Budget) -> dict:
     """One ref → one manifest entry. Raises `ValueError` on a ref that names
-    nothing: an attachment the caller typed and this filter silently swallowed
-    would reach the draft as a fact nobody has."""
+    nothing rather than swallowing it silently."""
     m = GH_URL_RE.match(ref)
     if m:
         return issue_entry(ref, m.group("repo"), m.group("number"), m.group("target"))

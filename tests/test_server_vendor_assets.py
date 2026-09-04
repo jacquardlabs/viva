@@ -1,42 +1,12 @@
 #!/usr/bin/env python3
-"""The SPA's third-party JS, CSS and fonts are vendored and served from disk.
+"""The SPA's third-party JS, CSS and fonts are vendored under `assets/vendor/`
+and served from disk (#79, #144) rather than fetched from a CDN at request time.
 
-Before this, five `<script>` tags and one injected `<link>` pointed at
-cdn.jsdelivr.net at `@major` ranges. A review therefore needed the network, the
-resolved bytes were whatever the CDN served that day, and #43 exists only
-because DOMPurify can fail to load independently of marked. The assets now live
-under `assets/vendor/` at exact versions and are served by this server.
-
-Four invariants, in the order they can break:
-
-  1. Nothing in the served page points at any remote host. Checked against
-     `server.HTML` as well as a live page — `_HTML_BYTES` is one constant
-     served identically to review, diff, and QA, so a static assertion on the
-     constant is the mode-independent statement of "no mode fetches a CDN".
-  2. Every `/vendor/...` URL in the page has a route, and every route has a
-     file on disk. A page/table mismatch is the failure a version bump makes,
-     and it is silent — the browser 404s and the reader gets the fallback.
-  3. Every route serves those exact bytes with the right Content-Type, from a
-     server whose cwd is somewhere else entirely. viva runs from the repo under
-     review, so a cwd-relative resolution would work in this repo and nowhere
-     else; the harness launches with `cwd=tmp` precisely to catch it.
-  4. Nothing else under `/vendor/` is reachable. The route table is an
-     exact-match dict, so there is no path to traverse today; the test is what
-     keeps a future refactor from reintroducing a join.
-
-Not checked here: that the browser makes zero external requests. There is no
-browser harness in this repo (stdlib only, no npm/node), so "no remote host" is
-proven by the absence of the host in what is served.
-
-#79 scoped Google Fonts OUT — the two faces stayed remote while the JS and CSS
-came in-tree, so a review still made a per-session request to Google and, run
-offline, silently lost its typography. That scope decision is reversed: Fragment
-Mono is vendored as four woff2 subsets and declared in the page's own
-stylesheet, and the assertion below that once PROTECTED the font preconnect now
-forbids the host outright. Bricolage Grotesque is not vendored — it was an
-undocumented third family on three rules (DESIGN.md: "Two families only"), and
-those rules now inherit body's grotesque stack instead.
+Covers: no remote host survives in the served page, every `/vendor/` URL in
+the page has a route and a file, routes serve correct bytes from a foreign
+cwd, and the route table is exact-match only (no traversal).
 """
+import hashlib
 import http.client
 import json
 import re
@@ -61,9 +31,8 @@ REVIEW_INPUT = {
 
 
 def _fetch(base: str, path: str):
-    """GET and return `(status, headers, body_bytes)` — the vendor routes are
-    checked on their headers and raw bytes, which the JSON/text harness
-    helpers do not surface."""
+    """GET and return `(status, headers, body_bytes)`; the JSON/text harness
+    helpers don't surface headers or raw bytes."""
     parsed = urllib.parse.urlparse(base)
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
     try:
@@ -75,22 +44,15 @@ def _fetch(base: str, path: str):
 
 
 def test_no_cdn_reference_survives_in_any_mode() -> None:
-    """The one acceptance criterion, stated where it holds for every mode:
-    `_HTML_BYTES` is `HTML` encoded once at import and served to review, diff,
-    and QA alike, so the constant carrying no jsdelivr reference IS the
-    mode-independent guarantee."""
+    """`_HTML_BYTES` is served identically to review, diff, and QA, so a
+    static assertion on it covers every mode."""
     assert "jsdelivr" not in server.HTML, \
         "the served page still references jsdelivr"
     assert "cdn." not in server.HTML, \
         "the served page still references a CDN host"
     assert 'rel="preconnect" href="https://cdn' not in server.HTML, \
         "the jsdelivr preconnect must be gone"
-    # INVERTED. This assertion used to read `"fonts.gstatic.com" in HTML` and
-    # protected the font preconnect, because #79 left the faces remote. The
-    # faces are vendored now, so the same line states the widened invariant:
-    # the page reaches no font host either, and a reinstated <link> — the
-    # obvious way to "fix" a missing glyph — fails here rather than shipping a
-    # per-session request to Google.
+    # Fonts are vendored (#79): the page must reach no font host either.
     assert "fonts.googleapis.com" not in server.HTML, \
         "the fonts are vendored — nothing in the page may reach Google"
     assert "fonts.gstatic.com" not in server.HTML, \
@@ -101,16 +63,13 @@ def test_no_cdn_reference_survives_in_any_mode() -> None:
 
 
 def test_every_vendor_url_in_the_page_has_a_route() -> None:
-    """A bump edits three places (the file, the route table, the page URL).
-    Miss the third and the browser 404s into the md-raw fallback with no error
-    anywhere — so the page's URLs and the route table are compared directly."""
+    """A version bump edits three places (file, route table, page URL); miss
+    the third and the browser 404s silently into the md-raw fallback."""
     urls = set(re.findall(r'(?:src|href)=[\'"](/vendor/[^\'"]+)[\'"]', server.HTML))
     # The mode-diff stylesheet is assigned in JS, not written as an attribute.
     urls |= set(re.findall(r"= '(/vendor/[^']+)'", server.HTML))
-    # The four faces are declared in `@font-face`, not as an element attribute —
-    # a third spelling, invisible to both patterns above. Without this harvest
-    # the font routes read as "routes nothing in the page loads", which is the
-    # right complaint about the wrong thing.
+    # The four faces are declared in `@font-face`, a third spelling invisible
+    # to both patterns above.
     urls |= set(re.findall(r"url\(['\"]?(/vendor/[^'\")]+)", server.HTML))
     assert len(urls) == 10, f"expected 10 vendor URLs in the page, found {sorted(urls)}"
     unrouted = urls - set(server._VENDOR_ROUTES)
@@ -121,9 +80,8 @@ def test_every_vendor_url_in_the_page_has_a_route() -> None:
 
 
 def test_every_route_has_a_file_and_a_license() -> None:
-    """The assets ship in the plugin package, and vendored third-party code
-    carries its attribution — `assets/vendor/README.md` names each pin and
-    points at the license text beside it."""
+    """Vendored third-party code carries its attribution: `assets/vendor/
+    README.md` names each pin and points at the license text beside it."""
     for name, _ctype in server._VENDOR_ASSETS:
         path = server._VENDOR_DIR / name
         assert path.is_file(), f"vendored asset missing from the tree: {path}"
@@ -139,6 +97,24 @@ def test_every_route_has_a_file_and_a_license() -> None:
     print("  ok  test_every_route_has_a_file_and_a_license")
 
 
+def test_every_asset_matches_its_recorded_sha256() -> None:
+    """A tampered blob, a wrong-version download, or a compromised CDN
+    response in a future bump is otherwise a 300KB minified diff nobody
+    reads — README.md now records a SHA-256 per file, and this asserts every
+    on-disk byte matches it."""
+    readme = (server._VENDOR_DIR / "README.md").read_text()
+    rows = dict(re.findall(
+        r"\| `([^`]+)` \|.*\| `([0-9a-f]{64})` \|$", readme, re.M))
+    for name, _ctype in server._VENDOR_ASSETS:
+        assert name in rows, f"assets/vendor/README.md records no SHA-256 for {name}"
+        actual = hashlib.sha256((server._VENDOR_DIR / name).read_bytes()).hexdigest()
+        assert actual == rows[name], (
+            f"{name}: on-disk SHA-256 {actual} does not match "
+            f"README.md's recorded {rows[name]} — a bad download or a "
+            f"tampered blob was committed")
+    print("  ok  test_every_asset_matches_its_recorded_sha256")
+
+
 def test_no_hljs_stylesheet_is_vendored() -> None:
     """Only highlight.js's engine is vendored. viva hand-writes its own `.hljs`
     theme; a stock one would spend catalog yellow on syntax, which belongs to
@@ -150,8 +126,7 @@ def test_no_hljs_stylesheet_is_vendored() -> None:
 
 
 def test_routes_serve_the_files_from_a_foreign_cwd(base: str) -> None:
-    """The server is launched from the repo under review, never from its own
-    directory — `_VENDOR_DIR` must resolve off `__file__`. The harness runs it
+    """`_VENDOR_DIR` must resolve off `__file__`, not cwd — the harness runs
     with `cwd` set to a temp dir, so a cwd-relative resolution 404s here."""
     for name, ctype in server._VENDOR_ASSETS:
         status, headers, body = _fetch(base, "/vendor/" + name)
@@ -168,10 +143,9 @@ def test_routes_serve_the_files_from_a_foreign_cwd(base: str) -> None:
 
 
 def test_vendor_routes_are_exact_match_only(base: str) -> None:
-    """The route table is a dict keyed on the whole path and the filename is
-    always a literal from it, so there is nothing to traverse. This pins that:
-    a future refactor to `_VENDOR_DIR / <request tail>` would turn every line
-    below into a served file."""
+    """The route table is a dict keyed on the whole path, so there is nothing
+    to traverse; pins that a future `_VENDOR_DIR / <request tail>` refactor
+    would serve these."""
     for path in (
         "/vendor/../server.py",
         "/vendor/%2e%2e/server.py",
@@ -206,6 +180,7 @@ def main() -> None:
     test_no_cdn_reference_survives_in_any_mode()
     test_every_vendor_url_in_the_page_has_a_route()
     test_every_route_has_a_file_and_a_license()
+    test_every_asset_matches_its_recorded_sha256()
     test_no_hljs_stylesheet_is_vendored()
 
     tmp = Path(tempfile.mkdtemp())
@@ -218,7 +193,7 @@ def main() -> None:
         test_vendor_routes_are_exact_match_only(base)
         test_live_page_matches_the_constant(base)
 
-    print("OK (7 tests)")
+    print("OK (8 tests)")
 
 
 if __name__ == "__main__":

@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""preferences.py maintains the learned-preference store (issue #17).
+"""preferences.py is the SINGLE writer of .viva/preferences.json (issue #17).
 
-It is the SINGLE writer of .viva/preferences.json — the store that lets viva
-learn a recurring critique and pre-apply/pre-flag it. The agent does the
-semantic clustering and cross-session matching; this script does the mechanical
-bookkeeping: stable ids, distinct-session counting, candidate→standing
-promotion, and listing. These tests cover that mechanical contract.
+Tests cover its mechanical contract: stable ids, distinct-session counting,
+candidate→standing promotion, and listing.
 """
 import json
 import subprocess

@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """Required-section checklist gating — a viva pre-review producer (#13).
 
-Doc types have an expected shape: a spec needs problem / non-goals / testing;
-an ADR needs context / decision / consequences; a runbook needs trigger / steps
-/ rollback. An agent-written doc that silently omits a required section passes
-review only because the reviewer didn't notice the gap. This producer checks
-the parsed headings against a per-type template and flags missing sections so
-the absence is impossible to miss.
+Checks parsed headings against a per-doc-type template (spec, adr, runbook)
+and flags missing sections so an agent-written doc can't silently omit one.
 
   python3 checklist.py --input .viva/review-input-r1.json [--type spec|adr|runbook]
 
-Prints a sidecar annotation list (JSON) to stdout — pipe it into annotate.py:
-
-  python3 checklist.py --input IN.json | python3 annotate.py --input IN.json --annotations -
-
-A missing required section attaches an `error` flag to the *first* card rather
-than a synthetic placeholder card — the parser's integrity check requires every
-card's content to come from the source doc, so a card for a non-existent section
-is impossible. The first card (preamble/H1) is the document-level anchor.
-
-Doc type is taken from --type, else inferred from the filename or H1, else
-nothing — an untyped doc emits no flags and reviews exactly as today.
+Prints a sidecar annotation list (JSON) to stdout — pipe it into annotate.py.
+A missing section attaches an `error` flag to the first card (the document
+anchor) rather than a synthetic placeholder card, since every card must come
+from the source doc. Doc type is taken from --type, else inferred from the
+filename or H1, else nothing (untyped docs emit no flags).
 """
 from __future__ import annotations
 
@@ -30,9 +20,8 @@ import re
 import sys
 from pathlib import Path
 
-# Per-type required sections. Labels are shown to the reviewer; matching is done
-# on a punctuation-insensitive normalized form so "Non-Goals", "Non Goals", and
-# "Non-goals" all satisfy the same requirement.
+# Per-type required sections. Matching is punctuation-insensitive, so
+# "Non-Goals", "Non Goals", and "Non-goals" all satisfy the same requirement.
 TEMPLATES = {
     "spec": ["Problem", "Non-goals", "Testing"],
     "adr": ["Context", "Decision", "Consequences"],
@@ -51,13 +40,8 @@ def _tokens(s: str) -> set:
 
 
 def infer_type(doc_file: str, sections: list) -> str | None:
-    """Resolve a doc type from the filename or H1, or None if untyped.
-
-    Matches a type name as a whole token, not a substring — 'inspector.md' must
-    not infer 'spec'. Filename wins (the most explicit author signal); the first
-    section's title (usually the H1/preamble) is the fallback. Returns None when
-    nothing matches — the caller then emits no gating and the doc reviews as today.
-    """
+    """Resolve a doc type from the filename or H1 (filename wins), matching
+    a whole token so 'inspector.md' doesn't infer 'spec'. None if untyped."""
     haystacks = [doc_file or ""]
     if sections:
         haystacks.append(sections[0].get("title", ""))

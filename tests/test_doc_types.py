@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Tests for scripts/doc_types.py — type-bundle resolution and repo override.
 
-A type bundle is the doc's section grammar, its check set, and its default pass.
-Resolution is the only place a name becomes a bundle, so every way it can fail —
-unknown name, malformed file, a bundle that lies about its own name — has to
-fail loudly here rather than downstream as an empty grammar nothing flags.
+Resolution is the only place a name becomes a bundle, so every failure mode
+(unknown name, malformed file, a lying name) must fail loudly here.
 """
 from __future__ import annotations
 
@@ -68,10 +66,9 @@ def test_shipped_set_resolves_and_validates() -> None:
 
 
 def test_shipped_grammars_exclude_revision_history() -> None:
-    """`parse_sections.py` splits the ledger off every round — `rev_line`
-    truncates the source and the heading never becomes a card. A bundle that
-    listed it would make `headings-present` flag every signed-off doc for a
-    section that cannot exist."""
+    """`parse_sections.py` splits the ledger off every round, so "Revision
+    History" never becomes a card. A bundle listing it would make
+    `headings-present` flag every signed-off doc for a section that can't exist."""
     for name in sorted(EXPECTED_SHIPPED):
         headings = [h.strip().lower() for h in resolve_ok(name)["sections"]]
         assert "revision history" not in headings, (
@@ -96,9 +93,7 @@ def test_shipped_checks_name_a_real_producer() -> None:
 def test_shipped_grammars_are_checked() -> None:
     """A grammar nothing checks is decoration: `headings-present` is the
     producer that turns `sections[]` into flags, so every shipped bundle that
-    names a heading must also name the check. `pr-description` and
-    `progress-note` shipped with sections but no checks before the agent-era
-    grammars landed, and a typed draft missing a heading drew no flag."""
+    names a heading must also name the check."""
     for name in sorted(EXPECTED_SHIPPED):
         bundle = resolve_ok(name)
         if bundle["sections"]:
@@ -110,9 +105,8 @@ def test_shipped_grammars_are_checked() -> None:
 
 def test_checks_default_pass_names_a_check() -> None:
     """A `checks` pass holds the round until every check flag carries a result.
-    With no checks to run there are no flags, the conjunct is vacuous, and the
-    round closes on the all-approved base alone — the depth is a label. Fails
-    open, so it is pinned here rather than in the resolver."""
+    With no checks to run, the conjunct is vacuous and the round closes on the
+    all-approved base alone — the depth is a label."""
     for name in sorted(EXPECTED_SHIPPED):
         bundle = resolve_ok(name)
         if bundle["default_pass"] == "checks":
@@ -217,6 +211,38 @@ def test_structurally_invalid_bundles_are_refused() -> None:
     print("  ok  test_structurally_invalid_bundles_are_refused")
 
 
+def test_checks_entry_must_be_a_bare_token() -> None:
+    """`checks[]` becomes a path the same way a bundle's own `name` does, so a
+    `.viva-types/` override naming a traversal string must be refused before
+    any path is built, exactly as `name` already is."""
+    for bad in ("../../../../tmp/x", "a/b", "Headings-Present", "a b", ""):
+        with tempfile.TemporaryDirectory() as td:
+            types_dir = Path(td) / ".viva-types"
+            write_bundle(types_dir, "x", {
+                "name": "x", "title": "X", "sections": [],
+                "checks": [bad], "default_pass": "architecture"})
+            r = resolve("x", types_dir)
+        assert r.returncode != 0, f"checks entry {bad!r} must be refused"
+        assert "checks entry" in r.stderr, (bad, r.stderr)
+    print("  ok  test_checks_entry_must_be_a_bare_token")
+
+
+def test_unregistered_check_kind_warns_but_still_resolves() -> None:
+    """`CHECK_KINDS` fails open by design (CLAUDE.md): an unregistered kind is
+    invisible to `round_is_complete`, not a hard failure. This pins the warning
+    `doc_types.py` prints for a repo-committed bundle with such a kind."""
+    with tempfile.TemporaryDirectory() as td:
+        types_dir = Path(td) / ".viva-types"
+        write_bundle(types_dir, "x", {
+            "name": "x", "title": "X", "sections": [],
+            "checks": ["not-a-registered-kind"], "default_pass": "architecture"})
+        r = resolve("x", types_dir)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["name"] == "x"
+    assert "not in schema.CHECK_KINDS" in r.stderr, r.stderr
+    print("  ok  test_unregistered_check_kind_warns_but_still_resolves")
+
+
 def test_name_must_be_a_bare_token() -> None:
     """Rejected before any path is built — the name is a filename component."""
     with tempfile.TemporaryDirectory() as td:
@@ -304,12 +330,14 @@ def main() -> None:
     test_malformed_json_fails_loudly()
     test_bundle_name_must_match_its_filename()
     test_structurally_invalid_bundles_are_refused()
+    test_checks_entry_must_be_a_bare_token()
+    test_unregistered_check_kind_warns_but_still_resolves()
     test_name_must_be_a_bare_token()
     test_doc_types_cross_imports_no_sibling()
     test_list_is_the_merged_namespace_with_titles()
     test_list_refuses_rather_than_offering_a_broken_bundle()
     test_bundles_live_outside_the_cleared_state_dir()
-    print("OK (16 tests)")
+    print("OK (18 tests)")
 
 
 if __name__ == "__main__":
