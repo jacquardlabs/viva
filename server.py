@@ -145,6 +145,7 @@ HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viva</title>
+<link rel="icon" id="favicon-link" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232946c4'/%3E%3C/svg%3E">
 <script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
 <script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
 <script defer src="/vendor/highlight-11.11.1.min.js"></script>
@@ -3375,8 +3376,36 @@ function tabDocName(path) {
   return (path || '').split('/').pop();
 }
 
+// Session identity, not per-event data (#172) — the repo name is fixed for
+// the life of this tab, so it is stashed once where it enters (the /input
+// boot fetch, and again off the 'round' SSE payload for a qa→review
+// hand-off) rather than threaded through every setTabTitle call site.
+let TAB_REPO = null;
+
 function setTabTitle(...parts) {
-  document.title = parts.filter(Boolean).concat('viva').join(' · ');
+  document.title = [TAB_REPO, ...parts].filter(Boolean).concat('viva').join(' · ');
+}
+
+// The 'processing' SSE handler's own title setter, kept distinct from
+// setTabTitle rather than added as a fifth call site to it: this fires the
+// instant a round is submitted, before the server has a fresh doc/round to
+// report, so it only ever has the PRIOR round's doc name to work with. Same
+// join convention as setTabTitle (TAB_REPO leads, filter-empty, ' · '-joined,
+// 'viva' last).
+function setProcessingTabTitle(docName) {
+  document.title = [TAB_REPO, docName, 'working…'].filter(Boolean).concat('viva').join(' · ');
+}
+
+// Turn-state colors for the inline data: URI favicon — no network fetch,
+// mirroring the CSS custom properties for the same states (--acc "your
+// turn"/boot, --fact "processing", --machine "done") rather than inventing a
+// second palette. Swaps the <link>'s href in place; setTabTitle's sibling.
+const FAVICON_COLOR = { turn: '2946c4', processing: 'a06a12', done: '0c7f6b' };
+function setTabFavicon(state) {
+  const color = FAVICON_COLOR[state] || FAVICON_COLOR.turn;
+  const link = document.getElementById('favicon-link');
+  if (!link) return;
+  link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23" + color + "'/%3E%3C/svg%3E";
 }
 
 /* Render verbatim markdown into el. Falls back to raw monospace text if
@@ -7755,6 +7784,11 @@ function connectSSE() {
     clearRoundRefused();  // a new submit is in flight; the refused round is history
     closeRecap();       // the review it recapped is gone from under it
     closePrefsPanel();  // ditto — no full-screen backdrop survives a view swap
+    // Retitle the instant the round is submitted, before the agent's response
+    // arrives — otherwise the tab keeps showing the previous "your turn" REV
+    // badge while the agent is actually working (#172).
+    setProcessingTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null);
+    setTabFavicon('processing');
     renderProcessingView();
     el('review-view').style.display     = 'none';
     el('qa-view').style.display         = 'none';
@@ -7791,6 +7825,7 @@ function connectSSE() {
     closeRecap();        // a stale grid must never sit over a fresh round's cards
     closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
     REVIEW_DATA       = data;
+    TAB_REPO          = data.repo || null;   // a qa→review hand-off carries it too (#172)
     // A qa → review hand-off (#109) lands here too — the qa session this tab
     // may have been showing is done; drop its state so leftover QA_DATA/
     // qState.active can't be picked up by qa-branch logic (keydown handler,
@@ -7807,6 +7842,7 @@ function connectSSE() {
     el('round-badge').textContent = String(data.round).padStart(2, '0');
     const rev = 'REV ' + String(data.round).padStart(2, '0');
     setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));
+    setTabFavicon('turn');
     el('review-cards').innerHTML  = '';
     initReview();
     el('processing-view').style.display = 'none';
@@ -7844,6 +7880,7 @@ function connectSSE() {
     el('qa-view').style.display         = 'none';
     el('complete-view').style.display   = '';
     setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');
+    setTabFavicon('done');
     const r   = data.rounds_total;
     const s   = data.sections_total;
     const rev = data.sections_revised != null ? data.sections_revised : null;
@@ -8104,6 +8141,7 @@ function bootReviewMode(data, modeWord, docFallback) {
   setDocTitleBlock(data, modeWord, docFallback);
   el('round-badge').textContent = String(data.round).padStart(2, '0');
   setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));
+  setTabFavicon('turn');
   el('review-view').style.display = '';
   initReview();
   connectSSE();
@@ -8123,6 +8161,7 @@ Promise.all([
   fetch('/preferences').then(r => r.json()).catch(() => []),
 ])
   .then(([data, prefs]) => {
+    TAB_REPO    = data.repo || null;   // set once at boot, every mode (#172)
     PREFS_DATA  = Array.isArray(prefs) ? prefs : [];
     PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));
     // Ships hidden (same treatment as the confidence sort toggle,
@@ -8174,6 +8213,7 @@ Promise.all([
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
       el('qa-count-badge').textContent  = String(data.questions.length);
       setTabTitle(data.context || 'brainstorm');
+      setTabFavicon('turn');
       // Same page cap as the review print: a column that holds a measure plus
       // a margin, and no wider. See `.mode-doc, .mode-qa` in the stylesheet.
       document.body.classList.add('mode-qa');
@@ -8558,7 +8598,8 @@ class Handler(BaseHTTPRequestHandler):
                 data_snapshot = _input_data
                 ledger_snapshot = list(_ledger)
             body = json.dumps({**_with_revision_counts(data_snapshot, _viva_dir),
-                               "ledger": ledger_snapshot}).encode()
+                               "ledger": ledger_snapshot,
+                               "repo": _viva_dir.parent.name}).encode()
             self._send(200, "application/json", body)
         elif path == "/preferences":
             # Every preference, every status, label-sorted — the in-page
@@ -8585,6 +8626,12 @@ class Handler(BaseHTTPRequestHandler):
                         _sse_clients.remove(self.wfile)
                     except ValueError:
                         pass
+        elif path == "/favicon.ico":
+            # Purely so a browser's automatic favicon.ico probe doesn't
+            # 404-log-spam; the actual tab icon is the inline data: URI
+            # `<link rel="icon">` in HTML's <head>, never this route.
+            self.send_response(204)
+            self.end_headers()
         else:
             self._error(404, "not found")
 
@@ -8749,7 +8796,8 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"viva · hand-off qa → review · {_url}", flush=True)
             self._send(200, "application/json", b'{"ok":true}')
             _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
-                                "ledger": ledger_snapshot})
+                                "ledger": ledger_snapshot,
+                                "repo": _viva_dir.parent.name})
         elif path == "/complete":
             length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
             if length is None:
