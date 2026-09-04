@@ -2,8 +2,8 @@
 """viva's review-loop driver — the bookkeeping half of the launch → wait → act
 → rewrite loop, so SKILL.md can carry judgment work only.
 
-Seven subcommands: `start`, `annotate`, `arm`, `wait`, `rearm`, `finish`,
-`abandon`. Issues: #104, #102, #103, #125.
+Eight subcommands: `interview`, `start`, `annotate`, `arm`, `wait`, `rearm`,
+`finish`, `abandon`. Issues: #104, #102, #103, #125, #179.
 
 Three rules this file exists to keep:
   * The agent never types a round number. Every subcommand derives it from disk.
@@ -17,6 +17,7 @@ Three rules this file exists to keep:
 """
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,18 @@ def run_or_die(cmd, what: str, recovery: str = "") -> None:
     if run(cmd).returncode != 0:
         tail = f" {recovery}" if recovery else ""
         die(f"{what} failed: {' '.join(str(c) for c in cmd)}.{tail}")
+
+
+def run_stdin_or_die(cmd, text: str, what: str, recovery: str = "") -> str:
+    """`run_or_die` for a sibling that reads its input on stdin and answers on
+    stdout — a bundle into a check, a sidecar into `annotate.py`."""
+    proc = run(cmd, input=text, capture_output=True, text=True)
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip()
+        tail = f" {recovery}" if recovery else ""
+        die(f"{what} failed: {' '.join(str(c) for c in cmd)}"
+            + (f" — {err}" if err else "") + f".{tail}")
+    return proc.stdout
 
 
 # ── round derivation — the counter nobody holds ───────────────────────────────
@@ -212,6 +225,160 @@ def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
     return None
 
 
+def _is_interview(payload: dict) -> bool:
+    """A qa server serves `questions` and never `sections` — the one shape
+    `start --handoff` may push a round into."""
+    return "questions" in payload
+
+
+def _preflight_no_live_session(viva: Path) -> None:
+    """Refuse to clear over a session that may still be live.
+
+    Two cases wear one file, and they take opposite recoveries — so ask the
+    server rather than guessing from the stat. Live: the human already has the
+    tab, and telling them to delete the file that points at it is how a running
+    review (or the interview `/viva-write` left open) gets orphaned. Not
+    answering: the `finally` that unlinks this never ran, and deleting it is
+    exactly right."""
+    if not (viva / "server.url").exists():
+        return
+    base = server_url(viva)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    if payload is not None:
+        if _is_interview(payload):
+            die(f"an interview is already open at {base} — `loop.py start "
+                f"--handoff` hands a round to that tab; `loop.py abandon` "
+                f"ends it.")
+        die(f"a session is already open at {base} — that tab is the live "
+            f"review. Finish it there, or `loop.py abandon`, before "
+            f"starting another.")
+    # `server_url` is None for an empty file, which is still a collision.
+    where = f" ({base})" if base else ""
+    die(f"{viva}/server.url exists but nothing is answering{where} — a "
+        f"prior session was killed without cleaning up. Delete the file, "
+        f"then re-run.")
+
+
+def _clear_state(viva: Path, keep_server_url: bool = False,
+                 include_answers: bool = False,
+                 include_attachments: bool = True) -> None:
+    """The session state clear (CLAUDE.md, State lifecycle). `preferences.json`
+    is the one survivor. `start` runs it whole. `start --handoff` keeps
+    `server.url` — the interview server that will receive the round owns it —
+    and `attachments/`, because the interview's answers may cite files there.
+    `interview` adds `answers.json`, which `start` must never touch: a hand-off
+    `start` runs while the draft written from those answers is still the
+    agent's source."""
+    for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
+        p.unlink()
+    names = ["open-notes.json"]
+    if not keep_server_url:
+        names.append("server.url")
+    if include_answers:
+        names.append("answers.json")
+    for name in names:
+        (viva / name).unlink(missing_ok=True)
+    if include_attachments:
+        # Attachment filenames are deterministic, so a surviving directory
+        # silently re-points a prior ledger's citations at a later session's
+        # images.
+        shutil.rmtree(viva / "attachments", ignore_errors=True)
+
+
+def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
+    """Launch `server.py` detached and return its base URL once `server.url`
+    appears. Both of the child's streams go to `.viva/server.log`: an inherited
+    stdout is held open by the grandchild, so a caller piping this driver would
+    hang in `communicate()` until the server itself exited."""
+    log = viva / "server.log"
+    with log.open("wb") as logfh:
+        proc = subprocess.Popen(
+            [str(sys.executable), str(SERVER), "--mode", mode,
+             "--input", str(inp), "--output", str(out)],
+            stdout=logfh, stderr=logfh,
+        )
+    for _ in range(_POLL_TRIES):
+        if (viva / "server.url").exists():
+            break
+        if proc.poll() is not None:
+            # The headless contract documents a one-line startup error shape;
+            # discarding it made every launch failure look alike.
+            tail = log.read_text().strip().splitlines()
+            why = tail[-1] if tail else "no output"
+            die(f"server exited during startup ({why}). Full log: {log}")
+        time.sleep(_POLL_INTERVAL)
+    base = server_url(viva)
+    if not base:
+        proc.kill()
+        die(f"server start timed out — no server.url appeared. Log: {log}")
+    return base
+
+
+# A bundle's `checks[]` name producers by the mechanical mapping
+# `<name with - as _>.py` (CLAUDE.md, headings_present.py). A repo-committed
+# `.viva-types/` bundle is caller input that becomes a path, so the name is
+# shape-checked before it is joined to anything.
+_CHECK_NAME = re.compile(r"^[a-z0-9-]+$")
+
+
+def _check_script(name: str) -> Path:
+    return SCRIPTS / (name.replace("-", "_") + ".py")
+
+
+def _validate_checks(bundle: dict, fatal: bool = True) -> None:
+    """Every check a bundle names must be a script this plugin ships — refused
+    beside `resolve_doc_type`, before any state is cleared, for the same reason
+    an unknown type is: a name that resolves to nothing would run the round at
+    a depth whose checks never ran, silently."""
+    for name in bundle.get("checks") or []:
+        if not isinstance(name, str) or not _CHECK_NAME.match(name):
+            why = f"type {bundle.get('name')!r} names an unusable check {name!r}"
+        elif not _check_script(name).is_file():
+            why = (f"type {bundle.get('name')!r} names check {name!r}, but "
+                   f"{_check_script(name)} does not exist — the round would run "
+                   f"at a depth whose checks never ran")
+        else:
+            continue
+        if fatal:
+            die(why)
+        warn(why)
+
+
+def _run_bundle_checks(bundle: dict, round_file: Path) -> int:
+    """Run the type's mechanical checks and merge their flags; return the count.
+
+    Pre-arm by construction — this runs inside `start`, between the parse and
+    every branch that could arm, so `annotate`'s already-armed guard has nothing
+    to protect here and `annotate.py` is called directly. The producer seam that
+    follows is for the judgment producers (confidence, preferences), which are
+    the agent's to run."""
+    flags = []
+    for name in bundle.get("checks") or []:
+        script = _check_script(name)
+        if not script.is_file():          # the resume path warned rather than died
+            continue
+        out = run_stdin_or_die(
+            [sys.executable, script, "--input", round_file, "--bundle", "-"],
+            json.dumps(bundle), f"check {name!r}",
+            f"Round file {round_file} is parsed but not armed; fix the check "
+            f"and re-run `loop.py start`.")
+        try:
+            emitted = json.loads(out or "[]")
+        except ValueError:
+            die(f"check {name!r} emitted non-JSON — see "
+                f"{REFERENCES / 'producers.md'}")
+        if not isinstance(emitted, list):
+            die(f"check {name!r} must emit a JSON list of flags")
+        flags += emitted
+    if flags:
+        run_stdin_or_die(
+            [sys.executable, SCRIPTS / "annotate.py",
+             "--input", round_file, "--annotations", "-"],
+            json.dumps(flags), "check merge",
+            f"{round_file} is unchanged on failure.")
+    return len(flags)
+
+
 def _seam_stop(round_no: int, round_file: Path, why: str) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
     print("viva-loop: run your producer, then `loop.py annotate --sidecar "
@@ -225,6 +392,51 @@ def _seam_stop(round_no: int, round_file: Path, why: str) -> int:
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────
+def cmd_interview(args) -> int:
+    """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`, block
+    for the answers, print them. Never `/complete` — the hand-off reuses this
+    process, and `start --handoff` + `arm` is what ends the interview."""
+    viva = Path(args.viva_dir)
+    qa_in = Path(args.input)
+    if not qa_in.exists():
+        die(f"qa-input not found: {qa_in}")
+    _preflight_no_live_session(viva)
+    viva.mkdir(parents=True, exist_ok=True)
+    answers = viva / "answers.json"
+    # `start`'s clear plus the answers: a stale `answers.json` would satisfy the
+    # wait below before the human typed a word.
+    _clear_state(viva, include_answers=True)
+    base = _launch_server(viva, "qa", qa_in, answers)
+    # Flushed: this process now blocks on human time, and whoever launched it
+    # needs the URL before that, not after.
+    print(f"viva-loop: interview open · {base}", flush=True)
+
+    # Same liveness contract as `wait`: never block on a server that is gone.
+    while not answers.exists():
+        live = server_url(viva)
+        if not live:
+            die(f"the interview server is gone ({viva}/server.url disappeared) "
+                f"and no answers were written. Re-run `loop.py interview "
+                f"--input {qa_in}`.", 2)
+        if probe_input(live) is None:
+            die(f"the interview server at {live} is not answering and no "
+                f"answers were written. Delete {viva}/server.url, then re-run "
+                f"`loop.py interview --input {qa_in}`.", 2)
+        time.sleep(_WAIT_INTERVAL)
+
+    # The answers verbatim (the server writes them atomically, so existence is
+    # completeness), then one classification line LAST — the agent routes on
+    # the token, never on its own scan.
+    text = answers.read_text()
+    print(text, end="" if text.endswith("\n") else "\n")
+    try:
+        early = bool(json.loads(text).get("submitted_early"))
+    except (ValueError, AttributeError):
+        early = False
+    print(f"=== interview: {'submitted-early' if early else 'answered'} ===")
+    return 0
+
+
 def cmd_start(args) -> int:
     viva = Path(args.viva_dir)
     doc = Path(args.doc)
@@ -232,37 +444,48 @@ def cmd_start(args) -> int:
         die(f"doc not found: {doc}")
 
     bundle = resolve_doc_type(args.doc_type) if args.doc_type else None
+    if bundle:
+        _validate_checks(bundle)
 
     # Pre-flight guard. `cmd_start`'s own clear below deletes the round files
     # and `server.url`; without this check it would do that to a *live* session,
     # orphaning a running server with the reviewer's tab still attached. The
-    # dependency is file-local — the clear is thirty lines down, not in prose.
-    if (viva / "server.url").exists():
-        # Two cases wearing one file, and they take opposite recoveries — so
-        # ask the server rather than guessing from the stat. Live: the human
-        # already has the tab, and telling them to delete the file that points
-        # at it is how a running review (or the interview server `/viva-write`
-        # leaves behind) gets orphaned. Not answering: the `finally` that
-        # unlinks this never ran, and deleting it is exactly right.
+    # dependency is file-local — the clear is forty lines down, not in prose.
+    #
+    # `--handoff` inverts it: the live server is the point. It is the interview
+    # `/viva-write` ran, and the round parsed here is armed INTO that process so
+    # the same tab reflows from Q&A cards to section cards. Explicit, never
+    # inferred from the payload — an abandoned interview must not quietly become
+    # the next `/viva-review`'s tab.
+    if args.handoff:
         base = server_url(viva)
-        if base and probe_input(base, timeout=_PREFLIGHT_TIMEOUT) is not None:
-            die(f"a session is already open at {base} — that tab is the live "
-                f"review. Finish it there, or `loop.py abandon`, before "
-                f"starting another.")
-        # `server_url` is None for an empty file, which is still a collision.
-        where = f" ({base})" if base else ""
-        die(f"{viva}/server.url exists but nothing is answering{where} — a "
-            f"prior session was killed without cleaning up. Delete the file, "
-            f"then re-run.")
+        if not base:
+            die(f"--handoff needs a live interview to hand off to, and "
+                f"{viva}/server.url does not exist. Run `loop.py interview "
+                f"--input .viva/qa-input.json` first, or drop --handoff.")
+        payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT)
+        if payload is None:
+            die(f"--handoff needs a live interview at {base}, but nothing is "
+                f"answering there. Delete {viva}/server.url, then re-run "
+                f"without --handoff.")
+        if not _is_interview(payload):
+            die(f"--handoff needs a live interview at {base}; that server is "
+                f"serving a review session (round {payload.get('round', '?')}). "
+                f"Finish it there, or `loop.py abandon`.")
+    else:
+        _preflight_no_live_session(viva)
 
     viva.mkdir(parents=True, exist_ok=True)
 
     # Resume branch: a doc that already carries a sign-off ledger, with the
     # prior session's finishing round still on disk. Protect that pair OUTSIDE
-    # the clear glob before clearing, or carry-forward dies with it.
+    # the clear glob before clearing, or carry-forward dies with it. Never under
+    # `--handoff`: the doc was drafted minutes ago in this same session, so a
+    # ledger heading in it is a false positive, and any round files on disk
+    # belong to the interview's session, not to a prior sign-off.
     prior_in = prior_out = None
     prior_split_on = prior_doc_type = None
-    if schema.has_revision_history(doc.read_text()):
+    if not args.handoff and schema.has_revision_history(doc.read_text()):
         n = current_round(viva)
         if n:
             src_in, src_out = round_files(viva, n)
@@ -290,15 +513,11 @@ def cmd_start(args) -> int:
                 # `final` pass would add a conjunct nobody asked for. Name it
                 # again with `--pass` if the new session wants it.
 
-    for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
-        p.unlink()
-    for name in ("server.url", "open-notes.json"):
-        (viva / name).unlink(missing_ok=True)
     # Everything under .viva/ except preferences.json is disposable and reset
-    # each session (CLAUDE.md). Attachment filenames are deterministic, so a
-    # surviving directory silently re-points a prior ledger's citations at a
-    # later session's images.
-    shutil.rmtree(viva / "attachments", ignore_errors=True)
+    # each session (CLAUDE.md). A hand-off keeps the two things the interview
+    # still owns: its `server.url` and the attachments its answers cite.
+    _clear_state(viva, keep_server_url=args.handoff,
+                 include_attachments=not args.handoff)
 
     split_on = args.split_on if args.split_on is not None else prior_split_on
     doc_type = args.doc_type if args.doc_type is not None else prior_doc_type
@@ -308,6 +527,8 @@ def cmd_start(args) -> int:
         # the producers nobody is told about never run. Non-fatal: the scratch
         # pair above is already on disk, and dying here would strand it.
         bundle = resolve_doc_type(doc_type, fatal=False)
+        if bundle:
+            _validate_checks(bundle, fatal=False)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
            "--output", viva / "review-input-r1.json", "--round", "1",
            "--doc-file", args.doc]
@@ -334,13 +555,18 @@ def cmd_start(args) -> int:
             prior_in.unlink(missing_ok=True)
             prior_out.unlink(missing_ok=True)
 
+    round_file = viva / "review-input-r1.json"
     if bundle:
-        # The type's check set, named once where it is resolved — the agent
-        # runs the producers, and a check nobody is told about never runs.
+        # The type's check set, named once where it is resolved — and RUN here,
+        # before any branch that could arm. A check nobody is told about never
+        # runs; a check the driver owns cannot be forgotten, and a typed round
+        # with no flags to answer would otherwise close on the base alone.
         checks = ", ".join(bundle.get("checks") or []) or "none"
         print(f"viva-loop: doc type {bundle['name']} · checks: {checks}")
+        if bundle.get("checks"):
+            merged = _run_bundle_checks(bundle, round_file)
+            print(f"viva-loop: checks run: {checks} · {merged} flag(s) merged")
 
-    round_file = viva / "review-input-r1.json"
     if args.parse_only:
         return _seam_stop(1, round_file, "--parse-only")
     # The producer seam. A standing preference means the preference producer
@@ -395,39 +621,25 @@ def cmd_arm(args) -> int:
     # server.url on the first poll tick, and print a stale base while the new
     # process binds another port — the orphaned-server failure `start`'s guard
     # exists to prevent, reintroduced one subcommand over.
+    #
+    # Liveness is `probe_input`, never `probe_round`: a live qa server answers
+    # `/input` with an interview payload that has no `round` key, and reading
+    # that as "nothing is answering" is what kept `arm` from handing a round to
+    # the interview `/viva-write` left open (#179).
     base = server_url(viva)
-    if base and probe_round(base) is not None:
+    if base and probe_input(base) is not None:
         payload = load_json(inp)
         payload["output"] = str(out)
         post(base, "/next-round", payload, f"arming round {n}",
-             "Fix the round file and re-run `loop.py arm`.")
+             f"Fix the round file and re-run `loop.py arm` — or, if that URL "
+             f"is not a viva server, delete {viva}/server.url.")
         print(f"viva-loop: round {n} armed · {base}")
         return 0
     if base:
         die(f"{viva}/server.url names {base}, but nothing is answering there. "
             f"Delete the stale file, then `loop.py start --doc <path>`.")
 
-    log = viva / "server.log"
-    with log.open("wb") as errfh:
-        proc = subprocess.Popen(
-            [str(sys.executable), str(SERVER), "--mode", "review",
-             "--input", str(inp), "--output", str(out)],
-            stdout=subprocess.DEVNULL, stderr=errfh,
-        )
-    for _ in range(_POLL_TRIES):
-        if (viva / "server.url").exists():
-            break
-        if proc.poll() is not None:
-            # The headless contract documents a one-line startup error shape;
-            # discarding it to DEVNULL made every launch failure look alike.
-            tail = log.read_text().strip().splitlines()
-            why = tail[-1] if tail else "no output"
-            die(f"server exited during startup ({why}). Full log: {log}")
-        time.sleep(_POLL_INTERVAL)
-    base = server_url(viva)
-    if not base:
-        proc.kill()
-        die(f"server start timed out — no server.url appeared. Log: {log}")
+    base = _launch_server(viva, "review", inp, out)
     print(f"viva-loop: round {n} armed · {base}")
     return 0
 
@@ -704,6 +916,14 @@ def main() -> int:
                     help="state directory (default: .viva)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    p = sub.add_parser("interview", help="clear state, run the Q&A interview, "
+                                         "print the answers")
+    p.add_argument("--input", required=True, metavar="PATH",
+                   help="the QAInput JSON the caller wrote (references/qa.md). "
+                        "Answers land in .viva/answers.json and on stdout; "
+                        "the server stays up for `start --handoff`.")
+    p.set_defaults(func=cmd_interview)
+
     p = sub.add_parser("start", help="clear state, parse round 1, arm it")
     p.add_argument("--doc", required=True)
     p.add_argument("--split-on", metavar="REGEX",
@@ -737,6 +957,11 @@ def main() -> int:
                         "producer seam. Not the rejected `finish --force`: this "
                         "declines an advisory producer, it never bypasses the "
                         "human gate.")
+    p.add_argument("--handoff", action="store_true",
+                   help="hand round 1 to the live interview at .viva/server.url "
+                        "instead of refusing over it — the /viva-write seam. "
+                        "Requires a live qa session; the round is armed into "
+                        "that same process and its tab reflows in place.")
     p.set_defaults(func=cmd_start)
 
     p = sub.add_parser("annotate", help="merge a producer sidecar into the "

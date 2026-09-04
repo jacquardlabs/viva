@@ -48,9 +48,10 @@ VIVA_DIR=${VIVA_DIR%/server.py}
 
 ## The flow
 
-**type → attach → interview → draft → hand off → rounds → stamp.** Steps 5–7 are
-`/viva`'s loop verbatim, driven by `loop.py`; this skill owns only what comes
-before the hand-off.
+**type → attach → interview → draft → hand off → rounds → stamp.** `loop.py`
+drives every step that is not model work — the interview, the state clear, the
+parse, the type's checks, the hand-off, the rounds, the stamp's ledger. This
+skill owns the attachments, the questions, and the draft.
 
 **1. Resolve the type**
 
@@ -97,36 +98,28 @@ audience and the decision the doc has to carry; every fork the attachments leave
 open; anything a section of the grammar has no material for. Do **not** ask what
 an attachment already states.
 
-```bash
-[ -f .viva/server.url ] && { echo "viva-write: a session may be open at $(cat .viva/server.url 2>/dev/null) — check that tab first. Finish or abandon it there; delete .viva/server.url only if nothing is answering."; exit 1; }
-
-mkdir -p .viva
-rm -f .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json .viva/answers.json
-rm -rf .viva/attachments
-```
-
-That clear is `loop.py start`'s, matched deliberately: `preferences.json` is the
-one survivor (cross-session, per-clone), and `open-notes.json` **must** go — a
-stale store injects a prior session's threads into this session's round 2.
-
 Write `.viva/qa-input.json` (the `QAInput` shape — `references/qa.md` at the
 plugin root is the full contract; `choices`, `recommended_choice`, and
 `grounds` are all optional — `grounds` classifies a `recommended_choice` as
 `sourced`, `inferred`, or `taste`, and `taste` never pairs with an actual
-`recommended_choice`), then launch and wait:
+`recommended_choice`), then run the interview:
 
 ```bash
-python3 "$VIVA_DIR/server.py" --mode qa \
-  --input .viva/qa-input.json --output .viva/answers.json &
-for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
-[ -f .viva/server.url ] || { echo "viva-write: server start failed"; exit 1; }
-
-until [ -f .viva/answers.json ]; do sleep 0.3; done
-cat .viva/answers.json
+mkdir -p .viva
+python3 "$VIVA_DIR/scripts/loop.py" interview --input .viva/qa-input.json
 ```
 
-Issue the wait with a generous timeout (~10 min / 600000ms) — it is human time,
-not computation. `Read` any path in an answer's `attachments`.
+`interview` clears stale state (`loop.py start`'s clear plus `answers.json`;
+`preferences.json` is the one survivor), launches the interview server, prints
+its URL, blocks until the human submits, then prints the answers followed by
+one classification line — `=== interview: answered ===` or
+`=== interview: submitted-early ===`. Route on that line, never on your own
+scan. It **refuses** over a live session, naming the tab's URL; only a URL
+nothing answers on is told to delete the file. It exits non-zero the moment the
+server disappears, so a killed interview ends the wait instead of outliving it.
+
+Issue it with a generous timeout (~10 min / 600000ms) — it is human time, not
+computation. `Read` any path in an answer's `attachments`.
 
 **`submitted_early: true` means the human stopped short**, and the questions
 they skipped are exactly the decisions a draft would otherwise fill from guessed
@@ -137,9 +130,10 @@ and start over. The interview cannot be re-presented on this server: the tab has
 moved to its processing card, and `/next-round` reflows into review cards only.
 
 **Never call `/complete` here.** This server is the one the review round runs on;
-completing it tears the process down out from under the hand-off. The human sits
-on a processing card from their submit until step 5 pushes the round — that wait
-is the drafting, and the card says so on its own after 20s.
+completing it tears the process down out from under the hand-off — `interview`
+does not call it, and neither do you. The human sits on a processing card from
+their submit until step 5 arms the round — that wait is the drafting, and the
+card says so on its own after 20s.
 
 **4. Draft**
 
@@ -168,53 +162,46 @@ drifted.
 **5. Parse, produce, hand off**
 
 ```bash
-python3 "$VIVA_DIR/scripts/parse_sections.py" <doc> \
-  --output .viva/review-input-r1.json --round 1 --doc-file <doc> \
-  --doc-type <type> --pass <bundle.default_pass>
+python3 "$VIVA_DIR/scripts/loop.py" start --doc <doc> --type <type> \
+  --pass <bundle.default_pass> --handoff --parse-only
 ```
 
-`--pass` is not optional here: the bundle's `default_pass` is what makes a type's
-depth real, and a typed session that drops it runs at no depth at all. A
-`checks` default (e.g. `progress-note`) additionally holds the round open until
-every check flag carries a `result`.
+`--handoff` points `start` at the interview still running instead of refusing
+over it: the round it parses is armed **into that process**, so the Q&A cards
+reflow into section cards in the same tab. It keeps the interview's
+`server.url` and never touches `answers.json`. `--pass` is not optional: the
+bundle's `default_pass` is what makes a type's depth real, and a typed session
+that drops it runs at no depth at all. A `checks` default (e.g. `progress-note`)
+additionally holds the round open until every check flag carries a `result`.
 
-Then run the producers — **before the hand-off, never after**. The server reads
-its round once, when it is armed, so a merge into a round it is already serving
-is one the reviewer never sees; `loop.py annotate` refuses that case outright.
-
-```bash
-# one per entry in the bundle's `checks`; the script name is the check name
-# with `-` as `_`
-python3 "$VIVA_DIR/scripts/doc_types.py" <type> \
-| python3 "$VIVA_DIR/scripts/headings_present.py" --input .viva/review-input-r1.json --bundle - \
-| python3 "$VIVA_DIR/scripts/loop.py" annotate --sidecar -
-```
+`start` runs the bundle's `checks` itself, before anything could arm, and prints
+which ran and how many flags it merged. `--parse-only` then holds the seam open
+for the producers only you can run — **before the hand-off, never after**. The
+server reads its round once, when it is armed, so a merge into a round it is
+already serving is one the reviewer never sees; `loop.py annotate` refuses that
+case outright.
 
 You just wrote every section, so emit the **confidence** self-annotation now,
 while the basis for each is still in hand — `sourced` for a fact an attachment
-carried, `inferred` for a call you made. Write the sidecar and merge it the same
-way (`producers.md` has the shape). If the preferences store holds standing
-preferences, run the learned-preference producer too and merge that sidecar —
-this is a write, and a recurring critique is cheaper to apply now than to have
-flagged back at you.
+carried, `inferred` for a call you made. Write the sidecar and merge it with
+`loop.py annotate --sidecar <path>` (`producers.md` has the shape). If the
+preferences store holds standing preferences, run the learned-preference
+producer too and merge that sidecar — this is a write, and a recurring critique
+is cheaper to apply now than to have flagged back at you.
 
 Then hand the round to the running server:
 
 ```bash
-BASE=$(cat .viva/server.url)
-python3 -c "import json; d=json.load(open('.viva/review-input-r1.json')); d['output']='.viva/review-r1.json'; print(json.dumps(d))" \
-  | curl -s -X POST "$BASE/next-round" -H "Content-Type: application/json" --data-binary @-
+python3 "$VIVA_DIR/scripts/loop.py" arm
 ```
 
-Same process, same `server.url`, same tab — the Q&A cards reflow into section
-cards in place. `output` **must** be `.viva/review-r1.json`, distinct from the
-Q&A output: reusing `.viva/answers.json` lets the first review submit overwrite
-the answers you drafted from.
+Same process, same `server.url`, same tab. `arm` names the verdict path itself,
+distinct from the Q&A output — reusing `answers.json` would let the first
+review submit overwrite the answers you drafted from, and you type neither.
 
 **6. Editorial rounds**
 
-From here `loop.py` drives, exactly as in `/viva` — it derives the round number
-from disk, so you never type one:
+`loop.py` derives the round number from disk, so you never type one:
 
 ```bash
 python3 "$VIVA_DIR/scripts/loop.py" wait     # ~10 min timeout; human review time
@@ -302,11 +289,13 @@ prints the absolute path of whichever file documents the step you have reached:
 ```
 .viva/
 ├── qa-input.json          ← you write (step 3)
-├── answers.json           ← server writes (step 3)
+├── answers.json           ← `interview` prints and leaves (step 3)
 ├── server.url             ← one server, launched at step 3, torn down at step 7
-├── review-input-r1.json   ← parse_sections writes (step 5), you hand off
+├── review-input-r1.json   ← `start --handoff` writes (step 5), `arm` hands off
 ├── review-r1.json         ← the verdicts the server writes back
 ├── open-notes.json        ← threads carried across rounds
 ├── preferences.json       ← learned critiques; survives the state clear
 └── attachments/           ← image attachments, written during /submit
 ```
+
+`loop.py` writes and reads all of this; you name none of it.

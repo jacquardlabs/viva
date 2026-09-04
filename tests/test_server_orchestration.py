@@ -23,13 +23,12 @@ suggested edit is applied verbatim, and every `references/` file is one some
 reader is handed the path to.
 
 **The bookkeeping rule is scoped, and the scope is the point (#170).** `loop.py`
-drives doc review only, so only `/viva-review`'s branch A is held to it.
-`/viva-review` branch B (hunks — `parse_diff.py` and `--mode diff`, neither of
-which the driver knows) and `/viva-write`'s pre-hand-off steps (`start` cannot
-run against the interview's own live server) carry that bash deliberately. Those
-two are enumerated below rather than exempted by a wildcard, so a THIRD skill
-growing its own loop fails this test — and when #179 extends the driver, the
-enumeration is the list to empty.
+drives doc review and the intake interview, so `/viva-review`'s branch A and all
+of `/viva-write` are held to it. `/viva-review` branch B (hunks — `parse_diff.py`
+and `--mode diff`, neither of which the driver knows) carries that bash
+deliberately. It is enumerated below rather than exempted by a wildcard, so a
+SECOND skill growing its own loop fails this test — and when #179's remaining
+half extends the driver to hunks, the enumeration is the list to empty.
 """
 import ast
 import contextlib
@@ -40,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -488,8 +488,8 @@ def check_no_subcommand_takes_a_round() -> None:
     listed = re.search(r"\{([a-z,]+)\}", top.stdout)
     assert listed, "could not read the subcommand list from --help:\n" + top.stdout
     names = listed.group(1).split(",")
-    assert set(names) >= {"start", "annotate", "arm", "wait", "rearm",
-                          "finish", "abandon"}, names
+    assert set(names) >= {"interview", "start", "annotate", "arm", "wait",
+                          "rearm", "finish", "abandon"}, names
 
     for name in names:
         h = subprocess.run([sys.executable, str(LOOP), name, "--help"],
@@ -497,7 +497,8 @@ def check_no_subcommand_takes_a_round() -> None:
         assert h.returncode == 0, h.stderr
         assert "--round" not in h.stdout, \
             "`%s` exposes a round argument — the round is derived, never passed" % name
-        required = [flag for flag in ("--doc", "--sidecar") if flag in h.stdout]
+        required = [flag for flag in ("--doc", "--sidecar", "--input")
+                    if flag in h.stdout]
         argv = [sys.executable, str(LOOP), "--viva-dir", str(sandbox), name]
         for flag in required:
             argv += [flag, "/nonexistent/for-parse-only"]
@@ -558,13 +559,13 @@ def check_skill_carries_no_bookkeeping_bash() -> None:
     print("  ok  check_skill_carries_no_bookkeeping_bash")
 
 
-def check_only_the_two_undriven_flows_carry_their_own_loop() -> None:
+def check_only_the_undriven_flow_carries_its_own_loop() -> None:
     """The scope of the rule above, asserted as a closed set.
 
-    Two flows drive themselves because `loop.py` cannot reach them yet, and each
-    must say which one it is — an undocumented third skill growing its own loop
-    is the drift this catches. When #179 extends the driver, this check is the
-    list to empty.
+    One flow drives itself because `loop.py` cannot reach it yet, and it must
+    say so — an undocumented second skill growing its own loop is the drift this
+    catches. `/viva-write` left this set when `interview` and `start --handoff`
+    landed (#179); branch B leaves it when the driver learns `parse_diff.py`.
     """
     undriven = {}
     for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
@@ -578,18 +579,15 @@ def check_only_the_two_undriven_flows_carry_their_own_loop() -> None:
         if hits:
             undriven[skill_md] = sorted(set(hits))
 
-    assert set(undriven) == {SKILL, WRITE_SKILL}, (
+    assert set(undriven) == {SKILL}, (
         "skills carrying their own loop changed — expected exactly "
-        "%s (branch B) and %s, got %s"
-        % (SKILL.parent.name, WRITE_SKILL.parent.name,
-           sorted(p.parent.name for p in undriven)))
-    # Each must name the reason, so the exemption is a documented constraint
+        "%s (branch B), got %s"
+        % (SKILL.parent.name, sorted(p.parent.name for p in undriven)))
+    # It must name the reason, so the exemption is a documented constraint
     # rather than an accident nobody notices.
     assert "#179" in SKILL.read_text(), (
         "%s must name the issue that would let the driver take branch B" % SKILL)
-    assert "loop.py start" in WRITE_SKILL.read_text(), (
-        "%s must say which driver subcommand it cannot use, and why" % WRITE_SKILL)
-    print("  ok  check_only_the_two_undriven_flows_carry_their_own_loop")
+    print("  ok  check_only_the_undriven_flow_carries_its_own_loop")
 
 
 def check_rewrite_step_applies_standing_preferences() -> None:
@@ -739,10 +737,12 @@ def check_references_are_reachable() -> None:
 
 
 @contextlib.contextmanager
-def stub_input_server(payload: dict):
+def stub_input_server(payload: dict, posts: list = None):
     """A loopback server answering `GET /input` with `payload` — the smallest
     thing `loop.py`'s liveness probe can find at the other end of a
-    `server.url`. Yields its base URL."""
+    `server.url`. Every POST body is appended to `posts` (when given) and
+    answered `{"ok":true}`, so a test can see what `arm` hands over. Yields its
+    base URL."""
     body = json.dumps(payload).encode()
 
     class H(BaseHTTPRequestHandler):
@@ -752,6 +752,18 @@ def stub_input_server(payload: dict):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def do_POST(self):                    # noqa: N802
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n) if n else b""
+            if posts is not None:
+                posts.append((self.path, json.loads(raw or b"{}")))
+            ok = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(ok)))
+            self.end_headers()
+            self.wfile.write(ok)
 
         def log_message(self, *a):            # keep the test output clean
             pass
@@ -802,7 +814,8 @@ def check_start_refuses_over_a_live_session() -> None:
         assert (viva / "server.url").exists(), \
             "start must not delete the session's server.url"
 
-        # 2. A live server — point at the tab, never at `rm`.
+        # 2. A live server — point at the tab, never at `rm`. An interview is
+        #    named as one, with the flag that would continue it.
         with stub_input_server({"mode": "qa", "questions": []}) as base:
             (viva / "server.url").write_text(base + "\n")
             r = loop(viva, td, "start", "--doc", str(doc))
@@ -811,24 +824,198 @@ def check_start_refuses_over_a_live_session() -> None:
                 "a live collision must name the URL of the open tab: " + r.stderr
             assert "Delete the file" not in r.stderr, \
                 "deleting a live session's server.url orphans the server"
+            assert "--handoff" in r.stderr, \
+                "a live interview must be named as one, with the way in: " + r.stderr
             assert not (viva / "review-input-r1.json").exists(), r.stderr
             assert (viva / "server.url").exists()
     print("  ok  check_start_refuses_over_a_live_session")
 
 
-def check_undriven_guards_point_at_the_live_tab() -> None:
-    """#174 fixed the collision message in `loop.py`, which drives exactly one
-    of the three flows that own this guard. `/viva-write`'s pre-hand-off clear
-    and `/viva-review`'s branch B carry their own bash on purpose (CLAUDE.md;
-    #179 empties them), so the driver's fix cannot reach them — and
-    `/viva-write` is the *likeliest* collision of the three, since its own
-    interview qa server writes the file it is about to stat.
+def check_start_handoff_refuses_without_an_interview() -> None:
+    """`--handoff` is explicit and verified, never inferred from state: it
+    needs a live server serving an interview. No `server.url`, a dead one, and
+    a live REVIEW session are three distinct refusals, and none of them parses
+    a round or touches the file."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n")
 
-    They cannot probe without growing the bash #179 exists to shrink, so they
-    do the half that needs no round-trip: name the URL, and make deleting the
-    file conditional on nothing answering there. What is pinned is that no copy
-    reverts to advising `rm` first."""
-    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        r = loop(viva, td, "start", "--doc", str(doc), "--handoff")
+        assert r.returncode != 0 and "server.url does not exist" in r.stderr, r.stderr
+        assert "loop.py interview" in r.stderr, "must name the step that was skipped"
+
+        (viva / "server.url").write_text("http://127.0.0.1:1\n")
+        r = loop(viva, td, "start", "--doc", str(doc), "--handoff")
+        assert r.returncode != 0 and "nothing is answering" in r.stderr, r.stderr
+        assert (viva / "server.url").exists()
+
+        with stub_input_server({"mode": "review", "round": 2, "sections": []}) as base:
+            (viva / "server.url").write_text(base + "\n")
+            r = loop(viva, td, "start", "--doc", str(doc), "--handoff")
+            assert r.returncode != 0, "a review session is not an interview"
+            assert "review session" in r.stderr and "round 2" in r.stderr, r.stderr
+            assert (viva / "server.url").read_text().strip() == base
+        assert not (viva / "review-input-r1.json").exists(), \
+            "no refusal may leave a parsed round behind"
+    print("  ok  check_start_handoff_refuses_without_an_interview")
+
+
+def check_arm_hands_off_into_a_live_interview() -> None:
+    """`arm` gates its POST branch on liveness (`probe_input`), not on the round
+    the server reports (`probe_round`): a qa payload carries no `round` key, and
+    reading that as "nothing is answering" is what kept the driver out of
+    `/viva-write`'s hand-off. The stub answers `/input` as an interview would
+    and records what `arm` POSTs to `/next-round`."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
+        parse(doc, viva / "review-input-r1.json", 1, viva)
+        posts = []
+        with stub_input_server({"mode": "qa", "questions": []}, posts) as base:
+            (viva / "server.url").write_text(base + "\n")
+            r = loop(viva, td, "arm")
+            assert r.returncode == 0, r.stderr
+            assert f"round 1 armed · {base}" in r.stdout, r.stdout
+        assert [p for p, _ in posts] == ["/next-round"], posts
+        body = posts[0][1]
+        parsed = json.loads((viva / "review-input-r1.json").read_text())
+        assert [s["id"] for s in body["sections"]] == \
+            [s["id"] for s in parsed["sections"]], body
+        assert body["output"].endswith("review-r1.json"), \
+            "the verdict path travels in the body, distinct from the qa output"
+    print("  ok  check_arm_hands_off_into_a_live_interview")
+
+
+def check_interview_refuses_over_a_live_session() -> None:
+    """`interview` inherits `start`'s pre-flight, both branches: a live server
+    names its URL and never advises `rm`; a dead `server.url` is told to delete
+    the file. Neither clears a thing."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        qa_in = viva / "qa-input.json"
+        qa_in.write_text(json.dumps({"mode": "qa", "context": "c", "questions": [
+            {"id": "q1", "text": "Which?", "choices": ["a", "b"]}]}))
+        (viva / "answers.json").write_text("{}")
+
+        with stub_input_server({"mode": "review", "round": 1, "sections": []}) as base:
+            (viva / "server.url").write_text(base + "\n")
+            r = loop(viva, td, "interview", "--input", str(qa_in))
+            assert r.returncode != 0 and base in r.stderr, r.stderr
+            assert "Delete the file" not in r.stderr, r.stderr
+        assert (viva / "answers.json").exists(), "a refusal must not clear"
+
+        (viva / "server.url").write_text("http://127.0.0.1:1\n")
+        r = loop(viva, td, "interview", "--input", str(qa_in))
+        assert r.returncode != 0 and "Delete the file" in r.stderr, r.stderr
+        assert (viva / "answers.json").exists()
+    print("  ok  check_interview_refuses_over_a_live_session")
+
+
+def check_interview_exits_2_when_the_server_dies() -> None:
+    """The interview wait was `until [ -f .viva/answers.json ]` — the same
+    dead-server infinite poll #103 fixed for review. The driver's form exits 2
+    the moment `server.url` is gone, exactly as `wait` does."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        qa_in = viva / "qa-input.json"
+        qa_in.write_text(json.dumps({"mode": "qa", "context": "c", "questions": [
+            {"id": "q1", "text": "Which?", "choices": ["a", "b"]}]}))
+        proc = subprocess.Popen(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva),
+             "interview", "--input", str(qa_in)],
+            cwd=str(td), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        base = ""
+        try:
+            # The driver flushes its URL line once its own startup poll has seen
+            # `server.url`; reading it is what makes the delete below land AFTER
+            # that poll rather than racing it.
+            first = proc.stdout.readline()
+            assert "interview open · " in first, \
+                "the URL line must be flushed before the block: " + first
+            base = first.split("interview open · ", 1)[1].strip()
+            assert (viva / "server.url").read_text().strip() == base
+            # The only deterministic kill: the driver detached the server and
+            # holds no handle to it. The orphan is reaped below.
+            (viva / "server.url").unlink()
+            out, err = proc.communicate(timeout=15)
+            assert proc.returncode == 2, (proc.returncode, err)
+            assert "interview server is gone" in err, err
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            if base:
+                try:
+                    post(base, "/abandon", {})
+                except Exception:             # already down — fine
+                    pass
+    print("  ok  check_interview_exits_2_when_the_server_dies")
+
+
+def check_start_runs_the_bundles_checks() -> None:
+    """A type's `checks[]` run inside `start`, between the parse and every
+    branch that could arm — a check nobody is told about never runs, and a
+    typed round with no flags to answer closes on the base alone. The name is
+    validated beside the type, BEFORE the clear, so a repo bundle naming a
+    check this plugin does not ship is refused with the prior state intact."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        viva = td / ".viva"
+        viva.mkdir()
+        doc = td / "d.md"
+        # The design-doc grammar minus every heading: one flag per gap.
+        doc.write_text("# T\n\n## Problem & persona\n\np\n")
+        r = loop(viva, td, "start", "--doc", str(doc), "--type", "design-doc",
+                 "--parse-only")
+        assert r.returncode == 0, r.stderr
+        assert "checks run: headings-present" in r.stdout, r.stdout
+        assert "flag(s) merged" in r.stdout, r.stdout
+        data = json.loads((viva / "review-input-r1.json").read_text())
+        flags = [a for s in data["sections"] for a in s.get("annotations", [])
+                 if a.get("kind") == "headings-present"]
+        assert flags and all("result" not in a for a in flags), flags
+        assert not (viva / "server.url").exists(), "--parse-only still stops"
+
+        # A bundle naming a check that does not exist: refused before the clear.
+        (td / ".viva-types").mkdir()
+        (td / ".viva-types" / "bad.json").write_text(json.dumps({
+            "name": "bad", "title": "Bad", "sections": ["A"],
+            "checks": ["no-such-check"], "default_pass": "architecture"}))
+        marker = viva / "review-input-r1.json"
+        before = marker.read_text()
+        r = loop(viva, td, "start", "--doc", str(doc), "--type", "bad")
+        assert r.returncode != 0 and "no-such-check" in r.stderr, r.stderr
+        assert marker.read_text() == before, \
+            "a refused type must not have cleared the prior round"
+    print("  ok  check_start_runs_the_bundles_checks")
+
+
+def check_undriven_guards_point_at_the_live_tab() -> None:
+    """#174 fixed the collision message in `loop.py`. `/viva-review`'s branch B
+    still carries its own bash (CLAUDE.md; #179's remaining half empties it),
+    so the driver's fix cannot reach it. It cannot probe without growing the
+    bash #179 exists to shrink, so it does the half that needs no round-trip:
+    name the URL, and make deleting the file conditional on nothing answering
+    there. What is pinned is that the copy never reverts to advising `rm` first.
+
+    `/viva-write` carries NO guard any more: `loop.py interview` and `start
+    --handoff` own that refusal, probing before they advise — so a guard line
+    reappearing there is the bash creeping back."""
+    write_guards = [ln for ln in WRITE_SKILL.read_text().splitlines()
+                    if "[ -f .viva/server.url ]" in ln]
+    assert not write_guards, \
+        "viva-write must not carry a server.url guard — the driver probes: %r" \
+        % write_guards
+    for skill_md in (SKILL,):
         # `&&` is the collision guard (file present = refuse). The `||` form is
         # the post-launch check that the server wrote its URL at all — inverse
         # test, different message, not this one's business.
@@ -1076,7 +1263,7 @@ def main() -> None:
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     check_skill_carries_no_bookkeeping_bash()
-    check_only_the_two_undriven_flows_carry_their_own_loop()
+    check_only_the_undriven_flow_carries_its_own_loop()
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
     check_skill_applies_suggestions_verbatim()
@@ -1084,6 +1271,11 @@ def main() -> None:
     check_skill_carries_the_decline_rule()
     check_references_are_reachable()
     check_start_refuses_over_a_live_session()
+    check_start_handoff_refuses_without_an_interview()
+    check_arm_hands_off_into_a_live_interview()
+    check_interview_refuses_over_a_live_session()
+    check_interview_exits_2_when_the_server_dies()
+    check_start_runs_the_bundles_checks()
     check_undriven_guards_point_at_the_live_tab()
     check_start_resume_carries_prior_approvals()
     check_start_opens_the_producer_seam()

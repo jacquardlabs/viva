@@ -95,6 +95,12 @@ carried flags. Each flag's `id` is the target section's id from the id→title m
 
 ### Mechanical producers (bundled scripts)
 
+A doc-type bundle's `checks[]` are **driver-run**: `loop.py start --type` runs
+each as `<name with - as _>.py --input <round> --bundle -` with the bundle on
+stdin and merges the flags before the seam, so an agent never runs a bundle
+check by hand. The producers in this table are not bundle checks; they stay
+agent-run through the sidecar contract above.
+
 | Producer | Script | Flags |
 |----------|--------|-------|
 | **Checklist gating** | `checklist.py --input IN [--type spec\|adr\|runbook]` | `error` per required section missing for the doc's type. Type is inferred from the filename/H1 when `--type` is omitted; an untyped doc emits nothing. Missing-section flags land on the **first** card — the integrity check forbids a card for a section that isn't in the doc. |

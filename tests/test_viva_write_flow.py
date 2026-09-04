@@ -1,47 +1,64 @@
 #!/usr/bin/env python3
-"""The `/viva-write` intake seam, end to end (#170).
+"""The `/viva-write` intake seam, end to end (#170, #179).
 
 `/viva-write` is a skill, not a script — but the sequence it prescribes crosses
 four processes and one ordering constraint that is invisible in prose, so the
 sequence itself is what this file pins. Everything below is the SKILL.md's steps
-3–7 run for real: one `server.py --mode qa`, an interview, a draft on disk,
-`parse_sections.py --doc-type --pass`, the type's check producer, `loop.py
-annotate`, the `/next-round` hand-off, then `loop.py wait`/`rearm`/`finish`.
+3–7 run for real, and every step is a driver call: `loop.py interview` (one
+`server.py --mode qa`, answered by the human), a draft on disk, `loop.py start
+--doc --type --pass --handoff --parse-only` (the parse AND the bundle's checks),
+`loop.py annotate` for the judgment producer, `loop.py arm` (the `/next-round`
+hand-off into the same process), then `loop.py wait`/`rearm`/`finish`.
 
-The three properties that would break silently:
+The four properties that would break silently:
 
   1. **`loop.py annotate` must pass its already-armed guard against a LIVE qa
      server.** That guard compares `probe_round(base)` to the round on disk;
      a qa `/input` carries no `round` key, so it returns `None` and the round-1
      annotate goes through. If that ever stops holding, every typed
-     `/viva-write` session loses its check flags with no error anywhere — so it
-     is asserted from both sides here: it passes before the hand-off and is
-     REFUSED after it.
+     `/viva-write` session loses its confidence flags with no error anywhere —
+     so it is asserted from both sides here: it passes before the hand-off and
+     is REFUSED after it.
 
-  2. **`--pass <bundle.default_pass>` is load-bearing.** `default_pass` had no
-     consumer before this flow (`loop.py start` resolves a bundle and only
-     prints it), so a `/viva-write` that forgot to pass it would look identical
-     on screen and run at no depth. The two tests below differ only in the
+  2. **`--pass <bundle.default_pass>` is load-bearing.** `default_pass` has no
+     consumer but this flow (`loop.py start` resolves a bundle and only prints
+     it), so a `/viva-write` that forgot to pass it would look identical on
+     screen and run at no depth. The two tests below differ only in the
      bundle's `default_pass` and reach opposite outcomes on an identical doc
      with an identical unanswered check flag: `architecture` signs off,
      `checks` refuses.
 
   3. **The hand-off keeps one server and one `server.url`.** Same process, same
-     base URL, from the interview through the ledger.
+     base URL, from the interview through the ledger — `start --handoff` leaves
+     the interview's `server.url` byte-identical, and `arm` gates on liveness
+     rather than on a `round` key the interview payload does not carry.
+
+  4. **The driver owns the clear.** `interview` removes every disposable file
+     `start` does plus `answers.json`; `preferences.json` survives; and a
+     hand-off `start` never touches `answers.json` — the draft was written from
+     it minutes earlier.
 """
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import SERVER, get, poll_for, post, wait_for_url  # noqa: E402
+from _server_harness import get, poll_for, post, wait_for_url  # noqa: E402
 
 SCRIPTS = ROOT / "scripts"
+LOOP = SCRIPTS / "loop.py"
+SKILL = ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md"
+
+# `interview` opens the human's tab; `$BROWSER` is registered preferred by
+# `webbrowser`, so pointing it at a no-op keeps the test headless.
+os.environ["BROWSER"] = "true"
 
 QA_INPUT = {
     "mode": "qa",
@@ -52,8 +69,13 @@ QA_INPUT = {
     ],
 }
 
+ANSWERS = [
+    {"id": "q1", "choice": "email", "note": ""},
+    {"id": "q2", "choice": "", "note": "docs/notifications.md"},
+]
+
 # The design-doc grammar minus "Open questions" — one missing heading, so the
-# `headings-present` producer has exactly one flag to emit and both tests below
+# `headings-present` check has exactly one flag to emit and both tests below
 # run against the same unanswered check.
 DRAFT = """# Notification design
 
@@ -94,6 +116,11 @@ REPO_TYPE = {
     "default_pass": "checks",
 }
 
+# The judgment producer the skill runs itself after `start` — one confidence
+# flag, merged through `annotate` against the live interview server.
+CONFIDENCE = [{"id": "s1", "kind": "confidence", "severity": "info",
+               "message": "sourced from #170", "basis": "sourced"}]
+
 
 # ── the SKILL.md's steps, as callables ───────────────────────────────────────
 def _tmp_session():
@@ -104,55 +131,38 @@ def _tmp_session():
     return tmp, viva
 
 
-def _launch_qa(tmp: Path, viva: Path):
-    """Step 3 — one server, launched in qa mode, never `/complete`d."""
-    proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--mode", "qa",
-         "--input", str(viva / "qa-input.json"),
-         "--output", str(viva / "answers.json"), "--no-browser"],
-        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    return proc, wait_for_url(viva / "answers.json")
-
-
-def _script(name, *args, cwd=None, stdin=None):
-    return subprocess.run(
-        [sys.executable, str(SCRIPTS / name)] + [str(a) for a in args],
-        capture_output=True, text=True, input=stdin,
-        cwd=str(cwd) if cwd else None)
-
-
-def _parse_round1(tmp: Path, doc: str, type_name: str, pass_kind: str, types_dir=None):
-    """Step 5's parse — `--doc-type` AND `--pass <bundle.default_pass>`."""
-    proc = _script("parse_sections.py", doc,
-                   "--output", ".viva/review-input-r1.json", "--round", "1",
-                   "--doc-file", doc, "--doc-type", type_name,
-                   "--pass", pass_kind, cwd=tmp)
-    assert proc.returncode == 0, proc.stderr
-    return proc
-
-
-def _run_check(tmp: Path, type_name: str, round_file: str) -> str:
-    """Step 5's producer — the bundle piped into the check, as SKILL.md shows."""
-    bundle = _script("doc_types.py", type_name, cwd=tmp)
-    assert bundle.returncode == 0, bundle.stderr
-    flags = _script("headings_present.py", "--input", round_file, "--bundle", "-",
-                    cwd=tmp, stdin=bundle.stdout)
-    assert flags.returncode == 0, flags.stderr
-    return flags.stdout
-
-
 def _loop(tmp: Path, *args, stdin=None):
     return subprocess.run(
-        [sys.executable, str(SCRIPTS / "loop.py")] + [str(a) for a in args],
+        [sys.executable, str(LOOP)] + [str(a) for a in args],
         capture_output=True, text=True, input=stdin, cwd=str(tmp))
 
 
-def _handoff(base: str, viva: Path):
-    """Step 5's hand-off — `output` in the BODY, the form `loop.py arm` uses."""
-    payload = json.loads((viva / "review-input-r1.json").read_text())
-    payload["output"] = ".viva/review-r1.json"
-    return post(base, "/next-round", payload)
+def _interview(tmp: Path, viva: Path):
+    """Step 3 — the driver clears, launches `--mode qa`, and blocks on the
+    human. Returns the blocked driver and the server it opened."""
+    proc = subprocess.Popen(
+        [sys.executable, str(LOOP), "interview", "--input", ".viva/qa-input.json"],
+        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return proc, wait_for_url(viva / "answers.json")
+
+
+def _answer(proc, base: str, answers) -> str:
+    """The human submits; the driver wakes, prints the answers, and exits."""
+    post(base, "/submit", {"answers": answers, "submitted_early": False})
+    out, err = proc.communicate(timeout=15)
+    assert proc.returncode == 0, err
+    return out
+
+
+def _reap(tmp: Path, viva: Path) -> None:
+    """The driver detaches the server, so no test holds a child handle: the
+    only reaper is the driver's own exit route. After `finish` it dies at "no
+    live session", which is the point."""
+    _loop(tmp, "abandon")
+    for _ in range(50):
+        if not (viva / "server.url").exists():
+            return
+        time.sleep(0.2)
 
 
 def _approve_all(base: str, round_no: int, ids) -> None:
@@ -160,47 +170,86 @@ def _approve_all(base: str, round_no: int, ids) -> None:
                            "sections": [{"id": i, "verdict": "approved"} for i in ids]})
 
 
+def _flags(served: dict, kind: str) -> list:
+    return [a for s in served["sections"] for a in s.get("annotations", [])
+            if a.get("kind") == kind]
+
+
 # ── test 1: the architecture default — an advisory flag does not hold ────────
 def test_typed_draft_hands_off_and_signs_off():
     tmp, viva = _tmp_session()
-    proc, base = _launch_qa(tmp, viva)
+    # (4) State the interview must clear, and the one file it must spare. The
+    # store is written by `preferences.py` so `start` reads it as a real (empty
+    # of standing preferences) store rather than warning on a stub.
+    for stale in ("open-notes.json", "review-input-r7.json", "review-r7.json"):
+        (viva / stale).write_text("{}")
+    (viva / "answers.json").write_text('{"answers": [], "submitted_early": true}')
+    (viva / "attachments").mkdir()
+    (viva / "attachments" / "x.png").write_bytes(b"x")
+    subprocess.run([sys.executable, str(SCRIPTS / "preferences.py"), "record",
+                    "--store", str(viva / "preferences.json"), "--session", "s0",
+                    "--id", "cite", "--label", "Cite", "--guidance", "Cite it."],
+                   check=True, capture_output=True)
+    prefs_before = (viva / "preferences.json").read_text()
+
+    proc, base = _interview(tmp, viva)
     try:
         assert get(base, "/input")["mode"] == "qa"
-        post(base, "/submit", {"answers": [
-            {"id": "q1", "choice": "email", "note": ""},
-            {"id": "q2", "choice": "", "note": "docs/notifications.md"},
-        ], "submitted_early": False})
-        assert poll_for(viva / "answers.json"), "answers.json never written"
+        for gone in ("open-notes.json", "review-input-r7.json", "review-r7.json",
+                     "answers.json", "attachments"):
+            assert not (viva / gone).exists(), f"interview must clear {gone}"
+        assert (viva / "preferences.json").read_text() == prefs_before, \
+            "preferences.json is the one survivor of the clear"
+        assert proc.poll() is None, "a stale answers.json must not end the interview"
+
+        out = _answer(proc, base, ANSWERS)
+        assert f"viva-loop: interview open · {base}" in out, out
+        assert out.rstrip().splitlines()[-1] == "=== interview: answered ===", out
         answers_snapshot = (viva / "answers.json").read_text()
+        assert json.loads(out[out.index("{"):out.rindex("}") + 1]) \
+            == json.loads(answers_snapshot), "the driver prints the answers verbatim"
 
         # Step 4 — the draft lands at the path the interview named.
         (tmp / "docs").mkdir()
         doc = "docs/notifications.md"
         (tmp / doc).write_text(DRAFT)
 
-        # Step 5 — parse at the bundle's own depth, then produce, then hand off.
-        _parse_round1(tmp, doc, "design-doc", "architecture")
-        sidecar = _run_check(tmp, "design-doc", ".viva/review-input-r1.json")
-        assert "Open questions" in sidecar, sidecar
+        # Step 5 — parse at the bundle's own depth INTO the live interview: the
+        # bundle's check runs inside `start`, the seam stays open for the
+        # judgment producer, and the interview's server.url is untouched.
+        url_before = (viva / "server.url").read_text()
+        started = _loop(tmp, "start", "--doc", doc, "--type", "design-doc",
+                        "--pass", "architecture", "--handoff", "--parse-only")
+        assert started.returncode == 0, started.stderr
+        assert "checks run: headings-present · 1 flag(s) merged" in started.stdout, \
+            started.stdout
+        assert "NOT armed" in started.stdout, started.stdout
+        assert (viva / "server.url").read_text() == url_before, \
+            "--handoff must keep the interview's server.url"
+        assert (viva / "answers.json").read_text() == answers_snapshot, \
+            "start must never clear the answers the draft was written from"
+        assert get(base, "/input")["mode"] == "qa", "not armed yet"
 
         # (1) The guard: the qa server is LIVE and holds no round, so the
         # round-1 annotate goes through.
-        merged = _loop(tmp, "annotate", "--sidecar", "-", stdin=sidecar)
+        merged = _loop(tmp, "annotate", "--sidecar", "-", stdin=json.dumps(CONFIDENCE))
         assert merged.returncode == 0, merged.stderr
 
-        assert _handoff(base, viva) == {"ok": True}
+        armed = _loop(tmp, "arm")
+        assert armed.returncode == 0, armed.stderr
+        assert f"round 1 armed · {base}" in armed.stdout, armed.stdout
 
         served = get(base, "/input")
         assert served["mode"] == "review" and served["round"] == 1, served
         assert served["doc_type"] == "design-doc", served
         assert served["pass"] == {"kind": "architecture"}, served
-        flags = served["sections"][0]["annotations"]
-        assert any(a["kind"] == "headings-present" for a in flags), flags
-        assert all("result" not in a for a in flags), flags
+        checks = _flags(served, "headings-present")
+        assert checks and all("result" not in a for a in checks), checks
+        assert _flags(served, "confidence"), served["sections"][0]
 
         # (1, other side): now that the server holds round 1, the SAME annotate
         # is refused — the ordering SKILL.md states is enforced, not a norm.
-        late = _loop(tmp, "annotate", "--sidecar", "-", stdin=sidecar)
+        late = _loop(tmp, "annotate", "--sidecar", "-", stdin=json.dumps(CONFIDENCE))
         assert late.returncode != 0, late.stdout
         assert "already armed" in late.stderr, late.stderr
 
@@ -224,15 +273,13 @@ def test_typed_draft_hands_off_and_signs_off():
         # The interview's answers are never clobbered by the review that follows.
         assert (viva / "answers.json").read_text() == answers_snapshot
     finally:
-        proc.terminate()
-        try:
-            out, _ = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            out, _ = proc.communicate(timeout=5)
+        _reap(tmp, viva)
 
-    assert "viva · qa mode ·" in out, out
-    assert "viva · hand-off qa → review ·" in out, out
+    # The server's own stdout goes to the log the driver keeps, and it is the
+    # hand-off's only signal — never a wire field (references/qa.md).
+    log = (viva / "server.log").read_text()
+    assert "viva · qa mode ·" in log, log
+    assert "viva · hand-off qa → review ·" in log, log
     print("  ok  test_typed_draft_hands_off_and_signs_off")
 
 
@@ -241,20 +288,20 @@ def test_checks_default_pass_holds_the_round_until_the_flag_is_answered():
     tmp, viva = _tmp_session()
     (tmp / ".viva-types").mkdir()
     (tmp / ".viva-types" / "gated-note.json").write_text(json.dumps(REPO_TYPE))
-    proc, base = _launch_qa(tmp, viva)
+    proc, base = _interview(tmp, viva)
     try:
-        post(base, "/submit", {"answers": [{"id": "q1", "choice": "email", "note": ""},
-                                           {"id": "q2", "choice": "", "note": "note.md"}],
-                               "submitted_early": False})
-        assert poll_for(viva / "answers.json")
+        _answer(proc, base, [{"id": "q1", "choice": "email", "note": ""},
+                             {"id": "q2", "choice": "", "note": "note.md"}])
 
         doc = "note.md"
         (tmp / doc).write_text(DRAFT)
-        _parse_round1(tmp, doc, "gated-note", REPO_TYPE["default_pass"])
-        sidecar = _run_check(tmp, "gated-note", ".viva/review-input-r1.json")
-        assert json.loads(sidecar), "the repo bundle's grammar must flag a gap"
-        assert _loop(tmp, "annotate", "--sidecar", "-", stdin=sidecar).returncode == 0
-        assert _handoff(base, viva) == {"ok": True}
+        started = _loop(tmp, "start", "--doc", doc, "--type", "gated-note",
+                        "--pass", REPO_TYPE["default_pass"], "--handoff",
+                        "--parse-only")
+        assert started.returncode == 0, started.stderr
+        assert "1 flag(s) merged" in started.stdout, \
+            "the repo bundle's grammar must flag a gap: " + started.stdout
+        assert _loop(tmp, "arm").returncode == 0
 
         served = get(base, "/input")
         assert served["pass"] == {"kind": "checks"}, served
@@ -273,8 +320,7 @@ def test_checks_default_pass_holds_the_round_until_the_flag_is_answered():
         # comments, finds none, and stalls, so the skill's table must fork on it.
         verdicts = json.loads((viva / "review-r1.json").read_text())
         assert not any(s.get("comments") for s in verdicts["sections"]), verdicts
-        skill = (ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md").read_text()
-        assert "**no** active comment anywhere" in skill, \
+        assert "**no** active comment anywhere" in SKILL.read_text(), \
             "the routing table must fork `has-work` on whether any comment is active"
 
         refused = _loop(tmp, "finish", "--doc", doc)
@@ -283,18 +329,21 @@ def test_checks_default_pass_holds_the_round_until_the_flag_is_answered():
         assert "## Revision History" not in (tmp / doc).read_text()
 
         # The documented recovery: answer the flag in the round about to be
-        # armed, never the one already armed.
+        # armed, never the one already armed. The flags come off the served
+        # round; `annotate.py` matches a flag ignoring its `result`, so the
+        # re-emitted twin lands on the one it answers.
         assert _loop(tmp, "rearm", "--parse-only").returncode == 0
-        answered = [{**f, "result": "added 'Open questions'"}
-                    for f in json.loads(sidecar)]
+        answered = [dict(a, id=s["id"], result="added 'Open questions'")
+                    for s in served["sections"] for a in s.get("annotations", [])
+                    if a.get("kind") == "headings-present"]
+        assert answered
         assert _loop(tmp, "annotate", "--sidecar", "-",
                      stdin=json.dumps(answered)).returncode == 0
         assert _loop(tmp, "arm").returncode == 0
 
         served2 = get(base, "/input")
         assert served2["round"] == 2, served2
-        answered_flags = [a for a in served2["sections"][0]["annotations"]
-                          if a["kind"] == "headings-present"]
+        answered_flags = _flags(served2, "headings-present")
         assert answered_flags and all(a.get("result") for a in answered_flags), \
             answered_flags
         _approve_all(base, 2, [s["id"] for s in served2["sections"]])
@@ -305,42 +354,38 @@ def test_checks_default_pass_holds_the_round_until_the_flag_is_answered():
         assert signed.returncode == 0, signed.stderr
         assert "## Revision History" in (tmp / doc).read_text()
     finally:
-        proc.terminate()
-        try:
-            proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate(timeout=5)
+        _reap(tmp, viva)
     print("  ok  test_checks_default_pass_holds_the_round_until_the_flag_is_answered")
 
 
-# ── the state clear the skill performs ───────────────────────────────────────
-def test_skill_clears_open_notes_and_spares_preferences():
-    """The clear in SKILL.md step 3 is `loop.py start`'s, not `/viva-diff`'s —
-    which omits `open-notes.json`. A stale store would inject a prior session's
-    threads into this session's round 2, so the file list is pinned here."""
-    text = (ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md").read_text()
-    clear = text[text.index("mkdir -p .viva"):text.index("rm -rf .viva/attachments")]
-    for name in ("review-input-r*.json", "review-r*.json", "open-notes.json"):
-        assert name in clear, f"the state clear must remove {name}"
-    assert "preferences.json" not in clear, \
-        "preferences.json is the one survivor of the clear (CLAUDE.md)"
-    # `/viva-qa`'s standalone step 4 ends with `/complete`, which would tear the
-    # process down out from under the round this flow is about to hand it. The
-    # prohibition is the one thing a caller copying that skill would drop.
-    interview = text[text.index("until [ -f .viva/answers.json ]"):
-                     text.index("**4. Draft**")]
+# ── the skill carries no bookkeeping of its own ──────────────────────────────
+def test_skill_runs_the_interview_through_the_driver():
+    """Step 3 used to carry the clear, the launch, and a liveness-free
+    `until [ -f answers.json ]` poll; step 5 the parse, the check pipeline, and
+    a curl. All of it is `loop.py`'s now. What stays in prose is the one thing
+    a caller copying the qa contract would drop: never `/complete` the server
+    this flow is about to hand a round to."""
+    text = SKILL.read_text()
+    interview = text[text.index("**3."):text.index("**4. Draft**")]
+    assert 'loop.py" interview --input .viva/qa-input.json' in interview, \
+        "step 3 must run the interview through the driver"
     assert "Never call `/complete` here" in interview, \
         "the interview step must forbid /complete on the server it hands off to"
-    assert "curl" not in interview, \
-        "the interview step must issue no /complete call of its own"
-    print("  ok  test_skill_clears_open_notes_and_spares_preferences")
+    for bash in ("server.py", "until [", "rm -f", "curl"):
+        assert bash not in interview, \
+            f"step 3 carries bookkeeping bash ({bash!r}) the driver owns"
+    handoff = text[text.index("**5."):text.index("**6.")]
+    assert "--handoff" in handoff and "--parse-only" in handoff, handoff
+    for bash in ("parse_sections.py", "headings_present.py", "curl", "review-input-r"):
+        assert bash not in handoff, \
+            f"step 5 carries bookkeeping bash ({bash!r}) the driver owns"
+    print("  ok  test_skill_runs_the_interview_through_the_driver")
 
 
 def main() -> None:
     test_typed_draft_hands_off_and_signs_off()
     test_checks_default_pass_holds_the_round_until_the_flag_is_answered()
-    test_skill_clears_open_notes_and_spares_preferences()
+    test_skill_runs_the_interview_through_the_driver()
     print("OK (3 tests)")
 
 

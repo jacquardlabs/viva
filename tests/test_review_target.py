@@ -224,7 +224,7 @@ def test_branch_b_uses_the_parser_and_mode_the_driver_lacks():
     loop = (ROOT / "scripts" / "loop.py").read_text()
     assert "parse_diff" not in loop, \
         "loop.py learned parse_diff — branch B can move onto the driver (#179)"
-    assert '"--mode", "review"' in loop, \
+    assert '_launch_server(viva, "review"' in loop, \
         "loop.py no longer hardcodes --mode review; re-check branch B's exemption"
     print("  ok  test_branch_b_uses_the_parser_and_mode_the_driver_lacks")
 

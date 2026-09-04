@@ -159,7 +159,9 @@ by hand or read the parser's output back into context.
 
 Pass `--type <name>` when the doc has one (`doc_types.py --list` is the menu) —
 it names the round's check set and, with `--pass <kind>`, the depth it runs at. A
-doc `/viva-write` produced already carries both.
+doc `/viva-write` produced already carries both. `start` runs the bundle's checks
+itself, before anything could arm, and prints what it merged; the seam below is
+for the producers only you can run.
 
 **If `start` stops after parsing**, it prints the path of the producer contract
 to read: run the producer, then `loop.py annotate --sidecar <path>` and

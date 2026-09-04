@@ -360,9 +360,11 @@ qa-then-review session rather than to the qa phase alone.
 ### type-first authoring (`viva-write`, #170)
 
 The hand-off above, with a driver on it. `/viva-write` is the caller the
-`unified-session` entry describes in the abstract: it interviews, drafts, and
-POSTs the round-1 payload to the same process. Everything in that entry applies
-unchanged — the distinct `output` path, the operational-only signal, the absent
+`unified-session` entry describes in the abstract: `loop.py interview` launches
+`--mode qa` and blocks for `answers.json`; the skill drafts; `loop.py start
+--handoff` parses round 1 into that still-live process and `loop.py arm` POSTs
+it to `/next-round`. Everything in that entry applies unchanged — the distinct
+`output` path (the driver names it), the operational-only signal, the absent
 `/complete`.
 
 **This session type adds no wire surface, so the contract version does not
