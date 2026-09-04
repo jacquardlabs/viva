@@ -201,12 +201,12 @@ and a `changes` comment asking for more wins. `tests/test_writing_register.py`
 pins those seams.
 
 **The no-bookkeeping-bash rule is scoped, deliberately.** `loop.py` drives doc
-review only, so only `viva-review`'s **branch A** is held to it. Branch B (hunks
-— `parse_diff.py` and `--mode diff`, neither of which the driver knows) and
-`viva-write`'s pre-hand-off steps carry that bash on purpose.
-`test_server_orchestration.py` enumerates those two rather than exempting by
-wildcard, so a third skill growing its own loop fails; #179 is the issue that
-empties the list.
+review and the intake interview, so `viva-review`'s **branch A** and all of
+`viva-write` are held to it. Branch B (hunks — `parse_diff.py` and `--mode
+diff`, neither of which the driver knows) carries that bash on purpose.
+`test_server_orchestration.py` enumerates it rather than exempting by wildcard,
+so a second skill growing its own loop fails; #179's remaining half empties the
+list.
 
 ## `/viva-write` — the intake end of the lifecycle
 
@@ -215,13 +215,20 @@ that same review **in the same server process**. The flow is type → attach →
 interview → draft → hand off → rounds → stamp, and it is a skill precisely
 because steps 2 and 4 are model work.
 
-`loop.py` drives everything from the hand-off on (`wait`, `rearm`, `finish`).
-Only `start` is unusable here, for two file-local reasons: `cmd_start` refuses
-when `.viva/server.url` exists — and by then the interview's qa server wrote it —
-and `cmd_arm`'s liveness probe reads `round` off `/input`, which a qa payload has
-no key for. So `/viva-write` performs `cmd_start`'s state clear itself (the same
-five things; `preferences.json` survives), parses round 1 directly, and POSTs
-`/next-round`. Extending the driver over that gap is #179's, not this flow's.
+`loop.py` drives all of it. `loop.py interview` runs the Q&A gate: `start`'s
+state clear plus `answers.json`, the `--mode qa` launch, a liveness-aware wait
+(exit 2 the moment `server.url` is gone, the contract `wait` already keeps), the
+answers on stdout, and one classification line last (`answered` /
+`submitted-early`). It never calls `/complete` — the hand-off reuses the
+process. `loop.py start --doc … --handoff` then parses round 1 **into** that
+live interview instead of refusing over it: the flag is explicit, never inferred
+from a live qa payload, so an abandoned interview cannot quietly become the next
+`/viva-review`'s tab; it requires a live server serving `questions`, keeps
+`server.url` and `attachments/` (the answers may cite files there), never touches
+`answers.json`, and skips the resume branch (a fresh draft's ledger heading is a
+false positive). `arm` gates its POST branch on `probe_input` (liveness), not
+`probe_round` — a qa payload carries no `round` key, and reading that as "nothing
+is answering" was the second thing that kept the driver out of this flow.
 
 **Two orderings this flow depends on, both enforced rather than documented:**
 
@@ -229,7 +236,16 @@ five things; `preferences.json` survives), parses round 1 directly, and POSTs
   once and replaces it only from `/next-round`, so `loop.py annotate` refuses a
   round the server already holds. It *passes* before the hand-off because the
   live qa server's `probe_round` returns `None` — that is the seam, and
-  `tests/test_viva_write_flow.py` asserts both sides of it.
+  `tests/test_viva_write_flow.py` asserts both sides of it. The bundle's own
+  `checks[]` no longer depend on the agent remembering the order: `start --type`
+  runs them itself, between the parse and every branch that could arm, by the
+  mechanical mapping `<name with - as _>.py --input <round> --bundle -` with the
+  bundle on stdin, and merges the flags through `annotate.py`. A check name is
+  validated beside the type, before the clear — a repo bundle naming a script
+  this plugin does not ship is refused with the prior state intact. `rearm`
+  does not re-run them: flags carry onto byte-identical sections with their
+  `result`, and `annotate._same_flag` ignores `result`, so a re-run would land
+  on the answered flag and change nothing.
 - **`--pass <bundle.default_pass>` is passed explicitly.** `/viva-write` is
   `default_pass`'s first consumer — `loop.py start` resolves a bundle and only
   prints it — so a typed session that drops the flag runs at no depth and looks
@@ -292,13 +308,22 @@ cost is that a branch named `42` needs `--kind ref`.
   cross-session, gitignored, per-clone); everything else under `.viva/` is
   disposable and reset each session. Don't add new state that must survive
   without documenting why here. The state clear itself lives in
-  `scripts/loop.py`'s `cmd_start`, not in prose — it removes the round files,
-  `server.url`, `open-notes.json`, and the `attachments/` directory. The one
-  documented exception: `cmd_start`'s resume branch copies a completed session's
-  finishing round to `.viva/prior-review-input.json` /
-  `.viva/prior-review-verdicts.json` just long enough to survive the
-  clear and feed the new session's `--prior-input`/`--prior-verdicts`, then
-  discards them in a `finally` — nothing new persists past that one resume.
+  `scripts/loop.py`'s `_clear_state`, not in prose — it removes the round files,
+  `server.url`, `open-notes.json`, and the `attachments/` directory. `interview`
+  adds `answers.json` to it (a stale one would satisfy the wait before the human
+  typed a word) and `start` deliberately does not — a `start --handoff` runs
+  while the draft written from those answers is still the agent's source.
+  `qa-input.json` is written by the caller and cleared by nobody; it is
+  `interview`'s own `--input`. `start --handoff` keeps `server.url` (the
+  interview server that receives the round owns it) and `attachments/` (its
+  answers may cite files there). A finished `/viva-write` leaves `qa-input.json`
+  and `answers.json` beside the round files; `docket.py` classifies on the round
+  files first, so its `qa` bucket is unaffected. The one documented exception:
+  `cmd_start`'s resume branch copies a completed session's finishing round to
+  `.viva/prior-review-input.json` / `.viva/prior-review-verdicts.json` just long
+  enough to survive the clear and feed the new session's
+  `--prior-input`/`--prior-verdicts`, then discards them in a `finally` —
+  nothing new persists past that one resume.
 
 ## Tests
 

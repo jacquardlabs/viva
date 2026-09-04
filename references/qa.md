@@ -94,6 +94,11 @@ decide what your flow does about that rather than reading past it.
 
 ## Launch and wait
 
+Inside this repo, `python3 scripts/loop.py interview --input .viva/qa-input.json`
+is the driver's form of this block — the same clear, launch, and wait, with the
+liveness check the bash below lacks, and the answers printed to stdout. The
+block is the contract for any other caller.
+
 ```bash
 mkdir -p .viva
 rm -f .viva/answers.json
@@ -142,10 +147,12 @@ python3 -c "import json; d=json.load(open('.viva/review-input-r1.json')); d['out
   | curl -s -X POST "$BASE/next-round" -H "Content-Type: application/json" --data-binary @-
 ```
 
-`review-input-r1.json` is the ordinary `ReviewInput` shape `parse_sections.py`
-produces — nothing about its schema changes for a qa-originated round. From
-there the review proceeds exactly as `/viva-review` branch A's loop, and
-`loop.py` can drive it: `wait`, `rearm`, `finish`.
+The driver's form is `loop.py start --doc <doc> --handoff` (parse into the live
+interview; `--type`/`--pass` as the session needs) followed by `loop.py arm`,
+which POSTs exactly this. `review-input-r1.json` is the ordinary `ReviewInput`
+shape `parse_sections.py` produces — nothing about its schema changes for a
+qa-originated round. From there the review proceeds exactly as `/viva-review`
+branch A's loop: `wait`, `rearm`, `finish`.
 
 **`output` must be a path distinct from the `--output` this server was launched
 with** (`.viva/answers.json`) — e.g. `.viva/review-r1.json`. `/next-round` and a

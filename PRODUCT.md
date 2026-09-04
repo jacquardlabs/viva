@@ -130,11 +130,10 @@ opt-in layers that all funnel through the section card:
   types, verdicts, and pass depth, but confidence triage and the producer
   contract are still documented only in `references/` and `CLAUDE.md`.
 - **The loop's prose half.** `scripts/loop.py` owns the bookkeeping — round
-  numbers, the state clear, liveness, and the finish guard — for **doc review
-  only**. `/viva-review`'s hunk branch drives itself (`parse_diff.py` and
-  `--mode diff` are outside the driver), and `/viva-write` re-states the state
-  clear and the round-1 parse because `loop.py start` cannot run against the
-  interview's own live server. Extending the driver to both is unshipped (#179).
+  numbers, the state clear, liveness, and the finish guard — for doc review and
+  the intake interview. `/viva-review`'s hunk branch still drives itself
+  (`parse_diff.py` and `--mode diff` are outside the driver); extending the
+  driver to it is unshipped (#179).
 - **Stamps are prose, not bundle data.** A type bundle carries no `stamp` field,
   so `/viva-write`'s per-type consequence (commit vs. `gh pr edit`) lives in the
   skill's table rather than in the type it belongs to.
