@@ -168,6 +168,9 @@ overwrites `REVIEW_DATA`.
 
 `GET /input` serves the review-input merged with a live `ledger: [...]` key; that
 `ledger` is injected at serve time and is not part of the on-disk file schema.
+A `repo` key (`_viva_dir.parent.name`) is injected into `GET /input` and the
+`round` SSE event the same way — serve-time only, not on-disk schema — for the
+browser tab's title (#172).
 
 ## Two skills, split by intent
 
