@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.6.0 (2026-09-04)
+
+### Bug Fixes
+
+- Docket degrades a non-object round file instead of crashing the report
+  ([#218](https://github.com/jacquardlabs/viva/pull/218),
+  [`69bf14c`](https://github.com/jacquardlabs/viva/commit/69bf14ca102339653fc2c48572a2354f2b3e34ca))
+
+### Features
+
+- Docket — list open review sessions across repos (CLI-only)
+  ([#218](https://github.com/jacquardlabs/viva/pull/218),
+  [`69bf14c`](https://github.com/jacquardlabs/viva/commit/69bf14ca102339653fc2c48572a2354f2b3e34ca))
+
+
 ## v2.5.0 (2026-09-04)
 
 ### Bug Fixes
