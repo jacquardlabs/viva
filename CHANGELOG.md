@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v2.7.0 (2026-09-04)
+
+### Documentation
+
+- Scope #107 down to a pre-flight pre-fix producer
+  ([#213](https://github.com/jacquardlabs/viva/pull/213),
+  [`f98c91d`](https://github.com/jacquardlabs/viva/commit/f98c91d7bb8834e73daa6ddcf6694a14c11192df))
+
+### Features
+
+- Give each viva tab a name and a turn-state favicon
+  ([#215](https://github.com/jacquardlabs/viva/pull/215),
+  [`6fcdd5e`](https://github.com/jacquardlabs/viva/commit/6fcdd5e5aaa29934e90cd960da24915744610730))
+
+- Grounds-classed recommendations in the Q&A interview (sourced / inferred / taste)
+  ([#217](https://github.com/jacquardlabs/viva/pull/217),
+  [`2a06b02`](https://github.com/jacquardlabs/viva/commit/2a06b02d5ae58e51fee6eb82f2671b51d51ac739))
+
+
 ## v2.6.0 (2026-09-04)
 
 ### Bug Fixes
