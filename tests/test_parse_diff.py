@@ -339,6 +339,90 @@ def test_no_summary_key_when_the_agent_wrote_none():
     print("test_no_summary_key_when_the_agent_wrote_none: OK")
 
 
+# TWO_HUNK_DIFF with one line added to hunk 1. Hunk 2's body is untouched, but
+# its header moves from `@@ -10,3 +10,3 @@` to `@@ -10,3 +11,3 @@` — the shift
+# every edit above a hunk produces.
+SHIFTED_DIFF = TWO_HUNK_DIFF.replace(
+    "@@ -1,3 +1,3 @@\n context\n-old\n+new\n context\n",
+    "@@ -1,3 +1,4 @@\n context\n-old\n+new\n+another\n context\n",
+).replace("@@ -10,3 +10,3 @@", "@@ -10,3 +11,3 @@")
+assert SHIFTED_DIFF != TWO_HUNK_DIFF and "+11,3" in SHIFTED_DIFF
+
+
+def _round_pair(tmp: Path, r1_patch: str, r1_edit, r1_verdicts: dict, r2_patch: str):
+    """Parse round 1, let `r1_edit` touch the round file, write verdicts, parse
+    round 2 with both as priors. Returns round 2's data."""
+    patch = tmp / "diff.patch"
+    r1_input = tmp / "r1-input.json"
+    r1_out = tmp / "r1-verdicts.json"
+    r2_input = tmp / "r2-input.json"
+    patch.write_text(r1_patch, encoding="utf-8")
+    subprocess.run([PYTHON, SCRIPT, str(patch), "--output", str(r1_input), "--round", "1"],
+                   check=True, capture_output=True)
+    r1 = json.loads(r1_input.read_text())
+    r1_edit(r1)
+    r1_input.write_text(json.dumps(r1))
+    r1_out.write_text(json.dumps(r1_verdicts))
+    patch.write_text(r2_patch, encoding="utf-8")
+    result = subprocess.run(
+        [PYTHON, SCRIPT, str(patch), "--output", str(r2_input), "--round", "2",
+         "--prior-input", str(r1_input), "--prior-verdicts", str(r1_out)],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads(r2_input.read_text())
+
+
+def test_carry_forward_survives_a_line_shift_above():
+    """#103 item 4b. The `@@` header is line 1 of a hunk's content, and it
+    moves whenever an earlier hunk in the file grows — so comparing whole
+    content dropped hunk 2's approval the moment hunk 1 gained a line, and the
+    human re-approved a change they had already approved, with no notice.
+
+    Round 1: s1 `changes`, s2 approved. The agent adds a line to hunk 1. Round
+    2: s2's body is byte-identical under a shifted header and must carry; s1's
+    body changed and must not.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        r2 = _round_pair(
+            Path(tmp), TWO_HUNK_DIFF, lambda r1: None,
+            {"round": 1, "sections": [
+                {"id": "s1", "verdict": "changes", "comments": [{"note": "add one"}]},
+                {"id": "s2", "verdict": "approved"},
+            ]},
+            SHIFTED_DIFF)
+        by_id = {s["id"]: s for s in r2["sections"]}
+        assert "@@ -10,3 +11,3 @@" in by_id["s2"]["content"], \
+            "precondition: the fixture must actually shift hunk 2's header"
+        assert "s2" in r2["approved_ids"], (
+            "an approved hunk whose only change is its @@ header must carry; "
+            f"got {r2['approved_ids']}")
+        assert "s1" not in r2["approved_ids"], \
+            "the hunk that actually changed must still be re-reviewed"
+        print("test_carry_forward_survives_a_line_shift_above: OK")
+
+
+def test_summary_survives_a_line_shift_above():
+    """Same shift, same identity: the summary carry keys on the hunk body too,
+    so s2 keeps its one-liner and s1 (body changed) arrives without one."""
+    def summarize(r1):
+        r1["sections"][0]["summary"] = "renames the first context guard"
+        r1["sections"][1]["summary"] = "drops the removed branch"
+    with tempfile.TemporaryDirectory() as tmp:
+        r2 = _round_pair(
+            Path(tmp), TWO_HUNK_DIFF, summarize,
+            {"round": 1, "sections": [
+                {"id": "s1", "verdict": "changes", "comments": [{"note": "add one"}]},
+                {"id": "s2", "verdict": "approved"},
+            ]},
+            SHIFTED_DIFF)
+        by_id = {s["id"]: s for s in r2["sections"]}
+        assert by_id["s2"].get("summary") == "drops the removed branch", \
+            f"a header-only shift must keep the summary; got {by_id['s2'].get('summary')!r}"
+        assert "summary" not in by_id["s1"], \
+            "a hunk whose body changed must arrive with no summary"
+        print("test_summary_survives_a_line_shift_above: OK")
+
+
 def main() -> None:
     test_single_hunk()
     test_two_hunks_same_file()
@@ -352,6 +436,8 @@ def main() -> None:
     test_carry_forward_round_3_preserves_round_1_approvals()
     test_summary_carries_only_onto_an_unchanged_hunk()
     test_no_summary_key_when_the_agent_wrote_none()
+    test_carry_forward_survives_a_line_shift_above()
+    test_summary_survives_a_line_shift_above()
     print("\nAll parse_diff tests passed.")
 
 
