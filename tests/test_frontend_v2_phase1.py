@@ -373,8 +373,9 @@ def test_page_ships_recap_overlay(page: str) -> None:
         "recap rows must derive their verdict slot per section"
     assert "const notes = activeComments(s.id).length;" in page, \
         "recap rows must count active comments"
-    assert "'<span class=\"recap-id\">' + esc(s.id) + '</span>'" in page, \
-        "recap row missing its section-id column"
+    # Numbered as the print numbers sections (`1 ·`), never the machine's `s1`.
+    assert "'<span class=\"recap-id\">' + (i + 1) + '</span>'" in page, \
+        "recap row missing its section-number column"
     assert "'<span class=\"recap-row-title\">' + esc(s.title) + '</span>'" in page, \
         "recap row missing its title column"
     assert "'<span class=\"recap-verdict ' + v.cls + '\">" in page, \
@@ -591,11 +592,14 @@ def test_recap_offers_the_action_that_works(page: str) -> None:
     # DOM `disabled` attribute, which already means IN FLIGHT.
     assert "el('recap-confirm').setAttribute('aria-disabled', ready ? 'false' : 'true');" in page, \
         "a dead confirm must announce itself as well as draw itself"
-    # Focus lands on the control that can act, and AFTER the display flips —
-    # focus() on a display:none node silently no-ops and no needle would catch it.
-    focus_line = ("(canSkip ? el('recap-skip') : ready ? el('recap-confirm') "
-                  ": el('recap-close')).focus();")
-    assert focus_line in page, "the recap must open focused on a control that can act"
+    # Focus lands on the confirm when it can act and otherwise on the close —
+    # NEVER on the skip: `o` then Enter used to dispatch a round with every
+    # section unreviewed. And AFTER the display flips — focus() on a
+    # display:none node silently no-ops and no needle would catch it.
+    focus_line = "(ready ? el('recap-confirm') : el('recap-close')).focus();"
+    assert focus_line in page, "the recap must open focused on confirm or close"
+    assert "el('recap-skip').focus()" not in page and "el('recap-skip') : " not in page, \
+        "the escape hatch is never the recap's default focus"
     assert "el('recap-confirm').focus();" not in page, \
         "the unconditional confirm focus must be gone, not shadowed"
     assert (page.index("el('recap-skip').style.display = canSkip")
@@ -627,8 +631,9 @@ def test_not_ready_dispatch_is_not_the_primary(page: str) -> None:
         "the not-ready dispatch must not be a filled block"
     assert "var(--border2)" not in body and "var(--ink)" not in body, \
         "the not-ready dispatch must not carry the page's strongest ink"
-    assert "color: var(--faint);" in body and "border-color: var(--rule);" in body, \
-        "the not-ready dispatch takes btn-skip's outline grammar"
+    # Label in --soft (readable at 5:1), boundary the inactive hairline.
+    assert "color: var(--soft);" in body and "border-color: var(--rule);" in body, \
+        "the not-ready dispatch takes btn-skip's outline grammar with a readable label"
     assert "cursor: not-allowed;" in body, "the not-ready dispatch keeps its cursor"
     base = re.search(r"\.btn-submit \{[^}]*\}", page)
     assert base and "border: 1px solid transparent;" in base.group(0), \

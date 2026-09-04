@@ -214,10 +214,11 @@ def test_the_strip_announces_readings_but_not_partial_guesses():
 
 
 def test_controls_meet_the_page_s_own_a11y_rules():
-    # Native buttons, aria-hidden decorative emoji, focus-visible coverage, and
+    # Native buttons, a plain-text label (the microphone emoji was the only
+    # colour glyph on a monochrome catalog page), focus-visible coverage, and
     # an accessible name that says what the control DOES rather than its state.
-    assert '<span aria-hidden="true">&#127908;</span> dictate' in HTML, \
-        "the microphone emoji must be aria-hidden like every other decorative glyph"
+    assert 'class="mic-btn">dictate</button>' in HTML and '&#127908;' not in HTML, \
+        "dictate is a word, not an emoji"
     assert HTML.count('<div class="voice-strip"') == 1
     for needle in (".voice-toggle:focus-visible", ".mic-btn:focus-visible",
                    ".voice-notice button:focus-visible"):

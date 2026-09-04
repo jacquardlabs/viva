@@ -97,7 +97,7 @@ def test_page_ships_the_suggestion_affordances() -> None:
     # fill two fields to say one thing; the type chips now change what the
     # single `.note-field` MEANS, and its placeholder says which.
     for needle in (
-        'class="cmt-chip cmt-chip-suggestion" data-type="suggestion">suggest wording',
+        'class="cmt-chip cmt-chip-suggestion" data-type="suggestion" aria-pressed="false">suggest wording',
         'class="note-field cmt-pop-note"',
         "suggestion: 'Replacement wording — applied verbatim'",
         "mark.cmt-hl-suggestion",
