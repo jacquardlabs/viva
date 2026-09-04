@@ -140,6 +140,29 @@ def test_your_turn_when_armed_and_unanswered_no_server():
         assert info["round"] == 1
 
 
+def test_malformed_non_dict_review_input_does_not_crash():
+    # A review-input-rN.json that is valid JSON but not an object (a stale
+    # format, a hand-edited fixture, a torn write) must degrade the row, not
+    # raise AttributeError out of classify() and blank the whole report.
+    with tempfile.TemporaryDirectory() as tmp:
+        viva = Path(tmp) / ".viva"
+        _write(viva / "review-input-r1.json", [1, 2, 3])
+        info = docket.classify(viva)
+        assert info["state"] == "your-turn"
+        assert info["doc_file"] is None
+        assert info["doc_type"] is None
+        assert info["round"] == 1
+
+
+def test_malformed_non_dict_qa_input_does_not_crash():
+    with tempfile.TemporaryDirectory() as tmp:
+        viva = Path(tmp) / ".viva"
+        _write(viva / "qa-input.json", ["not", "an", "object"])
+        info = docket.classify(viva)
+        assert info["state"] == "qa"
+        assert info["context"] is None
+
+
 def test_agent_working_when_verdicts_submitted_and_incomplete():
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
@@ -325,6 +348,24 @@ def test_cli_text_output_no_crash_and_reports_none_found():
         assert "no .viva/ sessions found" in proc.stdout
 
 
+def test_cli_survives_one_malformed_repo_among_many():
+    # The verifier's exact repro: a top-level-list review-input-rN.json in
+    # one scanned repo must not blank the report for every other repo too.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "Projects"
+        _write(root / "bad" / ".viva" / "review-input-r1.json", [1, 2, 3])
+        _write(root / "good" / ".viva" / "review-input-r1.json",
+               {"doc_file": "spec.md", "sections": [{"id": "s1", "title": "A"}]})
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--root", str(root) + "/*"],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "good" in proc.stdout
+        assert "spec.md" in proc.stdout
+        assert "bad" in proc.stdout
+
+
 def test_cli_text_output_renders_table():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "Projects"
@@ -348,6 +389,8 @@ def main():
     test_find_viva_dirs_root_is_directory_of_repos()
     test_find_viva_dirs_dedupes_across_globs()
     test_your_turn_when_armed_and_unanswered_no_server()
+    test_malformed_non_dict_review_input_does_not_crash()
+    test_malformed_non_dict_qa_input_does_not_crash()
     test_agent_working_when_verdicts_submitted_and_incomplete()
     test_done_when_verdicts_complete()
     test_qa_when_no_review_round_but_qa_input_exists()
@@ -361,8 +404,9 @@ def main():
     test_resolve_roots_precedence()
     test_cli_json_output()
     test_cli_text_output_no_crash_and_reports_none_found()
+    test_cli_survives_one_malformed_repo_among_many()
     test_cli_text_output_renders_table()
-    print("OK (19 tests)")
+    print("OK (23 tests)")
 
 
 if __name__ == "__main__":

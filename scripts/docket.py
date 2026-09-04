@@ -156,13 +156,18 @@ def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
 
 
 def load_json(p: Path) -> Optional[dict]:
-    """`None` on anything short of a clean parse — a docket report must never
-    crash on a round file some other process is mid-write on."""
+    """`None` on anything short of a clean parse of a JSON *object* — a docket
+    report must never crash on a round file some other process is mid-write
+    on, nor on one that parses cleanly but is the wrong shape (a stale
+    format, a hand-edited fixture, a torn write that happens to land on
+    valid JSON). Callers do `load_json(p) or {}` and then `.get(...)`, so a
+    non-dict payload (e.g. a top-level list) must not reach them as-is."""
     try:
         with p.open() as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def mtime_of(paths: List[Path]) -> Optional[float]:
