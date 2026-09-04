@@ -54,6 +54,13 @@ literals in component styles.
 Yellow is dimmed to a wash in dark rather than reused at full strength: on a
 charcoal ground, full-strength yellow is a highlighter, not a touch.
 
+**`--faint` is never the ink of live copy.** It is 2.15:1 on the light ground
+and 2.90:1 on the dark one — right for a settled thread or a struck word,
+wrong for anything the reviewer must read to act. The bar's blocked line, the
+not-ready dispatch label, the invitation, the shortcut legend, approved
+headings, placeholders, and a focused field's border all wore it once; they
+take `--soft` (5.13:1 / 6.59:1), and `--acc` for the focused border.
+
 ### Theme selection
 
 The reader chooses, and the choice wins over the OS. `[data-theme]` on `<html>`
@@ -111,7 +118,11 @@ in `--accent` (see Multiple inline comments).
 |----------|-------|-------------|
 | `info` | `--teal` | `.annot-info` |
 | `warn` | `--violet` | `.annot-warn` |
-| `error` | `--orange` | `.annot-error` |
+| `error` | `--violet`, weight 700 | `.annot-error` |
+
+Every severity is the machine's news, so every severity takes a machine ink;
+the glyph carries the difference. `error` used to take `--orange` (cobalt,
+the reviewer's), which meant a producer flag changed *party* as it escalated.
 
 ## Typography
 
@@ -252,6 +263,14 @@ margin conversation. The bottom bar matches the shell's max-width via
 `.bottom-inner`, is opaque (`var(--paper)`, no backdrop blur), and closes the
 page with the same 2px ink rule that opens it.
 
+**The masthead is sticky in the print** (`.mode-doc .header`): file, round,
+pass and the approved count are the reader's bearings, and a 7,000px document
+scrolled them off the top after the first screen. Opaque on the paper ground,
+under the overlays. `html` carries `scroll-padding-top` for it and
+`scroll-padding-bottom` for the fixed bar, so every programmatic jump lands
+between the two; the composer reads both paddings itself (`revealWithinBars`),
+because Chrome ignores them for a smooth `scrollIntoView`.
+
 Diff mode widens `.shell`, `.bottom-inner`, **and `#paper`** together to
 `min(95vw, 1600px)` — see Diff-first layout.
 
@@ -278,8 +297,10 @@ keyed on `.doc-section`, which no other surface builds.
 
 In the print, sections appear **open, in document order** (`buildDocSection`),
 every one rendered up front. A settled section **dims in place**
-(`.is-approved` → `opacity: 0.5` on its prose) rather than collapsing to a
-clickable row: the point of a document review is reading the document. In the
+(`.is-approved` → `opacity: 0.72` on its prose rows — the floor at which
+`--ink2` still clears 4.5:1 on both grounds; the head and foot rows stay at 1)
+rather than collapsing to a clickable row: the point of a document review is
+reading the document, and a reviewer re-reads a section before dispatch. In the
 accordion (diff, Q&A) one entry is open at a time and the rows live inside its
 body.
 
@@ -352,12 +373,15 @@ Four ways this went wrong first, all of them visible only in a browser:
 letter, so a `72ch` column fits ~88 real characters of English prose. Measure
 the wrap point, not the `ch` count, before concluding a column is narrow.
 
-**Code breaks out where the room is actually spare — in the print only.**
-`.doc.print .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4 }` — a code or
-table row with nothing to annotate takes the margin's track too (540px →
-1056px at a 1240px shell); one that carries a note keeps three columns and
-scrolls sideways in its own container, exactly as `.section-content > pre`
-always did. `:has()` reads the row's own contents, so no JS has to remember to
+**Code breaks out where the room is actually spare — in the print only, and
+only code.** `.doc.print .row.wide:not(:has(> .rm)):has(> .rp > pre, …) .rp
+{ grid-column: 2 / 4 }` — a code row with nothing to annotate takes the
+margin's track too; one that carries a note keeps three columns and scrolls
+sideways in its own container, exactly as `.section-content > pre` always
+did. **Tables hold the measure.** A table reflows — its cells wrap and it keeps
+the prose's right edge — so a table wider than the text was the one wide thing
+that read as wrong, and it changed width the moment it took its first note. A
+table is `width: auto`, as wide as its columns need up to the measure. `:has()` reads the row's own contents, so no JS has to remember to
 set a class when a note is added or removed.
 
 The `.print` scope is load-bearing. There a wide block is one row among a
@@ -367,8 +391,13 @@ turn the first comment on it into a 328px re-layout of the very lines being
 commented on, under the cursor. Whether a hunk is inset is the per-document
 decision `--margin-w` already makes, made once for all of them.
 
-**The wasted-space rule.** Both side columns collapse to `0px`
-(`.doc.no-gutter` / `.doc.no-margin`), decided **once per round** by
+**The wasted-space rule — the margin's half is accordion-only.** The gutter
+collapses to `0px` (`.doc.no-gutter`) on any surface; the margin
+(`.doc.no-margin`) collapses only in the accordion. **The print never
+collapses its margin.** An empty margin is still the measure — the page holds
+it — and collapsing it put the prose at 967px, 128–159 characters a line, on
+every note-less round, then rewrapped the entire document the moment the first
+composer opened. Both decisions are made **once per round** by
 `updateDocColumns` reading the **round**, not the DOM. Per-row would jog the
 prose sideways between paragraphs and per-section between sections; a column of
 text that moves as you read it is worse than the space it saves — and a DOM
@@ -385,7 +414,9 @@ With the margin collapsed, `.doc.no-margin .row-head` drops to two tracks at
 was the last `ch` in a grid template — and the section's controls print under
 its heading. Pure CSS, so a collapse never moves a focused control between
 hosts. Below 920px the third column has no room to be a margin: notes fall
-under their passage and the gutter narrows to a 30px glyph rail.
+under their passage and the gutter narrows to a 30px glyph rail. Every control
+grows to a 44px touch target there, and the bottom bar's row is allowed to
+wrap.
 
 Q&A sets both classes as **constants** rather than computing them: a question
 carries no producer flags to rail, and the margin always holds its verbs.
@@ -398,8 +429,11 @@ carried sections.
 the app addresses them by. They live in the section's **foot band**, in its
 prose track, beside the state run. One control, one grammar, one label rule
 (`renderPrimaryButton`): approve
-reads `approve` only while nothing is open, `✓ done · N comments` while
-something is, and `↺ withdraw approval` on an approved section — which calls
+reads `approve` only while nothing is open, `N comments open` while
+something is — carrying `aria-disabled` and the disabled grammar, because it
+refuses, and a control that refuses says so rather than sitting there enabled
+and silent (the `a` key announces the refusal through `#sr-status`) — and
+`↺ withdraw approval` on an approved section — which calls
 `docWithdraw`, since nothing was ever collapsed and withdrawing is only the
 verdict going back to pending.
 
@@ -759,7 +793,10 @@ seven wrapped the stamp onto a second line. Everything it keeps is about
 **dispatching** — `blocked · N unreviewed` (or `N open` with the `⌘⏎` keycap
 once nothing is unreviewed), `convergence N → M`, `round trip N ms`, and the one
 consequential stamp `approve — dispatch`, named for what it does to the document
-rather than for the HTTP verb behind it. `approved N/M` and the item counts live
+rather than for the HTTP verb behind it and never restating the count printed
+beside it. `convergence` prints only once its two ends differ — a fresh round
+compared with itself teaches nothing — and `round trip` only from 200 ms, the
+point at which a number in the reviewer's bar is worth acting on. `approved N/M` and the item counts live
 in the bar and are not repeated here. The round trip is a **measurement** —
 `timedFetch` times the page's own `/input` request, and the line stays hidden
 until one has been observed. Nothing in the footer is a number copied off a mock.
@@ -782,7 +819,11 @@ content, and a reader should meet the document first.
 ### Command palette (⌘K, #186, unreleased)
 
 A directory of the keyboard layer, never a second interaction model: every verb
-it lists is one the page also carries as a control or a keycap. `.pal` takes the
+it lists is one the page also carries as a control or a keycap, and every key
+it prints is bound — `a c i o v t l j` on the page, `⇧⏎` inside the palette
+itself, `r s y n` on the note that has focus. A verb that cannot act (the
+ledger before any revision) is not listed. Opening it makes the page inert
+behind the scrim; closing it returns focus to the control that opened it. `.pal` takes the
 floor's materials — square, 1px ink border, selection on `var(--touch)` rather
 than a tint of the accent. Built from live state on each open, so "Approve
 section 9" names the section actually under the reader.
@@ -816,6 +857,11 @@ gradient stack, so every state rule still works by reassigning one property:
 |-------|-------|
 | rest | `var(--rule)` |
 | hover | `var(--ink)` |
+
+`.btn-skip`, `.prefs-toggle` and `.sort-toggle` follow the same two rows. They
+used to rest at `--ink` and *lighten* to `--faint` under the pointer, which
+made the unconfirmed early-submit the heaviest control in the bar and its hover
+read as a recession.
 | `.sel-approve` | `var(--machine)` |
 | `.sel-changes` | `var(--acc)` |
 | `.sel-info` | `var(--fact)` |
@@ -846,15 +892,20 @@ added to this group; the panel's new instances of it made the gap visible.)
 
 ## Animation
 
-- **Card entrance**: `fadeUp` — `opacity: 0 → 1`, `translateY: 8px → 0`, `0.4s ease`.
-  Stagger with `animation-delay` for list items.
+- **Card entrance** (accordion only): `fadeUp` — `opacity: 0 → 1`, `translateY: 8px → 0`, `0.4s ease`.
+  Stagger with `animation-delay` for list items. The print has **no** entrance:
+  eight sections fading in under a reader is the generic default, and it hid a
+  section from any screenshot taken mid-fade.
 - **Accordion expand/collapse**: `grid-template-rows: 0fr → 1fr`, `0.28s cubic-bezier(0.4,0,0.2,1)`.
   Never animate `height` directly.
 - **Verdict dot transition**: `background 0.25s, box-shadow 0.25s`.
 - **Progress bar**: `width 0.6s cubic-bezier(0.4,0,0.2,1)`.
-- **Approved card fade**: `opacity 0.35s` — cards dim to 0.42 on approve, restore to 0.72 on hover.
+- **Approved card fade**: `opacity 0.35s` — cards dim to 0.72 on approve, restore to 1 on hover.
 - **Approval stamp**: `stamp-down` — `0.42s cubic-bezier(0.2,1.4,0.4,1)`, scales from 2.1 down to 1 at a fixed `-5deg` tilt. Suppressed under `prefers-reduced-motion: reduce`.
-- **Between-rounds pulse**: `viva-pulse` — `opacity 1 → 0.25 → 1`, `1.6s ease-in-out infinite` on `.processing-dot`. Suppressed under `prefers-reduced-motion: reduce` (as are card entrances and the stamp).
+- **Between-rounds pulse**: `viva-pulse` — `opacity 1 → 0.25 → 1`, `1.6s ease-in-out infinite` on `.processing-dot`.
+- **Reduced motion** suppresses every animation above, the accordion and
+  progress transitions, and `scroll-behavior: smooth`; every programmatic
+  scroll asks the `SMOOTH` constant, which reads the same media query.
 
 ## Card accordion
 
@@ -967,8 +1018,8 @@ One question at a time is the point of an interview, so the accordion stays.
 
 On round ≥ 2, a section in `approved_ids` renders as a **carried card**
 (`buildCarriedCard`) instead of an accordion card: `.card.is-carried`, a dimmed
-head-only line — `opacity: 0.55`, `0.9` on hover/focus-within, kept brighter
-than `.is-approved`'s 0.42 so the affordances stay discoverable. The head
+head-only line — `opacity: 0.72`, `1` on hover/focus-within, the same
+readable floor `.is-approved` takes. The head
 carries the `carried` marker (label convention), the section title, an
 `unchanged since your stamp — show` reveal (aria-expanded/aria-controls,
 toggling a hidden read-only `.carried-body` whose markdown renders lazily on
@@ -1121,7 +1172,8 @@ because the palette is what a catalog overlay looks like here; a row under the
 pointer takes `var(--touch)`, the ground's one selection ink. `#recap-overlay`
 is a hidden `role="dialog" aria-modal="true"` shipped in the static page; `openRecap()`
 rebuilds its grid from live verdict state on every open. Each `.recap-row`
-(a jump-link button) indexes one section: mono id, title, verdict dot + label
+(a jump-link button) indexes one section: its print number (`1 ·`, never the
+machine's `s1`), title, verdict dot + label
 (reusing the card dot slots, colored `rv-approved` / `rv-changes` / `rv-info`
 / `rv-pending`), and active-note count (or `—`).
 
@@ -1133,15 +1185,15 @@ rebuilds its grid from live verdict state on every open. Each `.recap-row`
 - `o` toggles the overlay anytime in review; Escape, the `esc` keycap close,
   and a backdrop click close it; a row click closes-and-activates its section.
   Focus returns to `btn-submit` on close if it was inside the overlay.
-- **The overlay opens focused on the control that can act.** With sections
-  still pending that is the in-modal `skip rest & submit` (`#recap-skip`);
-  with the round ready it is `#recap-confirm`; with a submit in flight it is
-  the `esc` close. Focus moved to the confirm control unconditionally until
-  this change, which meant a recap opened with pendings put the reviewer on a
-  large primary-looking button whose click and Enter were silent no-ops, while
-  the only control that worked (`btn-skip`) sat behind the inert backdrop.
-  The three `display` flips run before the `focus()` — `focus()` on a
-  `display:none` node no-ops, the same trap `closeRecap` records for `inert`.
+- **The overlay opens focused on `#recap-confirm` when the round is ready and
+  on the `esc` close otherwise — never on the skip.** It opened on
+  `#recap-skip` whenever sections were pending, so `o` then Enter dispatched a
+  round with every section unreviewed and no confirmation; the escape hatch is
+  one Tab away, never the default. Nor does it open on a dead confirm: a recap
+  opened with pendings used to put the reviewer on a large primary-looking
+  button whose click and Enter were silent no-ops. The `display` flips run
+  before the `focus()` — `focus()` on a `display:none` node no-ops, the same
+  trap `closeRecap` records for `inert`.
 - **The actions row prints the blocked state** (`#recap-blocked`, in
   `.recap-title`'s label grammar): `N of M unreviewed` while pendings remain,
   `submitted — the agent is revising` while a submit is in flight, empty when
@@ -1229,8 +1281,11 @@ for a suggestion, replacement wording, which is the comment's whole payload.
 
 Design elements:
 - **The invitation** (`.doc-hint`) — "select any passage to comment", printed
-  once at the foot of the whole page rather than once per section, and `+ note`
-  is a margin verb. The per-section add row went with the action row.
+  once **above** the first section, sharing `.doc-tools` with the sort toggle:
+  it is the only line that teaches the core gesture, and at the foot of an
+  eight-section document nobody met it until they had read everything. Label
+  ink (`--soft`), never the settled ink. `+ note` is a margin verb; the
+  per-section add row went with the action row.
 - **Comment popover** (`.comment-popover`) — the only rounded surface in the review
   body (`border-radius: 4px`, `1px solid var(--border2)`, `background: var(--bg2)`).
   Holds the quoted span, type chips, an image attach control (`.attach-btn` +
@@ -1402,10 +1457,13 @@ Submit button states:
 - Both states share one box: the base rule carries `border: 1px solid
   transparent`, so taking the outline costs no 2px.
 
-**At a narrow viewport the bar wraps; the buttons do not.** `.bottom-inner`
-carries `flex-wrap: wrap` — inert at every width where the row already fits —
-and `.btn-group` carries `flex: 0 0 auto`, so the two dispatch controls are one
-unit that never shrinks. `.stats` already wraps and is the item that absorbs
+**The bar squeezes its counters first and wraps only under 920px; the buttons
+never shrink.** `.bottom-inner` is `nowrap` at ordinary widths — a flex row
+breaks its line *before* it shrinks anything, and at the print's 1054px cap
+that put the stamp on a line of its own — and takes `flex-wrap: wrap` under
+the 920px breakpoint, where `.stats` can no longer shrink and the dispatch
+controls would otherwise leave the viewport. `.btn-group` carries
+`flex: 0 0 auto`, so the two dispatch controls are one unit that never shrinks. `.stats` already wraps and is the item that absorbs
 the width instead. Both buttons also take `white-space: nowrap`: a flex item's
 default `flex-shrink: 1` broke `skip rest & submit` onto three lines at a 780px
 viewport, where `.mode-diff` caps the bar at 95vw. `.btn-group` keeps

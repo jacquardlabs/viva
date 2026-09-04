@@ -161,8 +161,9 @@ def test_diff_keeps_the_accordion_and_loses_its_chrome(page: str) -> None:
     assert "const skip = !!(opts && opts.skip);" in page
     # The hunk never borrows the margin's track. `:has()` there would make the
     # first comment on a hunk a 328px re-layout of the lines being commented on.
-    assert ".doc.print .row.wide:not(:has(> .rm)) .rp" in page, \
-        "the break-out rule belongs to the print, where a wide row is one of many"
+    # ...and only a CODE row takes it: a table reflows to the measure.
+    assert ".doc.print .row.wide:not(:has(> .rm)):has(> .rp > pre, > .rp > .d2h-wrapper) .rp" in page, \
+        "the break-out rule belongs to the print, where a wide row is one of many, and to code"
     # A pin on a code line LEADS the line and sticks: prose wraps, a diff line
     # scrolls, and a pin set after its anchor was measured at x=1052 inside a
     # 445px pane — nowhere the reviewer will ever see it.
@@ -269,8 +270,12 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
         "margin flags, carried threads and this round's comments all hold the margin"
     assert "doc.classList.toggle('no-gutter', !gutter);" in page, \
         "the gutter must collapse when nothing in the round carries a flag"
-    assert "doc.classList.toggle('no-margin', !margin);" in page, \
-        "the margin must collapse when the round carries nothing for it"
+    # The PRINT keeps its margin even when nothing is in it: an empty margin
+    # is still the measure, and collapsing it put the prose at 967px (~150
+    # characters a line) on every note-less round, then rewrapped the whole
+    # document when the first composer opened. The accordion still collapses.
+    assert "doc.classList.toggle('no-margin', !margin && !isContinuousPrint());" in page, \
+        "the margin collapses only in the accordion; the print holds the measure"
     # The HEAD row has no margin cell in any state, so it needs no
     # collapsed-margin exemption at all — three special cases deleted, and a
     # rule that reappears is a head row that grew a margin back.
@@ -618,13 +623,14 @@ def test_bar_and_footer_state_one_arithmetic(page: str) -> None:
     assert "'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>'" in page
     # The stamp is named for what it does to the document, on every surface
     # that dispatches one.
-    assert ("sub.textContent = remaining > 0 ? `approve — dispatch "
-            "(${remaining} unreviewed)`") in page, \
-        "the footer carries one consequential stamp"
+    # ...and names its action only: the count beside it in `#stat-pending`
+    # is the one place the blocking number prints.
+    assert "sub.textContent = 'approve — dispatch';" in page, \
+        "the footer carries one consequential stamp, with no restated count"
     # A measured latency, never a claimed one.
     assert "function timedFetch(url, opts)" in page and "timedFetch('/input')" in page
-    assert "if (_lastRTT === null) lat.style.display = 'none';" in page, \
-        "the footer must never print a latency it did not observe"
+    assert "if (_lastRTT === null || _lastRTT < SLOW_RTT_MS) lat.style.display = 'none';" in page, \
+        "the footer must never print a latency it did not observe, nor one not worth acting on"
     # The composite has no progress track — the footer's rule is the progress.
     assert "el('r-progress-track').style.display = 'none';" in page
     # Document-scale settled is ink, not the section rule's gray.
@@ -698,8 +704,11 @@ def test_activation_costs_no_layout(page: str) -> None:
     # test passes on a change that opens a composer the reviewer cannot see.
     composer = page[page.index("function openCommentPopover(") :
                     page.index("function closeCommentPopover(")]
-    assert "pop.scrollIntoView({ block: 'nearest' });" in composer, \
-        "the composer must bring itself into view"
+    # `revealWithinBars`, not `scrollIntoView({ block: 'nearest' })`: Chrome
+    # ignores `scroll-padding` for a smooth scrollIntoView, so the box read
+    # both paddings itself and the save/cancel sat under the fixed bar.
+    assert "revealWithinBars(pop);" in composer, \
+        "the composer must bring itself into view, clear of the fixed bar"
     assert "ta.focus({ preventScroll: true });" in composer, \
         "...and the browser's own scroll-to-field must not undo it"
     assert "block: 'center'" not in composer, \

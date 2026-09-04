@@ -116,8 +116,11 @@ def assert_catalog_ground(text: str) -> None:
     # ...and only in the continuous PRINT. In the accordion the wide row IS
     # the section — a hunk — and `:has()` would turn the first comment on it
     # into a 328px re-layout of the very lines being commented on.
+    # ...and only CODE: a table reflows to the measure and keeps the prose's
+    # right edge, so it never takes the track.
     assert re.search(
-        r'\.doc\.print \.row\.wide:not\(:has\(> \.rm\)\) \.rp\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
+        r'\.doc\.print \.row\.wide:not\(:has\(> \.rm\)\):has\(> \.rp > pre, > \.rp > \.d2h-wrapper\) \.rp'
+        r'\s*\{\s*grid-column:\s*2 / 4;\s*\}', text), \
         "a code row with no margin cell must break out across it, in the print only"
     assert not re.search(r'\.doc \.row\.wide\s*\{[^}]*grid-template-columns', text), \
         "a wide row must not restate the template — that is what moved the margin"

@@ -69,7 +69,10 @@ def test_skip_link_targets_main():
 
 
 def test_stats_aria_live_and_dynamic_title():
-    assert 'id="stats-area" aria-live="polite"' in HTML
+    # The live region is the counters alone — the toggles beside them rewrite
+    # their own labels, and inside the region every repaint re-announced them.
+    assert 'id="stat-run" aria-live="polite"' in HTML
+    assert 'id="stats-area" aria-live' not in HTML, "the toggles must sit outside the live region"
     print("  ok  test_stats_aria_live_and_dynamic_title")
 
 
@@ -102,11 +105,15 @@ def test_tab_title_identifies_document():
 def test_decorative_emoji_are_aria_hidden():
     # Every leading button glyph is wrapped; spot-check a representative set and
     # confirm no bare entity sits directly against a button open tag.
+    # (attach and dictate lost their emoji outright — the paperclip and the
+    # microphone were the only colour glyphs on a monochrome page — so they
+    # are asserted absent below rather than wrapped.)
     for needle in ('<span aria-hidden="true">&#10003;</span>',   # approve / confirm / settle
                    '<span aria-hidden="true">&#8595;</span>',     # skip
-                   '<span aria-hidden="true">&#128206;</span>',   # attach
                    '<span aria-hidden="true">&#9662;</span>'):    # diff toggle
         assert needle in HTML, f"missing aria-hidden wrap: {needle}"
+    for gone in ('&#128206;', '&#127908;', '&#9889;'):
+        assert gone not in HTML, f"emoji glyph must not ship: {gone}"
     print("  ok  test_decorative_emoji_are_aria_hidden")
 
 

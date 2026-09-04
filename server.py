@@ -345,7 +345,7 @@ button { font-family:inherit; cursor:pointer; }
 textarea { font-family:inherit; }
 
 /* ─── Base ───────────────────────────────────────────────── */
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; scroll-padding-bottom: 130px; }
 
 body {
   /* Catalog type: a compact grotesque for everything a human reads, a mono
@@ -416,7 +416,18 @@ body {
 /* ─── Header ─────────────────────────────────────────────── */
 .header {
   margin-bottom: 36px;
-  animation: fadeUp 0.4s ease both;
+}
+/* The masthead stays put in the print: file, round, pass and the approved
+   count are the reader's bearings, and a 7,000px document scrolled them off
+   the top of the page after the first screen. Opaque on the paper ground so
+   the prose passes beneath it, and under the overlays (z-index 200). */
+.mode-doc .header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  padding-top: 12px;
+  margin-top: -12px;
 }
 
 /* ─── Status bar — the catalog header ────────────────────
@@ -466,6 +477,7 @@ body {
   margin-bottom: 0;
   white-space: nowrap;
 }
+h1.tb-val { margin: 0; }
 .tb-val {
   font-size: 12.5px;
   font-weight: 600;
@@ -494,9 +506,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   padding: 8px 14px;
   cursor: pointer;
   user-select: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 .ledger-head:hover { background: var(--bg3); }
 .ledger-title {
@@ -687,7 +705,7 @@ body {
   border-radius: 3px;
   background: none;
 }
-.sort-toggle:hover { color: var(--text); border-color: var(--text3); }
+.sort-toggle:hover { color: var(--ink); border-color: var(--ink); }
 .sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
 
 /* ─── Preferences panel toggle (issue #142) ──────────────────
@@ -695,18 +713,18 @@ body {
    static label, never an interpolated count, so it never competes with the
    counters for that region's announcement. */
 .prefs-toggle {
-  font-family: 'Fragment Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
   cursor: pointer;
-  color: var(--text2);
+  color: var(--soft);
   padding: 4px 10px;
-  border: 1px solid var(--border2);
-  border-radius: 3px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
   background: none;
 }
-.prefs-toggle:hover { color: var(--text); border-color: var(--text3); }
+.prefs-toggle:hover { color: var(--ink); border-color: var(--ink); }
 
 /* Theme toggle — sits beside the prefs toggle and wears the same control
    grammar, square per the catalog's shape rule. It states the current mode in
@@ -763,6 +781,7 @@ body {
    silence: every utterance prints here with the reading it got, INCLUDING the
    ones that matched no verb. A reviewer who cannot tell "heard nothing" from
    "heard something and ignored it" cannot trust the layer at all. */
+.mode-doc .voice-strip, .mode-qa .voice-strip { max-width: 1054px; }
 .voice-strip {
   max-width: 1240px;
   margin: 0 auto 8px;
@@ -834,15 +853,15 @@ body {
   to   { opacity:1; transform:translateY(0); }
 }
 
-.card.is-approved { opacity: 0.42; }
-.card.is-approved:hover { opacity: 0.72; transition: opacity 0.2s; }
+.card.is-approved { opacity: 0.72; }
+.card.is-approved:hover { opacity: 1; transition: opacity 0.2s; }
 
 /* Carried card (round >= 2 prior approval): a dimmed head-only line — kept a
    touch brighter than is-approved so the reveal and withdraw affordances
    stay discoverable — with the mono APPROVED mini-stamp echoing the
    completion stamp motif. */
-.card.is-carried { opacity: 0.55; }
-.card.is-carried:hover, .card.is-carried:focus-within { opacity: 0.9; transition: opacity 0.2s; }
+.card.is-carried { opacity: 0.72; }
+.card.is-carried:hover, .card.is-carried:focus-within { opacity: 1; transition: opacity 0.2s; }
 .carried-head {
   display: flex;
   align-items: center;
@@ -866,7 +885,7 @@ body {
 .carried-show, .carried-withdraw {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
-  color: var(--text3);
+  color: var(--soft);
   background: none;
   border: 0;
   padding: 2px 0;
@@ -1043,10 +1062,12 @@ body {
 .annot-jump:hover { filter: brightness(1.2); }
 .annot-info  { background: var(--teal-bg);   border-color: var(--teal);   }
 .annot-warn  { background: var(--violet-bg);  border-color: var(--violet); }
-.annot-error { background: var(--orange-bg);  border-color: var(--orange); }
+/* An error flag is still the machine's news — the facts ink at every
+   severity, the glyph carrying the difference; cobalt is the reviewer's. */
+.annot-error { background: var(--violet-bg);  border-color: var(--violet); }
 .annot-info  .annot-kind { color: var(--teal);   }
 .annot-warn  .annot-kind { color: var(--violet); }
-.annot-error .annot-kind { color: var(--orange); }
+.annot-error .annot-kind { color: var(--violet); font-weight: 700; }
 
 /* round-to-round diff — added/removed lines vs the prior round on a rewritten
    card. Reuses the verdict slots: added → teal, removed → orange. Presentational
@@ -1170,9 +1191,10 @@ body {
    doc-print size, sitting in the open prose column under the `<h2>`; the
    accordion head overrides it above (`.card-title-wrap .section-summary`). */
 .section-summary {
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--text2);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--soft);
   margin-bottom: 12px;
 }
 
@@ -1428,8 +1450,13 @@ body {
    wide row IS the section — a hunk — and `:has()` would make the first
    comment on it a 328px re-layout of the very lines being commented on,
    under the cursor. Whether a hunk is inset is the per-document decision
-   `--margin-w` already makes, made once for all of them. */
-.doc.print .row.wide:not(:has(> .rm)) .rp { grid-column: 2 / 4; }
+   `--margin-w` already makes, made once for all of them.
+
+   CODE ONLY, not tables. A table reflows — its cells wrap to the measure and
+   it keeps the prose's right edge — so a table wider than the text was the
+   one wide thing that read as wrong, and it snapped back to the measure the
+   moment it took a note. A code block cannot wrap, so it keeps the room. */
+.doc.print .row.wide:not(:has(> .rm)):has(> .rp > pre, > .rp > .d2h-wrapper) .rp { grid-column: 2 / 4; }
 /* Explicit column placement, so a row that omits an empty side cell still
    prints its prose in the middle track instead of sliding left. */
 .doc .rg { grid-column: 1; padding-right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 2px; }
@@ -1466,6 +1493,15 @@ body {
   .doc .row { grid-template-columns: 30px minmax(0, 1fr); }
   .doc .rg { padding-right: 8px; }
   .doc .rm { grid-column: 2; padding-left: 0; }
+  /* The bar's row breaks here and nowhere wider: at the print's 1054px cap the
+     squeeze rule below keeps one line, and under 920px `.stats` can no longer
+     shrink enough, so the dispatch controls take a line of their own rather
+     than leaving the viewport. */
+  .bottom-inner { flex-wrap: wrap; row-gap: 8px; }
+  /* Every control the grid reflows for a narrow screen is a touch target. */
+  .nt-btn, .theme-toggle, .voice-toggle, .prefs-toggle, .sort-toggle,
+  .btn-skip, .btn-submit, .pal-row, .cmt-chip, .cmt-save, .cmt-cancel,
+  .attach-btn, .mic-btn, .settle-btn, .thread-reply-btn, .choice-chip { min-height: 44px; }
 }
 
 /* ─── The foot band ───────────────────────────────────────────
@@ -1547,19 +1583,25 @@ body {
   .spec-strip { margin-left: 0; }
 }
 
-.doc-section { position: relative; animation: fadeUp 0.4s ease both; }
+.doc-section { position: relative; }
 /* Continuous print: nothing collapses, so a settled section dims in place.
    Its prose stays on the page and stays readable — that is the whole point
    of printing the document rather than one section of it. */
-.doc-section.is-approved .rp { opacity: 0.5; }
-.doc-section.is-approved .doc-head { color: var(--faint); }
-.doc-section.is-approved:hover .rp { opacity: 0.85; transition: opacity 0.2s; }
+.doc-section.is-approved .rp { opacity: 0.72; }
+.doc-section.is-approved .doc-head { color: var(--soft); }
+.doc-section.is-approved:hover .rp { opacity: 1; transition: opacity 0.2s; }
 /* The prose dims on approval; the band that lets you take it back does not.
    `↺ withdraw approval` is the only way out of an approved section, and this
-   fight was already had for carried cards (0.55 rather than `.is-approved`'s
-   0.42, "so the affordances stay discoverable"). Specificity 0,4,0 — it TIES
+   fight was already had for carried cards ("so the affordances stay
+   discoverable"). 0.72 is the floor at which --ink2 still clears 4.5:1 on
+   both grounds — a dimmed section is still one the reviewer may re-read
+   before dispatch. Specificity 0,4,0 — it TIES
    the hover rule above, so its position after it is the whole mechanism. */
 .doc-section.is-approved .row-foot .rp { opacity: 1; }
+/* Nor does the heading: it is already in --soft, and dimming that a second
+   time (the head row is a `.rp` too) put it at 2.9:1. The reader navigates
+   by headings, settled or not. */
+.doc-section.is-approved .row-head .rp { opacity: 1; }
 
 /* The section heading carries its catalog number, the way a parts catalog
    numbers its entries — `9 · One human, N threads`. */
@@ -1582,6 +1624,19 @@ body {
 /* The live section is marked where the reader's eye already is — at the
    heading — the same rule the accordion's active card used. */
 .doc-section.is-active .doc-head { border-left: 2px solid var(--ink); margin-left: -10px; padding-left: 8px; }
+/* The segmented rule's slot is reserved whether or not a rule is drawn, so
+   approving a section (which draws the settled hairline) moves nothing. */
+.doc .row-head [id^="rseg-"] { min-height: 5px; margin-bottom: 8px; }
+.doc .row-head [id^="rseg-"] .rule-s { padding-bottom: 4px; margin-bottom: 0; }
+.doc .row-head [id^="rseg-"] .seg { margin-bottom: 0; }
+/* The keycap on `approve` is live only on the live section — `a` acts on
+   rState.active — so it prints only there. Hidden, not removed: the button
+   keeps its width, so activation moves nothing either. */
+.doc-section:not(.is-active) .doc-acts kbd { visibility: hidden; }
+/* A control that refuses (approve with comments open) says so in the disabled
+   grammar rather than sitting there enabled and silent. */
+.nt-btn[aria-disabled="true"] { border-color: var(--rule); color: var(--soft); background: none; cursor: not-allowed; }
+.nt-btn[aria-disabled="true"]:hover { border-color: var(--rule); color: var(--soft); background: none; }
 
 /* ─── Segmented rule ──────────────────────────────────────────
    State × party under an open heading, in honest counts: blue open
@@ -1616,7 +1671,7 @@ body {
 }
 .lflag-info  { color: var(--machine); }
 .lflag-warn  { color: var(--fact); }
-.lflag-error { color: var(--acc); }
+.lflag-error { color: var(--fact); font-weight: 700; }
 
 /* The words, in the margin of the same row — the machine's line, not a note
    in the conversation, so it takes no border and no actions: a producer flag
@@ -1861,8 +1916,8 @@ body {
   font-size: 12.5px;
   padding: 9px 12px;
 }
-.pal-input:focus { outline: none; }
-.pal-input::placeholder { color: var(--faint); }
+.pal-input:focus { outline: none; box-shadow: inset 0 -2px 0 var(--acc); }
+.pal-input::placeholder { color: var(--soft); }
 .pal-list { max-height: 46vh; overflow-y: auto; }
 .pal-row {
   display: flex;
@@ -1893,11 +1948,14 @@ body {
 .doc .section-content { max-width: none; padding: 0; margin-bottom: 0; }
 /* The break-out rule, at row scale. The `wide` row already gives the middle
    track the room; this is what lets the block use it. */
-.doc .rp > pre, .doc .rp > table, .doc .rp > .table-wrap {
+.doc .rp > pre, .doc .rp > .table-wrap {
   max-width: none;
   width: 100%;
   overflow-x: auto;
 }
+/* A table is as wide as its columns need, up to the measure: a three-column
+   table stretched to 100% stranded its last column 300px right of its text. */
+.doc .rp > table, .doc .rp > .table-wrap > table { width: auto; max-width: 100%; }
 .doc .rp > *:last-child { margin-bottom: 0; }
 .doc .row + .row { margin-top: 10px; }
 
@@ -1945,15 +2003,26 @@ body {
 }
 .doc .comment-popover { border-radius: 0; margin-top: 0; margin-bottom: 12px; }
 .doc .annot { border-radius: 0; margin-bottom: 12px; flex-direction: column; gap: 3px; }
-/* The whole-document invitation, printed once at the foot of the print
-   instead of once per section — the per-section hint was a line of chrome
-   between every passage and the next. */
+/* The whole-document invitation, printed once ABOVE the print — it is the
+   only line that teaches the core gesture, and at the foot of an eight-section
+   document nobody met it until they had read everything. It shares a row with
+   the sort toggle so neither sits alone in a band of its own. Label ink
+   (--soft), never the settled ink: this is live instruction. */
+.doc-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.doc-tools .sort-bar { margin: 0 0 0 auto; }
 .doc-hint {
-  margin: 22px 0 0;
+  margin: 0;
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   letter-spacing: 0.05em;
-  color: var(--faint);
+  color: var(--soft);
 }
 
 /* The document's own balance, drawn across the footer that closes the page —
@@ -1983,7 +2052,7 @@ body {
 }
 .pal-hint:hover { color: var(--ink); }
 .stat-conv b { color: var(--ink); font-weight: 600; }
-.stat-lat { color: var(--faint); }
+.stat-lat { color: var(--soft); }
 .stat-pending kbd, .stats kbd {
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 9px;
@@ -2041,8 +2110,9 @@ body {
   margin-top: 2px;
   display: block;
 }
-.note-field:focus { outline: none; border-color: var(--text3); }
-.note-field::placeholder { color: var(--text3); }
+.note-field:focus { outline: none; border-color: var(--acc); }
+.note-field::placeholder { color: var(--soft); }
+.note-field[aria-invalid="true"] { border-color: var(--fact); }
 .thumb-strip {
   display: flex;
   flex-wrap: wrap;
@@ -2158,19 +2228,23 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   cursor: pointer;
   color: var(--text2);
-  padding: 5px 10px;
+  padding: 5px 8px;
+  /* A chip that does not fit moves to the next row whole; it never breaks
+     `request changes` into two lines inside a 300px composer. */
+  white-space: nowrap;
 }
+.cmt-pop-row { flex-wrap: wrap; }
 .cmt-chip:hover { --c: var(--text3); color: var(--text); }
 .cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
 .cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
 .cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
 /* The replacement field only exists while the suggestion chip is on; it reuses
    `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
-/* Popover save / cancel — reticle buttons like the verdict row; save reads
-   affirmative (teal), cancel stays muted. */
+/* Popover save / cancel — save is the reviewer's own act and takes the
+   reviewer's cobalt (teal is the machine's party); cancel stays muted. */
 .cmt-save, .cmt-cancel {
   font-family: 'Fragment Mono', monospace;
   font-size: 10px;
@@ -2180,7 +2254,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   padding: 6px 14px;
   color: var(--text2);
 }
-.cmt-save { --c: var(--teal); color: var(--teal); }
+.cmt-save { --c: var(--acc); color: var(--acc); }
 .cmt-save:hover   { color: var(--text); }
 .cmt-cancel:hover { --c: var(--text3); color: var(--text); }
 /* a section the reviewer is selecting text in, to make the anchor target obvious */
@@ -2247,8 +2321,8 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   line-height: 1.5;
   display: block;
 }
-.thread-reply-field:focus { outline: none; border-color: var(--text3); }
-.thread-reply-field::placeholder { color: var(--text3); }
+.thread-reply-field:focus { outline: none; border-color: var(--acc); }
+.thread-reply-field::placeholder { color: var(--soft); }
 .open-thread.is-settled .thread-reply { display: none; }
 .exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
 .exchange + .exchange { border-top: 1px solid var(--border); }
@@ -2412,6 +2486,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .skip-link:focus { top: 8px; outline: 1.5px solid var(--accent); outline-offset: 2px; }
 #main-content:focus { outline: none; }
 
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
 /* ─── Keyboard focus (quality floor) ─────────────────────── */
 .card-head:focus-visible,
 .choice-chip:focus-visible,
@@ -2437,7 +2516,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   margin: 4px 2px 0;
   font-family: 'Fragment Mono', monospace;
   font-size: 11px;
-  color: var(--text3);
+  color: var(--soft);
 }
 .kbd-legend summary {
   cursor: pointer;
@@ -2525,7 +2604,8 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   flex: 0 1 auto;
   min-width: 0;
 }
-.stat-pending  { color: var(--text3); }
+.stat-run { display: flex; gap: 14px; flex-wrap: wrap; min-width: 0; align-items: center; }
+.stat-pending  { color: var(--soft); }
 
 /* The two dispatch controls are one unit and they do not shrink: a flex item's
    default `flex-shrink: 1` let `skip rest & submit` wrap onto three lines at a
@@ -2541,16 +2621,16 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   font-weight: 600;
   letter-spacing: 0.06em;
   padding: 9px 16px;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--rule);
   background: transparent;
-  color: var(--text2);
-  /* The label is three words and a glyph; a button narrower than its text
-     broke `skip rest & submit` onto three lines before `.btn-group` stopped
+  color: var(--soft);
+  /* The label is three words; a button narrower than its text broke
+     `skip rest & submit` onto three lines before `.btn-group` stopped
      shrinking. Both halves are needed. */
   white-space: nowrap;
   transition: all 0.15s;
 }
-.btn-skip:hover { border-color: var(--text3); color: var(--text); }
+.btn-skip:hover { border-color: var(--ink); color: var(--ink); }
 
 .btn-submit {
   font-family: 'Fragment Mono', monospace;
@@ -2582,7 +2662,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    updateQAStats; the DOM `disabled` attribute stays reserved for in-flight. */
 .btn-submit.disabled {
   background: transparent;
-  color: var(--faint);
+  color: var(--soft);
   border-color: var(--rule);
   cursor: not-allowed;
 }
@@ -2656,7 +2736,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
   letter-spacing: 0.06em;
-  color: var(--text3);
+  color: var(--soft);
 }
 .recap-row-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .recap-verdict {
@@ -2670,11 +2750,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .rv-approved { color: var(--teal); }
 .rv-changes  { color: var(--orange); }
 .rv-info     { color: var(--violet); }
-.rv-pending  { color: var(--text3); }
+.rv-pending  { color: var(--soft); }
 .recap-notes {
   font-family: 'Fragment Mono', monospace;
   font-size: 9px;
-  color: var(--text3);
+  color: var(--soft);
   text-align: right;
 }
 /* Three children, not one: the blocked state on the left, the two controls on
@@ -2911,7 +2991,11 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   60%  { opacity: 1; }
   100% { opacity: 1; transform: rotate(-5deg) scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .approve-stamp { animation: none; } .card { animation: none; } .processing-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .approve-stamp, .card, .ledger, .transmittal, .doc-section, .processing-dot { animation: none; }
+  .card-body-wrap, .progress-fill, .btn-skip, .btn-submit, .ledger-chevron, .transmittal-chevron { transition: none; }
+}
 .complete-headline {
   font-size: 1.6rem;
   font-weight: 600;
@@ -2997,7 +3081,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
   <div id="review-view" style="display:none">
     <div class="header">
       <div class="titleblock">
-        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="doc-path"></div></div>
+        <div class="tb-cell tb-flex tb-wide"><h1 class="tb-val mono" id="doc-path"></h1></div>
         <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
         <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
         <!-- Review-mode cells (#186): the composite's bar states the document's
@@ -3014,11 +3098,11 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       </div>
     </div>
     <div class="ledger" id="ledger" style="display:none">
-      <div class="ledger-head" id="ledger-head">
+      <button type="button" class="ledger-head" id="ledger-head" aria-expanded="true" aria-controls="ledger-body">
         <span class="ledger-title">Revisions &middot; <span id="ledger-count">0</span></span>
-        <span class="ledger-chevron">&#9662;</span>
-      </div>
-      <div class="ledger-body-wrap">
+        <span class="ledger-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="ledger-body-wrap" id="ledger-body">
         <div class="ledger-body-inner">
           <div class="ledger-rows" id="ledger-rows"></div>
         </div>
@@ -3032,11 +3116,13 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
          The checks TALLY still rides in that head, where it is one part of the
          line rather than the name of the whole thing. -->
     <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level flags" style="display:none"></nav>
-    <div class="sort-bar" id="sort-bar" style="display:none">
-      <button class="sort-toggle" id="sort-toggle" title="Order cards by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> document order</button>
+    <div class="doc-tools" id="doc-tools">
+      <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment on it &middot; <kbd>&#8984;K</kbd> for every command</div>
+      <div class="sort-bar" id="sort-bar" style="display:none">
+        <button type="button" class="sort-toggle" id="sort-toggle" title="Reorder the sections by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> sort weakest first</button>
+      </div>
     </div>
     <div class="cards" id="review-cards"></div>
-    <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Q&A mode ─────────────────────────────────────────────
@@ -3097,12 +3183,17 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
       <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
       <dt><kbd>i</kbd></dt><dd>comment &mdash; need info</dd>
-      <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally</dd>
+      <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally &middot; <kbd>Shift</kbd>+<kbd>Tab</kbd> always moves focus back</dd>
+      <dt><kbd>r</kbd> <kbd>s</kbd> <kbd>y</kbd> <kbd>n</kbd></dt><dd>on the note that has focus: reply, settle, accept, change anyway</dd>
+      <dt><kbd>j</kbd></dt><dd>jump to the next open thread</dd>
+      <dt><kbd>l</kbd></dt><dd>open the revision ledger</dd>
+      <dt><kbd>Esc</kbd></dt><dd>close the composer (a draft keeps; an empty box cancels), the palette, or the recap</dd>
       <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
       <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
       <dt><kbd>v</kbd></dt><dd>voice &mdash; the oral examination; Escape stops listening from anywhere</dd>
       <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
-      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>submit all</dd>
+      <dt><kbd>t</kbd></dt><dd>cycle theme &mdash; system, light, dark</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>approve &mdash; dispatch the round</dd>
     </dl>
     <!-- Every aggregate the bar and the footer print, defined once, in the
          page, in the reader's reach. A reviewer who cannot reproduce the
@@ -3133,8 +3224,13 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
        and one region cannot pace both. Ships hidden — nothing about this page
        changes until a reviewer turns the microphone on. -->
   <div class="voice-strip" id="voice-strip" aria-live="polite" style="display:none"></div>
+  <div class="sr-only" id="sr-status" role="status" aria-live="polite"></div>
   <div class="bottom-inner">
-    <div class="stats" id="stats-area" aria-live="polite">
+    <div class="stats" id="stats-area">
+      <!-- The live region is the COUNTERS, not the whole bar: the three
+           toggles beside them rewrite their own labels, and inside the region
+           every repaint re-read them on top of the button's own name change. -->
+      <span class="stat-run" id="stat-run" aria-live="polite">
       <span class="stat-pending"  id="stat-pending"></span>
       <!-- Review-mode footer (#186). `convergence` is the question a
            multi-round review actually asks — is the reviewer closing more than
@@ -3142,6 +3238,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
            the last same-origin request this page made. -->
       <span class="stat-conv" id="stat-conv" style="display:none"></span>
       <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
+      </span>
       <div class="bar-controls">
         <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
         <!-- Ships hidden and stays hidden where the browser has no recognizer:
@@ -3153,8 +3250,8 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       </div>
     </div>
     <div class="btn-group">
-      <button class="btn-skip" id="btn-skip"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
-      <button class="btn-submit disabled" id="btn-submit">submit all</button>
+      <button type="button" class="btn-skip" id="btn-skip">skip rest &amp; submit</button>
+      <button type="button" class="btn-submit disabled" id="btn-submit" aria-disabled="true">approve &mdash; dispatch</button>
     </div>
   </div>
 </div>
@@ -3171,7 +3268,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
     <div class="recap-grid" id="recap-grid"></div>
     <div class="recap-actions">
       <span class="recap-blocked" id="recap-blocked"></span>
-      <button type="button" class="btn-skip" id="recap-skip" style="display:none"><span aria-hidden="true">&#9889;</span> skip rest &amp; submit</button>
+      <button type="button" class="btn-skip" id="recap-skip" style="display:none">skip rest &amp; submit</button>
       <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
     </div>
   </div>
@@ -3220,7 +3317,7 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
 <div class="pal-overlay" id="pal-overlay" style="display:none">
   <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette">
     <input type="text" class="pal-input" id="pal-input" placeholder="&gt; type a command" autocomplete="off"
-           role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+           aria-label="Command" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
     <div class="pal-list" id="pal-list" role="listbox" aria-label="Commands"></div>
   </div>
 </div>
@@ -3397,6 +3494,19 @@ function renderDiffHunk(target, raw, title) {
 }
 
 function el(id) { return document.getElementById(id); }
+// Reduced motion is honored in script as well as in CSS: every programmatic
+// scroll asks this instead of hardcoding `smooth`.
+const SMOOTH = (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth';
+// The footer prints a round trip only once it is worth knowing about.
+const SLOW_RTT_MS = 200;
+// One status line for the refusals the page used to swallow — an approve
+// pressed on a section with comments open, a save pressed on an empty box.
+// Cleared and re-set on a tick so the same sentence announces twice.
+function announce(text) {
+  const n = el('sr-status'); if (!n) return;
+  n.textContent = '';
+  setTimeout(() => { n.textContent = text; }, 30);
+}
 
 function ledgerRowsHTML(entries) {
   return entries.map(e => `
@@ -3416,7 +3526,20 @@ function renderLedger() {
   el('ledger-count').textContent = entries.length;
   el('ledger-rows').innerHTML = ledgerRowsHTML(entries);
   el('ledger').classList.toggle('is-collapsed', entries.length > 2);
-  el('ledger-head').onclick = () => el('ledger').classList.toggle('is-collapsed');
+  const head = el('ledger-head');
+  const paint = () => head.setAttribute('aria-expanded',
+    el('ledger').classList.contains('is-collapsed') ? 'false' : 'true');
+  paint();
+  head.onclick = () => { el('ledger').classList.toggle('is-collapsed'); paint(); };
+}
+
+// The palette's and `l`'s one path to the ledger: open, expand, scroll.
+function openLedger() {
+  const p = el('ledger');
+  if (!p || p.style.display === 'none') return;
+  p.classList.remove('is-collapsed');
+  el('ledger-head')?.setAttribute('aria-expanded', 'true');
+  p.scrollIntoView({ behavior: SMOOTH, block: 'nearest' });
 }
 
 /* ─── Transmittal slip (round >= 2, review mode only) ────────
@@ -3939,7 +4062,8 @@ function openThreadItemHTML(t) {
       declined ? 'y' : 's', ' id="rsettle-' + cid + '" data-cid="' + cid + '"');
     const reply = () => btn('thread-reply-btn', declined ? 'Change anyway' : 'Reply',
       declined ? 'n' : 'r',
-      ' data-cid="' + cid + '" data-type="' + (declined ? 'changes' : esc(type)) + '"');
+      ' data-cid="' + cid + '" data-type="' + (declined ? 'changes' : esc(type))
+      + '" aria-expanded="false" aria-controls="rreplywrap-' + cid + '"');
     return '<div class="open-thread' + (declined ? ' is-declined' : '')
       + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
@@ -3953,14 +4077,14 @@ function openThreadItemHTML(t) {
       + '</div>'
       // Ships hidden; a verb reveals it. wireOpenThread un-hides it on build
       // when a reply is already pending in rState, so a rebuild never loses one.
-      + '<div class="thread-reply" data-cid="' + cid + '" data-type="' + esc(type) + '" hidden>'
-      +   '<div class="thread-reply-chips">'
+      + '<div class="thread-reply" id="rreplywrap-' + cid + '" data-cid="' + cid + '" data-type="' + esc(type) + '" hidden>'
+      +   '<div class="thread-reply-chips" role="group" aria-label="Reply type">'
       +     '<button type="button" class="cmt-chip cmt-chip-changes' + (type === 'changes' ? ' is-on' : '')
-      +       '" data-type="changes">request changes</button>'
+      +       '" data-type="changes" aria-pressed="' + (type === 'changes') + '">request changes</button>'
       +     '<button type="button" class="cmt-chip cmt-chip-info' + (type === 'info' ? ' is-on' : '')
-      +       '" data-type="info">need info</button>'
+      +       '" data-type="info" aria-pressed="' + (type === 'info') + '">need info</button>'
       +   '</div>'
-      +   '<textarea class="thread-reply-field" id="rreply-' + cid + '" data-cid="' + cid
+      +   '<textarea class="thread-reply-field" aria-label="Reply" id="rreply-' + cid + '" data-cid="' + cid
       +     '" placeholder="' + (declined
             ? 'A reply insists, and an insisting reply is binding.'
             : 'Reply… (switch to “request changes” to turn the discussion into an edit)')
@@ -4004,7 +4128,9 @@ function applyCardSort() {
   const btn = el('sort-toggle');
   if (btn) {
     btn.classList.toggle('is-active', conf);
-    btn.innerHTML = conf ? '&#8645; weakest first' : '&#8645; document order';
+    // The label names what a click DOES; the state is visible in the print.
+    btn.innerHTML = conf ? '&#8645; restore document order' : '&#8645; sort weakest first';
+    btn.setAttribute('aria-pressed', conf ? 'true' : 'false');
   }
 }
 
@@ -4539,9 +4665,13 @@ function specHTML(section) {
   // readout — drop it here and a documented feature goes invisible with no
   // error anywhere.
   const conf = confidenceAnnot(section);
-  return item('comments open', s.comments, s.comments > 0)
-    + item('suggestions open', s.suggestions, s.suggestions > 0)
-    + item('author kept as-is', s.declined, false)
+  // Each count prints only when it is one — three zeros were the run's usual
+  // content on a typed round, and the reader scanned past them to reach the
+  // one live value. A decline is OPEN judgment (sectionBalance says so), so
+  // it takes the open ink like the other two.
+  return (s.comments ? item('comments open', s.comments, true) : '')
+    + (s.suggestions ? item('suggestions open', s.suggestions, true) : '')
+    + (s.declined ? item('author kept as-is', s.declined, true) : '')
     + (s.checks ? item('checks', s.checksDone + '/' + s.checks
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
     + (conf ? item('agent confidence',
@@ -4735,7 +4865,7 @@ function wireDocSection(root, id) {
     e.stopPropagation();
     const note = root.querySelector('[data-cid="' + pin.dataset.cid + '"]');
     if (note) {
-      note.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      note.scrollIntoView({ behavior: SMOOTH, block: 'nearest' });
       // The note's first verb, not its reply box — the box ships hidden now,
       // and focusing a hidden field silently drops the focus on the floor.
       const target = note.querySelector('.nt-btn, textarea:not([hidden])');
@@ -4904,8 +5034,11 @@ function placeDocThreads(id) {
 // here so they can never disagree about which one is lit.
 function setThreadReplyType(wrap, type) {
   wrap.dataset.type = type;
-  wrap.querySelectorAll('.cmt-chip').forEach(c =>
-    c.classList.toggle('is-on', c.dataset.type === type));
+  wrap.querySelectorAll('.cmt-chip').forEach(c => {
+    const on = c.dataset.type === type;
+    c.classList.toggle('is-on', on);
+    c.setAttribute('aria-pressed', String(on));
+  });
 }
 
 // The settle button + reply box wiring, lifted out of buildReviewCard so both
@@ -4922,6 +5055,8 @@ function wireOpenThread(id, node) {
       const wrap = node.querySelector('.thread-reply[data-cid="' + b.dataset.cid + '"]');
       if (!wrap) return;
       wrap.hidden = false;
+      node.querySelectorAll('.thread-reply-btn[data-cid="' + b.dataset.cid + '"]')
+        .forEach(x => x.setAttribute('aria-expanded', 'true'));
       setThreadReplyType(wrap, b.dataset.type);
       const field = wrap.querySelector('.thread-reply-field');
       if (field) field.focus({ preventScroll: true });
@@ -5121,7 +5256,12 @@ function updateDocColumns() {
   const margin = sections.some(s => docFlagSplit(s).margin.length || docNotes(s).length)
     || !!doc.querySelector('.rm .comment-popover.is-open');
   doc.classList.toggle('no-gutter', !gutter);
-  doc.classList.toggle('no-margin', !margin);
+  // The PRINT never collapses its margin. An empty margin is still the
+  // measure — the page holds it — and collapsing put the prose at 967px, ~150
+  // characters a line, on every note-less round, then rewrapped the whole
+  // document the moment the first composer opened. The accordion still
+  // collapses: there the wide row IS the section, and the room is real.
+  doc.classList.toggle('no-margin', !margin && !isContinuousPrint());
 }
 
 // Open/close a card, keeping the header button's aria-expanded in sync.
@@ -5133,6 +5273,14 @@ function setCardExpanded(cardEl, expanded) {
   cardEl.classList.toggle('is-active', expanded);
   const head = cardEl.querySelector('.card-head');
   if (head) head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  // A body clipped to 0fr is still in the tab order unless it is inert — a
+  // keyboard reader walked nine invisible stops per closed card. Focus that
+  // was inside moves to the head rather than being dropped on the floor.
+  const wrap = cardEl.querySelector('.card-body-wrap');
+  if (wrap) {
+    if (!expanded && wrap.contains(document.activeElement) && head) head.focus({ preventScroll: true });
+    wrap.inert = !expanded;
+  }
 }
 
 // `opts.noScroll` marks a passive activation — the reader pointed at or tabbed
@@ -5146,7 +5294,7 @@ function activateReviewCard(id, opts) {
   const target = el('rcard-' + id);
   if (target && target.classList.contains('is-carried')) {
     setCarriedShown(id, true);
-    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    target.scrollIntoView({ behavior: SMOOTH, block: 'nearest' });
     return;
   }
   const prev = rState.active;
@@ -5161,7 +5309,7 @@ function activateReviewCard(id, opts) {
   const card = el('rcard-' + id);
   if (card) {
     setCardExpanded(card, true);
-    if (!(opts && opts.noScroll)) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!(opts && opts.noScroll)) card.scrollIntoView({ behavior: SMOOTH, block: 'nearest' });
   }
   syncReviewDot(id);
 }
@@ -5246,7 +5394,12 @@ function skipReviewCard(id) {
   const idx = sections.findIndex(s => s.id === id);
   const rest = [...sections.slice(idx + 1), ...sections.slice(0, idx)];
   const next = rest.find(s => !rState.verdicts[s.id]?.verdict);
-  if (next) setTimeout(() => activateReviewCard(next.id), 80);
+  if (next) setTimeout(() => {
+    activateReviewCard(next.id);
+    // Tab advanced the section; focus advances with it, or the reader is
+    // left focused on a control in the section they just left.
+    el('rbtn-primary-' + next.id)?.focus({ preventScroll: true });
+  }, 80);
 }
 
 function toggleReviewCard(id) {
@@ -5275,7 +5428,10 @@ function advanceFrom(id) {
 // Approve = sign off this section. A section with comments cannot approve; the
 // primary button only reads "approve" when comments.length === 0.
 function approveSection(id) {
-  if (activeComments(id).length) return;  // guarded by label
+  if (activeComments(id).length) {          // guarded by label AND said aloud
+    announce('approve is refused while comments are open — settle or remove them first');
+    return;
+  }
   (rState.verdicts[id] ||= {}).skip = false;
   rState.verdicts[id].verdict = 'approved';
   advanceFrom(id);
@@ -5401,8 +5557,14 @@ function renderPrimaryButton(id) {
   const n = activeComments(id).length;
   const approved = deriveVerdict(id) === 'approved';
   btn.className = 'nt-btn ' + (approved || n ? 'is-quiet' : 'is-pri');
-  btn.innerHTML = approved ? '&#8634; withdraw approval'
-    : n ? ('&#10003; done · ' + n + (n === 1 ? ' comment' : ' comments'))
+  // With comments open the control cannot act, and it says so: the disabled
+  // grammar plus a title naming the way out, never an enabled silent no-op.
+  // No checkmark on a section whose derived verdict is `changes`.
+  const refused = !approved && n > 0;
+  btn.setAttribute('aria-disabled', refused ? 'true' : 'false');
+  btn.title = refused ? 'approve is refused while comments are open — settle or remove them first' : '';
+  btn.innerHTML = approved ? '<span aria-hidden="true">&#8634;</span> withdraw approval'
+    : n ? (n + (n === 1 ? ' comment' : ' comments') + ' open')
         : '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd>';
 }
 
@@ -5575,18 +5737,22 @@ function openCommentPopover(id, { anchor, type } = {}) {
   pop.dataset.type = 'changes';
   const canSuggest = !REVIEW_DATA || REVIEW_DATA.mode !== 'diff';
   const captureState = {};
+  // Where focus goes back to when the box closes: the control that opened
+  // it, or the section's own `+ note` verb when a selection opened it.
+  pop._returnTo = (document.activeElement && document.activeElement !== document.body)
+    ? document.activeElement : el('rcmtnote-' + id);
   pop.innerHTML =
-      '<div class="cmt-pop-row">'
-    +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes">request changes</button>'
-    +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info">need info</button>'
-    +   (canSuggest ? '<button type="button" class="cmt-chip cmt-chip-suggestion" data-type="suggestion">suggest wording</button>' : '')
+      '<div class="cmt-pop-row" role="group" aria-label="Comment type">'
+    +   '<button type="button" class="cmt-chip cmt-chip-changes is-on" data-type="changes" aria-pressed="true">request changes</button>'
+    +   '<button type="button" class="cmt-chip cmt-chip-info" data-type="info" aria-pressed="false">need info</button>'
+    +   (canSuggest ? '<button type="button" class="cmt-chip cmt-chip-suggestion" data-type="suggestion" aria-pressed="false">suggest wording</button>' : '')
     + '</div>'
     + (anchor ? '<div class="cmt-pop-quote">' + esc(anchor.text) + '</div>' : '')
-    + '<textarea class="note-field cmt-pop-note" placeholder="Describe the change or question…"></textarea>'
+    + '<textarea class="note-field cmt-pop-note" aria-label="Comment" placeholder="Describe the change or question…"></textarea>'
     + '<div class="thumb-strip" style="display:none" aria-live="polite"></div>'
-    + '<button type="button" class="attach-btn"><span aria-hidden="true">&#128206;</span> attach image</button>'
+    + '<button type="button" class="attach-btn">attach image</button>'
     + (voiceSupported()
-        ? '<button type="button" class="mic-btn"><span aria-hidden="true">&#127908;</span> dictate</button>'
+        ? '<button type="button" class="mic-btn">dictate</button>'
         : '')
     + '<input type="file" accept="image/*" multiple style="display:none">'
     + '<div class="cmt-pop-row"><button type="button" class="cmt-save">save</button>'
@@ -5646,7 +5812,10 @@ function openCommentPopover(id, { anchor, type } = {}) {
   };
   pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
     pop.dataset.type = ch.dataset.type;
-    pop.querySelectorAll('.cmt-chip').forEach(c => c.classList.toggle('is-on', c === ch));
+    pop.querySelectorAll('.cmt-chip').forEach(c => {
+      c.classList.toggle('is-on', c === ch);
+      c.setAttribute('aria-pressed', String(c === ch));
+    });
     ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
     ta.focus();
   });
@@ -5663,15 +5832,21 @@ function openCommentPopover(id, { anchor, type } = {}) {
   // on the focus, or the browser's own scroll-to-field undoes it and lands the
   // viewport on the textarea with the chips and the quote above the fold.
   ta.focus({ preventScroll: true });
-  pop.scrollIntoView({ block: 'nearest' });
+  revealWithinBars(pop);
   pop.querySelector('.cmt-save').onclick = () => {
     const text = ta.value.trim();
     // A suggestion ships on its wording: the same box the other types use for
     // a note carries the replacement the author applies verbatim.
     const isSuggestion = pop.dataset.type === 'suggestion';
     if (!text) {
-      ta.placeholder = isSuggestion ? 'a suggestion needs replacement wording'
-                                    : 'a comment needs a note';
+      const why = isSuggestion ? 'a suggestion needs replacement wording'
+                               : 'a comment needs a note';
+      // Said, not only shown: the placeholder swap alone was silent to a
+      // screen reader and vanished on the first keystroke.
+      ta.placeholder = why;
+      ta.setAttribute('aria-invalid', 'true');
+      ta.addEventListener('input', () => ta.removeAttribute('aria-invalid'), { once: true });
+      announce(why);
       ta.focus();
       return;
     }
@@ -5695,10 +5870,32 @@ function openCommentPopover(id, { anchor, type } = {}) {
   }
 }
 
+/* Scroll a node clear of the fixed bottom bar and the sticky masthead, by
+   the smallest amount that does it. `scrollIntoView({ block: 'nearest' })`
+   was the previous mechanism, and under `scroll-behavior: smooth` Chrome
+   ignores `scroll-padding` for it — the composer opened with its save and
+   cancel under the bar, and the page did not move. A plain `scrollBy` honors
+   the behavior the page asks for, so the paddings are read and applied here. */
+function revealWithinBars(node) {
+  const r = node.getBoundingClientRect();
+  const cs = getComputedStyle(document.documentElement);
+  const padTop = parseFloat(cs.scrollPaddingTop) || 0;
+  const padBottom = parseFloat(cs.scrollPaddingBottom) || 0;
+  let dy = 0;
+  if (r.bottom > innerHeight - padBottom) dy = r.bottom - (innerHeight - padBottom);
+  if (r.top - dy < padTop) dy = r.top - padTop;   // never push the top under the masthead
+  if (dy) scrollBy({ top: dy, behavior: SMOOTH });
+}
+
 function closeCommentPopover(id) {
   const pop = el('rpop-' + id);
-  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; pop.classList.remove('is-open'); }
+  // Focus goes back to what opened the box. Wiping innerHTML with focus
+  // inside it dropped focus to <body>, and the next Tab restarted the page.
+  const back = pop && pop._returnTo && document.contains(pop._returnTo)
+    ? pop._returnTo : el('rcmtnote-' + id);
+  if (pop) { pop.style.display = 'none'; pop.innerHTML = ''; pop.classList.remove('is-open'); pop._returnTo = null; }
   updateDocColumns();
+  if (back && back.focus) back.focus({ preventScroll: true });
 }
 
 /* Marking used to happen twice — `renderHighlights` wrapped the anchors, then
@@ -5895,8 +6092,10 @@ function updateReviewStats() {
   // mirror reads it; overloading it here would re-enable a not-ready button
   // on any submit failure.
   sub.setAttribute('aria-disabled', sub.classList.contains('disabled') ? 'true' : 'false');
-  sub.textContent = remaining > 0 ? `approve — dispatch (${remaining} unreviewed)`
-                                  : 'approve — dispatch';
+  // The stamp names its action and nothing else: `#stat-pending` beside it
+  // already carries the blocking count, and restating it here uppercased the
+  // same number a second time in the same bar.
+  sub.textContent = 'approve — dispatch';
   // The composite's footer states four things; this one was stating seven, and
   // at the doc page's width that wrapped the stamp onto a second line. The bar
   // above already carries `approved N/M` and the item counts, so the footer
@@ -6002,11 +6201,15 @@ function renderDocStatus() {
   // The question a multi-round review actually asks — is the reviewer closing
   // more than they open — with both ends counted, never estimated.
   const conv = el('stat-conv');
-  conv.style.display = '';
+  // Printed once the arrow has somewhere to point: on a fresh round both ends
+  // are the same number, and a round compared with itself teaches nothing.
+  conv.style.display = b.open !== b.atStart ? '' : 'none';
   conv.innerHTML = 'convergence ' + b.atStart + ' &rarr; <b>' + b.open + '</b>';
   conv.title = 'open items when this round was armed → open items now';
   const lat = el('stat-lat');
-  if (_lastRTT === null) lat.style.display = 'none';
+  // A measured number, and only one worth acting on — a local server's 11 ms
+  // is machine trivia in the reviewer's bar.
+  if (_lastRTT === null || _lastRTT < SLOW_RTT_MS) lat.style.display = 'none';
   else { lat.style.display = ''; lat.textContent = 'round trip ' + _lastRTT + ' ms'; }
 }
 
@@ -6107,10 +6310,9 @@ function reviewPaletteCommands() {
   const openThread = nextOpenThread();
   if (openThread) cmds.push({ label: 'Jump to next open thread', key: 'j',
                               run: () => activateReviewCard(openThread) });
-  cmds.push({ label: 'Open revision ledger', key: 'l', run: () => {
-    const p = el('ledger');
-    if (p && p.style.display !== 'none') { p.classList.remove('is-collapsed'); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
-  } });
+  // Listed only while there is a ledger to open — a verb that cannot act
+  // has no place in the directory.
+  if (el('ledger').style.display !== 'none') cmds.push({ label: 'Open revision ledger', key: 'l', run: openLedger });
   cmds.push({ label: 'Open recap and submit', key: 'o', run: () => openRecap() });
   if (voiceSupported()) cmds.push(voicePaletteCommand());
   cmds.push({ label: 'Cycle theme', key: 't', run: () => cycleTheme() });
@@ -6141,14 +6343,19 @@ function nextOpenThread() {
 
 let _palCmds = [];
 let _palIdx = 0;
+let _palReturnTo = null;
 
 function paletteIsOpen() { return el('pal-overlay').style.display !== 'none'; }
 
 function openPalette() {
   if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;
+  _palReturnTo = document.activeElement;
   el('pal-overlay').style.display = '';
   el('pal-input').value = '';
   renderPalette('');
+  // Modal in fact as well as in aria: the page behind the scrim is inert
+  // while it is open, and focus goes back where it came from on close.
+  setBackgroundInert(true);
   el('pal-input').focus();
 }
 
@@ -6156,6 +6363,9 @@ function closePalette() {
   el('pal-overlay').style.display = 'none';
   el('pal-list').innerHTML = '';
   _palCmds = [];
+  setBackgroundInert(false);
+  const back = _palReturnTo; _palReturnTo = null;
+  if (back && back !== document.body && document.contains(back)) back.focus({ preventScroll: true });
 }
 
 function renderPalette(query) {
@@ -6164,10 +6374,13 @@ function renderPalette(query) {
   _palIdx = 0;
   const list = el('pal-list');
   if (!_palCmds.length) { list.innerHTML = '<div class="pal-empty">no matching command</div>'; return; }
+  // Options are addressed through the combobox (`aria-activedescendant`) and
+  // take no tab stop of their own — Tab-then-Enter used to run row 0.
   list.innerHTML = _palCmds.map((c, i) =>
-    '<button type="button" class="pal-row' + (i === 0 ? ' is-on' : '') + '" role="option"'
-    + ' aria-selected="' + (i === 0) + '" data-i="' + i + '">'
+    '<button type="button" class="pal-row' + (i === 0 ? ' is-on' : '') + '" role="option" tabindex="-1"'
+    + ' id="pal-row-' + i + '" aria-selected="' + (i === 0) + '" data-i="' + i + '">'
     + '<span>' + esc(c.label) + '</span><span class="k">' + esc(c.key) + '</span></button>').join('');
+  el('pal-input').setAttribute('aria-activedescendant', 'pal-row-0');
   list.querySelectorAll('.pal-row').forEach(b =>
     b.addEventListener('click', () => runPalette(+b.dataset.i)));
 }
@@ -6180,6 +6393,7 @@ function movePalette(delta) {
     r.classList.toggle('is-on', i === _palIdx);
     r.setAttribute('aria-selected', String(i === _palIdx));
   });
+  el('pal-input').setAttribute('aria-activedescendant', rows[_palIdx].id);
   rows[_palIdx].scrollIntoView({ block: 'nearest' });
 }
 
@@ -6276,10 +6490,10 @@ function buildQACard(q, index) {
               ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
               <div class="nt nt-compose">
                 <div class="nh">you &mdash; context</div>
-                <textarea class="note-field" id="qnote-${q.id}" placeholder="Optional — or paste a screenshot"></textarea>
+                <textarea class="note-field" id="qnote-${q.id}" aria-label="Context for this answer" placeholder="Optional — or paste a screenshot"></textarea>
                 <div class="thumb-strip" id="qthumbs-${q.id}" aria-live="polite" style="display:none"></div>
-                <button type="button" class="attach-btn" id="qattach-${q.id}"><span aria-hidden="true">&#128206;</span> attach image</button>
-                ${voiceSupported() ? `<button type="button" class="mic-btn" id="qmic-${q.id}"><span aria-hidden="true">&#127908;</span> dictate</button>` : ''}
+                <button type="button" class="attach-btn" id="qattach-${q.id}">attach image</button>
+                ${voiceSupported() ? `<button type="button" class="mic-btn" id="qmic-${q.id}">dictate</button>` : ''}
                 <input type="file" accept="image/*" multiple style="display:none" id="qfile-${q.id}">
               </div>
               <div class="nt-acts doc-acts">
@@ -6381,7 +6595,7 @@ function activateQACard(id) {
   const card = el('qacard-' + id);
   if (card) {
     setCardExpanded(card, true);
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.scrollIntoView({ behavior: SMOOTH, block: 'nearest' });
   }
   syncQADot(id);
 }
@@ -6418,6 +6632,7 @@ function syncQACard(id) {
   const chEl = el('qchoices-' + id);
   if (chEl) chEl.querySelectorAll('.choice-chip').forEach(chip => {
     chip.classList.toggle('selected', chip.dataset.choice === choice);
+    chip.setAttribute('aria-pressed', String(chip.dataset.choice === choice));
   });
 
   // Badge
@@ -6657,11 +6872,12 @@ const RECAP_VERDICTS = {
 };
 
 function recapRowsHTML() {
-  return REVIEW_DATA.sections.map(s => {
+  // Numbered as the print numbers them — `1 ·`, not the machine's `s1`.
+  return REVIEW_DATA.sections.map((s, i) => {
     const v = RECAP_VERDICTS[deriveVerdict(s.id)] || RECAP_VERDICTS.pending;
     const notes = activeComments(s.id).length;
     return '<button type="button" class="recap-row" data-target="' + esc(s.id) + '">'
-      + '<span class="recap-id">' + esc(s.id) + '</span>'
+      + '<span class="recap-id">' + (i + 1) + '</span>'
       + '<span class="recap-row-title">' + esc(s.title) + '</span>'
       + '<span class="recap-verdict ' + v.cls + '"><span class="dot ' + v.dot + '" aria-hidden="true"></span>' + v.label + '</span>'
       + '<span class="recap-notes">' + (notes ? notes + ' note' + (notes === 1 ? '' : 's') : '&mdash;') + '</span>'
@@ -6711,10 +6927,13 @@ function openRecap() {
                                   : '';
   el('recap-overlay').style.display = '';
   setBackgroundInert(true);   // trap focus + block interaction behind the modal
-  // Focus the control that can act, never a dead primary. Runs AFTER both
-  // display flips above — focus() on a `display:none` node silently no-ops,
-  // the same class of trap closeRecap's comment records for `inert`.
-  (canSkip ? el('recap-skip') : ready ? el('recap-confirm') : el('recap-close')).focus();
+  // Focus the confirm when it can act, otherwise the close — NEVER the skip.
+  // Opening on `skip rest & submit` made `o` then Enter dispatch a round with
+  // every section unreviewed, unconfirmed; the escape hatch is one Tab away,
+  // never the default. Runs AFTER both display flips above — focus() on a
+  // `display:none` node silently no-ops, the same class of trap closeRecap's
+  // comment records for `inert`.
+  (ready ? el('recap-confirm') : el('recap-close')).focus();
 }
 
 // The recap is a modal (aria-modal="true"): mark everything behind it inert
@@ -7710,8 +7929,29 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1);  return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); movePalette(-1); return; }
-    if (e.key === 'Enter')     { e.preventDefault(); runPalette(_palIdx); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // ⇧⏎ is printed beside `Approve all unblocked`; it runs that row
+      // wherever the highlight is, or the highlighted row when it is absent.
+      const all = e.shiftKey ? _palCmds.findIndex(c => c.key === '⇧⏎') : -1;
+      runPalette(all >= 0 ? all : _palIdx);
+      return;
+    }
     return;
+  }
+
+  // Escape closes the composer from inside its own textarea — the one place
+  // the TEXTAREA guard below would otherwise swallow it. An empty box
+  // cancels; a box with a draft only gives up focus, so Escape never loses
+  // typed text. Never over the modals that own Escape themselves.
+  if (e.key === 'Escape' && !prefsIsOpen() && !(REVIEW_DATA && recapIsOpen())) {
+    const pop = document.querySelector('.comment-popover.is-open');
+    if (pop) {
+      e.preventDefault();
+      const ta = pop.querySelector('.cmt-pop-note');
+      if (ta && ta.value.trim()) ta.blur(); else pop.querySelector('.cmt-cancel')?.click();
+      return;
+    }
   }
 
   /* Escape stops listening from ANYWHERE, and like ⌘K it sits ahead of the
@@ -7746,6 +7986,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey && voiceSupported()) {
     e.preventDefault(); toggleVoice(); return;
   }
+  // `t` is the theme control's keycap in both directories, like `v`.
+  if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault(); cycleTheme(); return;
+  }
 
   if (REVIEW_DATA) {
     if (e.key === 'o' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleRecap(); return; }
@@ -7756,15 +8000,33 @@ document.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); el('recap-confirm').click(); }
       return;
     }
+    // The palette's other two keycaps, bound where they are printed.
+    if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); openLedger(); return; }
+    if (e.key === 'j' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const t = nextOpenThread();
+      if (t) { e.preventDefault(); activateReviewCard(t); }
+      return;
+    }
+    // The margin's own verbs, live on the note that has focus: r/s/y/n are
+    // printed on Reply / Settle / Accept / Change anyway, and a bare `s` in
+    // the prose must never settle a thread the reader is not looking at.
+    if (e.key.length === 1 && 'rsyn'.includes(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const note = document.activeElement && document.activeElement.closest
+        ? document.activeElement.closest('.open-thread') : null;
+      const verb = note && [...note.querySelectorAll('.nt-acts .nt-btn')]
+        .find(b => (b.querySelector('kbd') || {}).textContent === e.key);
+      if (verb) { e.preventDefault(); verb.click(); return; }
+    }
     if (e.key === 'a' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); approveSection(rState.active); return; }
     // Modifier-guarded like 'a' and 'o': bare `c` opens a composer, so an
     // unguarded branch would swallow ⌘C/Ctrl+C — copy, on a page of prose.
     if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'changes'); return; }
     if (e.key === 'i' && !e.metaKey && !e.ctrlKey && !e.altKey && rState.active) { e.preventDefault(); openTypedComment(rState.active, 'info'); return; }
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.shiftKey) {
       // Advance to the next card only while focus is inside the active card;
       // otherwise let Tab navigate natively so the skip-link, bottom-bar
       // controls, and browser chrome stay keyboard-reachable (#75).
+      // Shift+Tab is always native: backward is a direction, not a verb.
       const card = rState.active ? el('rcard-' + rState.active) : null;
       if (card && card.contains(document.activeElement)) {
         e.preventDefault();
@@ -7801,7 +8063,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault(); advanceQA(qState.active); return;
       }
     }
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.shiftKey) {
       const card = el('qacard-' + qState.active);
       if (card && card.contains(document.activeElement)) {
         e.preventDefault(); advanceQA(qState.active); return;
