@@ -87,7 +87,9 @@ def main() -> None:
         st, ct, payload = raw(base, "/next-round", "POST", body={"round": {"sections": []}})
         assert st == 400 and "output" in payload["error"], payload
 
-    # ── #54: legacy ?output= query param still works (fallback) ──────────────
+    # ── #103: the legacy ?output= query param is gone — body only ───────────
+    # Its last sender was branch B's re-arm curl, which `loop.py rearm`
+    # replaced. A caller still sending it is told about the field it can fix.
     # A separate .viva dir so this server's server.url can't collide with the
     # first (both would otherwise write the same path in the same parent).
     viva2 = tmp / ".viva2"
@@ -95,8 +97,10 @@ def main() -> None:
     (viva2 / "in3.json").write_text(json.dumps(r1))
     with launch_server(viva2 / "in3.json", viva2 / "out3.json", cwd=tmp) as base:
         out4 = viva2 / "out4.json"
-        assert post(base, "/next-round?output=" + str(out4), dict(r1, round=2)) == {"ok": True}
-        assert get(base, "/input")["round"] == 2
+        st, ct, payload = raw(base, "/next-round?output=" + str(out4), "POST",
+                              body=dict(r1, round=2))
+        assert st == 400 and "output" in payload["error"], (st, payload)
+        assert get(base, "/input")["round"] == 1, "a refused round is not served"
 
     print("OK")
 

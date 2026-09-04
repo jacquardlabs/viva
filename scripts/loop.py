@@ -2,8 +2,14 @@
 """viva's review-loop driver — the bookkeeping half of the launch → wait → act
 → rewrite loop, so SKILL.md can carry judgment work only.
 
-Eight subcommands: `interview`, `start`, `annotate`, `arm`, `wait`, `rearm`,
-`finish`, `abandon`. Issues: #104, #102, #103, #125, #179.
+Nine subcommands: `interview`, `start`, `annotate`, `summarize`, `arm`, `wait`,
+`rearm`, `finish`, `abandon`. Issues: #104, #102, #103, #125, #177, #179.
+
+Two review modes, one driver. A doc (`start --doc`) is parsed by
+`parse_sections.py` and served `--mode review`; a diff (`start --target <pr|ref>`
+or `--kind worktree`) is captured by the argv `review_target.py` prints, parsed by
+`parse_diff.py`, and served `--mode diff`. Every subcommand after `start` reads
+the mode off the round file — the agent types neither a mode nor a round.
 
 Three rules this file exists to keep:
   * The agent never types a round number. Every subcommand derives it from disk.
@@ -17,6 +23,7 @@ Three rules this file exists to keep:
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -50,6 +57,10 @@ _HTTP_TIMEOUT = 10
 # off loopback or not at all. Ten seconds of it would stall every start behind
 # a `server.url` whose process is long gone.
 _PREFLIGHT_TIMEOUT = 2
+# A diff round above this many hunks stops at a seam until every hunk carries a
+# one-line `summary` (`loop.py summarize`): below it the collapsed list is
+# already navigable, and the summaries are not worth the tokens (#188).
+SUMMARY_THRESHOLD = 10
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -271,7 +282,7 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
     agent's source."""
     for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
         p.unlink()
-    names = ["open-notes.json"]
+    names = ["open-notes.json", "target.json", "diff.patch"]
     if not keep_server_url:
         names.append("server.url")
     if include_answers:
@@ -379,16 +390,122 @@ def _run_bundle_checks(bundle: dict, round_file: Path) -> int:
     return len(flags)
 
 
-def _seam_stop(round_no: int, round_file: Path, why: str) -> int:
+def _seam_stop(round_no: int, round_file: Path, why: str,
+               diff: bool = False) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
-    print("viva-loop: run your producer, then `loop.py annotate --sidecar "
-          "<path>` and `loop.py arm`.")
+    if diff:
+        # A diff seam is for the hunk summaries, not a producer — there is no
+        # producer contract to point at, and the merge verb is `summarize`.
+        print("viva-loop: write one line per hunk, then `loop.py summarize "
+              "--map <path|->` and `loop.py arm`.")
+    else:
+        print("viva-loop: run your producer, then `loop.py annotate --sidecar "
+              "<path>` and `loop.py arm`.")
     # Named, not templated: a producer reading `--input` needs this path, and
     # computing `review-input-r{N}.json` is the counter this file exists to stop
     # the agent holding.
     print(f"viva-loop: round file → {round_file}")
-    print(f"viva-loop: producer contract → {REFERENCES / 'producers.md'}")
+    if not diff:
+        print(f"viva-loop: producer contract → {REFERENCES / 'producers.md'}")
     return 0
+
+
+# ── diff review: the target record and the capture ───────────────────────────
+def _classify(target: Optional[str], kind: Optional[str]) -> dict:
+    """One target → one dispatch record, from `review_target.py` — a subprocess,
+    so `schema` stays the one cross-import. It runs before the pre-flight and
+    before any clear, so a bad target costs nothing."""
+    argv = [sys.executable, SCRIPTS / "review_target.py"]
+    if target is not None:
+        argv.append(target)
+    if kind is not None:
+        argv += ["--kind", kind]
+    proc = run(argv, capture_output=True, text=True)
+    if proc.returncode != 0:
+        die((proc.stderr or "").strip() or "review_target.py failed")
+    try:
+        return json.loads(proc.stdout)
+    except ValueError:
+        die("review_target.py printed non-JSON")
+    return {}  # unreachable; die() raises
+
+
+def _target_record(viva: Path) -> Tuple[dict, Path]:
+    """The record `start` saved, and the directory its capture must run in."""
+    path = viva / "target.json"
+    if not path.exists():
+        die(f"{path} is gone — the capture argv is not recoverable. "
+            f"`loop.py abandon`, then start again.")
+    record = load_json(path)
+    return record, Path(record.get("cwd") or Path.cwd())
+
+
+def _capture(record: dict, dest: Path, cwd: Path) -> int:
+    """Run the record's `capture` argv with stdout into `dest`; return the size.
+
+    A failed capture must never leave a patch behind: a 0-byte or partial
+    `diff.patch` is read by every caller as "no changes", and a session whose
+    `gh` call 403'd (the wrong account active) would sign off as fully resolved
+    with nothing reviewed. So on any failure the file is removed and the argv
+    and its stderr are the error."""
+    argv = [str(c) for c in record.get("capture") or []]
+    if not argv:
+        die(f"{record.get('label')!r} has no capture argv — a doc is not a diff")
+    if not cwd.is_dir():
+        die(f"the capture must run from {cwd}, which is gone. Re-run from the "
+            f"directory the review was started in.")
+    try:
+        with open(str(dest), "wb") as fh:
+            proc = subprocess.Popen(argv, stdout=fh, stderr=subprocess.PIPE,
+                                    cwd=str(cwd))
+            _, err = proc.communicate()
+    except FileNotFoundError:
+        dest.unlink(missing_ok=True)
+        die(f"capture failed: {argv[0]} is not on PATH ({' '.join(argv)})")
+    if proc.returncode != 0:
+        dest.unlink(missing_ok=True)
+        die(f"capture failed ({proc.returncode}): {' '.join(argv)} — "
+            f"{(err or b'').decode(errors='replace').strip()}")
+    return dest.stat().st_size
+
+
+def _needs_summaries(data: dict) -> bool:
+    sections = data.get("sections", [])
+    return (len(sections) > SUMMARY_THRESHOLD
+            and any(not s.get("summary") for s in sections))
+
+
+def _relaunch_hint(viva: Path) -> str:
+    """The `start` that would recreate this diff session, rebuilt from the
+    record — the label (`PR #187 (o/r)`, `working tree`) is not a legal
+    target."""
+    try:
+        record = load_json(viva / "target.json")
+    except (OSError, ValueError):
+        return "`loop.py start --target <target>`"
+    kind = record.get("kind")
+    if kind == "worktree":
+        return "`loop.py start --kind worktree`"
+    if kind == "ref":
+        return f"`loop.py start --target {record.get('ref')} --kind ref`"
+    if kind == "pr":
+        repo = f" (repo {record['repo']})" if record.get("repo") else ""
+        return f"`loop.py start --target {record.get('number')} --kind pr`{repo}"
+    return "`loop.py start --target <target>`"
+
+
+def _diff_seam_or_arm(args, round_no: int, round_file: Path, data: dict) -> int:
+    """The diff round's one seam: the hunk summaries. `--parse-only` holds it
+    open regardless; `--arm-anyway` declines it (summaries are advisory)."""
+    if args.parse_only:
+        return _seam_stop(round_no, round_file, "--parse-only", diff=True)
+    if _needs_summaries(data) and not args.arm_anyway:
+        sections = data.get("sections", [])
+        missing = sum(1 for s in sections if not s.get("summary"))
+        return _seam_stop(round_no, round_file,
+                          f"{missing} of {len(sections)} hunks need a summary",
+                          diff=True)
+    return cmd_arm(args)
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -439,6 +556,61 @@ def cmd_interview(args) -> int:
 
 def cmd_start(args) -> int:
     viva = Path(args.viva_dir)
+    diff_form = args.target is not None or args.kind is not None
+    if args.doc is not None and diff_form:
+        die("--doc is the doc form and --target/--kind the diff form — pass one "
+            "or the other")
+    if args.doc is None and not diff_form:
+        die("no target — `loop.py start --doc <path>` reviews a doc; `loop.py "
+            "start --target <pr|ref>` or `loop.py start --kind worktree` reviews "
+            "a diff")
+    if args.handoff and diff_form:
+        die("--handoff hands a round to an interview, which is a doc review — "
+            "use --doc")
+    if diff_form:
+        record = _classify(args.target, args.kind)
+        if record.get("kind") != "doc":
+            return _start_diff(args, viva, record)
+        # A `--target` naming a markdown file is the doc form spelled the other
+        # way — filesystem first, then shape (review_target.py).
+        args.doc = record["doc"]
+    return _start_doc(args, viva)
+
+
+def _start_diff(args, viva: Path, record: dict) -> int:
+    for flag, value in (("--split-on", args.split_on), ("--type", args.doc_type),
+                        ("--pass", args.pass_kind), ("--posture", args.posture)):
+        if value is not None:
+            die(f"{flag} is a doc-review flag; {record.get('label')} is "
+                f"reviewed hunk by hunk")
+    _preflight_no_live_session(viva)
+    viva.mkdir(parents=True, exist_ok=True)
+    # No resume branch and no preference seam: neither has hunk semantics.
+    _clear_state(viva)
+    cwd = Path.cwd().resolve()
+    # The record verbatim plus the one thing it lacks — where its capture
+    # runs. `rearm` and `finish` re-capture from a later shell whose cwd this
+    # driver does not control.
+    (viva / "target.json").write_text(
+        json.dumps(dict(record, cwd=str(cwd)), indent=2) + "\n")
+    size = _capture(record, viva / "diff.patch", cwd)
+    if size == 0:
+        print(f"viva-loop: no changes to review — {record.get('label')}")
+        return 0
+    round_file = viva / "review-input-r1.json"
+    # A non-empty patch with no hunks is a real failure, not an empty diff:
+    # `parse_diff.py` exits 1 on it and this dies rather than completing.
+    run_or_die([sys.executable, SCRIPTS / "parse_diff.py", viva / "diff.patch",
+                "--output", round_file, "--round", "1",
+                "--doc-file", record.get("label") or "working tree"],
+               "parse", f"The patch is at {viva / 'diff.patch'}.")
+    data = load_json(round_file)
+    print(f"viva-loop: {len(data.get('sections', []))} hunk(s) · "
+          f"{record.get('label')}")
+    return _diff_seam_or_arm(args, 1, round_file, data)
+
+
+def _start_doc(args, viva: Path) -> int:
     doc = Path(args.doc)
     if not doc.exists():
         die(f"doc not found: {doc}")
@@ -583,7 +755,7 @@ def cmd_annotate(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
     if not n:
-        die("no round to annotate — run `loop.py start --doc <path>` first")
+        die("no round to annotate — run `loop.py start` first")
     inp, _ = round_files(viva, n)
     # Annotate is a PRE-ARM step. The server loads its round once and replaces
     # it only from `/next-round`, so annotating the round it is already serving
@@ -613,7 +785,7 @@ def cmd_arm(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
     if not n:
-        die("no round to arm — run `loop.py start --doc <path>` first")
+        die("no round to arm — run `loop.py start` first")
     inp, out = round_files(viva, n)
 
     # Branch on liveness, not on the round number. A round-1 `arm` re-run after
@@ -637,10 +809,59 @@ def cmd_arm(args) -> int:
         return 0
     if base:
         die(f"{viva}/server.url names {base}, but nothing is answering there. "
-            f"Delete the stale file, then `loop.py start --doc <path>`.")
+            f"Delete the stale file, then `loop.py start`.")
 
-    base = _launch_server(viva, "review", inp, out)
+    # The mode is round state, written by the parser that produced the round,
+    # never typed: `parse_sections.py` writes `review`, `parse_diff.py` `diff`.
+    mode = load_json(inp).get("mode") or "review"
+    if mode not in ("review", "diff"):
+        die(f"round {n}'s input carries mode {mode!r} — expected review or diff")
+    base = _launch_server(viva, mode, inp, out)
     print(f"viva-loop: round {n} armed · {base}")
+    return 0
+
+
+def cmd_summarize(args) -> int:
+    """Merge a `{id: one-line summary}` map into the current round's hunks —
+    the diff seam's driver end, the way `annotate` is the producer seam's."""
+    viva = Path(args.viva_dir)
+    n = current_round(viva)
+    if not n:
+        die("no round to summarize — run `loop.py start --target <pr|ref>` or "
+            "`loop.py start --kind worktree` first")
+    inp, _ = round_files(viva, n)
+    # Pre-arm, for the reason `annotate` is: the server reads its round once.
+    base = server_url(viva)
+    if base and probe_round(base) == n:
+        die(f"round {n} is already armed — the server at {base} holds it in "
+            f"memory and would never see this merge. Summarize before arming.")
+    try:
+        raw = sys.stdin.read() if args.map == "-" else Path(args.map).read_text()
+        summaries = json.loads(raw)
+    except OSError as e:
+        die(f"cannot read --map: {e}")
+    except ValueError:
+        die("--map must be JSON")
+    if not isinstance(summaries, dict):
+        die("--map must be a JSON object of {id: summary}")
+    data = load_json(inp)
+    by_id = {s.get("id"): s for s in data.get("sections", [])}
+    for sid, text in summaries.items():
+        if sid not in by_id:
+            die(f"unknown section id {sid!r} — round {n} carries "
+                f"s1…s{len(by_id)}")
+        if not isinstance(text, str) or not text.strip():
+            die(f"summary for {sid} must be a non-empty string")
+        by_id[sid]["summary"] = text.strip()
+    try:
+        schema.validate_review_input(data)
+    except ValueError as e:
+        die(f"invalid review-input after the merge: {e}")
+    tmp = inp.with_name(inp.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    os.replace(str(tmp), str(inp))
+    print(f"viva-loop: round {n} summarized · {len(summaries)} of {len(by_id)} "
+          f"hunk(s) · {inp}")
     return 0
 
 
@@ -650,20 +871,25 @@ def cmd_wait(args) -> int:
     if not n:
         die("no armed round to wait on")
     inp, out = round_files(viva, n)
+    input_data = load_json(inp)
+    diff = input_data.get("mode") == "diff"
+    if diff:
+        relaunch = f"Relaunch with {_relaunch_hint(viva)}."
+    else:
+        relaunch = (f"Relaunch with `loop.py start --doc "
+                    f"{input_data.get('doc_file', '<doc>')}` — carried "
+                    f"approvals are preserved.")
 
     while not out.exists():
         base = server_url(viva)
         if not base:
             die(f"server is gone ({viva}/server.url disappeared) and round {n} "
-                f"never returned verdicts. Relaunch with "
-                f"`loop.py start --doc {load_json(inp).get('doc_file', '<doc>')}` "
-                f"— carried approvals are preserved.", 2)
+                f"never returned verdicts. {relaunch}", 2)
         served = probe_round(base)
         if served is None:
             die(f"server at {base} is not answering and round {n} never "
-                f"returned verdicts. Delete {viva}/server.url, then relaunch "
-                f"with `loop.py start --doc "
-                f"{load_json(inp).get('doc_file', '<doc>')}`.", 2)
+                f"returned verdicts. Delete {viva}/server.url, then relaunch. "
+                f"{relaunch}", 2)
         if served != n:
             # Parsed but never armed — `rearm --parse-only` wrote round n while
             # the server still serves round `served`, and nothing will ever
@@ -674,7 +900,6 @@ def cmd_wait(args) -> int:
         time.sleep(_WAIT_INTERVAL)
 
     verdicts = load_json(out)
-    input_data = load_json(inp)
 
     print(json.dumps(verdicts, indent=2))
     print("=== id -> title ===")
@@ -694,7 +919,8 @@ def cmd_wait(args) -> int:
     else:
         klass = "has-work"
     print(f"=== round {n}: {klass} ===")
-    if klass in ("has-work", "submitted-early"):
+    # A diff round has no threads and no prose, so neither rail applies.
+    if klass in ("has-work", "submitted-early") and not diff:
         # The next step is the rewrite, and the rule it turns on — act on each
         # thread's *latest* reviewer turn — is documented, not obvious. A paused
         # round can carry comments too, so it needs the same pointer.
@@ -711,7 +937,7 @@ def cmd_rearm(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
     if not n:
-        die("no round to re-arm — run `loop.py start --doc <path>` first")
+        die("no round to re-arm — run `loop.py start` first")
     inp, out = round_files(viva, n)
     if not out.exists():
         die(f"round {n} has no verdicts yet — run `loop.py wait` first")
@@ -722,6 +948,8 @@ def cmd_rearm(args) -> int:
     # round it parses, so re-reading it here is what keeps round N+1 splitting
     # the way round 1 did. Absent key → auto-detection, unchanged.
     round_data = load_json(inp)
+    if round_data.get("mode") == "diff":
+        return _rearm_diff(args, viva, n, inp, out, round_data)
     doc = round_data.get("doc_file")
     split_on = round_data.get("split_on")
     doc_type = round_data.get("doc_type")
@@ -792,6 +1020,33 @@ def cmd_rearm(args) -> int:
     return cmd_arm(args)
 
 
+def _rearm_diff(args, viva: Path, n: int, inp: Path, out: Path,
+                round_data: dict) -> int:
+    if args.response or args.decline or args.pass_kind is not None \
+            or args.posture is not None:
+        die("a diff round carries no threads and no pass — --response, "
+            "--decline, --pass, and --posture apply to doc review only")
+    record, cwd = _target_record(viva)
+    # The SAME capture as round 1, never a different one: a `git diff`
+    # substituted on round 2 of a PR review reviews the working tree instead,
+    # which reads as a shrinking diff rather than as an error.
+    size = _capture(record, viva / "diff.patch", cwd)
+    if size == 0:
+        # Not a sign-off: `finish` owns `/complete` in every mode, and it
+        # re-captures for itself rather than trusting this line.
+        print("viva-loop: diff is empty after re-capture — nothing to re-arm; "
+              "`loop.py finish` signs it off")
+        return 0
+    nxt_in, _ = round_files(viva, n + 1)
+    run_or_die([sys.executable, SCRIPTS / "parse_diff.py", viva / "diff.patch",
+                "--output", nxt_in, "--round", str(n + 1),
+                "--doc-file", round_data.get("doc_file") or record.get("label")
+                or "working tree",
+                "--prior-input", inp, "--prior-verdicts", out],
+               "re-parse", f"The running server still holds round {n}.")
+    return _diff_seam_or_arm(args, n + 1, nxt_in, load_json(nxt_in))
+
+
 def cmd_finish(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
@@ -802,6 +1057,8 @@ def cmd_finish(args) -> int:
         die(f"round {n} has no verdicts yet — nothing to finish")
 
     input_data, verdicts = load_json(inp), load_json(out)
+    if input_data.get("mode") == "diff":
+        return _finish_diff(args, viva, n, inp, out, input_data, verdicts)
     if not schema.round_is_complete(input_data, verdicts):
         by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
         pending = [s.get("title") for s in input_data.get("sections", [])
@@ -884,6 +1141,82 @@ def cmd_finish(args) -> int:
     return 0
 
 
+def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
+                 input_data: dict, verdicts: dict) -> int:
+    """The diff finish, decided from a FRESH capture, never from memory.
+
+    Three outcomes. The capture is empty: every hunk was applied or reverted at
+    the reviewer's request, so there is nothing left to approve — `/complete`
+    is sent `resolved: "empty"`, the one signal the server's diff gate honors
+    (#177). The capture equals round n and round n is all-approved: the normal
+    finish. Anything else — a hunk changed since the human approved it, or one
+    reverted without the rest being re-presented — is a `rearm`, because the
+    server's gate would (rightly) refuse it and the human has not seen it."""
+    if args.doc:
+        die("--doc is a doc-review override; a diff session records its target "
+            "in target.json")
+    record, cwd = _target_record(viva)
+    base = server_url(viva)
+    if not base:
+        die(f"no live server to complete (no {viva}/server.url). The verdicts "
+            f"are on disk; nothing was written to the working tree.")
+    sections = input_data.get("sections", [])
+    revised = sum(1 for s in verdicts.get("sections", [])
+                  if s.get("verdict") in schema.LEDGER_VERDICTS)
+    summary = {"rounds_total": n, "sections_total": len(sections),
+               "sections_revised": revised}
+
+    size = _capture(record, viva / "diff.patch", cwd)
+    if size == 0:
+        post(base, "/complete", dict(summary, resolved="empty"),
+             "completing the session", "The server may need `loop.py abandon`.")
+        print("viva-loop: diff fully resolved — nothing to commit")
+        print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
+              f"{revised} revised")
+        return 0
+
+    if not schema.round_is_complete(input_data, verdicts):
+        by_id = {s.get("id"): s for s in verdicts.get("sections", [])}
+        pending = [s.get("title") for s in sections
+                   if (by_id.get(s.get("id")) or {}).get("verdict") != "approved"]
+        if not sections:
+            why = "the round carries no hunks to approve"
+        else:
+            why = (f"{len(pending)} of {len(sections)} hunk(s) not approved — "
+                   f"{', '.join(repr(t) for t in pending[:5])}")
+        die(f"refusing to finish: {why}. Nothing is auto-accepted; re-present "
+            f"the round or abandon it.")
+
+    # Freshness: the diff as it stands must be the diff the human approved.
+    # `parse_diff.py` with round n as prior carries an approval only onto a hunk
+    # whose title and body match, so a hunk edited, added, or dropped since the
+    # sign-off falls out of `approved_ids`. The scratch name must not match
+    # `current_round`'s `review-input-r*.json` glob.
+    scratch = viva / "finish-check.json"
+    try:
+        run_or_die([sys.executable, SCRIPTS / "parse_diff.py",
+                    viva / "diff.patch", "--output", scratch, "--round", str(n),
+                    "--doc-file", input_data.get("doc_file") or "working tree",
+                    "--prior-input", inp, "--prior-verdicts", out],
+                   "re-parse",
+                   "The session is still live; fix and re-run `loop.py finish`.")
+        fresh = load_json(scratch)
+    finally:
+        scratch.unlink(missing_ok=True)
+        scratch.with_name(scratch.name + ".tmp").unlink(missing_ok=True)
+    carried = set(fresh.get("approved_ids", []))
+    fresh_ids = [s.get("id") for s in fresh.get("sections", [])]
+    if len(fresh_ids) != len(sections) or not all(i in carried for i in fresh_ids):
+        die(f"the diff changed since round {n} was reviewed — `loop.py rearm` "
+            f"to re-present it. Nothing is auto-accepted.")
+
+    post(base, "/complete", summary, "completing the session",
+         "The server may need `loop.py abandon`.")
+    print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
+          f"{revised} revised")
+    return 0
+
+
 def cmd_abandon(args) -> int:
     viva = Path(args.viva_dir)
     base = server_url(viva)
@@ -924,8 +1257,20 @@ def main() -> int:
                         "the server stays up for `start --handoff`.")
     p.set_defaults(func=cmd_interview)
 
-    p = sub.add_parser("start", help="clear state, parse round 1, arm it")
-    p.add_argument("--doc", required=True)
+    p = sub.add_parser("start", help="clear state, parse round 1, arm it — a "
+                                     "doc (--doc) or a diff (--target/--kind)")
+    p.add_argument("--doc", default=None, metavar="PATH",
+                   help="the markdown doc to review, section by section")
+    p.add_argument("--target", default=None, metavar="TARGET",
+                   help="a PR number/URL or a git ref to review hunk by hunk "
+                        "(`review_target.py` classifies it; a markdown path "
+                        "here is the doc form). The working tree takes no "
+                        "target: `--kind worktree` alone.")
+    p.add_argument("--kind", default=None,
+                   choices=("doc", "pr", "ref", "worktree"),
+                   help="force the target's kind — a branch named `42` needs "
+                        "`--kind ref`; `--kind worktree` reviews unstaged "
+                        "changes and takes no --target")
     p.add_argument("--split-on", metavar="REGEX",
                    help="split the doc on every heading whose title matches "
                         "this regex (re.search, any depth) instead of an "
@@ -953,10 +1298,10 @@ def main() -> int:
                    help="stop after parsing so a producer can annotate round 1 "
                         "before it is armed (the opt-in producer seam)")
     p.add_argument("--arm-anyway", action="store_true",
-                   help="arm even when standing preferences would open the "
-                        "producer seam. Not the rejected `finish --force`: this "
-                        "declines an advisory producer, it never bypasses the "
-                        "human gate.")
+                   help="arm even when standing preferences (a doc) or missing "
+                        "hunk summaries (a diff) would open the seam. Not the "
+                        "rejected `finish --force`: this declines an advisory "
+                        "step, it never bypasses the human gate.")
     p.add_argument("--handoff", action="store_true",
                    help="hand round 1 to the live interview at .viva/server.url "
                         "instead of refusing over it — the /viva-write seam. "
@@ -969,6 +1314,12 @@ def main() -> int:
     p.add_argument("--sidecar", required=True,
                    help="producer sidecar JSON list, or '-' for stdin")
     p.set_defaults(func=cmd_annotate)
+
+    p = sub.add_parser("summarize", help="merge one-line hunk summaries into "
+                                         "the current diff round (pre-arm)")
+    p.add_argument("--map", required=True, metavar="PATH",
+                   help="JSON object of {section id: summary}, or '-' for stdin")
+    p.set_defaults(func=cmd_summarize)
 
     p = sub.add_parser("arm", help="make the current round file live")
     p.set_defaults(func=cmd_arm)
@@ -1000,6 +1351,8 @@ def main() -> int:
                         "carried kind." % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after the re-parse so a producer can annotate it")
+    p.add_argument("--arm-anyway", action="store_true",
+                   help="diff review: arm even when new hunks lack a summary")
     p.set_defaults(func=cmd_rearm)
 
     p = sub.add_parser("finish", help="sign off — refuses an incomplete round")

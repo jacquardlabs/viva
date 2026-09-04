@@ -125,7 +125,7 @@ def test_review_mode_diff_passthrough() -> None:
 
         # Pass-through across a round push: /next-round body reflected in /input.
         r2 = dict(r1, round=3)
-        post(base, "/next-round?output=" + str(viva / "out2.json"), r2)
+        post(base, "/next-round", dict(r2, output=str(viva / "out2.json")))
         data = get(base, "/input")
         s1 = next(s for s in data["sections"] if s["id"] == "s1")
         assert s1.get("diff") == diff, f"diff lost across round: {s1}"
@@ -199,7 +199,7 @@ def test_diff_mode_next_round() -> None:
             })
             r2_input = dict(DIFF_INPUT, round=2, approved_ids=["s2"])
             r2_out = str(Path(tmp) / ".viva" / "review-r2.json")
-            post(base, f"/next-round?output={r2_out}", r2_input)
+            post(base, "/next-round", dict(r2_input, output=r2_out))
             data = get(base, "/input")
             assert data["round"] == 2
             print("test_diff_mode_next_round: OK")
@@ -233,9 +233,15 @@ def test_review_round_refused_by_a_diff_server() -> None:
 
 
 def test_diff_mode_complete_shuts_down() -> None:
+    """B5: every hunk approved. The gate that #177 put on diff mode passes on
+    the base alone, exactly as a review round does."""
     with tempfile.TemporaryDirectory() as tmp:
         proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
         try:
+            post(base, "/submit", {"round": 1, "sections": [
+                {"id": "s1", "verdict": "approved"},
+                {"id": "s2", "verdict": "approved"},
+            ]})
             post(base, "/complete", {
                 "rounds_total": 1, "sections_total": 2, "sections_revised": 1
             })
@@ -256,11 +262,10 @@ def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
     """/viva-review branch B's empty-diff re-arm (#116): the human requests a
     `changes` edit that fully resolves the diff before every hunk is
     individually approved, so the loop reaches `/complete` straight from
-    B4 instead of B5 — never calling `/next-round` for that round.
-    The server-side handling is call-site agnostic, so this asserts the same
-    shutdown behavior `test_diff_mode_complete_shuts_down` covers for B5,
-    exercised via the new call site's actual path (submit a `changes` verdict,
-    skip `/next-round`, go straight to `/complete`)."""
+    B4 instead of B5 — never calling `/next-round` for that round. Since #177
+    that finish carries `resolved: "empty"`, the caller's word that the
+    re-capture came back empty; without it the `changes` verdict on record is
+    refused (`test_server_qa_complete_shutdown.py` pins the refusal)."""
     with tempfile.TemporaryDirectory() as tmp:
         proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
         try:
@@ -273,8 +278,9 @@ def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
             })
             # Step 4: re-diff comes back empty (the requested edit reverted
             # the only outstanding hunk) — go straight to /complete, no
-            # /next-round in between.
+            # /next-round in between, asserting why.
             post(base, "/complete", {
+                "resolved": "empty",
                 "rounds_total": 1, "sections_total": 2, "sections_revised": 1
             })
             for _ in range(35):
@@ -290,6 +296,26 @@ def test_diff_mode_complete_from_empty_diff_branch_shuts_down() -> None:
             proc.wait()
 
 
+def test_page_captions_a_resolved_diff() -> None:
+    """Wiring check only (no JS harness — stdlib Python): the `complete` SSE
+    handler reads `resolved` off the payload `loop.py finish` sent and captions
+    the stamp as a resolved diff rather than counting sections that no longer
+    exist. The stamp itself (`stamp-sub`) is untouched — DESIGN.md's contract."""
+    sys.path.insert(0, str(ROOT))
+    import server  # noqa: E402
+    page = server.HTML
+    start = page.index("es.addEventListener('complete'")
+    end = page.index("\n  });", start)
+    handler = page[start:end]
+    assert "data.resolved === 'empty'" in handler, \
+        "the complete handler must branch on the resolved-empty signal"
+    assert "diff fully resolved" in handler, \
+        "a resolved diff must be captioned as one"
+    assert "stampSub.textContent = counted" in handler, \
+        "the stamp's own line must stay count-only"
+    print("test_page_captions_a_resolved_diff: OK")
+
+
 # ─── Runner ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -300,6 +326,7 @@ def main() -> None:
     test_review_round_refused_by_a_diff_server()
     test_diff_mode_complete_shuts_down()
     test_diff_mode_complete_from_empty_diff_branch_shuts_down()
+    test_page_captions_a_resolved_diff()
     print("\nAll server diff tests passed.")
 
 

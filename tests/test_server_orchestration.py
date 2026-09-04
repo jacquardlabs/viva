@@ -22,13 +22,15 @@ rewrite step still applies standing preferences, nothing is auto-approved, a
 suggested edit is applied verbatim, and every `references/` file is one some
 reader is handed the path to.
 
-**The bookkeeping rule is scoped, and the scope is the point (#170).** `loop.py`
-drives doc review and the intake interview, so `/viva-review`'s branch A and all
-of `/viva-write` are held to it. `/viva-review` branch B (hunks — `parse_diff.py`
-and `--mode diff`, neither of which the driver knows) carries that bash
-deliberately. It is enumerated below rather than exempted by a wildcard, so a
-SECOND skill growing its own loop fails this test — and when #179's remaining
-half extends the driver to hunks, the enumeration is the list to empty.
+**The bookkeeping rule has no exemptions left (#179).** `loop.py` drives doc
+review, hunk review, and the intake interview, so every bash block in every
+skill is held to it. The closed set of skills carrying their own loop is
+asserted empty below, so a skill growing one fails this test.
+
+The diff checks drive a real git repo through the driver's other mode: capture,
+parse, arm, the summaries seam, the empty re-capture that signs off as
+`resolved: "empty"`, and the freshness refusal when the diff moved after the
+human approved it.
 """
 import ast
 import contextlib
@@ -53,10 +55,6 @@ SKILLS_DIR = ROOT / ".claude" / "skills"
 SKILL = SKILLS_DIR / "viva-review" / "SKILL.md"       # the driver's own skill
 WRITE_SKILL = SKILLS_DIR / "viva-write" / "SKILL.md"
 REFERENCES = ROOT / "references"
-
-# The one part of the prose `loop.py` actually drives. Branch B is a different
-# parser and a different `--mode`, so the driver has nothing to offer it yet.
-DRIVEN_SECTION = ("## A. Doc review", "## B. Diff review")
 
 BASH_BLOCK_RE = re.compile(r"```bash\n(.*?)```", re.S)
 
@@ -488,8 +486,8 @@ def check_no_subcommand_takes_a_round() -> None:
     listed = re.search(r"\{([a-z,]+)\}", top.stdout)
     assert listed, "could not read the subcommand list from --help:\n" + top.stdout
     names = listed.group(1).split(",")
-    assert set(names) >= {"interview", "start", "annotate", "arm", "wait",
-                          "rearm", "finish", "abandon"}, names
+    assert set(names) >= {"interview", "start", "annotate", "summarize", "arm",
+                          "wait", "rearm", "finish", "abandon"}, names
 
     for name in names:
         h = subprocess.run([sys.executable, str(LOOP), name, "--help"],
@@ -497,7 +495,7 @@ def check_no_subcommand_takes_a_round() -> None:
         assert h.returncode == 0, h.stderr
         assert "--round" not in h.stdout, \
             "`%s` exposes a round argument — the round is derived, never passed" % name
-        required = [flag for flag in ("--doc", "--sidecar", "--input")
+        required = [flag for flag in ("--doc", "--sidecar", "--input", "--map")
                     if flag in h.stdout]
         argv = [sys.executable, str(LOOP), "--viva-dir", str(sandbox), name]
         for flag in required:
@@ -537,12 +535,8 @@ def _numbered_step(text: str, keyword: str) -> str:
 
 
 def _driven_prose() -> str:
-    """The slice of `/viva-review` that `loop.py` drives — the invocation
-    preamble plus branch A, stopping where branch B's own loop begins."""
-    text = SKILL.read_text()
-    start, end = text.index(DRIVEN_SECTION[0]), text.index(DRIVEN_SECTION[1])
-    assert start < end, "branch A must precede branch B in %s" % SKILL
-    return text[:end]
+    """All of `/viva-review` — both branches are the driver's now."""
+    return SKILL.read_text()
 
 
 def check_skill_carries_no_bookkeeping_bash() -> None:
@@ -559,35 +553,25 @@ def check_skill_carries_no_bookkeeping_bash() -> None:
     print("  ok  check_skill_carries_no_bookkeeping_bash")
 
 
-def check_only_the_undriven_flow_carries_its_own_loop() -> None:
-    """The scope of the rule above, asserted as a closed set.
+def check_no_skill_carries_its_own_loop() -> None:
+    """The scope of the rule above, asserted as a closed set — now empty.
 
-    One flow drives itself because `loop.py` cannot reach it yet, and it must
-    say so — an undocumented second skill growing its own loop is the drift this
-    catches. `/viva-write` left this set when `interview` and `start --handoff`
-    landed (#179); branch B leaves it when the driver learns `parse_diff.py`.
+    Two flows used to drive themselves because `loop.py` could not reach them:
+    `/viva-write`'s interview and hand-off, and `/viva-review`'s branch B. #179
+    gave the driver both. A skill growing its own loop lands in this set and
+    fails here, by name.
     """
     undriven = {}
     for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
-        text = skill_md.read_text()
-        blocks = BASH_BLOCK_RE.findall(text)
-        if skill_md == SKILL:
-            # Only the half the driver does not own may carry it.
-            blocks = BASH_BLOCK_RE.findall(text[text.index(DRIVEN_SECTION[1]):])
+        blocks = BASH_BLOCK_RE.findall(skill_md.read_text())
         hits = [label for block in blocks for label, pattern in FORBIDDEN_BASH
                 if pattern.search(block)]
         if hits:
             undriven[skill_md] = sorted(set(hits))
-
-    assert set(undriven) == {SKILL}, (
-        "skills carrying their own loop changed — expected exactly "
-        "%s (branch B), got %s"
-        % (SKILL.parent.name, sorted(p.parent.name for p in undriven)))
-    # It must name the reason, so the exemption is a documented constraint
-    # rather than an accident nobody notices.
-    assert "#179" in SKILL.read_text(), (
-        "%s must name the issue that would let the driver take branch B" % SKILL)
-    print("  ok  check_only_the_undriven_flow_carries_its_own_loop")
+    assert not undriven, (
+        "a skill carries its own loop — loop.py owns that: %s"
+        % {p.parent.name: hits for p, hits in undriven.items()})
+    print("  ok  check_no_skill_carries_its_own_loop")
 
 
 def check_rewrite_step_applies_standing_preferences() -> None:
@@ -961,6 +945,264 @@ def check_interview_exits_2_when_the_server_dies() -> None:
     print("  ok  check_interview_exits_2_when_the_server_dies")
 
 
+def _git_repo(td: Path, lines=("a", "b", "c")) -> Path:
+    """One committed file, for a worktree or ref target. Never a `pr` target —
+    CI has no `gh`. Returns the file."""
+    subprocess.run(["git", "init", "-q"], cwd=str(td), check=True)
+    f = td / "f.txt"
+    f.write_text("\n".join(lines) + "\n")
+    subprocess.run(["git", "add", "f.txt"], cwd=str(td), check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-q", "-m", "init"], cwd=str(td), check=True)
+    return f
+
+
+def _submit(base: str, round_no: int, verdicts: dict) -> None:
+    post(base, "/submit", {"round": round_no, "submitted_early": False,
+                           "sections": [{"id": i, "verdict": v}
+                                        for i, v in verdicts.items()]})
+
+
+def _server_gone(viva: Path) -> bool:
+    for _ in range(50):
+        if not (viva / "server.url").exists():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def check_diff_round_trip() -> None:
+    """The driver's other mode, end to end: a worktree edit captured and armed
+    `--mode diff`, a `changes` verdict, an edit, a re-capture into round 2, an
+    approval, and a finish — with every doc-only surface refused on the way."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        f = _git_repo(td)
+        f.write_text("a\nB\nc\n")
+
+        r = loop(viva, td, "start", "--kind", "worktree")
+        assert r.returncode == 0, r.stderr
+        assert "1 hunk(s) · working tree" in r.stdout, r.stdout
+        assert "round 1 armed" in r.stdout, r.stdout
+        record = json.loads((viva / "target.json").read_text())
+        assert record["kind"] == "worktree" and record["capture"] == ["git", "diff"], record
+        assert Path(record["cwd"]) == td, "the capture's cwd is recorded"
+        assert (viva / "diff.patch").stat().st_size > 0
+        r1 = json.loads((viva / "review-input-r1.json").read_text())
+        assert r1["mode"] == "diff" and r1["doc_file"] == "working tree", r1
+        base = (viva / "server.url").read_text().strip()
+        try:
+            served = get(base, "/input")
+            assert served["mode"] == "diff" and served["round"] == 1, served
+
+            # A doc-only flag on a diff start is refused, loudly.
+            r = loop(viva, td, "start", "--kind", "worktree", "--type", "plan")
+            assert r.returncode != 0 and "doc-review flag" in r.stderr, r.stderr
+
+            _submit(base, 1, {"s1": "changes"})
+            assert poll_for(viva / "review-r1.json")
+            w = loop(viva, td, "wait")
+            assert w.returncode == 0 and "round 1: has-work" in w.stdout, w.stdout
+            assert "open-notes.md" not in w.stdout and "style.md" not in w.stdout, \
+                "a diff round has no threads and no prose rail: " + w.stdout
+
+            r = loop(viva, td, "rearm", "--response", "s1-c1=done")
+            assert r.returncode != 0 and "no threads" in r.stderr, r.stderr
+            r = loop(viva, td, "finish", "--doc", "x.md")
+            assert r.returncode != 0 and "--doc" in r.stderr, r.stderr
+
+            # The agent edits; `rearm` re-captures and arms round 2 in place.
+            f.write_text("a\nBB\nc\n")
+            r = loop(viva, td, "rearm")
+            assert r.returncode == 0, r.stderr
+            assert "round 2 armed" in r.stdout, r.stdout
+            served = get(base, "/input")
+            assert served["round"] == 2 and served["mode"] == "diff", served
+            assert served["approved_ids"] == [], "a changed hunk carries nothing"
+
+            _submit(base, 2, {"s1": "approved"})
+            assert poll_for(viva / "review-r2.json")
+            assert "round 2: all-approved" in loop(viva, td, "wait").stdout
+            fin = loop(viva, td, "finish")
+            assert fin.returncode == 0, fin.stderr
+            assert "signed off — 2 round(s), 1 hunk(s)" in fin.stdout, fin.stdout
+            assert "nothing to commit" not in fin.stdout, "an approved diff is committable"
+            assert _server_gone(viva), "an accepted /complete shuts the server down"
+        finally:
+            loop(viva, td, "abandon")
+    print("  ok  check_diff_round_trip")
+
+
+def check_diff_finish_from_an_empty_recapture() -> None:
+    """#177. The reviewer asks for a hunk to go; the agent reverts it; the diff
+    is empty. `rearm` reports that and arms nothing; `finish` re-captures for
+    itself, asserts `resolved: "empty"` to `/complete`, and the server — which
+    holds a `changes` verdict and would refuse a plain finish — signs off."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        f = _git_repo(td)
+        f.write_text("a\nB\nc\n")
+        assert loop(viva, td, "start", "--kind", "worktree").returncode == 0
+        base = (viva / "server.url").read_text().strip()
+        try:
+            _submit(base, 1, {"s1": "changes"})
+            assert poll_for(viva / "review-r1.json")
+            f.write_text("a\nb\nc\n")                       # reverted
+            r = loop(viva, td, "rearm")
+            assert r.returncode == 0, r.stderr
+            assert "diff is empty after re-capture" in r.stdout, r.stdout
+            assert "finish" in r.stdout, "must name the verb that signs off"
+            assert get(base, "/input")["round"] == 1, "nothing was armed"
+            assert not (viva / "review-input-r2.json").exists()
+
+            fin = loop(viva, td, "finish")
+            assert fin.returncode == 0, fin.stderr
+            assert "diff fully resolved — nothing to commit" in fin.stdout, fin.stdout
+            assert "1 revised" in fin.stdout, fin.stdout
+            assert _server_gone(viva), "the resolved-empty finish shuts the server down"
+        finally:
+            loop(viva, td, "abandon")
+    print("  ok  check_diff_finish_from_an_empty_recapture")
+
+
+def check_finish_refuses_a_diff_that_changed_since_review() -> None:
+    """The human approved a hunk; the agent kept editing. The round on disk is
+    all-approved, so the server would sign it off — `finish` re-captures and
+    refuses instead, because what would be signed is not what was approved."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        f = _git_repo(td)
+        f.write_text("a\nB\nc\n")
+        assert loop(viva, td, "start", "--kind", "worktree").returncode == 0
+        base = (viva / "server.url").read_text().strip()
+        try:
+            _submit(base, 1, {"s1": "approved"})
+            assert poll_for(viva / "review-r1.json")
+            assert "round 1: all-approved" in loop(viva, td, "wait").stdout
+            f.write_text("a\nB\nC\n")                       # edited after approval
+            fin = loop(viva, td, "finish")
+            assert fin.returncode != 0, fin.stdout
+            assert "the diff changed since round 1" in fin.stderr, fin.stderr
+            assert "Nothing is auto-accepted" in fin.stderr, fin.stderr
+            assert get(base, "/input")["round"] == 1, "the server is still live"
+            assert not (viva / "finish-check.json").exists(), "the scratch is gone"
+            # The recovery it names: re-present, and the human sees the change.
+            r = loop(viva, td, "rearm")
+            assert r.returncode == 0 and "round 2 armed" in r.stdout, r.stderr
+        finally:
+            loop(viva, td, "abandon")
+    print("  ok  check_finish_refuses_a_diff_that_changed_since_review")
+
+
+def check_diff_start_stops_at_the_summaries_seam() -> None:
+    """Above `SUMMARY_THRESHOLD` hunks, a diff round stops after parsing until
+    every hunk carries a one-line summary (#188): the seam prints the round
+    file and the `summarize` verb, launches nothing, and hands out no
+    producer contract. `summarize` merges the map pre-arm; `--arm-anyway`
+    declines the seam."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        f = _git_repo(td, [f"l{i}" for i in range(1, 101)])
+        lines = f.read_text().splitlines()
+        for i in range(0, 88, 8):                 # 11 edits, 8 lines apart
+            lines[i] = lines[i].upper()
+        f.write_text("\n".join(lines) + "\n")
+
+        r = loop(viva, td, "start", "--kind", "worktree")
+        assert r.returncode == 0, r.stderr
+        data = json.loads((viva / "review-input-r1.json").read_text())
+        n = len(data["sections"])
+        assert n > 10, f"precondition: the fixture must exceed the threshold, got {n}"
+        assert "NOT armed" in r.stdout and f"{n} of {n} hunks need a summary" in r.stdout, r.stdout
+        assert "loop.py summarize" in r.stdout, r.stdout
+        assert str(viva / "review-input-r1.json") in r.stdout, "the seam names the round file"
+        assert "references/" not in r.stdout, "a diff seam has no producer contract"
+        assert not (viva / "server.url").exists(), "the seam must stop before a launch"
+
+        bad = loop(viva, td, "summarize", "--map", "-")
+        assert bad.returncode != 0, "an empty map is not JSON"
+        r = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva), "summarize", "--map", "-"],
+            input=json.dumps({"s99": "nope"}), capture_output=True, text=True, cwd=str(td))
+        assert r.returncode != 0 and "unknown section id 's99'" in r.stderr, r.stderr
+
+        summaries = {s["id"]: f"uppercases {s['title'].split()[-1]}" for s in data["sections"]}
+        r = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva), "summarize", "--map", "-"],
+            input=json.dumps(summaries), capture_output=True, text=True, cwd=str(td))
+        assert r.returncode == 0, r.stderr
+        assert f"{n} of {n} hunk(s)" in r.stdout, r.stdout
+        armed = loop(viva, td, "arm")
+        assert armed.returncode == 0 and "round 1 armed" in armed.stdout, armed.stderr
+        base = (viva / "server.url").read_text().strip()
+        try:
+            served = get(base, "/input")
+            assert all(s.get("summary") for s in served["sections"]), served["sections"][0]
+            # Pre-arm only: the served round would never see a later merge.
+            late = subprocess.run(
+                [sys.executable, str(LOOP), "--viva-dir", str(viva), "summarize", "--map", "-"],
+                input=json.dumps({"s1": "again"}), capture_output=True, text=True, cwd=str(td))
+            assert late.returncode != 0 and "already armed" in late.stderr, late.stderr
+        finally:
+            loop(viva, td, "abandon")
+        assert _server_gone(viva)
+
+        r = loop(viva, td, "start", "--kind", "worktree", "--arm-anyway")
+        assert r.returncode == 0 and "round 1 armed" in r.stdout, r.stderr
+        loop(viva, td, "abandon")
+    print("  ok  check_diff_start_stops_at_the_summaries_seam")
+
+
+def check_start_refuses_a_bad_target_before_it_clears() -> None:
+    """`review_target.py` runs before the pre-flight and before the clear, so a
+    target it cannot classify — or one that reads as an injection — costs
+    nothing: the prior round is still on disk afterwards."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        _git_repo(td)
+        marker = viva / "review-input-r3.json"
+        marker.write_text("{}")
+        r = loop(viva, td, "start", "--target", "main; rm -rf /")
+        assert r.returncode != 0, "an unclassifiable target must be refused"
+        assert "review_target" in r.stderr, r.stderr
+        assert marker.exists(), "a refused start must not have cleared"
+        assert not (viva / "target.json").exists()
+        r = loop(viva, td, "start", "--doc", "x.md", "--kind", "worktree")
+        assert r.returncode != 0 and "one or the other" in r.stderr, r.stderr
+    print("  ok  check_start_refuses_a_bad_target_before_it_clears")
+
+
+def check_capture_failure_is_not_an_empty_diff() -> None:
+    """A capture that fails must never read as "no changes". The motivating
+    case is a `gh pr diff` that 403s because the wrong account is active: a
+    0-byte `diff.patch` left behind would sign the session off as fully
+    resolved with nothing reviewed. Here the failing capture is a `git diff`
+    against a ref that does not exist."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        viva = td / ".viva"
+        viva.mkdir()
+        _git_repo(td)
+        r = loop(viva, td, "start", "--target", "no-such-ref", "--kind", "ref")
+        assert r.returncode != 0, "a failed capture must not complete"
+        assert "capture failed" in r.stderr and "git diff no-such-ref" in r.stderr, r.stderr
+        assert "no changes to review" not in r.stdout, r.stdout
+        assert not (viva / "diff.patch").exists(), "a failed capture leaves no patch behind"
+        assert not (viva / "review-input-r1.json").exists()
+        assert not (viva / "server.url").exists()
+    print("  ok  check_capture_failure_is_not_an_empty_diff")
+
+
 def check_start_runs_the_bundles_checks() -> None:
     """A type's `checks[]` run inside `start`, between the parse and every
     branch that could arm — a check nobody is told about never runs, and a
@@ -999,40 +1241,19 @@ def check_start_runs_the_bundles_checks() -> None:
     print("  ok  check_start_runs_the_bundles_checks")
 
 
-def check_undriven_guards_point_at_the_live_tab() -> None:
-    """#174 fixed the collision message in `loop.py`. `/viva-review`'s branch B
-    still carries its own bash (CLAUDE.md; #179's remaining half empties it),
-    so the driver's fix cannot reach it. It cannot probe without growing the
-    bash #179 exists to shrink, so it does the half that needs no round-trip:
-    name the URL, and make deleting the file conditional on nothing answering
-    there. What is pinned is that the copy never reverts to advising `rm` first.
-
-    `/viva-write` carries NO guard any more: `loop.py interview` and `start
-    --handoff` own that refusal, probing before they advise — so a guard line
-    reappearing there is the bash creeping back."""
-    write_guards = [ln for ln in WRITE_SKILL.read_text().splitlines()
-                    if "[ -f .viva/server.url ]" in ln]
-    assert not write_guards, \
-        "viva-write must not carry a server.url guard — the driver probes: %r" \
-        % write_guards
-    for skill_md in (SKILL,):
-        # `&&` is the collision guard (file present = refuse). The `||` form is
-        # the post-launch check that the server wrote its URL at all — inverse
-        # test, different message, not this one's business.
+def check_no_skill_carries_a_server_url_guard() -> None:
+    """#174 fixed the collision message in `loop.py`, and #179 put every flow
+    on the driver — so no skill stats `server.url` any more. `start`,
+    `interview`, and `start --handoff` probe before they advise (a live tab is
+    named, never `rm`'d), and a guard line reappearing in prose is the bash
+    creeping back with the pre-#174 message it would inevitably carry."""
+    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
         guards = [ln for ln in skill_md.read_text().splitlines()
-                  if ln.lstrip().startswith("[ -f .viva/server.url ] &&")]
-        assert guards, "no server.url guard found in " + skill_md.name
-        for ln in guards:
-            where = "{}/{}".format(skill_md.parent.name, skill_md.name)
-            assert "cat .viva/server.url" in ln, \
-                where + ": the collision must name the open tab's URL, not just " \
-                "the file's existence: " + ln
-            assert "may still be running (.viva/server.url exists)" not in ln, \
-                where + ": reverted to the pre-#174 message: " + ln
-            assert "only if nothing is answering" in ln, \
-                where + ": deleting a live session's server.url orphans the " \
-                "server, so the advice must be conditional: " + ln
-    print("  ok  check_undriven_guards_point_at_the_live_tab")
+                  if "[ -f .viva/server.url ]" in ln]
+        assert not guards, \
+            "%s must not carry a server.url guard — the driver probes: %r" \
+            % (skill_md.parent.name, guards)
+    print("  ok  check_no_skill_carries_a_server_url_guard")
 
 
 def check_start_resume_carries_prior_approvals() -> None:
@@ -1263,7 +1484,7 @@ def main() -> None:
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
     check_skill_carries_no_bookkeeping_bash()
-    check_only_the_undriven_flow_carries_its_own_loop()
+    check_no_skill_carries_its_own_loop()
     check_rewrite_step_applies_standing_preferences()
     check_no_auto_approve_and_paused_branch_routed()
     check_skill_applies_suggestions_verbatim()
@@ -1276,7 +1497,13 @@ def main() -> None:
     check_interview_refuses_over_a_live_session()
     check_interview_exits_2_when_the_server_dies()
     check_start_runs_the_bundles_checks()
-    check_undriven_guards_point_at_the_live_tab()
+    check_no_skill_carries_a_server_url_guard()
+    check_diff_round_trip()
+    check_diff_finish_from_an_empty_recapture()
+    check_finish_refuses_a_diff_that_changed_since_review()
+    check_diff_start_stops_at_the_summaries_seam()
+    check_start_refuses_a_bad_target_before_it_clears()
+    check_capture_failure_is_not_an_empty_diff()
     check_start_resume_carries_prior_approvals()
     check_start_opens_the_producer_seam()
     check_wait_refuses_a_parsed_but_unarmed_round()

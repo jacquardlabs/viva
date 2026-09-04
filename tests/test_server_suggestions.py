@@ -57,7 +57,7 @@ def test_suggestion_round_trips_and_lands_in_the_ledger() -> None:
         # with its anchor, byte for byte.
         assert written["sections"][0]["comments"][0] == suggestion, written
 
-        post(base, "/next-round?output=" + str(viva / "out2.json"), _round(2))
+        post(base, "/next-round", dict(_round(2), output=str(viva / "out2.json")))
         ledger = get(base, "/input")["ledger"]
         assert ledger == [{"round": 1, "section_title": "Goals",
                            "verdict": "changes",

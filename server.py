@@ -20,7 +20,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 # The sibling `scripts/` dir holds the shared schema contract (section_key, the
 # ledger rule, boundary validation). It sits beside server.py in both the repo
@@ -7990,9 +7990,12 @@ function connectSSE() {
     }
     const stampMeta = el('stamp-meta');
     if (stampMeta) stampMeta.textContent = 'viva · ' + new Date().toISOString().slice(0, 10);
-    el('complete-detail').textContent   = rev != null
-      ? `${rev} section${rev !== 1 ? 's' : ''} revised`
-      : '';
+    // A diff that re-captured empty signed off with nothing left to approve
+    // (`resolved: "empty"`, loop.py finish); say so rather than counting
+    // sections that no longer exist.
+    el('complete-detail').textContent   = data.resolved === 'empty'
+      ? `diff fully resolved · ${rev != null ? rev : 0} hunk${rev !== 1 ? 's' : ''} revised`
+      : (rev != null ? `${rev} section${rev !== 1 ? 's' : ''} revised` : '');
     const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
     if (entries.length) {
       el('complete-ledger').style.display = '';
@@ -8795,7 +8798,6 @@ class Handler(BaseHTTPRequestHandler):
         global _input_data, _output_path, _last_verdicts
         parsed = urlparse(self.path)
         path   = parsed.path
-        params = parse_qs(parsed.query)
         if path == "/submit":
             length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
             if length is None:
@@ -8870,11 +8872,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(400, "body must be a JSON object")
                 return
             # `output` travels in the JSON body like every other POST field. The
-            # legacy `?output=` query param is still honored as a fallback.
+            # legacy `?output=` query param is gone (#103): its last sender was
+            # branch B's re-arm curl, which `loop.py rearm` replaced.
             # ORDER IS LOAD-BEARING: the missing-`output` refusal stays AHEAD of
             # the shape validation — `test_server_api.py`'s missing-output case
             # POSTs a structurally valid round and pins that error text.
-            output = new_data.pop("output", None) or params.get("output", [None])[0]
+            output = new_data.pop("output", None)
             if not output:
                 self._error(400, "missing 'output' in body")
                 return
@@ -8953,6 +8956,9 @@ class Handler(BaseHTTPRequestHandler):
                 summary = json.loads(body) if body.strip() else {}
             except json.JSONDecodeError:
                 summary = {}
+            if not isinstance(summary, dict):
+                # `[]` and `3` parse; `.get` on either below would 500.
+                summary = {}
             # The finish guard. "Nothing is auto-accepted" is a hard product
             # line, and a check that lives only in `loop.py finish` is a norm the
             # next caller walks around — so the server refuses on its own too,
@@ -8961,29 +8967,42 @@ class Handler(BaseHTTPRequestHandler):
             with _data_lock:
                 round_input = _input_data
                 submitted   = _last_verdicts
-            # Two sessions are exempt, and shape alone does not identify them.
-            # Q&A carries `questions`, never `sections`, so the shape test
-            # excepts it. Diff mode does not: `parse_diff.py` emits `sections`,
-            # and `viva-diff/SKILL.md:109-113`'s empty-re-diff finish signs off
-            # with `changes` verdicts on record by design — the diff reached zero
-            # because a hunk was reverted at the reviewer's request, not because
-            # every hunk was approved. Gating it would 4xx a legitimate finish,
-            # leak the server, and strand the tab on the processing card.
-            # Closing that carve-out needs an explicit resolved-empty signal
-            # from viva-diff, which belongs to another story.
-            # The exemption keys on the *launch* mode, not the round payload's
-            # `mode`. `_input_data` is replaced wholesale from `/next-round`'s
-            # body, and no validator inspects `mode` — so gating on it let any
-            # caller send `{"sections": [...], "mode": "diff"}` and then sign off
-            # with zero verdicts, defeating the invariant this guard exists to
-            # enforce. `--mode` is an argparse choice fixed at startup and
-            # unreachable from any request.
-            if "sections" in round_input and _launch_mode != "diff":
+            # Q&A is exempt by shape: it carries `questions`, never `sections`.
+            # Diff mode is NOT exempt by mode any more (#177). It used to be —
+            # `parse_diff.py` emits `sections`, and branch B's empty-re-diff
+            # finish signs off with `changes` verdicts on record by design, the
+            # diff having reached zero because a hunk was reverted at the
+            # reviewer's request — but a blanket exemption let a `--mode diff`
+            # server accept `/complete` with ANY verdicts, which reopened for
+            # hunks the hole #102 closed for sections. The caller now says WHY
+            # the round may sign off unapproved: `resolved: "empty"` in the
+            # body, which `loop.py finish` derives from a fresh capture rather
+            # than from memory. The signal is honored only on a `--mode diff`
+            # server: `_launch_mode` is an argparse choice fixed at startup and
+            # unreachable from any request, whereas the body is caller-supplied
+            # — and a doc cannot go empty, so on any other server a present
+            # `resolved` is a caller bug, refused rather than ignored. Either
+            # way a round nobody has submitted is refused first: a diff can be
+            # resolved empty only after the human has seen it.
+            if "sections" in round_input:
                 if submitted is None:
                     self._error(400, "no verdicts submitted for this round — "
                                      "nothing to complete")
                     return
-                if not schema.round_is_complete(round_input, submitted):
+                resolved = summary.get("resolved")
+                if resolved is not None and resolved != "empty":
+                    self._error(400, "unknown 'resolved' value %r — the only "
+                                     "signal is \"empty\", and only a --mode "
+                                     "diff server honors it" % (resolved,))
+                    return
+                if resolved is not None and _launch_mode != "diff":
+                    self._error(400, "'resolved' is a diff-review signal — a "
+                                     "%s session cannot resolve empty; every "
+                                     "section must be approved" % _launch_mode)
+                    return
+                resolved_empty = resolved == "empty" and _launch_mode == "diff"
+                if not resolved_empty and not schema.round_is_complete(
+                        round_input, submitted):
                     # `round_is_complete` above is the gate; the detail below is
                     # only the message, and it follows the predicate rather than
                     # deciding anything. A round's `pass` ADDS a conjunct to the
