@@ -110,16 +110,39 @@ def parse_diff(text: str) -> list[dict]:
     return sections
 
 
+def _hunk_body(content: str) -> str:
+    """The hunk with its `@@ -a,b +c,d @@` header line removed — the identity
+    the carry rules compare on.
+
+    The header is line 1 of every hunk's content (`_parse_hunks` keeps the
+    delimiter), and it moves whenever an EARLIER hunk in the same file grows or
+    shrinks: `@@ -10,3 +10,3 @@` becomes `@@ -10,3 +11,3 @@` with not one line
+    of the hunk itself touched. Comparing whole content made that shift drop
+    the later hunk's approval and summary with no notice — the human re-approved
+    a change they had already approved (#103). The body is what they approved;
+    the header is where it landed. Rendering still shows the header: this is
+    the comparison key only, never what is served.
+
+    A binary sentinel has no header and is returned unchanged.
+    """
+    if not content.startswith("```diff\n@@ "):
+        return content
+    first_newline = content.index("\n", len("```diff\n"))
+    return content[:len("```diff\n")] + content[first_newline + 1:]
+
+
 def _carry_forward(
     sections: list[dict],
     prior_input: dict | None,
     prior_verdicts: dict | None,
 ) -> list[str]:
-    """Return ids of sections approved in the prior round with byte-identical content.
+    """Return ids of sections approved in the prior round with an identical body.
 
     A section carries forward as approved only when its normalized title matches
-    a prior section AND that prior section was approved AND the content is
-    byte-for-byte identical. This is the same rule parse_sections.py uses.
+    a prior section AND that prior section was approved AND the hunk body
+    (`_hunk_body`: the content minus its `@@` header line) is byte-for-byte
+    identical. This is parse_sections.py's rule with the one diff-specific
+    allowance: a header-only line shift is not a change.
     """
     if not prior_input or not prior_verdicts:
         return []
@@ -144,7 +167,7 @@ def _carry_forward(
         if (
             prior_s is not None
             and prior_s.get("id") in all_prior_approved
-            and s["content"] == prior_s.get("content")
+            and _hunk_body(s["content"]) == _hunk_body(prior_s.get("content", ""))
         ):
             approved_ids.append(s["id"])
     return approved_ids
@@ -155,24 +178,26 @@ def _carry_summaries(sections: list[dict], prior_input: dict | None) -> None:
 
     A summary is written by the agent between parsing and arming (#188); this
     keeps a round-1 summary from having to be rewritten every round. Keyed on
-    (normalized title, content) — byte-identical content is what makes it the
-    same hunk, and it is also the re-summarize rule: a hunk whose lines moved
-    arrives with no summary, so the next pass writes it a fresh one instead of
-    describing the previous edit. Hunk *numbering* alone is not identity — a
-    hunk added above shifts every later `hunk N` title, and content equality is
-    what refuses to carry a summary across that shift.
+    (normalized title, hunk body) — the same identity `_carry_forward` uses, so
+    the two carries agree: a hunk whose BODY is byte-identical is the same
+    hunk, and a hunk whose body changed arrives with no summary, so the next
+    pass writes it a fresh one instead of describing the previous edit. A
+    header-only line shift (an earlier hunk grew) keeps the summary, because
+    the change it describes did not move. Hunk *numbering* alone is not
+    identity — a hunk added above shifts every later `hunk N` title, and that
+    renumbering still drops both carries (#196).
     """
     if not prior_input:
         return
     prior = {
-        (section_key(s.get("title", "")), s.get("content", "")): s["summary"]
+        (section_key(s.get("title", "")), _hunk_body(s.get("content", ""))): s["summary"]
         for s in prior_input.get("sections", [])
         if s.get("summary")
     }
     if not prior:
         return
     for s in sections:
-        key = (section_key(s["title"]), s["content"])
+        key = (section_key(s["title"]), _hunk_body(s["content"]))
         if key in prior:
             s["summary"] = prior[key]
 
