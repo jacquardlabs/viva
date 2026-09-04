@@ -124,6 +124,19 @@ write the sidecar, merge it.
   `[cite-sources] "80% faster" has no source`) — the merge keeps only
   `kind`/`severity`/`message`/`anchor`, so the id has to ride in the text for
   the human to trace the flag back. See `preferences.md`.
+- **Pre-flight pre-fix** (#107) — runs before or alongside Learned preferences,
+  never in place of it. For each standing preference, read every new/changed
+  section and, where the preference's guidance clearly implies a concrete
+  textual fix — not just "this critique applies here" but "here specifically
+  is the fix" — emit a `kind: "preference"` `warn` whose message names the fix
+  itself, not only the critique. Same id-encoding convention as Learned
+  preferences: `[cite-sources] add a citation after "80% faster", e.g. "(see
+  bench.md)"`. Nothing is auto-applied — this producer only ever emits a
+  suggested pre-fix as a visible annotation; the human sees it in the margin
+  like any other flag and decides whether to take it, same as every other
+  annotation in viva. When the preference doesn't clearly imply a specific
+  fix, this producer stays silent on that section and leaves the critique to
+  Learned preferences alone — it never guesses.
 
 ## Confidence triage (sourced vs inferred)
 
