@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v2.5.0 (2026-09-04)
+
+### Bug Fixes
+
+- List handoff in viva-write's invocation type enumeration
+  ([#216](https://github.com/jacquardlabs/viva/pull/216),
+  [`bec1df2`](https://github.com/jacquardlabs/viva/commit/bec1df2462c71d18c56a4cdfd1207e6ecb26ded3))
+
+### Documentation
+
+- Fix placement and register of the #191 margin-gap ruling
+  ([#214](https://github.com/jacquardlabs/viva/pull/214),
+  [`539dab3`](https://github.com/jacquardlabs/viva/commit/539dab3998c6f6098f53a94ba41ffdcfb98693a9))
+
+- Rule the margin-taller-than-prose gap correct
+  ([#214](https://github.com/jacquardlabs/viva/pull/214),
+  [`539dab3`](https://github.com/jacquardlabs/viva/commit/539dab3998c6f6098f53a94ba41ffdcfb98693a9))
+
+### Features
+
+- Generalize the handoff bundle beyond DS-to-engineering
+  ([#216](https://github.com/jacquardlabs/viva/pull/216),
+  [`bec1df2`](https://github.com/jacquardlabs/viva/commit/bec1df2462c71d18c56a4cdfd1207e6ecb26ded3))
+
+- Ship the handoff doc-type bundle ([#216](https://github.com/jacquardlabs/viva/pull/216),
+  [`bec1df2`](https://github.com/jacquardlabs/viva/commit/bec1df2462c71d18c56a4cdfd1207e6ecb26ded3))
+
+
 ## v2.4.0 (2026-09-04)
 
 ### Features
