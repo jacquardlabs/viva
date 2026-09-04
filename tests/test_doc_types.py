@@ -28,7 +28,7 @@ import doc_types  # noqa: E402
 PASS_KINDS = ("architecture", "line", "checks", "final")
 # Per the design's open question 2 — the types this repo actually produces.
 EXPECTED_SHIPPED = {"design-doc", "plan", "pr-description", "readme",
-                    "progress-note"}
+                    "progress-note", "handoff"}
 
 
 def resolve(name: str, types_dir: Path | None = None) -> subprocess.CompletedProcess:
