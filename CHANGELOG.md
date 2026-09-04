@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.9.1 (2026-09-04)
+
+### Bug Fixes
+
+- Address gauntlet posture review findings (1 critical, 9 important, 18 track)
+  ([#227](https://github.com/jacquardlabs/viva/pull/227),
+  [`d112092`](https://github.com/jacquardlabs/viva/commit/d112092d74bb241a236a19e9c0ce0b46da51a493))
+
+### Code Style
+
+- Apply a repo-wide comment and prose convention
+  ([#227](https://github.com/jacquardlabs/viva/pull/227),
+  [`d112092`](https://github.com/jacquardlabs/viva/commit/d112092d74bb241a236a19e9c0ce0b46da51a493))
+
+
 ## v2.9.0 (2026-09-04)
 
 ### Features
