@@ -1,15 +1,15 @@
 {
   "name": "handoff",
-  "title": "DS-to-engineering handoff",
+  "title": "Handoff",
   "sections": [
-    "Analysis intent",
-    "Data lineage & refresh",
-    "Eval metrics",
+    "Handoff context",
+    "Deliverable intent",
+    "Inputs & assumptions",
     "Environment & dependencies",
-    "Notebook-to-script parity",
+    "Artifact parity",
     "Verification",
     "Known limits",
-    "On-call owner"
+    "Receiving-team owner"
   ],
   "checks": ["headings-present"],
   "default_pass": "checks"
