@@ -105,6 +105,10 @@ the boundary (on write by the producer, on read by the server):
   Requires `data.questions` to be a list; every entry must carry string
   `id`, `text`. When a question carries `recommended_choice`, it must be a
   string that exactly matches an entry in that question's own `choices`.
+  When a question carries `grounds`, it must be one of `sourced`, `inferred`,
+  `taste` (`schema.QA_GROUNDS`), and `grounds: "taste"` may not share a
+  question with a `recommended_choice` — taste means no recommendation is
+  offered at all.
 
 `scripts/schema.py` is the canonical source for the field-level shapes
 (`ReviewInput`, `ReviewSection`, `SectionVerdict`, `ReviewOutput`, `QAInput`,
@@ -168,6 +172,7 @@ The full output file (`ReviewOutput`) also carries `round` and
 | `hint` | no | Shown below the question text. |
 | `choices` | no | Rendered as chip buttons; omit for a free-text-only question. |
 | `recommended_choice` | no | Must exactly match one entry in this question's `choices` (value, not index) — `validate_qa_input` rejects it otherwise. Renders as a small badge on the matching chip. Advisory only: never pre-selected, defaulted, or required; the human may pick any chip. Absent on every question written before this field existed, which renders unchanged. |
+| `grounds` | no | One of `sourced`, `inferred`, `taste` (`schema.QA_GROUNDS`) — classifies how `recommended_choice` was arrived at. `sourced` renders the same ambient badge, relabeled (the citation itself rides in this question's own `text`/`hint` — no separate provenance field exists yet). `inferred` renders no ambient badge at all; the recommendation answers only behind a `<details>` reveal. `taste` renders a label on the question's choices instead of a chip badge, and may not share a question with `recommended_choice` — `validate_qa_input` rejects that combination as contradictory. Absent renders exactly as before this field existed. When at least one question in a batch carries `grounds`, `taste`-classed questions are presented first; a batch with none keeps document order unchanged. |
 
 **`QAOutput`** (`answers.json`, what the server writes after the human
 submits):
@@ -178,7 +183,11 @@ submits):
 | `submitted_early` | no | |
 
 **`QAAnswer`**: `id` (question id), `choice` (selected chip value, if any),
-`note` (free-text field value), `attachments` (server-written image paths).
+`note` (free-text field value), `attachments` (server-written image paths),
+`accepted_recommendation` (optional bool, computed server-side at
+`POST /submit` against the round's own recorded questions — present only when
+that question's `recommended_choice` was set at all, regardless of `grounds`;
+`true` iff `choice` matches it).
 
 **`DiffInput`** — same shape as `ReviewInput` with `mode: "diff"`; one
 `ReviewSection` entry per diff hunk.

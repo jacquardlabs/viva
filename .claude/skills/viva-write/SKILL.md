@@ -110,8 +110,10 @@ one survivor (cross-session, per-clone), and `open-notes.json` **must** go — a
 stale store injects a prior session's threads into this session's round 2.
 
 Write `.viva/qa-input.json` (the `QAInput` shape — `references/qa.md` at the
-plugin root is the full contract; `choices` and `recommended_choice` are both
-optional), then launch and wait:
+plugin root is the full contract; `choices`, `recommended_choice`, and
+`grounds` are all optional — `grounds` classifies a `recommended_choice` as
+`sourced`, `inferred`, or `taste`, and `taste` never pairs with an actual
+`recommended_choice`), then launch and wait:
 
 ```bash
 python3 "$VIVA_DIR/server.py" --mode qa \

@@ -136,6 +136,76 @@ def test_recommended_choice_non_string_raises():
     print("test_recommended_choice_non_string_raises: OK")
 
 
+# ── grounds (issue #175) ─────────────────────────────────────────────────────
+
+def test_question_without_grounds_is_valid():
+    # Backward compat is structural: omitting the field is indistinguishable
+    # from every qa-input.json written before it existed.
+    validate_qa_input({
+        "questions": [{"id": "q1", "text": "Which?", "choices": ["A", "B"]}],
+    })
+    print("test_question_without_grounds_is_valid: OK")
+
+
+def test_grounds_sourced_passes():
+    validate_qa_input({
+        "questions": [{
+            "id": "q1", "text": "Which?", "choices": ["A", "B"],
+            "recommended_choice": "A", "grounds": "sourced",
+        }],
+    })
+    print("test_grounds_sourced_passes: OK")
+
+
+def test_grounds_inferred_passes():
+    validate_qa_input({
+        "questions": [{
+            "id": "q1", "text": "Which?", "choices": ["A", "B"],
+            "recommended_choice": "A", "grounds": "inferred",
+        }],
+    })
+    print("test_grounds_inferred_passes: OK")
+
+
+def test_grounds_taste_without_recommended_choice_passes():
+    validate_qa_input({
+        "questions": [{
+            "id": "q1", "text": "Which?", "choices": ["A", "B"],
+            "grounds": "taste",
+        }],
+    })
+    print("test_grounds_taste_without_recommended_choice_passes: OK")
+
+
+def test_grounds_invalid_value_raises():
+    try:
+        validate_qa_input({
+            "questions": [{
+                "id": "q1", "text": "Which?", "choices": ["A", "B"],
+                "grounds": "vibes",
+            }],
+        })
+        raise AssertionError("should have raised")
+    except ValueError as e:
+        assert "grounds" in str(e), str(e)
+    print("test_grounds_invalid_value_raises: OK")
+
+
+def test_grounds_taste_with_recommended_choice_raises():
+    # Contradictory data: taste means no recommendation is offered at all.
+    try:
+        validate_qa_input({
+            "questions": [{
+                "id": "q1", "text": "Which?", "choices": ["A", "B"],
+                "recommended_choice": "A", "grounds": "taste",
+            }],
+        })
+        raise AssertionError("should have raised")
+    except ValueError as e:
+        assert "taste" in str(e) and "recommended_choice" in str(e), str(e)
+    print("test_grounds_taste_with_recommended_choice_raises: OK")
+
+
 def main() -> None:
     test_valid_qa_input_passes()
     test_missing_questions_key_raises()
@@ -149,6 +219,12 @@ def main() -> None:
     test_recommended_choice_without_choices_raises()
     test_recommended_choice_with_non_list_choices_raises()
     test_recommended_choice_non_string_raises()
+    test_question_without_grounds_is_valid()
+    test_grounds_sourced_passes()
+    test_grounds_inferred_passes()
+    test_grounds_taste_without_recommended_choice_passes()
+    test_grounds_invalid_value_raises()
+    test_grounds_taste_with_recommended_choice_raises()
     print("\nAll schema QA tests passed.")
 
 
