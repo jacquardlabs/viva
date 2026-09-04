@@ -96,6 +96,24 @@ THREAD_SETTLED = "settled"
 THREAD_DECLINED = "declined"
 THREAD_STATUSES = (THREAD_OPEN, THREAD_SETTLED, THREAD_DECLINED)
 
+# ── Q&A recommendation grounds (issue #175) ───────────────────────────────────
+# How a QAQuestion's `recommended_choice` was arrived at, so the interview can
+# tell "cites where this comes from" apart from "just an opinion" apart from
+# "no opinion at all". Named independently of `open_notes.py`'s decline
+# `grounds` (the author's reason for not complying with a turn) — same English
+# word, unrelated shape, unrelated file. Also a DIFFERENT AXIS from the
+# confidence `basis` tuple below (`sourced`/`inferred`): that one is a
+# REVIEWER'S self-report on a document SECTION during review; this one
+# classifies a recommendation the agent itself offers on a Q&A QUESTION during
+# the interview, and adds a third value that basis has no room for.
+#   sourced  — the chip names its provenance: the ticket, a codebase standard,
+#              a measurement, a prior ledger ruling.
+#   inferred — best practice with no local provenance; an opinion, not a fact.
+#   taste    — labeled "this one is yours": no recommendation is offered at
+#              all, so `recommended_choice` must be absent (validate_qa_input
+#              rejects the two together).
+QA_GROUNDS = ("sourced", "inferred", "taste")
+
 
 def thread_is_unresolved(status: object) -> bool:
     """Is this thread still live — does it carry into the next round?
@@ -602,6 +620,14 @@ class QAQuestion(TypedDict, total=False):
     # they want, including a different one. Ignored/absent on every question
     # authored before this field existed — no render change without it.
     recommended_choice: str
+    # optional — one of QA_GROUNDS, classifying HOW `recommended_choice` was
+    # arrived at (issue #175). Absent renders exactly as before `grounds`
+    # existed — see `recommended_choice`'s own no-render-change guarantee
+    # above. `taste` never appears alongside a `recommended_choice` on the
+    # same question (validate_qa_input rejects that combination); provenance
+    # text for `sourced` rides in the question's own `text`/`hint` this
+    # iteration — no separate citation field was added.
+    grounds: str
 
 
 class QAInput(TypedDict, total=False):
@@ -615,6 +641,14 @@ class QAAnswer(TypedDict, total=False):
     choice: str           # selected chip value
     note: str             # free-text field value
     attachments: List[str]  # server-written image paths
+    # optional — present only when that question's `recommended_choice` was
+    # set at all (any grounds); True iff the chosen `choice` matches it.
+    # Written server-side at `POST /submit` (`server.annotate_qa_acceptance`,
+    # issue #175's accept-rate instrumentation) against the round's own
+    # recorded questions, never against anything the client posted, and never
+    # read back by this module — documentation only, same as every other
+    # QAAnswer field; unvalidated, like the rest of QAOutput.
+    accepted_recommendation: bool
 
 
 class QAOutput(TypedDict, total=False):
@@ -638,9 +672,12 @@ def validate_qa_input(data: dict) -> None:
     that `recommended_choice` is a string that exactly matches an entry in
     that same question's own `choices`. A dangling or typo'd recommendation
     (no `choices`, or a value not in it) is a loud startup failure here,
-    never a silent no-badge misfire at render time. Permissive about other
-    optional fields (`hint`, `choices`, `context`). Call at startup when
-    `--mode qa`.
+    never a silent no-badge misfire at render time. `grounds`, when present,
+    must be one of `QA_GROUNDS`, and `grounds: "taste"` may not share a
+    question with a `recommended_choice` — taste means no recommendation is
+    offered at all, so the two together are contradictory data, not a
+    rendering preference. Permissive about other optional fields (`hint`,
+    `choices`, `context`). Call at startup when `--mode qa`.
     """
     if not isinstance(data, dict):
         raise ValueError("qa-input must be a JSON object")
@@ -669,4 +706,19 @@ def validate_qa_input(data: dict) -> None:
                 raise ValueError(
                     f"qa-input.questions[{i}].recommended_choice {recommended!r} "
                     "does not match any entry in that question's own choices"
+                )
+        if "grounds" in q:
+            grounds = q.get("grounds")
+            if grounds not in QA_GROUNDS:
+                raise ValueError(
+                    f"qa-input.questions[{i}].grounds {grounds!r} must be one "
+                    f"of {QA_GROUNDS!r}"
+                )
+            # Contradictory data, not a style choice: taste means no
+            # recommendation is offered at all.
+            if grounds == "taste" and "recommended_choice" in q:
+                raise ValueError(
+                    f"qa-input.questions[{i}] has grounds 'taste' and a "
+                    "recommended_choice — taste means no recommendation is "
+                    "offered"
                 )

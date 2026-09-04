@@ -21,7 +21,8 @@ The caller writes `.viva/qa-input.json` before launching:
       "text": "The question text",
       "hint": "Optional elaboration shown below the question",
       "choices": ["Choice A", "Choice B", "Choice C"],
-      "recommended_choice": "Choice A"
+      "recommended_choice": "Choice A",
+      "grounds": "sourced"
     }
   ]
 }
@@ -38,6 +39,27 @@ Use it for a fork question where the calling agent has a genuine recommendation
 and a reason — the reason itself belongs in `hint` or the choice text, not in
 this field.
 
+`grounds` is optional and, when set, must be one of `sourced`, `inferred`,
+`taste`. It classifies HOW `recommended_choice` was arrived at, so the human
+can weigh the recommendation instead of taking it on faith:
+
+- `sourced` — the chip names its provenance: a ticket, a codebase standard, a
+  measurement, a prior ledger ruling. Renders the same ambient badge,
+  relabeled `sourced`. There is no separate citation field yet — put the
+  provenance itself in `hint` or the question `text`.
+- `inferred` — a best-practice opinion with no local provenance. Renders no
+  ambient badge; the recommendation answers only behind a small reveal, so an
+  unsourced opinion earns a click rather than a glance.
+- `taste` — no recommendation is offered at all. **Do not set
+  `recommended_choice` on a `taste` question** — the server rejects that
+  combination as contradictory data. Renders a "this one is yours" label
+  instead. When at least one question in a batch carries `grounds`,
+  `taste`-classed questions are presented first; a batch with no `grounds`
+  data at all keeps document order, unchanged from before this field existed.
+
+Omitting `grounds` renders exactly as before it existed (the plain
+"recommended" badge, if `recommended_choice` is set).
+
 ## Output
 
 `.viva/answers.json`, written by the server after the human submits:
@@ -45,7 +67,8 @@ this field.
 ```json
 {
   "answers": [
-    {"id": "q1", "choice": "Choice A", "note": "", "attachments": []}
+    {"id": "q1", "choice": "Choice A", "note": "", "attachments": [],
+     "accepted_recommendation": true}
   ],
   "submitted_early": false
 }
@@ -53,6 +76,11 @@ this field.
 
 If an answer carries an `attachments` array, `Read` each listed image path before
 incorporating that answer — the image is context for how you use the answer.
+
+`accepted_recommendation` is present only on a question whose `recommended_choice`
+was set at all (any `grounds`, or none) — `true` iff the human's `choice` matches
+it. It is instrumentation, not a gate: nothing reads it back into the round, and
+a caller with no use for it can ignore the key entirely.
 
 **A note alone is an answer.** A question with no `choices` can only be answered
 in free text, so its entry comes back with `choice: ""` and a populated `note`.

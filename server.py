@@ -2435,6 +2435,37 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   vertical-align: middle;
 }
 
+/* Grounds-classed recommendation badges (issue #175) — extend .chip-badge's
+   shape rather than inventing a second visual language. `.chip-badge-sourced`
+   keeps the same teal (a recommendation with a citation is still a machine
+   fact, just an attributed one). `.chip-badge-taste` reuses the accent token
+   the palette already comments "`changes` is reviewer judgment" — a taste
+   call is exactly that, the reviewer's own. It decorates the question's
+   choices rather than a chip (no `recommended_choice` ever accompanies
+   `taste`), so it needs its own line above them. `inferred` gets no ambient
+   color here — see .chip-reveal below, the disclosure it renders behind
+   instead. */
+.chip-badge-sourced { background: var(--teal-bg); color: var(--teal); }
+.chip-badge-taste   { display: block; width: fit-content; margin-bottom: 6px;
+                       background: var(--orange-bg); color: var(--orange); }
+
+/* An inferred recommendation answers only on request (issue #175) — a
+   best-practice opinion with no local provenance earns a click, not a
+   glance. Reuses the native <details>/<summary> disclosure .kbd-legend
+   already establishes, rather than a bespoke expand/collapse widget. */
+.chip-reveal {
+  margin-top: 4px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  color: var(--soft);
+}
+.chip-reveal summary { cursor: pointer; }
+.chip-reveal summary:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.chip-reveal-body { margin-top: 2px; }
+
 /* The Q&A action row is gone with every other action row: confirm and skip
    are margin verbs in the `.nt-btn` grammar, beside the note they act on.
 
@@ -6423,6 +6454,29 @@ function runPalette(i) {
    One thing deliberately stays in the prose column: the recommended-choice
    badge. It is advice ABOUT A CONTROL, and a reviewer should not have to read
    the margin, look back, and hunt for the chip it meant. */
+
+// Taste-first ordering (issue #175) — same discipline as the review print's
+// weakest-first confidence sort (`hasConfidence` above): the reorder is a
+// toggle keyed on whether the data exists at all, not a default. A batch
+// where no question carries `grounds` comes back untouched, so an
+// interview authored before this field existed renders in the exact
+// document order it always has. Where at least one question carries
+// `grounds`, taste-classed questions move first — a taste question is the
+// reviewer's own call regardless of index, so it should not wait behind a
+// page of machine opinions. A stable sort keeps every other relative
+// ordering (including ties) exactly as authored.
+function orderQAQuestions(questions) {
+  if (!questions.some(q => q.grounds)) return questions;
+  return questions
+    .map((q, i) => ({ q, i }))
+    .sort((a, b) => {
+      const ta = a.q.grounds === 'taste' ? 0 : 1;
+      const tb = b.q.grounds === 'taste' ? 0 : 1;
+      return (ta - tb) || (a.i - b.i);
+    })
+    .map(x => x.q);
+}
+
 function initQA() {
   const container = el('qa-cards');
   // The grammar, not the print. `no-gutter` is a constant here rather than a
@@ -6441,6 +6495,24 @@ function initQA() {
   updateQAStats();
 }
 
+// Grounds-classed recommendation badge (issue #175) — `grounds` is optional
+// and, absent, renders the exact plain badge issue #114 shipped (no render
+// change without it, the same guarantee `recommended_choice` itself carries).
+// `sourced` keeps the badge ambient, relabeled — the citation itself rides in
+// the question's own text/hint this iteration (see schema.py's QAQuestion).
+// `inferred` renders nothing here on purpose: an opinion with no local
+// provenance earns a click, not a glance — see buildQACard's `groundsReveal`,
+// the disclosure it answers behind instead. `taste` never reaches this
+// function: it never has a matching chip, since a `recommended_choice` can't
+// coexist with it (validate_qa_input) — its own label is `tasteLabel` below.
+function recommendedBadge(grounds) {
+  if (grounds === 'sourced') {
+    return '<span class="chip-badge chip-badge-sourced" title="Recommended — sourced; see the question for its citation">sourced</span>';
+  }
+  if (grounds === 'inferred') return '';
+  return '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>';
+}
+
 function buildQACard(q, index) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -6456,11 +6528,24 @@ function buildQACard(q, index) {
   const choicesHtml = q.choices.map((c, i) => {
     const isRecommended = q.recommended_choice !== undefined && c === q.recommended_choice;
     const badge = isRecommended
-      ? '<span class="chip-badge" title="Recommended — pick whichever you want">recommended</span>'
+      ? recommendedBadge(q.grounds)
       : '';
     const cap = i < 9 ? `<kbd>${i + 1}</kbd>` : '';
     return `<button class="choice-chip" data-choice="${esc(c)}"><span class="chip-label">${esc(c)}</span>${badge}${cap}</button>`;
   }).join('');
+  // An inferred recommendation answers only behind a reveal (issue #175) —
+  // never ambiently on the chip itself. Native <details>/<summary>, the same
+  // disclosure element `.kbd-legend` already uses.
+  const groundsReveal = (q.grounds === 'inferred' && q.recommended_choice !== undefined)
+    ? `<details class="chip-reveal"><summary>inferred pick &mdash; show</summary>` +
+      `<div class="chip-reveal-body">recommended: <strong>${esc(q.recommended_choice)}</strong></div></details>`
+    : '';
+  // Taste-classed questions never carry a recommended_choice at all
+  // (validate_qa_input rejects the two together), so there is no chip to
+  // badge — the label decorates the question's choices instead.
+  const tasteLabel = q.grounds === 'taste'
+    ? '<span class="chip-badge chip-badge-taste" title="No recommendation offered — this one is yours">this one is yours</span>'
+    : '';
 
   // The disclosure head IS the question, printed once, wrapping, numbered like
   // a catalog entry. The `<h2>` that used to restate it one line below is gone:
@@ -6484,7 +6569,9 @@ function buildQACard(q, index) {
           <div class="row row-head${choiceless ? ' is-choiceless' : ''}">
             ${choiceless ? '' : `<div class="rp">
               <div class="rule-s"></div>
+              ${tasteLabel}
               <div class="choices" id="qchoices-${q.id}">${choicesHtml}</div>
+              ${groundsReveal}
             </div>`}
             <div class="rm">
               ${q.hint ? `<div class="nt nt-check"><div class="nh">hint</div><div class="nt-body">${esc(q.hint)}</div></div>` : ''}
@@ -8170,6 +8257,9 @@ Promise.all([
       (QA_DATA.questions || []).forEach(q => {
         if (!Array.isArray(q.choices)) q.choices = [];
       });
+      // Taste-first reorder, at the same boundary the `choices` normalization
+      // above uses — see orderQAQuestions (issue #175).
+      QA_DATA.questions = orderQAQuestions(QA_DATA.questions || []);
       el('qa-title').textContent        = data.context || 'Q&A phase';
       el('qa-title').title              = data.context || 'Q&A phase';   /* full topic on hover when truncated */
       el('qa-count-badge').textContent  = String(data.questions.length);
@@ -8517,6 +8607,35 @@ def extract_attachments(data: dict, output_path: str, rnd: int) -> dict:
     return data
 
 
+def annotate_qa_acceptance(data: dict, questions: list) -> dict:
+    """Record whether each answer's `choice` matched its question's
+    `recommended_choice` (issue #175's accept-rate instrumentation).
+
+    Deliberately server-side rather than client-side: the browser's `.choice`
+    dereferences are a closed set `test_server_qa_choiceless.py` pins (every
+    place that treats `.choice` as the answered-signal is enumerated there),
+    and this is a value comparison, not an answered-gate, so it does not
+    belong in that set. `questions` is the round's own recorded
+    `QAInput.questions` — read server-side rather than trusting anything the
+    client posted, so a `recommended_choice` never carries a value the client
+    could have forged. Additive and idempotent: sets `accepted_recommendation`
+    only on an answer whose question actually has a `recommended_choice`,
+    never invents the key otherwise. Mutates and returns `data`.
+    """
+    recommended = {
+        q.get("id"): q.get("recommended_choice")
+        for q in questions
+        if isinstance(q, dict) and "recommended_choice" in q
+    }
+    if not recommended:
+        return data
+    for a in data.get("answers", []):
+        if not isinstance(a, dict) or a.get("id") not in recommended:
+            continue
+        a["accepted_recommendation"] = a.get("choice") == recommended[a["id"]]
+    return data
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args) -> None:
         pass  # silence access log
@@ -8665,6 +8784,11 @@ class Handler(BaseHTTPRequestHandler):
                     _last_verdicts = data
                 titles = {s.get("id"): s.get("title", "")
                           for s in _input_data.get("sections", [])}
+                # Snapshotted under the same lock, for the same reason `titles`
+                # is: a QA `answers` payload's recommendations are read off
+                # the round actually on record, never off anything the client
+                # posted (issue #175's accept-rate instrumentation, below).
+                questions_snapshot = _input_data.get("questions", [])
                 try:
                     rnd = int(data.get("round", _input_data.get("round", 0)))
                 except (TypeError, ValueError):
@@ -8675,6 +8799,8 @@ class Handler(BaseHTTPRequestHandler):
                     if entry is not None:
                         _ledger.append(entry)
             data = extract_attachments(data, out, rnd)
+            if "answers" in data:
+                data = annotate_qa_acceptance(data, questions_snapshot)
             try:
                 write_output(out, data)
             except (IOError, OSError) as e:
