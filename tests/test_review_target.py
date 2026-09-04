@@ -186,47 +186,52 @@ def test_skill_dispatch_table_covers_every_kind():
     print("  ok  test_skill_dispatch_table_covers_every_kind")
 
 
-def test_branch_b_runs_the_capture_this_script_prints():
-    """The prose end of the dispatch. `capture` is only useful if the skill
-    actually runs it — branch B carries no execution test of its own (it drives
-    itself; #179), so this pins the two commands the classifier can emit against
-    the two the skill shows, both at launch and at the re-diff.
+def test_the_driver_runs_the_capture_this_script_prints():
+    """The other end of the dispatch. `capture` is only useful if something
+    runs it — and since #179 that is `loop.py`, not the skill: `start` saves
+    this script's record to `target.json` and runs `record["capture"]`, and
+    `rearm`/`finish` re-run the SAME record rather than naming a form. (A
+    re-capture that hardcoded `git diff` would silently review the working
+    tree on round 2 of a PR review — the wrong artifact, looking like a
+    shrinking diff rather than an error.)
 
-    Both call sites matter separately: a re-diff that hardcoded `git diff` would
-    silently review the working tree on round 2 of a PR review, which is the
-    wrong artifact and looks like a shrinking diff rather than an error.
+    Branch B's prose therefore shows no capture bash at all; the execution half
+    is `tests/test_server_orchestration.py`'s diff checks.
     """
-    branch_b = _branch_b()
     capture_pr = " ".join(classify(["187"], cwd=_repo())["capture"])
     capture_ref = " ".join(classify(["HEAD~1"], cwd=_repo())["capture"][:2])
     assert capture_pr == "gh pr diff 187", capture_pr
     assert capture_ref == "git diff", capture_ref
 
-    launch, redoff = branch_b.index("**B1."), branch_b.index("**B4.")
-    for where, name in ((branch_b[launch:redoff], "B1"), (branch_b[redoff:], "B4")):
-        assert "gh pr diff" in where, f"{name} must show the PR capture"
-        assert "git diff" in where, f"{name} must show the ref capture"
-        assert "> .viva/diff.patch" in where, f"{name} must write the patch"
-    assert "SAME capture argv as B1" in branch_b[redoff:], (
-        "B4 must re-run B1's capture rather than naming one form — a hardcoded "
-        "`git diff` reviews the working tree on round 2 of a PR review")
-    print("  ok  test_branch_b_runs_the_capture_this_script_prints")
-
-
-def test_branch_b_uses_the_parser_and_mode_the_driver_lacks():
-    """Why branch B drives itself, asserted rather than asserted-in-prose:
-    `parse_diff.py` and `--mode diff` are the two things `loop.py` has no path
-    to (`cmd_start` runs `parse_sections.py`, `cmd_arm` launches
-    `--mode review`). If branch B ever stops needing both, #179 is unblocked and
-    this test is the reminder."""
-    branch_b = _branch_b()
-    assert "parse_diff.py" in branch_b and "--mode diff" in branch_b, branch_b[:400]
     loop = (ROOT / "scripts" / "loop.py").read_text()
-    assert "parse_diff" not in loop, \
-        "loop.py learned parse_diff — branch B can move onto the driver (#179)"
-    assert '_launch_server(viva, "review"' in loop, \
-        "loop.py no longer hardcodes --mode review; re-check branch B's exemption"
-    print("  ok  test_branch_b_uses_the_parser_and_mode_the_driver_lacks")
+    assert 'record.get("capture")' in loop, "loop.py must run the record's capture"
+    assert '"target.json"' in loop, "loop.py must persist the record for the re-capture"
+    assert "_capture(record, viva / \"diff.patch\", cwd)" in loop, \
+        "every capture runs from the recorded cwd"
+    for bash in re.findall(r"```bash\n(.*?)```", _branch_b(), re.S):
+        for needle in ("gh pr diff", "git diff", "> .viva/diff.patch", "parse_diff.py"):
+            assert needle not in bash, \
+                f"branch B still carries capture bash ({needle!r}) — loop.py owns it:\n{bash}"
+    print("  ok  test_the_driver_runs_the_capture_this_script_prints")
+
+
+def test_the_driver_knows_the_diff_parser_and_mode():
+    """The tripwire that used to say why branch B drove itself, inverted:
+    `parse_diff.py` and `--mode diff` were the two things `loop.py` had no path
+    to. Now it parses a diff with the one and launches with a mode read off the
+    round file — never a hardcoded `review` — so the prose names neither."""
+    loop = (ROOT / "scripts" / "loop.py").read_text()
+    assert "parse_diff.py" in loop, "loop.py must parse a diff round"
+    assert '_launch_server(viva, "review"' not in loop, \
+        "arm must not hardcode the launch mode"
+    assert "_launch_server(viva, mode, inp, out)" in loop, \
+        "arm launches with the mode the round file carries"
+    # Prose may still name the parser (B3's `info` exception rests on what
+    # `parse_diff.py` lacks); no bash block may run it or launch the mode.
+    for bash in re.findall(r"```bash\n(.*?)```", _branch_b(), re.S):
+        assert "--mode diff" not in bash and "parse_diff.py" not in bash, \
+            "branch B must run neither the parser nor the mode — the driver owns both:\n" + bash
+    print("  ok  test_the_driver_knows_the_diff_parser_and_mode")
 
 
 def test_branch_b_routes_info_away_from_threads_it_does_not_have():
@@ -267,28 +272,23 @@ def test_branch_b_routes_info_away_from_threads_it_does_not_have():
     print("  ok  test_branch_b_routes_info_away_from_threads_it_does_not_have")
 
 
-def test_branch_b_writes_summaries_before_it_launches_the_server():
-    """#188. Branch B drives itself, so an agent runs its bash blocks in the
-    order the page prints them. The server loads its round once and replaces it
-    only from `POST /next-round`, so a launch that precedes the summary write
-    serves the summary-less round for all of round 1 — 52 hunks titled
-    `server.py hunk N`, the exact complaint #188 was filed about, with no error
-    on any surface.
-
-    Asserted on block order rather than on the prose that states the rule twice:
-    a correct instruction under a mis-placed fence still boots the wrong round.
+def test_branch_b_summarizes_at_the_seam_before_it_arms():
+    """#188. The server loads its round once and replaces it only from
+    `POST /next-round`, so a summary written after the launch serves a
+    summary-less round for all of round 1 — 52 hunks titled `server.py hunk N`,
+    the exact complaint #188 was filed about. The driver holds the seam
+    (`start`/`rearm` stop above the threshold; `summarize` refuses an armed
+    round — `tests/test_server_orchestration.py` executes both), and the prose
+    must present the verbs in that order: an agent runs the blocks as printed.
     """
-    blocks = re.findall(r"```bash\n(.*?)```", _branch_b(), re.S)
-    write = [i for i, b in enumerate(blocks) if 's["summary"]' in b]
-    launch = [i for i, b in enumerate(blocks) if "--mode diff" in b]
-    assert write, "branch B has no bash block that writes a section summary"
-    assert launch, "branch B has no bash block that launches `--mode diff`"
-    assert write[0] < launch[0], (
-        "branch B prints its `--mode diff` launch (block %d) before the summary "
-        "write (block %d) — an agent running the blocks in order arms a round "
-        "the summaries never reach" % (launch[0], write[0])
+    bash = "\n".join(re.findall(r"```bash\n(.*?)```", _branch_b(), re.S))
+    assert 'loop.py" summarize' in bash, "branch B has no bash that runs `loop.py summarize`"
+    assert 'loop.py" arm' in bash, "branch B has no bash that runs `loop.py arm`"
+    assert bash.index('loop.py" summarize') < bash.index('loop.py" arm'), (
+        "branch B prints `arm` before `summarize` — an agent running the "
+        "blocks in order arms a round the summaries never reach"
     )
-    print("  ok  test_branch_b_writes_summaries_before_it_launches_the_server")
+    print("  ok  test_branch_b_summarizes_at_the_seam_before_it_arms")
 
 
 def main() -> None:
@@ -303,10 +303,10 @@ def main() -> None:
     test_a_directory_is_refused()
     test_capture_is_an_argv_list_no_target_can_inject()
     test_skill_dispatch_table_covers_every_kind()
-    test_branch_b_runs_the_capture_this_script_prints()
-    test_branch_b_uses_the_parser_and_mode_the_driver_lacks()
+    test_the_driver_runs_the_capture_this_script_prints()
+    test_the_driver_knows_the_diff_parser_and_mode()
     test_branch_b_routes_info_away_from_threads_it_does_not_have()
-    test_branch_b_writes_summaries_before_it_launches_the_server()
+    test_branch_b_summarizes_at_the_seam_before_it_arms()
     print("OK (15 tests)")
 
 

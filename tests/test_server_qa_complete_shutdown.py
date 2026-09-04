@@ -10,9 +10,12 @@ is the check the server performs on its own. Three sessions, two answers:
 - **review** — gated. No verdicts submitted yet and not-all-approved are two
   different agent recoveries, so they get two distinct 4xx.
 - **Q&A** — exempt by shape (`questions`, no `sections`).
-- **diff** — exempt by mode. `parse_diff.py` emits `sections`, so a diff
-  session is review-shaped; `viva-diff/SKILL.md:109-113`'s empty-re-diff finish
-  signs off with `changes` verdicts on record by design.
+- **diff** — gated like review, with one signal (#177). `parse_diff.py` emits
+  `sections`, so a diff session is review-shaped and holds until every hunk is
+  approved — unless the caller asserts `resolved: "empty"`, `loop.py finish`'s
+  word that the re-capture came back empty (every hunk applied or reverted at
+  the reviewer's request). Honored on a `--mode diff` launch only; any other
+  `resolved`, or one on a review server, is a `400`.
 
 Then the shutdown routes — three routes, three scenarios:
 
@@ -159,20 +162,22 @@ def check_review_complete_gate() -> None:
         _cleanup(proc)
 
 
-def check_diff_complete_ungated() -> None:
-    """A diff session finishes with `changes` verdicts on record.
-
-    `viva-diff/SKILL.md:109-113`: the re-diff reaches zero because a hunk was
-    reverted or dropped at the reviewer's request, *not* because every hunk was
-    approved — so the latest verdicts hold `changes` by design. `parse_diff.py`
-    emits `sections`, so a shape-only guard would 4xx that legitimate finish,
-    leak the server, and strand the tab on the processing card. The exemption is
-    `mode`, which is why this asserts a 200 with the non-approved verdicts
-    actually on record rather than an empty submit.
+def check_diff_complete_is_gated_unless_resolved_empty() -> None:
+    """#177. A diff session with a `changes` verdict on record is refused a
+    plain finish exactly as a review session is — the blanket mode exemption
+    let a `--mode diff` server sign off ANY verdicts. It signs off only when the
+    caller asserts the re-capture came back empty: the hunk was reverted or
+    dropped at the reviewer's request, so there is nothing left to approve.
+    `loop.py finish` derives that assertion from a fresh capture, never from
+    memory. A round nobody has submitted is still refused first.
     """
     proc, viva, out = _launch("diff", DIFF_INPUT)
     try:
         base = wait_for_url(out)
+        status, body = post_result(base, "/complete", {"resolved": "empty"})
+        assert status == 400 and "no verdicts" in body.get("error", ""), \
+            "a diff can be resolved empty only after the human has seen it: %r" % (body,)
+
         post(base, "/submit", {"round": 1, "sections": [
             {"id": "s1", "verdict": "changes",
              "comments": [{"note": "revert this hunk"}]},
@@ -184,10 +189,46 @@ def check_diff_complete_ungated() -> None:
 
         status, body = post_result(base, "/complete", {
             "rounds_total": 1, "sections_total": 1, "sections_revised": 1})
+        assert status == 409, \
+            "a diff finish with changes on record must be refused — got %d %r" % (status, body)
+        assert "1 of 1" in body.get("error", ""), body
+        assert proc.poll() is None, "a refused finish leaves the server up"
+
+        status, body = post_result(base, "/complete", {
+            "resolved": "partial", "rounds_total": 1})
+        assert status == 400 and "resolved" in body.get("error", ""), \
+            "an unknown resolved value is refused, not ignored: %r" % (body,)
+
+        status, body = post_result(base, "/complete", {
+            "resolved": "empty", "rounds_total": 1, "sections_total": 1,
+            "sections_revised": 1})
         assert (status, body) == (200, {"ok": True}), \
-            "diff mode is exempt from the finish guard — got %d %r" % (status, body)
+            "resolved-empty signs off a diff with changes on record — got %d %r" % (status, body)
         assert _await_exit(proc), "diff server should exit after /complete"
         assert not (viva / "server.url").exists()
+    finally:
+        _cleanup(proc)
+
+
+def check_review_complete_refuses_a_resolved_signal() -> None:
+    """A doc cannot go empty. `resolved` on a review server is a caller bug —
+    refused rather than silently ignored, the way every other malformed field
+    in this codebase is."""
+    proc, viva, out = _launch("review", REVIEW_INPUT)
+    try:
+        base = wait_for_url(out)
+        post(base, "/submit", {"round": 1, "sections": [
+            {"id": "s1", "verdict": "approved"},
+            {"id": "s2", "verdict": "approved"},
+        ]})
+        assert poll_for(out)
+        status, body = post_result(base, "/complete", {"resolved": "empty"})
+        assert status == 400 and "diff-review signal" in body.get("error", ""), \
+            "resolved on a review server must be refused: %d %r" % (status, body)
+        assert proc.poll() is None
+        status, body = post_result(base, "/complete", {})
+        assert (status, body) == (200, {"ok": True}), (status, body)
+        assert _await_exit(proc)
     finally:
         _cleanup(proc)
 
@@ -332,7 +373,8 @@ def check_sigterm_shutdown() -> None:
 
 def main() -> None:
     check_review_complete_gate()
-    check_diff_complete_ungated()
+    check_diff_complete_is_gated_unless_resolved_empty()
+    check_review_complete_refuses_a_resolved_signal()
     check_complete_shutdown()
     check_abandon_shutdown()
     check_loop_abandon_shutdown()

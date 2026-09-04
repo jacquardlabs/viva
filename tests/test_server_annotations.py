@@ -46,7 +46,7 @@ def main() -> None:
 
         # Pass-through across a round push: /next-round body is reflected in /input.
         r2 = dict(r1, round=2)
-        post(base, "/next-round?output=" + str(viva / "out2.json"), r2)
+        post(base, "/next-round", dict(r2, output=str(viva / "out2.json")))
         data = get(base, "/input")
         s1 = next(s for s in data["sections"] if s["id"] == "s1")
         assert s1.get("annotations") == annots, f"annotations lost across round: {s1}"

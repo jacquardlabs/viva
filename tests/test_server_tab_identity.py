@@ -77,7 +77,7 @@ def test_next_round_response_is_ok_with_repo_injected_server_side():
     }
     (viva / "in1.json").write_text(json.dumps(r1))
     with launch_server(viva / "in1.json", viva / "out1.json", cwd=repo_dir) as base:
-        result = post(base, "/next-round?output=" + str(viva / "out2.json"), dict(r1, round=2))
+        result = post(base, "/next-round", dict(r1, round=2, output=str(viva / "out2.json")))
         assert result == {"ok": True}, f"unexpected /next-round response: {result}"
         assert get(base, "/input").get("repo") == "another-repo"
     print("  ok  test_next_round_response_is_ok_with_repo_injected_server_side")

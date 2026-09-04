@@ -34,7 +34,7 @@ def main() -> None:
             {"id": "s1", "verdict": "changes", "note": note},
             {"id": "s2", "verdict": "info", "note": "How long in the DLQ?"},
         ]})
-        post(base, "/next-round?output=" + str(viva / "out2.json"), dict(r1, round=2))
+        post(base, "/next-round", dict(r1, round=2, output=str(viva / "out2.json")))
         ledger = get(base, "/input")["ledger"]
         assert ledger == [
             {"round": 1, "section_title": "Goals", "verdict": "changes", "note": note},
@@ -47,7 +47,7 @@ def main() -> None:
             {"id": "s1", "verdict": "approved", "note": ""},
             {"id": "s2", "verdict": "changes", "note": ""},
         ]})
-        post(base, "/next-round?output=" + str(viva / "out3.json"), dict(r1, round=3))
+        post(base, "/next-round", dict(r1, round=3, output=str(viva / "out3.json")))
         ledger = get(base, "/input")["ledger"]
         assert len(ledger) == 3, f"expected 3 entries, got {len(ledger)}"
         assert ledger[2] == {"round": 2, "section_title": "Error Handling",
@@ -61,7 +61,7 @@ def main() -> None:
         # round is coerced to int (stored-XSS hardening)
         post(base, "/submit", {"round": "<img src=x>", "submitted_early": False,
                                "sections": [{"id": "s1", "verdict": "info", "note": "n"}]})
-        post(base, "/next-round?output=" + str(viva / "out4.json"), dict(r1, round=4))
+        post(base, "/next-round", dict(r1, round=4, output=str(viva / "out4.json")))
         ledger = get(base, "/input")["ledger"]
         assert ledger[3]["round"] == 0, f"round not coerced: {ledger[3]}"
 

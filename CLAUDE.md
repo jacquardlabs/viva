@@ -107,7 +107,13 @@ import. It holds:
   fifth kind is covered the day it lands: `tests/test_schema.py`'s
   `test_no_pass_relaxes_the_all_approved_base` at the predicate, and
   `tests/test_server_pass.py`'s `check_a_pass_never_signs_off_an_unapproved_round`
-  at the wire.
+  at the wire. The one thing that is not a conjunct is not a relaxation of the
+  predicate either: a `--mode diff` server's `/complete` honors `resolved:
+  "empty"` in the body (#177) — the caller's assertion that the re-capture came
+  back empty, so there is nothing left to approve — and skips the predicate for
+  that finish alone. `loop.py finish` derives it from a fresh capture; a round
+  nobody has submitted is still refused first; any other `resolved`, or one on
+  a review server, is a `400`.
 - **`has_revision_history()`** — has this doc already been signed off? Anchored,
   never a substring test: `loop.py`'s resume detection and
   `revision_history.py`'s append-vs-create branch ask the same question, and a
@@ -200,13 +206,31 @@ draws. It edits the agent's prose only: a `suggestion` is still pasted verbatim
 and a `changes` comment asking for more wins. `tests/test_writing_register.py`
 pins those seams.
 
-**The no-bookkeeping-bash rule is scoped, deliberately.** `loop.py` drives doc
-review and the intake interview, so `viva-review`'s **branch A** and all of
-`viva-write` are held to it. Branch B (hunks — `parse_diff.py` and `--mode
-diff`, neither of which the driver knows) carries that bash on purpose.
-`test_server_orchestration.py` enumerates it rather than exempting by wildcard,
-so a second skill growing its own loop fails; #179's remaining half empties the
-list.
+**The no-bookkeeping-bash rule has no exemptions.** `loop.py` drives doc review,
+hunk review, and the intake interview (#179), so every bash block in both skills
+is held to it. `test_server_orchestration.py` asserts the set of skills carrying
+their own loop is empty, by name, so a skill growing one fails.
+
+**Two review modes, one driver.** `start --doc` is the doc form; `start --target
+<pr|ref>` or `start --kind worktree` is the diff form, and the two are refused
+together. The diff form runs `review_target.py` as a subprocess (filesystem
+first, so `--target docs/x.md` is the doc form spelled the other way), saves the
+record verbatim plus the capture's `cwd` to `.viva/target.json`, runs the
+`capture` argv into `.viva/diff.patch`, and parses with `parse_diff.py`. Every
+subcommand after `start` reads the mode off the round file — `arm` launches
+`--mode <that>`, `rearm` and `finish` branch on it — so the agent types neither
+a mode nor a round. A failed capture unlinks the patch before it dies: a 0-byte
+`diff.patch` left behind would be read as "no changes" and sign the session off
+resolved with nothing reviewed. Diff-mode `rearm` re-runs the recorded capture
+(never a different form — a `git diff` substituted on round 2 of a PR review
+reviews the working tree), reports an empty re-capture and arms nothing, and
+refuses `--response`/`--decline`/`--pass`. Diff-mode `finish` re-captures for
+itself: empty → `/complete` with `resolved: "empty"`; identical to round N and
+all-approved → the normal finish; anything else (the human approved a hunk and
+the agent kept editing) → refused, `rearm`. The summaries seam is the driver's
+too: above `SUMMARY_THRESHOLD` hunks with any lacking a `summary`, `start` and
+`rearm` stop after parsing, and `loop.py summarize --map <path|->` merges a
+`{id: one line}` map pre-arm, refusing an armed round as `annotate` does.
 
 ## `/viva-write` — the intake end of the lifecycle
 
@@ -309,7 +333,9 @@ cost is that a branch named `42` needs `--kind ref`.
   disposable and reset each session. Don't add new state that must survive
   without documenting why here. The state clear itself lives in
   `scripts/loop.py`'s `_clear_state`, not in prose — it removes the round files,
-  `server.url`, `open-notes.json`, and the `attachments/` directory. `interview`
+  `server.url`, `open-notes.json`, `target.json` (the diff form's dispatch record
+  plus the cwd its capture runs in), `diff.patch` (the capture, re-run every
+  `rearm` and `finish`), and the `attachments/` directory. `interview`
   adds `answers.json` to it (a stale one would satisfy the wait before the human
   typed a word) and `start` deliberately does not — a `start --handoff` runs
   while the draft written from those answers is still the agent's source.

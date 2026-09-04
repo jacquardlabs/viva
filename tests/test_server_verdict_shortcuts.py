@@ -154,7 +154,7 @@ def test_a_typed_comment_carries_the_verdict_and_removing_it_takes_it_back():
         # The instruction reaches the ledger — the thing the keypress used to
         # drop on the floor.
         r2 = dict(ROUND_1, round=2)
-        post(base, "/next-round?output=" + str(viva / "out2.json"), r2)
+        post(base, "/next-round", dict(r2, output=str(viva / "out2.json")))
         ledger = get(base, "/input")["ledger"]
         assert {"round": 1, "section_title": "Goals", "verdict": "changes",
                 "note": "5x not 3x"} in ledger, ledger

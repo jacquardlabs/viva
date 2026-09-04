@@ -180,7 +180,7 @@ def test_handoff_same_server_no_second_launch():
                 {"id": "s1", "title": "Channel", "content": "We will use email."},
             ],
         }
-        result = post(base, "/next-round?output=" + str(review_out), review_round1)
+        result = post(base, "/next-round", dict(review_round1, output=str(review_out)))
         assert result == {"ok": True}, result
 
         # Same tab contract: /input now serves the review round, same base URL.

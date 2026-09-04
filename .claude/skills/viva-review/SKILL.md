@@ -47,7 +47,7 @@ python3 "$VIVA_DIR/scripts/review_target.py" [target]
 ```
 
 It prints `{kind, label, …}` — `doc` sends you to **A**, everything else to
-**B**, where `capture` is the argv that writes the patch. Precedence is
+**B**, where `loop.py start` runs its `capture` argv for you. Precedence is
 filesystem first, then shape: a repo holding a *file* named `187` means that
 file, not the PR. Pass `--kind pr|ref|doc` to override — a branch named `42`
 needs it.
@@ -267,103 +267,78 @@ git commit -m "docs: sign off on <filename>"
 ## B. Diff review (`kind: pr | ref | worktree`)
 
 The unit of trust is the hunk: nothing in the diff is done until a human has
-approved the hunk it lives in. `loop.py` does **not** drive this branch — it
-parses with `parse_sections.py` and launches `--mode review`, and a diff needs
-`parse_diff.py` and `--mode diff`. Extending the driver here is #179's.
+approved the hunk it lives in. `loop.py` drives this branch the way it drives A
+— it runs the capture `review_target.py` printed, parses with `parse_diff.py`,
+launches `--mode diff`, and re-captures on every re-arm and at the finish. The
+round file carries the mode, so every command after `start` knows which loop
+it is in.
 
 **Reviewing a PR you are not checked out on is read-only.** The rewrite step
 edits working-tree files, so if you intend to revise rather than only sign off,
 `gh pr checkout <n>` first and say so before starting.
 
-**B1. Capture** (round 1)
+**Do not `git add` before `finish`.** A working-tree capture is `git diff` —
+unstaged changes only — so staging mid-review empties the re-capture, and
+`rearm` and `finish` read an empty capture as "every hunk resolved".
+
+**B1. Start** (round 1)
 
 ```bash
-[ -f .viva/server.url ] && { echo "viva-review: a session may be open at $(cat .viva/server.url 2>/dev/null) — check that tab first. Finish or abandon it there; delete .viva/server.url only if nothing is answering."; exit 1; }
-
-mkdir -p .viva
-rm -f .viva/server.url .viva/review-input-r*.json .viva/review-r*.json .viva/open-notes.json
-rm -rf .viva/attachments
-
-# `capture` is the argv review_target.py printed — run it verbatim.
-gh pr diff 187 > .viva/diff.patch          # or: git diff <ref> > .viva/diff.patch
-[ -s .viva/diff.patch ] || { echo "viva-review: no changes to review"; exit 0; }
-
-DOC_FILE="<the label review_target.py printed>"
-
-python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
-  --output .viva/review-input-r1.json --round 1 --doc-file "$DOC_FILE" \
-  || { echo "viva-review: parse failed"; exit 1; }
+python3 "$VIVA_DIR/scripts/loop.py" start --target 187          # a PR, or a ref
+python3 "$VIVA_DIR/scripts/loop.py" start --kind worktree       # the working tree
 ```
 
-**B1a. Summarize the hunks** (before the launch, and before every re-arm)
+`start` clears stale state, records the target, runs its capture, parses the
+hunks, launches the server, and prints the hunk count and `$BASE`. Pass the
+target `review_target.py` classified, with the same `--kind` if you overrode
+one; the working tree takes no target. It **refuses** over a live session
+exactly as A1 does, naming the tab's URL. `no changes to review` means the
+capture was empty — nothing to launch, report it and stop. A capture that
+fails (a `gh` that 403s, a ref that does not exist) is an error naming the
+argv, never an empty diff.
+
+**B1a. Summarize the hunks** (whenever `start` or `rearm` stops after parsing)
 
 `parse_diff.py` titles every hunk `{filepath} hunk N`, so a 41-hunk file
 collapses to `server.py hunk 1 … hunk 41` — an index with no entries in it.
 Write a one-line `summary` per section and the tab renders it under each title.
 
-**Only above 10 sections.** Below that the collapsed list is already navigable
-and the summaries are not worth the tokens. `parse_diff.py` prints nothing on
-success, so count them off the round file:
+**Only above 10 hunks.** Below that the collapsed list is already navigable and
+the summaries are not worth the tokens — so the driver holds the seam only
+there: `start` and `rearm` stop after parsing when the round has more than 10
+hunks and any of them lacks a summary, and print the round file's path. `Read`
+it — the one place branch B pays for its output deliberately, because the
+hunks are what you are about to review anyway — then merge the map and arm:
 
 ```bash
-python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['sections']))" \
-  .viva/review-input-r{N}.json
-```
-
-`Read` the round file — the one place branch B pays for its output deliberately,
-because the hunks are what you are about to review anyway — then write the map
-back. Ids you omit keep whatever they carried:
-
-```bash
-python3 - .viva/review-input-r{N}.json <<'PY'
-import json, sys
-SUMMARIES = {
-    "s1": "guards the finish path against an unapproved round",
-    "s2": "walks the anchor back to the nearest heading",
-}
-path = sys.argv[1]
-with open(path, encoding="utf-8") as f:
-    data = json.load(f)
-for s in data["sections"]:
-    if s["id"] in SUMMARIES:
-        s["summary"] = SUMMARIES[s["id"]]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-PY
+python3 "$VIVA_DIR/scripts/loop.py" summarize --map - <<'JSON'
+{"s1": "guards the finish path against an unapproved round",
+ "s2": "walks the anchor back to the nearest heading"}
+JSON
+python3 "$VIVA_DIR/scripts/loop.py" arm
 ```
 
 What the change *does*, in one clause — not the hunk header's enclosing symbol,
 which names where the change sits and not what it is. Lowercase, no trailing
-period, no filename (the title already carries it).
+period, no filename (the title already carries it). Ids you omit keep whatever
+they carried; an id the round does not have is refused.
 
 **It must land before the server reads the round.** The server loads its round
-once and replaces it only from `POST /next-round`, so a summary written into the
-file under a live round is one nobody sees. Round 1: before B1b below. Round
-N+1: between `parse_diff.py` and the `curl` in B4 — `-d @file` posts the file as
-it stands.
-
-`parse_diff.py` carries a summary forward onto any hunk whose content is
-byte-identical, so each round only needs the hunks that actually changed.
-
-**B1b. Launch** (round 1)
-
-```bash
-python3 "$VIVA_DIR/server.py" --mode diff \
-  --input .viva/review-input-r1.json --output .viva/review-r1.json &
-for i in $(seq 1 100); do [ -f .viva/server.url ] && break; sleep 0.1; done
-[ -f .viva/server.url ] || { echo "viva-review: launch failed"; exit 1; }
-BASE=$(cat .viva/server.url)
-```
+once and replaces it only from `POST /next-round`, so `summarize` refuses a
+round that is already armed. `parse_diff.py` carries a summary forward onto any
+hunk whose body is unchanged — a hunk that only moved keeps it — so each round
+only needs the hunks that were actually rewritten. `--arm-anyway` declines the
+seam.
 
 **B2. Wait for verdicts** (every round)
 
 ```bash
-until [ -f .viva/review-r{N}.json ]; do sleep 0.3; done
-cat .viva/review-r{N}.json
+python3 "$VIVA_DIR/scripts/loop.py" wait
 ```
 
-Read all verdicts from stdout. The server writes the file atomically — `cat`
-always sees complete JSON. Same ~10 minute timeout as A2.
+Same as A2: the verdicts, the id→title map, and the classification line, with
+the same ~10 minute timeout. It prints no thread or register rail here — there
+are no threads and no prose.
 
 **B3. Act on verdicts.** The verdict rules above apply with the hunk as the card,
 and **one exception: there are no threads here.** `parse_diff.py` takes no
@@ -384,62 +359,45 @@ the filepath (`title` = `"{filepath} hunk N"`), then apply the targeted edit to
 
 Every hunk approved → B5. Any `changes`/`info` → B4.
 
-**B4. Re-diff and re-arm**
+**B4. Re-arm**
 
 ```bash
-# Re-run the SAME capture argv as B1 — never a different one. A `git diff`
-# substituted here on round 2 of a PR review reviews the working tree instead,
-# which reads as a shrinking diff rather than as an error.
-gh pr diff 187 > .viva/diff.patch          # or: git diff <ref> > .viva/diff.patch
-
-if [ ! -s .viva/diff.patch ]; then
-  echo "viva-review: diff is now empty — all changes were applied or reverted; finishing"
-  curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
-    -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
-  exit 0
-fi
-
-python3 "$VIVA_DIR/scripts/parse_diff.py" .viva/diff.patch \
-  --output .viva/review-input-r{N+1}.json --round {N+1} --doc-file "$DOC_FILE" \
-  --prior-input .viva/review-input-r{N}.json \
-  --prior-verdicts .viva/review-r{N}.json
+python3 "$VIVA_DIR/scripts/loop.py" rearm
 ```
 
-Re-run **B1a** for the hunks that changed — a carried summary describes content
-that is byte-identical, so only the rewritten hunks need a new one. Then ship it:
+`rearm` re-runs the capture `start` recorded — the same argv, never a different
+one — re-parses with round N as prior so an approved, unchanged hunk carries its
+approval, and ships round N+1 to the running tab. Two outcomes, on stdout:
+
+- `round N+1 armed` — back to B2 (after B1a, if it stopped at the seam).
+- `diff is empty after re-capture` — every hunk was applied or reverted at the
+  human's request. Nothing was armed; go to B5, which signs it off.
+
+`--response`, `--decline`, and `--pass` are refused here: no threads, no pass.
+
+**B5. Finish**
 
 ```bash
-curl -s -X POST "$BASE/next-round?output=.viva/review-r{N+1}.json" \
-  -H "Content-Type: application/json" -d @.viva/review-input-r{N+1}.json
+python3 "$VIVA_DIR/scripts/loop.py" finish
 ```
 
-The browser updates in place — no new tab. Back to B2.
+`finish` re-captures for itself and decides from what it sees, never from what
+`rearm` printed. Three outcomes:
 
-**If the diff went empty and `/complete` was just called**, this session finished
-but not the way B5 assumes: the diff reached zero because a hunk was reverted or
-dropped at the human's request, not because every hunk was approved as-is. A hunk
-that nets to nothing counts toward `sections_revised`, not the approved count.
-Skip B5 and report:
-
-> "Diff fully resolved — nothing left to review. N hunks approved, K hunks
-> revised (including any reverted or dropped) across M files in R round(s)."
-
-Then state plainly: "Working tree matches `<target>` — nothing to commit." Do not
-prompt to commit; an empty diff means there is nothing to stage.
-
-**B5. Finish** (all hunks approved)
-
-```bash
-curl -s -X POST "$BASE/complete" -H "Content-Type: application/json" \
-  -d "{\"rounds_total\": N, \"sections_total\": M, \"sections_revised\": K}"
-```
-
-> "N hunks approved across M files in R round(s). K hunks revised."
-
-Then ask: "Commit these changes? (y/n)" — and on yes, stage and commit the
-reviewed working-tree changes.
-
----
+- **`diff fully resolved — nothing to commit`** — the capture was empty. It
+  signed off with `resolved: "empty"`, the one signal the server's diff gate
+  honors. A hunk that nets to nothing counts toward the revised count, not the
+  approved count. Report: "Diff fully resolved — nothing left to review. N hunks
+  revised (including any reverted or dropped) across M files in R round(s).
+  Working tree matches `<target>` — nothing to commit." Do **not** prompt to
+  commit; an empty diff means there is nothing to stage.
+- **`signed off`** — every hunk approved, and the capture is byte-for-byte the
+  round the human approved. Report: "N hunks approved across M files in R
+  round(s). K hunks revised." Then ask: "Commit these changes? (y/n)" — and on
+  yes, stage and commit the reviewed working-tree changes.
+- **refused** — a hunk is not approved, or the diff changed since the human
+  approved it (you kept editing). Nothing is auto-accepted: `rearm` to re-present
+  it, or `loop.py abandon`.
 
 ## Scope
 
@@ -463,12 +421,13 @@ producer the driver has not named, pass `--parse-only` to `start` or `rearm`.
 
 ## File layout
 
-`loop.py` writes and reads all of this on branch A; you name none of it.
+`loop.py` writes and reads all of this on both branches; you name none of it.
 
 ```
 .viva/
 ├── server.url             ← server writes on startup; deleted on shutdown
-├── diff.patch             ← branch B only
+├── target.json            ← branch B only: the dispatch record and its cwd
+├── diff.patch             ← branch B only, re-captured every rearm and finish
 ├── review-input-r1.json   ← the round the server serves
 ├── review-r1.json         ← the verdicts the server writes back
 ├── open-notes.json        ← threads carried across rounds

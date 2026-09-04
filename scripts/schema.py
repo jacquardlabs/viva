@@ -585,9 +585,13 @@ def round_is_complete(input_data: dict, verdicts: dict) -> bool:
     reason answering a flag in place, rather than waiting for it to disappear,
     is the satisfying move.
 
-    Callers gate on shape and mode: Q&A rounds carry `questions` rather than
-    `sections`, and diff rounds legitimately sign off with `changes` verdicts on
-    record (viva-diff's empty-re-diff finish), so neither reaches this function.
+    Callers gate on shape: a Q&A round carries `questions` rather than
+    `sections` and never reaches this function. A diff round does — every hunk
+    approved is its base too. The one diff finish that skips it is the
+    empty re-capture (every hunk applied or reverted at the reviewer's request,
+    nothing left to approve), which `loop.py finish` asserts to `/complete` as
+    `resolved: "empty"` from a fresh capture; the server honors that signal on a
+    `--mode diff` launch only (#177).
     """
     section_ids = [s.get("id") for s in input_data.get("sections", [])]
     if not section_ids:
