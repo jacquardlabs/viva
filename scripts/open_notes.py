@@ -1,38 +1,16 @@
 #!/usr/bin/env python3
-"""Maintain viva's open-note store — notes that carry across rounds (issue #16).
+"""Maintain viva's open-note store — notes that carry across rounds (#16).
 
-A note the reviewer marks *open* persists round to round, accumulating the
-exchange (what was asked, what the agent answered) until it is *settled*. This
-script is the SINGLE writer of `.viva/open-notes.json`; the server only reads it
-(via `parse_sections.py --open-notes`, which attaches open threads to the next
-round's cards) and `revision_history.py` folds the full threads into the ledger
-at sign-off.
+The SINGLE writer of `.viva/open-notes.json`, keyed by comment `cid` (one
+thread per inline comment). Each thread carries its section title, anchored
+quote, `status` (`schema.THREAD_STATUSES`: open|declined|settled), and an
+`exchanges` list of `{round, verdict, note, response}` (a suggestion turn
+also carries `replacement`; a declined turn also carries `grounds`).
 
-The store is keyed by comment `cid` — one thread per inline comment, not one per
-section. Each thread carries its section title (for re-attachment) and the
-anchored quote (if any).
-
-  open-notes.json:
-  {
-    "s1-c1": {
-      "cid": "s1-c1",
-      "title": "Goals",
-      "quote": "retries 3x",
-      "status": "open",            # schema.THREAD_STATUSES: open|declined|settled
-      "exchanges": [
-        {"round": 1, "verdict": "changes", "note": "5x not 3x", "response": "Done."}
-        # a `suggestion` turn also carries "replacement": the exact wording
-        # a DECLINED turn also carries "grounds": why the author did not comply
-      ]
-    }
-  }
-
-`declined` is the author's turn, not a verdict (see `schema.THREAD_STATUSES`).
-It resolves nothing: the thread carries into the next round exactly as an open
-one does, so the section stays held until the reviewer either settles it
-(accepting the decline) or replies (insisting). **Insisting wins** — a reply
-re-opens the thread and the author has no second decline on it; this script
-refuses one.
+`declined` is the author's turn, not a verdict — it resolves nothing, so the
+section stays held until the reviewer settles it (accepting the decline) or
+replies. **Insisting wins**: a reply re-opens the thread and there is no
+second decline on it — this script refuses one.
 
 Usage:
   open_notes.py update \\
@@ -63,27 +41,15 @@ def update(
 ) -> dict:
     """Apply one round's verdicts to the per-comment thread store. Pure.
 
-    Each section carries a `comments` list; each comment is its own thread keyed
-    by `cid`. For every comment:
-      - open & a known type (`schema.COMMENT_TYPES`) → append an exchange
-        (create the thread if new), carrying the agent's `responses[cid]` and,
-        for a suggestion, the replacement wording.
-      - settled truthy      → mark that thread settled.
-    Approving a section settles every still-unresolved thread whose `cid` belongs
-    to it (matched by the section's stable title), so approval clears the
-    section's conversation — including a declined one, which is how the reviewer
-    accepts a decline. A section with no comments is a no-op (today's behavior).
+    Per comment: open + known type → append an exchange (create the thread
+    if new). Settled → mark that thread settled. Approving a section settles
+    every unresolved thread on it, including a declined one — that's how the
+    reviewer accepts a decline.
 
-    `declines[cid]` is the author's grounds for *not* complying with that turn.
-    It rides on the same exchange the turn creates (`grounds`) and moves the
-    thread to `schema.THREAD_DECLINED`. A `responses[cid]` may accompany it —
-    grounds are why the author did not comply, a response is what they did
-    instead — and neither settles anything.
-
-    Raises `ValueError` on a second decline of the same thread: the reviewer has
-    already seen those grounds and re-requested, so the turn is spent. A decline
-    for a comment the reviewer settled this round is dropped, as a response is —
-    settling is decisive, and there is no turn left to answer.
+    `declines[cid]` is the author's grounds for not complying; it rides on
+    the exchange as `grounds` and moves the thread to `THREAD_DECLINED`.
+    Raises `ValueError` on a second decline of the same thread — insisting
+    wins, so the turn is spent.
     """
     titles = {s.get("id"): s.get("title", s.get("id"))
               for s in input_data.get("sections", [])}
@@ -97,11 +63,9 @@ def update(
         comments = s.get("comments") or []
 
         if verdict == "approved":
-            # Settle every unresolved thread belonging to this section (by
-            # title) — open or declined, since approving the section IS how the
-            # reviewer accepts a decline. Mutating `thread["status"]` in place is
-            # safe: `out` holds fresh copies (`{**v, ...}` above), not aliases
-            # into the input `store`.
+            # Approving settles every unresolved thread on this section (by
+            # title), open or declined. `out` holds fresh copies, so mutating
+            # in place doesn't touch the input `store`.
             for thread in out.values():
                 if (schema.section_key(thread.get("title")) == schema.section_key(title)
                         and schema.thread_is_unresolved(thread.get("status"))):
@@ -114,8 +78,7 @@ def update(
                 continue
             thread = out.get(cid)
             if c.get("settled"):
-                # Settling is decisive: close the thread and ignore any note on
-                # this turn (a reply typed then settled is intentionally dropped).
+                # Settling is decisive — a reply typed then settled is dropped.
                 if thread:
                     thread["status"] = schema.THREAD_SETTLED
                 continue
@@ -125,9 +88,8 @@ def update(
                     thread = {"cid": cid, "title": title, "quote": anchor.get("text", ""),
                               "status": schema.THREAD_OPEN, "exchanges": []}
                     out[cid] = thread
-                # A reviewer turn returns a declined thread to `open` — this one
-                # assignment is insisting-wins: they answered the decline, so the
-                # author's refusal no longer stands and the request is live again.
+                # Insisting wins — a reviewer turn returns a declined thread
+                # to open.
                 thread["status"] = schema.THREAD_OPEN
                 thread["title"] = title          # keep display title fresh
                 if anchor.get("text"):
@@ -138,16 +100,12 @@ def update(
                     "note": c.get("note", ""),
                     "response": responses.get(cid, ""),
                 }
-                # A suggestion's payload is the wording, so it rides on the
-                # exchange too: without it, round N+1 re-presents the thread
-                # with the rationale and the replacement stripped, and "apply
-                # verbatim" has nothing left to apply. Presence-gated — a
-                # changes/info exchange stays byte-identical to today's.
+                # A suggestion's wording rides on the exchange too, so it
+                # survives into the next round's re-presentation.
                 if c.get("replacement"):
                     exchange["replacement"] = c["replacement"]
-                # The author's turn. `is not None`, not truthiness: a decline
-                # with no grounds is still a decline — it just reads weaker than
-                # one with them — and the KEY is what marks the turn declined.
+                # `is not None`, not truthiness: a decline with no grounds is
+                # still a decline, and the key is what marks the turn declined.
                 grounds = (declines or {}).get(cid)
                 if grounds is not None:
                     if any("grounds" in x for x in thread["exchanges"]):
@@ -158,9 +116,6 @@ def update(
                             f"it with --response instead."
                         )
                     exchange["grounds"] = grounds
-                    # After the open branch above deliberately: a declined turn
-                    # is unresolved, not open, and only the reviewer's next move
-                    # settles it or returns it to open.
                     thread["status"] = schema.THREAD_DECLINED
                 thread["exchanges"].append(exchange)
     return out
@@ -210,8 +165,7 @@ def main() -> None:
         store = update(store, args.round_num, verdicts, input_data, responses,
                        declines)
     except ValueError as e:
-        # Nothing is written on a refusal: the store on disk still records the
-        # first decline, which is the state the reviewer is answering.
+        # Nothing is written on a refusal — the store keeps its prior state.
         sys.exit(f"viva open_notes: {e}")
 
     store_path.parent.mkdir(parents=True, exist_ok=True)

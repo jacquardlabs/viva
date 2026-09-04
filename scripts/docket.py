@@ -1,85 +1,48 @@
 #!/usr/bin/env python3
 """viva's docket — a read-only status line across every `.viva/` session found
-under a set of roots (issue #173): which repo, which doc, whose turn, and
-whether the round is live or resumable.
+under a set of roots (#173): which repo, which doc, whose turn, and whether
+the round is live or resumable.
 
-**CLI-only, deliberately.** This is a terminal filter, not a server route.
-CLAUDE.md documents `server.py`'s one read outside `.viva/` as `assets/vendor/`
-— ten pinned, committed assets. A `/docket` HTTP route walking arbitrary paths
-under a reviewer's home directory would break that documented invariant, so
-this stays `python3 scripts/docket.py`, run by a human or an agent in a
-terminal, never wired into `server.py`. Whether a served "live tabs" view of
-this is wanted at all is a decision this script deliberately leaves to the
-maintainer — see the PR body, not this file.
+CLI-only: a terminal filter, not a server route, so it doesn't collide with
+`server.py`'s one-read-outside-`.viva/` invariant (CLAUDE.md).
 
-Writes nothing: no new state file, no home-directory registry, no XDG cache.
-Every fact below comes from a stat or a short HTTP probe, never from a store
-this script itself maintains.
+Writes nothing — every fact comes from a stat or a short HTTP probe.
 
 Usage:
   docket.py [--root GLOB]... [--format text|json]
 
 Roots are directory globs, each checked two ways: the root itself may BE a
-repo (`<root>/.viva`), or a directory OF repos (`<root>/*/.viva`) — both are
-supported so `--root ~/Projects/viva` and `--root ~/Projects/*` both work.
-`--root` is repeatable; with none given, `VIVA_DOCKET_ROOTS` (colon-separated,
-same shape as `$PATH`) is used; with neither, the default is `~/Projects/*`.
+repo (`<root>/.viva`), or a directory OF repos (`<root>/*/.viva`). `--root` is
+repeatable; with none given, `VIVA_DOCKET_ROOTS` (colon-separated) is used;
+with neither, the default is `~/Projects/*`.
 
-For each `.viva/` found, one row is reported: repo name (the parent directory's
-name), doc file and doc type (from the current round's `review-input-rN.json`,
-when present), round number, STATE, and AGE.
+For each `.viva/` found, one row is reported: repo name, doc file and doc type
+(from the current round's `review-input-rN.json`, when present), round
+number, STATE, and AGE.
 
-STATE is the entire point of this tool — it is not just "is there a round",
-it is "does anything still need a human, and is the server that would answer
-even alive":
+STATE:
 
-  your-turn        Round N is armed (`review-input-rN.json` exists) and not
-                    yet answered (`review-rN.json` for that N does not exist),
-                    and — if a server is reachable — it agrees it is serving N.
-                    Also reported when no `server.url` exists at all and no
-                    round has been submitted (the session between launches).
-  agent-working     `review-rN.json` exists for round N — the human submitted
-                    verdicts and it is the agent's turn to act on them.
-  parsed-not-armed  `review-input-rN.json` exists for round N, but the live
-                    server at `server.url` answers with something other than
-                    round N — either an earlier round (`rearm --parse-only`
-                    wrote round N while the server still serves the round
-                    before it) or a qa payload with no `round` key at all (the
-                    `/viva-write` hand-off window, where the interview server
-                    is still up when round 1 is parsed to disk). Either way,
-                    nothing will populate `review-rN.json` until `loop.py arm`
-                    runs. This is `loop.py wait`'s "round N is parsed but not
-                    armed" condition (see `cmd_wait`), read off disk instead of
-                    raised as a fatal wait error — the whole reason this state
-                    exists as its own bucket rather than collapsing into
-                    "your-turn".
-  dead              `server.url` exists but nothing answers there within the
-                    probe timeout — the process is gone and no round will ever
-                    be armed or resolved until something relaunches it.
-  qa                A `qa-input.json` or `answers.json` exists and there is no
-                    `review-input-rN.json` at all — an intake interview
-                    (`/viva-write`), not a review round.
-  done              Best-effort only: `review-rN.json` exists for round N and
-                    `schema.round_is_complete()` says N's base (and any
-                    `pass` conjunct) is satisfied — the round the agent would
-                    hand to `loop.py finish`. Not attempted for anything but
-                    the review shape; a qa or malformed round is never
-                    reported "done".
+  your-turn        Round N is armed and unanswered, and any reachable server
+                    agrees it is serving N. Also the between-launches case
+                    where no `server.url` exists and nothing was submitted.
+  agent-working     `review-rN.json` exists for round N — the agent's turn.
+  parsed-not-armed  Round N is parsed but the live server is serving something
+                    else (a stale earlier round, or a `/viva-write` qa payload
+                    with no `round` key). Nothing populates `review-rN.json`
+                    until `loop.py arm` runs.
+  dead              `server.url` exists but nothing answers within the probe
+                    timeout.
+  qa                A `qa-input.json`/`answers.json` exists with no
+                    `review-input-rN.json` — an intake interview, not a round.
+  done              Best-effort: `review-rN.json` exists and
+                    `schema.round_is_complete()` is satisfied.
 
-AGE is the filesystem mtime of whichever of `review-input-rN.json` /
-`review-rN.json` (or `qa-input.json` / `answers.json` for a qa session) is
-newest — there is no timestamp written into any `.viva/` file, so mtime is the
-only signal available. Rendered as a human string ("2h ago") in `--format
-text`, and as a raw Unix epoch (seconds) in `--format json`.
+AGE is the mtime of whichever round/qa file is newest — there is no
+timestamp field, so mtime is the only signal. Human string in `--format
+text`, raw epoch seconds in `--format json`.
 
-This script imports no sibling under `scripts/` — `schema.py` is the one
-permitted cross-import (CLAUDE.md) — and does not import `loop.py`, whose
-round-derivation (`current_round`) and liveness probe (`probe_input`) are
-reimplemented here rather than shared, per the same rule that keeps
-`doc_types.py` un-imported by `loop.py`: run it, don't import it. Nothing here
-runs a subprocess either; there is nothing to run — the doc-type name, when
-present, is read straight off the round JSON that already carries it
-(`schema.ReviewInput.doc_type`), never re-resolved through `doc_types.py`.
+Imports no sibling but `schema.py` (CLAUDE.md), and does not import
+`loop.py` — its round-derivation and liveness probe are reimplemented here.
 """
 from __future__ import annotations
 
@@ -99,16 +62,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import schema  # noqa: E402  — the one permitted sibling import (CLAUDE.md)
 
 _DEFAULT_ROOTS = ["~/Projects/*"]
-# Short, deliberately — this walks N repos on every invocation, and a
-# `server.url` naming a process that will never answer must not stall the
-# whole report waiting on it.
+# Short: a dead server.url must not stall the whole report waiting on it.
 _PROBE_TIMEOUT = 0.7
 
 
 # ── roots ──────────────────────────────────────────────────────────────────
 def resolve_roots(root_args: List[str]) -> List[str]:
-    """`--root` (repeatable) wins outright; otherwise `VIVA_DOCKET_ROOTS`
-    (colon-separated); otherwise the single default."""
+    """`--root` wins outright; otherwise `VIVA_DOCKET_ROOTS`; otherwise the
+    single default."""
     if root_args:
         return list(root_args)
     env = os.environ.get("VIVA_DOCKET_ROOTS")
@@ -120,10 +81,9 @@ def resolve_roots(root_args: List[str]) -> List[str]:
 def find_viva_dirs(root_globs: List[str]) -> List[Path]:
     """Every `.viva/` directory reachable from `root_globs`, one level deep.
 
-    Each glob is expanded (`~` and `*` both), and each resulting directory is
-    checked two ways so a root that IS a repo and a root that is a directory
-    OF repos both work without the caller having to know which: does IT
-    directly hold `.viva/`, and does any immediate child?
+    Checks each expanded root two ways — does it directly hold `.viva/`, and
+    does any immediate child — so a repo root and a directory-of-repos root
+    both work.
     """
     found: Dict[str, Path] = {}
     for pattern in root_globs:
@@ -142,12 +102,9 @@ def find_viva_dirs(root_globs: List[str]) -> List[Path]:
 
 
 # ── round derivation — mirrors loop.py's current_round/round_files, not
-#    imported from it (scripts/*.py may import only schema.py). Both now
-#    format the round-file names through schema.py's shared helpers instead
-#    of independently re-deriving the convention. ───────────────────────────
+#    imported from it (scripts/*.py may import only schema.py). ────────────
 def current_round(viva: Path) -> int:
-    """Highest *parsed* round on disk. 0 when none — matches
-    `loop.py.current_round`'s contract exactly (see that docstring)."""
+    """Highest *parsed* round on disk. 0 when none."""
     rounds = [schema.parse_round_input_stem(p.stem)
               for p in viva.glob(schema.round_input_glob())]
     return max((n for n in rounds if n is not None), default=0)
@@ -158,12 +115,9 @@ def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
 
 
 def load_json(p: Path) -> Optional[dict]:
-    """`None` on anything short of a clean parse of a JSON *object* — a docket
-    report must never crash on a round file some other process is mid-write
-    on, nor on one that parses cleanly but is the wrong shape (a stale
-    format, a hand-edited fixture, a torn write that happens to land on
-    valid JSON). Callers do `load_json(p) or {}` and then `.get(...)`, so a
-    non-dict payload (e.g. a top-level list) must not reach them as-is."""
+    """`None` on anything short of a clean parse of a JSON *object* — must
+    never crash on a mid-write or wrong-shape round file. Callers do
+    `load_json(p) or {}`, so a non-dict payload must not reach them as-is."""
     try:
         with p.open() as fh:
             data = json.load(fh)
@@ -186,17 +140,11 @@ def mtime_of(paths: List[Path]) -> Optional[float]:
 # ── liveness — probed, not stat'ed (mirrors loop.py's server_url/probe_input,
 #    with a short timeout: a docket run must never hang on a dead process) ──
 def server_url(viva: Path) -> Optional[str]:
-    """`server.url`'s content is repo-supplied — every root this walks may be
-    someone else's clone. Constrained to loopback, the same rule `loop.py`'s
-    `server_url` enforces (and `server.py`'s own `Origin` guard): a repo
-    naming an attacker's host in `.viva/server.url` must not turn a docket
-    sweep into an SSRF probe of that host. Unlike `loop.py`, this returns
-    `None` rather than dying — one bad `.viva/` among many roots must not
-    stop the sweep. `None` reads to the caller exactly as "no server.url file
-    exists" does (`classify`'s `state = "your-turn"` branch): a
-    rejected non-loopback URL is indistinguishable from no server ever
-    having launched, not reported as `dead` — `dead` means a real `server.url`
-    named a real (loopback) address and nothing answered there."""
+    """`server.url` is repo-supplied — constrained to loopback so a repo
+    naming an attacker's host can't turn a sweep into an SSRF probe. Returns
+    `None` on a rejected URL rather than raising, same as a missing file, so
+    one bad `.viva/` doesn't stop the sweep (and reads as "your-turn", not
+    `dead`, which requires a real loopback address that didn't answer)."""
     f = viva / "server.url"
     if not f.exists():
         return None
@@ -214,18 +162,11 @@ def server_url(viva: Path) -> Optional[str]:
 
 def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> Optional[dict]:
     """The payload a live server at `base` is serving, or `None` if nothing
-    answers there within `timeout` — a dead process. Mirrors
-    `loop.py.probe_input`'s split on purpose: "no server" (`None`) and "no
-    round" (a dict with no `round` key) are different answers, and only the
-    first may be read as dead. The second is real and reachable here — during
-    the `/viva-write` hand-off window (CLAUDE.md) the interview's qa server
-    has already written `server.url` by the time round 1 is parsed to disk,
-    so a live qa payload with no `round` key can sit behind an *already
-    parsed* `review-input-r1.json`. Collapsing that into "dead" would misreport
-    exactly the live-vs-resumable distinction this tool exists to get right;
-    the caller compares `payload.get("round")` against `current_round()`
-    instead, so a missing key (`None != n` for any `n >= 1`) falls out of the
-    same `!=` check that catches an ordinary stale round."""
+    answers within `timeout`. "No server" (`None`) and "no round" (a dict
+    with no `round` key, e.g. a live qa payload during the `/viva-write`
+    hand-off) are different answers — only the caller decides via
+    `payload.get("round") != current_round()`, so the missing-key case falls
+    out of the same check as an ordinary stale round."""
     try:
         with urllib.request.urlopen(base + "/input", timeout=timeout) as resp:
             payload = json.loads(resp.read())
@@ -251,10 +192,8 @@ def classify(viva: Path) -> Dict[str, object]:
                 "context": qa_data.get("context"),
                 "mtime": mtime_of([qa_in, qa_out]),
             }
-        # A `.viva/` directory with neither a parsed round nor a qa session —
-        # e.g. between `start --parse-only` and the producer's parse. None of
-        # the five documented states fit; reported honestly rather than
-        # guessed into one of them.
+        # Neither a parsed round nor a qa session (e.g. mid `start
+        # --parse-only`) — none of the five documented states fit.
         return {
             "state": "empty",
             "doc_file": None,
@@ -270,8 +209,7 @@ def classify(viva: Path) -> Dict[str, object]:
     mtime = mtime_of([inp, out])
 
     if out.exists():
-        # The human has submitted verdicts for round N — the agent's turn,
-        # unless the round is fully signed off already (best-effort "done").
+        # Human submitted verdicts — agent's turn, unless already signed off.
         verdicts = load_json(out)
         state = "agent-working"
         if verdicts is not None:
@@ -279,26 +217,20 @@ def classify(viva: Path) -> Dict[str, object]:
                 if schema.round_is_complete(input_data, verdicts):
                     state = "done"
             except Exception:
-                pass  # best-effort per the issue — never let this crash the row
+                pass  # best-effort — never let this crash the row
     else:
-        # Round N is parsed but not yet answered. Whether it is actually the
-        # human's turn depends on what the live server (if any) is serving —
-        # this is `loop.py wait`'s "round is parsed but not armed" check
-        # (`cmd_wait`, "served != n"), read off disk rather than raised.
+        # Round N parsed but unanswered — whose turn depends on what the
+        # live server (if any) is actually serving.
         base = server_url(viva)
         if base is None:
-            # No server ever launched this session (or it launched and its
-            # url file was later cleaned up) and nothing has been submitted —
-            # the between-sessions case the issue calls out explicitly.
+            # No server reachable and nothing submitted yet.
             state = "your-turn"
         else:
             payload = probe_input(base)
             if payload is None:
                 state = "dead"
             elif payload.get("round") != n:
-                # Covers both an ordinary stale round (still serving N-1) and
-                # a live qa payload with no `round` key at all (`None != n`)
-                # — see `probe_input`'s docstring for why the second is real.
+                # Stale round, or a live qa payload with no `round` key.
                 state = "parsed-not-armed"
             else:
                 state = "your-turn"

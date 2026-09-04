@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""Integration test: GET /preferences and POST /preferences/mute (issue #142).
+"""Integration test: GET /preferences and POST /preferences/mute (#142).
 
-Covers the preferences-inspector story's own acceptance criteria — mute from
-the server is verified against `.viva/preferences.json` on disk, not just the
-HTTP response — plus the boundary behavior the design doc calls out
-explicitly: a missing or corrupt store degrades to an empty list rather than
-taking the server down (in deliberate contrast to `preferences.py`'s own
-`sys.exit()`-on-parse-failure CLI loader), the mute route does not restrict
-by the preference's current status (that restriction lives entirely in which
-rows the client renders a mute button on), and the loopback-Origin /
-body-size guards shared with every other caller-facing POST endpoint apply
-here too.
+Covers mute verified on disk, a missing/corrupt store degrading to an empty
+list instead of crashing the server, and the shared POST guards.
 """
 import json
 import sys
@@ -88,9 +80,7 @@ def main() -> None:
         assert cite["label"] == "Cite a source for every quantitative claim"
         assert cite["sessions"] == ["2026-06-20 plan.md", "2026-06-25 spec.md"]
 
-        # ── Mute a standing preference → verified on disk, not just the
-        #    HTTP response (the acceptance criterion's own verification
-        #    method) ────────────────────────────────────────────────────
+        # ── Mute a standing preference → verified on disk, not just the response ──
         assert post(base, "/preferences/mute", {"id": "cite-sources"}) == {"ok": True}
         on_disk = json.loads(prefs_path.read_text())
         assert on_disk["preferences"]["cite-sources"]["status"] == "muted", \
@@ -102,11 +92,7 @@ def main() -> None:
         cite2 = next(p for p in get(base, "/preferences") if p["id"] == "cite-sources")
         assert cite2["status"] == "muted"
 
-        # ── set_status doesn't restrict by current status — the route is a
-        #    second caller of the same pure function the CLI uses, and the
-        #    restriction to "only standing rows get a mute button" lives
-        #    entirely client-side (design doc, "Out of scope"). Muting a
-        #    candidate must still succeed server-side. ───────────────────
+        # ── set_status doesn't restrict by current status — that lives client-side ──
         assert post(base, "/preferences/mute", {"id": "avoid-passive"}) == {"ok": True}
         on_disk = json.loads(prefs_path.read_text())
         assert on_disk["preferences"]["avoid-passive"]["status"] == "muted"
@@ -130,19 +116,14 @@ def main() -> None:
         # ── Oversized body → 413, same cap as every other POST ──────────
         assert post_oversized(base, "/preferences/mute", MAX_SUBMIT_BYTES + 1) == 413
 
-        # ── Corrupt store on disk → GET degrades to [] and the server
-        #    stays up (in deliberate contrast to preferences.py's own
-        #    sys.exit()-on-parse-failure CLI loader) ─────────────────────
+        # ── Corrupt store on disk → GET degrades to [] and the server stays up ──
         prefs_path.write_text("{not valid json")
         assert get(base, "/preferences") == [], \
             "a corrupt preferences.json must degrade to an empty list, not error"
         # The server process itself must still be alive and serving.
         assert get(base, "/input")["round"] == 1
 
-        # ── Parseable JSON, wrong shape, degrades the same way — a
-        #    json.loads() success does not imply a valid store. `[]` and a
-        #    non-dict "preferences" value would otherwise crash
-        #    preferences.select()'s `.values()` call inside the handler. ──
+        # ── Parseable JSON, wrong shape, degrades the same way ──
         prefs_path.write_text("[]")
         assert get(base, "/preferences") == [], \
             "a top-level JSON array must degrade to an empty list, not 500"

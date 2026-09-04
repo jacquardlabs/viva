@@ -1,26 +1,11 @@
 #!/usr/bin/env python3
 """The voice layer on the page it ships in — the two invariants and the wiring.
 
-There is no JS engine in this suite (stdlib only, no npm), so the behavior is
-read off the page the server actually serves, the same split
-`test_server_a11y.py` and `test_server_verdict_shortcuts.py` use. What is pinned:
-
-**Invariant 1 — speech may command, it may never author.** The layer stages a
-transcript in the comment composer and stops; the reviewer reads it and saves.
-Nothing in the voice block calls `addComment`, and nothing in it submits. A
-recognizer's guess that became a comment on its own would put a sentence the
-human never read into a ledger PRODUCT.md promises is verbatim, and a spoken
-word would skip the recap gate a mouse cannot skip.
-
-**Invariant 2 — off unless turned on.** No recognizer is constructed at load,
-the toggle ships hidden, and where the browser has no recognizer no control is
-drawn at all. PRODUCT.md principle 4: a reviewer who never enables voice must
-get exactly the prior page.
-
-Plus the wiring that makes it usable rather than merely present: Escape reaches
-the switch from inside a textarea (the one place the caret is when the
-microphone is hot), `v` works in the interview as well as the review, and the
-transcript is announced without announcing every partial guess.
+Invariant 1: speech may command, never author — it stages a transcript in the
+comment composer and stops; nothing in the voice block calls `addComment` or
+submits. Invariant 2: off unless turned on — no recognizer at load, toggle
+ships hidden, no control drawn where the browser has none. No JS engine in
+this suite, so behavior is read off the page the server actually serves.
 """
 import json
 import sys
@@ -43,8 +28,7 @@ ROUND_1 = {
 
 def _voice_block() -> str:
     """The voice layer, banner to banner — see test_voice_grammar._voice_block
-    for why every needle below is anchored inside it rather than searched for
-    across a 7,000-line frontend."""
+    for why needles anchor inside it rather than search the whole frontend."""
     start = HTML.index("/* ═══ Voice — the oral examination")
     end = HTML.index("/* ═══ End voice")
     return HTML[start:end]
@@ -63,13 +47,8 @@ def test_grammar_is_injected_not_restated():
 
 
 def test_speech_stages_a_comment_and_never_commits_one():
-    """Invariant 1, at the seam that enforces it.
-
-    `stageVoiceComment` opens the composer and fills its box. The save button
-    already there is the only thing that makes a comment, so a transcript
-    reaches the ledger only after a human read it — which is what keeps a
-    spoken review inside "verbatim, not summarized".
-    """
+    """Invariant 1: `stageVoiceComment` opens the composer and fills its box;
+    the existing save button is the only thing that makes a comment."""
     block = _voice_block()
     assert "addComment(" not in block, (
         "the voice layer must never call addComment — a transcript that "
@@ -78,8 +57,7 @@ def test_speech_stages_a_comment_and_never_commits_one():
         "a spoken comment must route through the composer, like `c` and `i` do"
     assert ".cmt-save').click()" in block, \
         "'save' must drive the composer's own control, not a second save path"
-    # The staged type is reported back as what the box BECAME: `suggest wording`
-    # has no chip in diff mode, so asking for it does not make it so.
+    # Staged type is reported back as what the box BECAME, not what was asked for.
     assert "const became = pop.dataset.type;" in block
     print("  ok  test_speech_stages_a_comment_and_never_commits_one")
 
@@ -91,14 +69,13 @@ def test_spoken_submit_opens_the_recap_and_does_not_submit():
         assert forbidden not in block, (
             "the voice layer must not reach past the recap gate (%s): ending "
             "the round is confirmed by hand, spoken or not" % forbidden)
-    # And the alias is in the table, so the reviewer's natural word still works.
     assert any(r["phrase"] == "submit" and r["act"] == "recap"
                for r in server._VOICE_RULES)
     print("  ok  test_spoken_submit_opens_the_recap_and_does_not_submit")
 
 
 def test_nothing_starts_until_the_reviewer_starts_it():
-    """Invariant 2 — three independent halves, because any two alone leak."""
+    """Invariant 2, three independent halves — any two alone leak."""
     block = _voice_block()
     # 1. No recognizer at load: constructed once, inside the start path.
     assert HTML.count("new VoiceCtor()") == 1, \
@@ -130,13 +107,9 @@ def test_audio_leaving_the_machine_is_disclosed_once():
 
 
 def test_escape_reaches_the_switch_from_inside_a_textarea():
-    """The one place the caret is when the microphone is hot.
-
-    Staging a spoken comment focuses the composer's textarea, so every shortcut
-    below the `TEXTAREA`/`INPUT` guard is unreachable exactly then. Escape sits
-    ahead of that guard for the same reason ⌘K does — and never over the two
-    modals that own Escape themselves.
-    """
+    """Staging a spoken comment focuses the composer's textarea, so shortcuts
+    below the `TEXTAREA`/`INPUT` guard are unreachable exactly then; Escape
+    sits ahead of that guard for the same reason ⌘K does."""
     handler = HTML[HTML.index("document.addEventListener('keydown'"):]
     guard = handler.index("if (tag === 'TEXTAREA' || tag === 'INPUT') return;")
     stop = handler.index("stopVoice('you pressed Escape')")
@@ -149,15 +122,9 @@ def test_escape_reaches_the_switch_from_inside_a_textarea():
 
 
 def test_the_router_carries_the_keydown_handler_s_guards():
-    """Speech is a SECOND input path into the same verdict state.
-
-    `keydown` opens with `if (deadSessionIsOpen()) return;` and swallows every
-    card shortcut under the prefs panel and the recap gate (#174). Utterances do
-    not go through that handler, so each of those guards has to be repeated here
-    or the hole it closed is open again through the microphone: "approve" under
-    a full-screen scrim, or a spoken verb walking last round's cards while the
-    page reads "Claude is revising…".
-    """
+    """Speech is a second input path into the same verdict state (#174):
+    utterances don't go through `keydown`, so its guards must be repeated
+    here or the hole it closed reopens through the microphone."""
     block = _voice_block()
     route = block.index("const hit = norm ? matchVoiceRule(norm) : null;")
     for guard in ("deadSessionIsOpen()", "voiceRoundIsLive()", "prefsIsOpen()",
@@ -166,15 +133,13 @@ def test_the_router_carries_the_keydown_handler_s_guards():
         assert at < route, (
             "%s must be checked BEFORE an utterance is routed, the way the "
             "keydown handler checks it before a keystroke" % guard)
-    # The two TERMINAL states turn the microphone off at their own source: with
-    # #paper inert and the keydown handler returning early, a mic left hot there
-    # is one no control can reach.
+    # The two terminal states turn the mic off at their own source — a mic
+    # left hot there is one no control can reach.
     assert "stopVoice('the session ended');" in HTML
     assert "stopVoice('the review is signed off');" in HTML
     dead = HTML.index("function showDeadSession()")
     assert HTML.index("stopVoice('the session ended');", dead) < HTML.index("\n}\n", dead) + 400
-    # Between rounds is NOT terminal — the next round lands in this same tab, so
-    # the utterance is refused and the microphone stays on.
+    # Between rounds is NOT terminal — same tab, so the mic stays on.
     assert "voiceSay('heard', raw, 'no round on screen yet — nothing to command');" in block
     print("  ok  test_the_router_carries_the_keydown_handler_s_guards")
 
@@ -189,8 +154,7 @@ def test_v_is_a_mode_toggle_not_a_card_shortcut():
     assert "rState.active" not in line, \
         "`v` is a mode toggle, not a verb on the card under the reader"
     assert "voiceSupported()" in line, "`v` must be inert where voice cannot run"
-    # Both palettes carry it, from one definition — the palette is a directory
-    # of the keyboard layer, so a key with no entry is an undocumented verb.
+    # Both palettes carry it, from one definition.
     assert HTML.count("if (voiceSupported()) cmds.push(voicePaletteCommand());") == 2
     assert "function voicePaletteCommand()" in HTML
     assert "<dt><kbd>v</kbd></dt>" in HTML, "`v` must be in the keyboard legend"
@@ -203,9 +167,7 @@ def test_the_strip_announces_readings_but_not_partial_guesses():
     assert '<span class="vs-interim" aria-hidden="true">' in block, (
         "interim results must be aria-hidden — a live region reading every "
         "partial guess aloud is unusable")
-    # Nothing is swallowed: an utterance that matched no verb still prints —
-    # and names the verbs of the page actually on screen, since the interview
-    # has no sections to approve.
+    # An unmatched utterance still prints, naming the verbs on screen.
     assert "'no command — try \"approve\", \"request changes …\", \"next\"'" in block, \
         "an unmatched utterance must report itself, not vanish"
     assert "'no command — try \"question …\", \"next\", or press dictate to answer aloud'" in block, \
@@ -214,9 +176,7 @@ def test_the_strip_announces_readings_but_not_partial_guesses():
 
 
 def test_controls_meet_the_page_s_own_a11y_rules():
-    # Native buttons, a plain-text label (the microphone emoji was the only
-    # colour glyph on a monochrome catalog page), focus-visible coverage, and
-    # an accessible name that says what the control DOES rather than its state.
+    # Plain-text label (the mic emoji was the only colour glyph on the page).
     assert 'class="mic-btn">dictate</button>' in HTML and '&#127908;' not in HTML, \
         "dictate is a word, not an emoji"
     assert HTML.count('<div class="voice-strip"') == 1

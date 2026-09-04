@@ -57,11 +57,9 @@ def test_suggestion_exchange_renders_its_wording():
 
 
 def test_declined_exchange_renders_its_grounds():
-    """A decline and its grounds reach the ledger verbatim (#167).
-
-    Without them the Open-notes block shows a change the reviewer asked for and
-    the author never made, with no record of why — and the thread's own status
-    line is the only other trace.
+    """A decline and its grounds reach the ledger verbatim (#167) — without
+    them the block shows a requested change the author never made, with no
+    record of why.
     """
     grounds = "round 1 ruled the caveat load-bearing"
     threads = [{"title": "Goals", "quote": "in most cases", "status": "declined",

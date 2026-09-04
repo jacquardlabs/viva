@@ -1,26 +1,8 @@
 #!/usr/bin/env python3
-"""Tab self-identification (#172) — a browser with several viva tabs open must
-be able to tell them apart, and tell which one wants attention, from the tab
-strip alone (title + favicon), without switching to any of them.
-
-Three things this pins:
-
-  * `GET /input` and the `round` SSE event both carry a `repo` key —
-    `_viva_dir.parent.name`, injected server-side at serve time exactly like
-    the existing `ledger` key. It is informational: never validated, safe to
-    ignore, not part of any on-disk file's schema.
-  * `GET /favicon.ico` never 404s (a bare 404 is what the issue found — zero
-    `favicon` hits anywhere in the file). The real tab icon is the inline
-    `data:` URI `<link rel="icon">`, so this route only needs to not
-    log-spam a browser's automatic probe.
-  * The SSE `processing` handler — the one handler that used to leave the
-    tab's title/favicon on the previous "your turn" state while the agent was
-    actually working — now calls `setTabTitle`/`setTabFavicon` itself. This is
-    a source grep, matching the pattern `tests/test_doc_grid.py` uses for
-    other served-page structural checks: cheap, and it catches the exact
-    regression (someone reverting the fix, or a stray SSE handler that never
-    got wired up) that a black-box integration test cannot see without an
-    actual browser tab.
+"""Tab self-identification (#172): a browser with several viva tabs open must
+be able to tell them apart, and which one wants attention, from the tab strip
+alone (title + favicon). Pins the `repo` key on `/input`/`round` SSE, the
+favicon route not 404ing, and the `processing` SSE handler retitling the tab.
 """
 import json
 import sys
@@ -58,12 +40,8 @@ def test_input_carries_repo():
 
 
 def test_next_round_response_is_ok_with_repo_injected_server_side():
-    # `repo` is derived from `_viva_dir`, fixed for the server's lifetime — a
-    # POST /next-round with a different `--output` directory still resolves
-    # against the SAME `_viva_dir` this process was launched with, so the
-    # round SSE push (untestable over plain HTTP here) carries the identical
-    # value /input does. This exercises the code path that builds that push's
-    # payload dict without needing an SSE client.
+    # `repo` is fixed to `_viva_dir` for the server's lifetime, even across a
+    # /next-round with a different `--output` directory.
     tmp = Path(tempfile.mkdtemp())
     repo_dir = tmp / "another-repo"
     viva = repo_dir / ".viva"
@@ -117,9 +95,8 @@ def test_html_declares_inline_favicon_link():
 
 
 def test_processing_handler_retitles_the_tab():
-    """The concrete bug: the 'processing' SSE handler used to be the one
-    handler of the five that never called setTabTitle, so the tab kept
-    showing the previous "your turn" title while the agent was working."""
+    """Regression: the 'processing' SSE handler never called setTabTitle, so
+    the tab kept its stale "your turn" title while the agent was working."""
     text = SERVER.read_text(encoding="utf-8")
     start = text.index("es.addEventListener('processing'")
     end = text.index("es.addEventListener('round'")

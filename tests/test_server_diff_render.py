@@ -1,28 +1,10 @@
 #!/usr/bin/env python3
-"""Integration test for diff-mode hunk rendering (issue #99).
+"""Integration test for diff-mode hunk rendering (#99).
 
-This is a wiring test, not a parse-correctness test: the rendered diff is
-built client-side in JS (delegated to diff2html), and this repo has no
-JS/browser test harness (stdlib Python only, no npm/node). What's verifiable
-from a subprocess+urllib harness is that:
-
-  1. The vendored diff2html assets and the renderDiffHunk adapter are actually
-     shipped in the served page, gated on diff mode, and the deleted
-     hand-rolled renderer is truly gone (not just bypassed).
-  2. A diff-mode round still serves each section's `content` as the verbatim
-     fenced ```diff block, unchanged — /viva-review branch B relocates edits by
-     matching `comment.anchor.text` against the source, and round-to-round
-     carry-forward compares `content` byte-for-byte (parse_diff.py
-     `_carry_forward`). The renderer is a pure view transform; it must never
-     be allowed to alter what's actually served for `content`.
-
-One server boot serves every check (the repo's one-boot-per-file convention;
-the page is a static constant and all requests here are read-only GETs), with
-one fixture covering grouping (two files, multi-hunk) and the binary sentinel.
-
-Manual end-to-end verification of the rendered diff itself (alignment,
-word-level highlighting, gutters, binary fallback) is a browser check, not a
-subprocess+urllib one — nothing that lives in the DOM is exercised here.
+A wiring test, not a parse-correctness test: the diff is rendered client-side
+via diff2html (no JS/browser harness here), so this checks the assets and
+adapter ship correctly and that `content` is served byte-for-byte unchanged.
+One server boot serves every check.
 """
 import json
 import re
@@ -43,8 +25,7 @@ DIFF_INPUT = {
             "id": "s1",
             "title": "src/foo.py hunk 1",
             "content": "```diff\n@@ -1,3 +1,4 @@\n line 1\n-old line\n+new line\n+extra\n line 3\n```",
-            # The agent's one-liner (#188) — present on one hunk, absent on the
-            # next, because both paths have to hold.
+            # Agent's one-liner (#188), present on one hunk, absent on the next.
             "summary": "swaps the placeholder line for the real one",
         },
         {
@@ -67,10 +48,8 @@ DIFF_INPUT = {
 
 
 def test_page_ships_filepath_helper(page: str) -> None:
-    """filepathFromTitle stays the single definition of 'strip the hunk
-    suffix off a diff-mode section title' — both diffFileHunkCounts
-    (file grouping) and renderDiffHunk (preamble synthesis) call it from
-    their own function bodies."""
+    """filepathFromTitle is the single definition of 'strip the hunk suffix';
+    both diffFileHunkCounts and renderDiffHunk must call it."""
     assert "function filepathFromTitle" in page, "page missing: function filepathFromTitle"
     for caller in ("diffFileHunkCounts", "renderDiffHunk"):
         m = re.search(r"function " + caller + r"\(.*?\n\}", page, re.S)
@@ -92,10 +71,8 @@ def test_page_ships_file_group_header(page: str) -> None:
 
 
 def test_grouped_sections_stay_file_contiguous(data: dict) -> None:
-    """The grouping feature assumes hunks of the same file are never
-    interleaved with another file's hunks — parse_diff.py guarantees this by
-    construction. This pins that precondition against the fixture the SPA
-    would otherwise silently mis-group if it regressed."""
+    """Hunks of the same file must never interleave with another file's —
+    parse_diff.py guarantees this by construction."""
     titles = [s["title"] for s in data["sections"]]
     filepaths = [t.rsplit(" hunk ", 1)[0] for t in titles]
     seen = []
@@ -109,8 +86,7 @@ def test_grouped_sections_stay_file_contiguous(data: dict) -> None:
 
 def test_diff_content_served_verbatim(data: dict) -> None:
     """The renderer must never reshape what /input serves for `content` —
-    anchor-based edit relocation and carry-forward both depend on the raw
-    fenced ```diff string reaching the client unchanged."""
+    anchor relocation and carry-forward both depend on it reaching the client unchanged."""
     by_id = {s["id"]: s for s in data["sections"]}
     assert by_id["s1"]["content"] == DIFF_INPUT["sections"][0]["content"], \
         "hunk content must be served byte-for-byte unchanged"
@@ -120,12 +96,9 @@ def test_diff_content_served_verbatim(data: dict) -> None:
 
 
 def test_page_ships_diff_mode_sort_toggle_guard(page: str) -> None:
-    """setupCardSort's own function body — not just anywhere on the page —
-    must force hasConfidence false in diff mode, unconditionally, not just
-    because diff-mode sections happen not to carry confidence annotations
-    today. Without this guard, the static file-group-header divs (which
-    carry no CSS `order`) would be stranded if the sort toggle ever
-    reordered cards in diff mode."""
+    """setupCardSort must force hasConfidence false in diff mode,
+    unconditionally — otherwise the file-group-header divs get stranded
+    if sort ever reorders cards."""
     m = re.search(r"function setupCardSort\(.*?\n\}", page, re.S)
     assert m, "page missing: function setupCardSort"
     assert "REVIEW_DATA.mode !== 'diff'" in m.group(0), \
@@ -134,11 +107,8 @@ def test_page_ships_diff_mode_sort_toggle_guard(page: str) -> None:
 
 
 def test_page_ships_mode_diff_layout(page: str) -> None:
-    """Wiring check only: the diff dispatch branch stamps mode-diff on <body>
-    and injects the diff2html stylesheet (mode-specific, so review/QA never
-    pay a render-blocking fetch for it), and the mode-scoped CSS
-    overrides (wide shell/bottom bar, no nested section scroll) ship in the
-    served page. Does not measure rendered layout."""
+    """Wiring check: diff dispatch stamps mode-diff on <body>, injects the
+    diff2html stylesheet, and ships the mode-scoped layout overrides."""
     m = re.search(r"mode === 'diff'\) \{(.*?)\} else", page, re.S)
     assert m, "page missing: diff dispatch branch"
     branch = m.group(1)
@@ -146,9 +116,7 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
         "diff branch does not stamp mode-diff on body"
     for needle in (
         "d2hCss.id = 'diff2html-css'",
-        # Local, version-stamped route — never jsdelivr (#144). The pin lives
-        # in server.py's _VENDOR_ASSETS; test_server_vendor_assets.py is what
-        # proves this href actually resolves to a served file.
+        # Local, version-stamped route — never jsdelivr (#144).
         "d2hCss.href = '/vendor/diff2html-3.4.56.min.css'",
         "retryOnceScriptsLoad(['diff2html-css']",
     ):
@@ -163,14 +131,9 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
 
 
 def test_page_ships_diff2html_renderer(page: str) -> None:
-    """Wiring check only: the served page loads the diff2html@3 core +
-    slim-UI scripts (the stylesheet is injected by the diff dispatch branch
-    — see the layout test), and ships the renderDiffHunk adapter with the
-    audited pipeline: string API (Diff2Html.html), sanitize-BEFORE-DOM
-    (gate-audit: materializing first would let insertion-time payloads run
-    before removal), a CSS-readiness gate, an aria-hidden pass on line
-    numbers, and the spec's exact config. The hand-rolled renderer stays
-    gone."""
+    """Wiring check: the page loads diff2html@3 scripts and ships
+    renderDiffHunk with sanitize-BEFORE-DOM, a CSS-readiness gate, and
+    aria-hidden line numbers. The hand-rolled renderer stays gone."""
     for tag in (
         'id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"',
         'id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"',
@@ -191,13 +154,10 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
         "setAttribute('aria-hidden'",
     ):
         assert needle in body, f"renderDiffHunk missing: {needle}"
-    # sanitize-before-DOM order: the sanitize call must feed the innerHTML
-    # assignment directly, never read back already-materialized DOM.
+    # sanitize must feed innerHTML directly, never read back materialized DOM.
     assert "DOMPurify.sanitize(target.innerHTML)" not in body, \
         "renderDiffHunk sanitizes after materializing — inverted order"
-    # The hand-rolled renderer is deleted, not just bypassed. 'sxs' had no
-    # other meaning anywhere in the page, so its total absence is the
-    # strongest cheap deletion check available to this harness.
+    # The hand-rolled renderer must be deleted, not just bypassed.
     for gone in ("function renderDiffTable", "function alignBlock",
                  "function lcsMatches", "function alignGap",
                  "function buildSxsTableHtml", "function toggleFold",
@@ -207,16 +167,10 @@ def test_page_ships_diff2html_renderer(page: str) -> None:
 
 
 def test_page_ships_d2h_guards(page: str) -> None:
-    """Wiring check only: the viva-side guards on the d2h surface ship —
-    token theming via d2h's own custom properties (light + dark families),
-    the Fragment Mono font guard, the file-name/tag dedup, the scoped td
-    reset (specificity bleed), user-select:none on line numbers (anchor
-    hygiene), the containing-block/radius rule on the file wrapper, the
-    cross-pane selection guard, and the shared load-retry helper wired to
-    both d2h scripts (the hljs-race lesson from gate-audit)."""
-    # The cross-pane selection guard went with the panes: a unified hunk is
-    # one column in source order, so every selection inside it is already a
-    # contiguous substring of the raw hunk.
+    """Wiring check: viva-side guards on the d2h surface ship — token
+    theming, font guard, dedup, td reset, and the shared load-retry helper."""
+    # Cross-pane selection guard went with the panes: a unified hunk is one
+    # column, so every selection is a contiguous substring already.
     assert "closestD2hPane" not in page, \
         "the cross-pane guard must not outlive the panes"
     for needle in (
@@ -238,21 +192,9 @@ def test_page_ships_d2h_guards(page: str) -> None:
 
 
 def test_a_rendered_diff_is_not_held_to_the_prose_measure(page: str) -> None:
-    """Regression: a diff-mode section holds no prose, so it must not carry the
-    72ch READING measure.
-
-    `.section-content` caps at `max-width: 72ch` because prose past ~76
-    characters hurts to read. Diff mode reuses that container for a rendered
-    git diff, and left capped it clipped one: measured on a 1282px card, the
-    d2h wrapper came out 540px and 267px of code, cutting every line mid-word
-    while 746px of the card sat empty.
-
-    The `.section-content > pre, > table, > .table-wrap` break-out rule does
-    NOT fix this and never could — it lifts the CHILD's cap, and a child cannot
-    be wider than its parent. The container is the constraint, so the container
-    is what has to be unbound. Asserting the container's rule rather than the
-    child's is the whole point of this test: the first fix attempted here added
-    `.d2h-wrapper` to the child list and changed nothing at all."""
+    """Regression: a diff-mode section holds no prose, so `.section-content`'s
+    72ch reading-width cap must be dropped there — capping the child
+    (`.d2h-wrapper`) can't fix it since a child can't exceed its parent."""
     m = re.search(r'\.mode-diff \.section-content\s*\{([^}]*)\}', page)
     assert m, "the diff-mode container rule is gone"
     body = m.group(1)
@@ -264,18 +206,9 @@ def test_a_rendered_diff_is_not_held_to_the_prose_measure(page: str) -> None:
 
 
 def test_page_renders_a_section_summary_under_the_title(page: str) -> None:
-    """Wiring check: the agent's one-line `summary` reaches a render site in
-    BOTH builders, escaped, inside the title wrap (#188).
-
-    Scoped to each function body, not to the page: 41 heads reading
-    `server.py hunk N` is the whole complaint, and a summary that landed in
-    `.card-body` instead would satisfy a page-wide needle while leaving the
-    collapsed list exactly as unnavigable. `buildReviewCard` is the diff-mode
-    accordion; `buildDocSection` is review mode's continuous print.
-
-    The head is a `<button>`, so its summary must be a phrasing-level `<span>`
-    — a `<div>` there is invalid content for a button.
-    """
+    """Wiring check: the agent's one-line `summary` (#188) renders escaped
+    in the title wrap of both builders — a `<span>` in the button head
+    (`buildReviewCard`), a `<div>` in the continuous print (`buildDocSection`)."""
     for fn, tag in (("buildReviewCard", "span"), ("buildDocSection", "div")):
         m = re.search(r"function " + fn + r"\(.*?\n\}", page, re.S)
         assert m, f"page missing: function {fn}"
@@ -285,8 +218,7 @@ def test_page_renders_a_section_summary_under_the_title(page: str) -> None:
     # Conditional, so a section without one emits no empty element at all.
     assert "${section.summary ? `" in page, \
         "the summary render must be gated on presence, not always emitted"
-    # The head override exists — one clamped line, or a long summary grows
-    # every row in a 41-hunk list.
+    # Head override clamps to one line, or a long summary grows every row.
     m = re.search(r"\.card-title-wrap \.section-summary \{[^}]*\}", page)
     assert m, "page missing: the card-head override for .section-summary"
     assert "text-overflow: ellipsis" in m.group(0), \
@@ -295,14 +227,9 @@ def test_page_renders_a_section_summary_under_the_title(page: str) -> None:
 
 
 def test_a_summary_is_served_and_validated(data: dict, base: str) -> None:
-    """`/input` passes the summary through untouched, and the boundary
-    validator rejects a non-string one on the way in.
-
-    The presence gate is what keeps `null` from printing under a card title —
-    and `/next-round` is the wire it has to hold at, because that is the only
-    door a round the agent just rewrote comes through. Run last: a payload that
-    slipped past the gate would replace the live round for every check after it.
-    """
+    """`/input` passes `summary` through untouched; `/next-round`'s boundary
+    validator rejects a non-string one (keeps `null` from printing under a title).
+    Run last: a payload past the gate replaces the live round."""
     by_id = {s["id"]: s for s in data["sections"]}
     assert by_id["s1"]["summary"] == DIFF_INPUT["sections"][0]["summary"], \
         "the summary must be served verbatim"

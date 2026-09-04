@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """Tests for scripts/annotate.py — the shared annotation-merge helper.
 
-Every producer (claim grounding, contradiction, drift, checklist) writes its
-flags through this one path: a sidecar list of {id, kind, severity, message,
-anchor?} merged into the round's review-input. The merge is additive
-(preserves carried-forward annotations), idempotent (no duplicate on re-run),
-and a no-op sidecar leaves the input byte-identical.
-
-The last test covers the producer seam's *driver* end: `loop.py annotate`
-supplies the round number so a producer call never re-templates `{N}` (#104).
+Merges a producer's sidecar flags into the round's review-input: additive,
+idempotent, byte-identical on an empty sidecar. The last test covers
+`loop.py annotate`, which supplies the round number itself (#104).
 """
 from __future__ import annotations
 
@@ -129,15 +124,9 @@ def test_confidence_basis_level_preserved() -> None:
 
 
 def test_check_result_answers_the_flag_in_place() -> None:
-    """A check's `result` is preserved, and re-emitting the flag WITH one lands
-    on the flag already there.
-
-    This is what makes a `checks` round closable: `schema.round_is_complete`
-    holds it until every check flag carries a result, and appending an answered
-    twin beside the unanswered original would leave the original blocking
-    forever — `parse_sections._carry_annotations` copies a flag onto a
-    byte-identical section, so it does not have to disappear on its own.
-    """
+    """A check's `result` merges onto the existing flag rather than appending a
+    twin, which is what lets `schema.round_is_complete` close a `checks` round
+    once every flag is answered."""
     data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
     flag = {"id": "s1", "kind": "headings-present", "severity": "warn",
             "message": "missing expected design-doc section: 'Goals'"}
@@ -167,11 +156,9 @@ def test_check_result_answers_the_flag_in_place() -> None:
         out = run(data, [dict(flag, result=blank)])
         assert "result" not in out["sections"][0]["annotations"][0], blank
 
-    # The realistic shape: `headings_present` emits one flag per missing heading
-    # on the SAME card, same kind and anchor, differing only in `message`. They
-    # must stay distinct flags, and answering one must not answer the other —
-    # otherwise a single result would close a checks round with a finding
-    # still outstanding.
+    # `headings_present` emits multiple flags on one card differing only by
+    # `message`; they must stay distinct, so answering one must not answer
+    # another.
     other = dict(flag, message="missing expected design-doc section: 'Out of scope'")
     both = run(data, [flag, other])
     assert len(both["sections"][0]["annotations"]) == 2, both
@@ -185,13 +172,9 @@ def test_check_result_answers_the_flag_in_place() -> None:
 
 
 def test_split_on_survives_the_merge() -> None:
-    # The producer seam is the path a task-card PLAN.md review takes whenever a
-    # standing preference is in play: `start --split-on` stops after parsing,
-    # `annotate` rewrites the round file in place, then `arm`. `rearm` later
-    # reads `split_on` back off that same file, so a merge that rebuilt the
-    # top-level dict instead of mutating it would drop the pattern and re-split
-    # the next round by auto-detection — silently, with every carried approval
-    # dying as the section boundaries moved.
+    # The merge must mutate the round dict in place, not rebuild it — `rearm`
+    # reads `split_on` back off the same file, and rebuilding would silently
+    # drop it and re-split the next round by auto-detection.
     data = base_input([{"id": "s1", "title": "Task 1", "content": "body"}])
     data["split_on"] = r"^Task \d+"
     out = run(data, [{"id": "s1", "kind": "preference", "severity": "warn",
@@ -200,13 +183,9 @@ def test_split_on_survives_the_merge() -> None:
 
 
 def test_loop_annotate_merges_into_the_derived_round() -> None:
-    """`loop.py annotate --sidecar` names a sidecar and nothing else.
-
-    The driver reads the highest `review-input-r{N}.json` on disk and merges
-    there, so the producer seam never hands the round number back to the agent.
-    Two rounds are on disk and only the later one may be touched; a `.viva/`
-    with no round at all is a loud refusal, not a silent no-op.
-    """
+    """`loop.py annotate --sidecar` merges into the highest `review-input-r{N}.json`
+    on disk, never a round number the caller passes. Only the latest round may
+    be touched; a `.viva/` with no round at all is a loud refusal."""
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
         viva.mkdir()

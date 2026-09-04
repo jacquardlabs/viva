@@ -44,14 +44,14 @@ Annotations never gate a verdict — the human still decides. A round with no
 
 A producer is a pre-review pass that writes annotations into the round's
 review-input after the parse and before the arm. Producers are **opt-in**: the
-default loop runs none of them, so an unflagged review behaves as today. Run one
-when the user asks for that check ("ground the claims", "check for
-contradictions"), when the doc type warrants it, or when `loop.py` names the
-learned-preference producer. To run one at **round 1**, start the session with
-`loop.py start --doc <path> --parse-only` — it stops at the seam the same way a
-standing preference does, so the flags are merged before the reviewer ever sees
-the round. Round 2+ is `loop.py rearm --parse-only`. The LLM passes below read the whole doc; that is
-the one time the no-read fast path is traded away.
+default loop runs none of them. Run one when the user asks for that check
+("ground the claims", "check for contradictions"), when the doc type warrants
+it, or when `loop.py` names the learned-preference producer. To run one at
+**round 1**, start the session with `loop.py start --doc <path> --parse-only`
+— it stops at the seam the same way a standing preference does, so the flags
+are merged before the reviewer ever sees the round. Round 2+ is `loop.py rearm
+--parse-only`. The LLM passes below read the whole doc; that is the one time
+the no-read fast path is traded away.
 
 Every producer emits a sidecar list of `{id, kind, severity, message, anchor?}`
 flags. Write it to `.viva/producer.json` — no round number, the driver supplies
@@ -137,11 +137,10 @@ write the sidecar, merge it.
   is the fix" — emit a `kind: "preference"` `warn` whose message names the fix
   itself, not only the critique. Same id-encoding convention as Learned
   preferences: `[cite-sources] add a citation after "80% faster", e.g. "(see
-  bench.md)"`. Nothing is auto-applied — this producer only ever emits a
-  suggested pre-fix as a visible annotation; the human sees it in the margin
-  like any other flag and decides whether to take it, same as every other
-  annotation in viva. When the preference doesn't clearly imply a specific
-  fix, this producer stays silent on that section and leaves the critique to
+  bench.md)"`. Nothing is auto-applied: this producer only emits a suggested
+  pre-fix as a visible annotation, and the human decides whether to take it,
+  same as every other annotation in viva. When the preference doesn't clearly
+  imply a specific fix, this producer stays silent and leaves the critique to
   Learned preferences alone — it never guesses.
 
 ## Confidence triage (sourced vs inferred)
@@ -162,10 +161,10 @@ weakest:
 
 Unlike the producers above, confidence is the generating agent's own
 self-annotation, emitted at write time. Route it through `loop.py annotate` like
-any other sidecar: `annotate.py`'s merge preserves `basis`/`level` (issue #40),
-so the sort's fields survive it. Under the driver this is the only route — the
-alternative, editing the round file's `annotations` array in place, needs a path
-you are not meant to compute. The server reads
-`basis`/`level` directly — never the message — to offer a **weakest-first** sort
-toggle; document order stays the default. A section with no confidence
-annotation keeps document order, and a doc with none hides the toggle entirely.
+any other sidecar: `annotate.py`'s merge preserves `basis`/`level` (issue #40).
+Under the driver this is the only route — editing the round file's
+`annotations` array in place needs a path you are not meant to compute. The
+server reads `basis`/`level` directly — never the message — to offer a
+**weakest-first** sort toggle; document order stays the default. A section with
+no confidence annotation keeps document order, and a doc with none hides the
+toggle entirely.

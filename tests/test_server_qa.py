@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Integration test: QA mode serves questions and writes a real answers.json.
 
-QA mode is the brainstorming integration's only runtime, yet every other
-integration test launches `--mode review`. This exercises the full QA round
-trip — `/input` serves the question payload, `/submit` accepts an `answers`
-payload, and the server writes `answers.json` with the early-exit flag and
-`qa-`-prefixed attachments.
+Full round trip — `/input` serves the question payload, `/submit` accepts
+`answers`, and the server writes `answers.json` with `qa-`-prefixed attachments.
 """
 import json
 import sys

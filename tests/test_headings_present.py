@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Tests for scripts/headings_present.py — the doc-type grammar check.
 
-The one check that ships with type bundles: given a round and a bundle, report
-the bundle's expected headings the round does not carry, as a producer sidecar
-`annotate.py` merges. The end-to-end case at the bottom is the load-bearing one
-— a later completion check reads these results back off the round file by
-`kind`, so the flag has to survive the merge, not just be printed.
+Reports a bundle's expected headings a round doesn't carry. The end-to-end
+case is load-bearing: results must survive the `annotate.py` merge, findable
+by `kind`, not just print correctly.
 """
 from __future__ import annotations
 

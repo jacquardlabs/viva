@@ -1,40 +1,15 @@
 #!/usr/bin/env python3
 """Recommended-choice flag on the QA schema (#114).
 
-`QAQuestion.recommended_choice` is optional, matches a `choices` entry *by
-value*, and renders as a small advisory badge on the matching chip. This
-repo has no JS/browser test harness — stdlib Python only, no npm/node — so
-the browser-side render is pinned as string-needle assertions against the
-embedded HTML constant, matching the pattern in test_server_a11y.py /
-test_server_qa_review_handoff.py. Covered here:
+`QAQuestion.recommended_choice` is optional, matches a `choices` entry by
+value, and renders as an advisory badge (never auto-select/default-focus) on
+the matching chip. Server-side, it's served verbatim and validated at startup.
 
-  1. Render is undefined-safe and additive: `buildQACard` guards on
-     `q.recommended_choice !== undefined` before comparing, and only a
-     matching chip gets a `.chip-badge` span — a question that omits the
-     field renders byte-identical chips to before this story (pre-mortem
-     risk #6).
-  2. The badge is advisory only: no auto-select, no default-focus, and no
-     restyle of the chip as primary — `isRecommended` never touches
-     `.selected`/`classList`/`.focus()` (pre-mortem risk #1). The `hint`
-     paragraph is untouched, so the recommendation's "why" still renders
-     (pre-mortem risk #2).
-  3. `GET /input` serves `recommended_choice` verbatim, same as every other
-     QAQuestion field (no server-side stripping/transform).
-  4. `validate_qa_input` runs at server *startup* (before the port binds) —
-     a qa-input.json with a dangling `recommended_choice` exits 1 with the
-     `viva: invalid qa-input` prefix documented in headless-contract.md §6,
-     never boots a server (pre-mortem risks #3-#5).
+`grounds` (#175) classifies how a recommendation was arrived at — sourced
+renders the same badge relabeled, inferred hides behind a `<details>` reveal,
+taste labels the question rather than a chip, and absent behaves as before.
 
-`grounds` (issue #175) classifies HOW a recommendation was arrived at —
-sourced / inferred / taste — and is covered separately below:
-
-  5. `sourced` renders the same ambient badge shape, relabeled.
-  6. `inferred` renders NO badge on the chip — it answers behind a
-     `<details>` reveal instead (`.chip-reveal`), never ambiently.
-  7. `taste` renders a label on the question's choices, not a chip (a taste
-     question never carries a `recommended_choice` to badge).
-  8. A question with no `grounds` at all renders byte-identical to before
-     this field existed — proving no behavior change for absent data.
+String-needle assertions against the embedded HTML constant (no JS/browser harness).
 """
 import json
 import subprocess
@@ -67,8 +42,7 @@ def test_chip_badge_css_defined():
 
 
 def test_badge_is_advisory_not_selection():
-    # The recommended-choice branch must not touch selection/focus state —
-    # it only decides whether to append a badge <span>, nothing else.
+    # Must not touch selection/focus state — only decides whether to append a badge.
     snippet_start = HTML.index("const choicesHtml = q.choices.map((c, i) =>")
     snippet_end = HTML.index("}).join('');", snippet_start)
     snippet = HTML[snippet_start:snippet_end]
@@ -80,10 +54,7 @@ def test_badge_is_advisory_not_selection():
 
 
 def test_hint_still_renders_alongside_choices():
-    # The recommendation's "why" stays in `hint`. It moved to the margin with
-    # the rest of the commentary, as a machine-inked note beside the question
-    # it is about; the badge stayed on its chip, because advice ABOUT A CONTROL
-    # belongs next to the control rather than across the page from it.
+    # The recommendation's "why" stays in `hint`, rendered as a margin note.
     assert '<div class="nt nt-check"><div class="nh">hint</div>' in HTML, \
         "the hint must render as a margin note in the machine's ink"
     assert "${q.hint ? `" in HTML, "a question with no hint must print no note"
@@ -151,8 +122,7 @@ def test_recommended_badge_helper_covers_all_grounds():
     assert "'inferred'" in snippet and "return '';" in snippet, (
         "inferred must render no ambient badge on the chip"
     )
-    # The fallback branch is today's plain badge, unconditioned on grounds —
-    # absent, or any future/unknown value, must not change the render.
+    # Fallback: absent or unknown grounds must not change the render.
     assert "recommended</span>" in snippet
     print("  ok  test_recommended_badge_helper_covers_all_grounds")
 
@@ -172,8 +142,7 @@ def test_taste_label_decorates_the_question_not_a_chip():
 
 
 def test_order_qa_questions_no_reorder_when_grounds_absent():
-    # Mirrors the review print's weakest-first confidence sort discipline: the
-    # toggle is keyed on data presence, not a default-on reorder.
+    # Toggle is keyed on data presence, not a default-on reorder.
     start = HTML.index("function orderQAQuestions(questions) {")
     end = HTML.index("\n}", start)
     snippet = HTML[start:end]
@@ -183,11 +152,7 @@ def test_order_qa_questions_no_reorder_when_grounds_absent():
 
 
 def test_accepted_recommendation_recorded_at_submit():
-    # Computed server-side, not in the browser: `.choice` dereferences in
-    # `server.HTML` are a closed set `test_server_qa_choiceless.py` pins
-    # (every place that treats `.choice` as the answered-signal is
-    # enumerated there), and this is a value comparison, not an
-    # answered-gate — see `annotate_qa_acceptance`'s own docstring.
+    # Computed server-side: a value comparison, not an answered-gate.
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
     viva.mkdir()

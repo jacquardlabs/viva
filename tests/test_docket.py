@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
 """docket.py reports open viva sessions across repos (issue #173).
 
-It is a read-only CLI filter — never a server route, per CLAUDE.md's
-description of `server.py`'s one permitted read outside `.viva/`
-(`assets/vendor/`) — so these tests build fixture `.viva/` trees under a
-tempdir and drive `docket.py`'s functions directly, plus one subprocess check
-of the CLI entrypoint itself.
-
-The load-bearing case is `test_parsed_not_armed_is_not_your_turn`: round N is
-parsed on disk while a live (mocked) server still answers with round N-1. A
-naive implementation that only checks "does review-input-rN.json exist and
-review-rN.json not exist" reports this as "your-turn" — the exact bug the
-issue is about ("live or resumable"). It must report "parsed-not-armed".
+Read-only CLI filter: tests build fixture `.viva/` trees under a tempdir and
+drive `docket.py`'s functions directly, plus one subprocess check of the CLI.
 """
 import http.server
 import json
@@ -42,11 +33,9 @@ def _free_port() -> int:
 
 
 class _MockServer:
-    """A minimal HTTP server answering GET /input with a fixed JSON payload —
-    enough to exercise docket.py's liveness probe without spinning up
-    server.py. `payload` is whatever `/input` should return; pass one with no
-    "round" key to stand in for a live qa server (the `/viva-write` hand-off
-    window)."""
+    """Minimal HTTP server answering GET /input with a fixed JSON payload, to
+    exercise docket.py's liveness probe without spinning up server.py. Pass a
+    payload with no "round" key to stand in for a live qa server."""
 
     def __init__(self, payload):
         outer = self
@@ -141,9 +130,8 @@ def test_your_turn_when_armed_and_unanswered_no_server():
 
 
 def test_malformed_non_dict_review_input_does_not_crash():
-    # A review-input-rN.json that is valid JSON but not an object (a stale
-    # format, a hand-edited fixture, a torn write) must degrade the row, not
-    # raise AttributeError out of classify() and blank the whole report.
+    # A non-object review-input-rN.json must degrade the row, not raise
+    # AttributeError out of classify() and blank the whole report.
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
         _write(viva / "review-input-r1.json", [1, 2, 3])
@@ -239,12 +227,9 @@ def test_your_turn_when_server_agrees_on_round():
 
 
 def test_parsed_not_armed_is_not_your_turn():
-    """THE case the issue names: round 2 is parsed on disk
-    (review-input-r2.json exists, review-r2.json does not) while the live
-    server still answers with round 1. A naive "input exists, output
-    doesn't" check would call this "your-turn" — it must not. This is
-    `loop.py wait`'s own "round N is parsed but not armed" condition
-    (`cmd_wait`, "served != n"), read off disk instead of raised."""
+    """Round 2 is parsed on disk while the live server still answers round 1.
+    A naive "input exists, output doesn't" check would call this "your-turn"
+    (#173) — it must report "parsed-not-armed" instead."""
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
         _write(viva / "review-input-r1.json",
@@ -265,14 +250,10 @@ def test_parsed_not_armed_is_not_your_turn():
 
 
 def test_parsed_not_armed_during_viva_write_handoff_window():
-    """The other way a live server can answer with "not round N": during the
-    `/viva-write` hand-off (CLAUDE.md) the interview's qa server has already
-    written `server.url` by the time round 1 is parsed to disk — so a live
-    server here answers `/input` with a qa payload carrying no "round" key at
-    all, not a stale round number. That must still classify as
-    "parsed-not-armed", never "dead" (nothing failed — the server is up and
-    about to be replaced by `POST /next-round`) and never "your-turn" (the
-    round is not actually being served yet)."""
+    """During the `/viva-write` hand-off, the qa server has already written
+    `server.url` before round 1 is parsed, so `/input` answers with a qa
+    payload carrying no "round" key. Must classify as "parsed-not-armed",
+    never "dead" or "your-turn"."""
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
         _write(viva / "review-input-r1.json",
@@ -349,8 +330,8 @@ def test_cli_text_output_no_crash_and_reports_none_found():
 
 
 def test_cli_survives_one_malformed_repo_among_many():
-    # The verifier's exact repro: a top-level-list review-input-rN.json in
-    # one scanned repo must not blank the report for every other repo too.
+    # A malformed review-input-rN.json in one scanned repo must not blank
+    # the report for every other repo too.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "Projects"
         _write(root / "bad" / ".viva" / "review-input-r1.json", [1, 2, 3])

@@ -1,32 +1,17 @@
 #!/usr/bin/env python3
-"""Maintain viva's learned-preference store — recurring critiques (issue #17).
+"""Maintain viva's learned-preference store — recurring critiques (#17).
 
-Reviewers repeat the same critiques across docs and sessions — "unsourced
-numbers", "passive voice", "no rollback step". This script is the primary
-writer of `.viva/preferences.json`, the store that lets viva *learn* those
-patterns and pre-apply (or pre-flag) them before the human re-types the note.
+The primary writer of `.viva/preferences.json`, which lets viva learn a
+reviewer's recurring critiques and pre-apply (or pre-flag) them. `server.py`'s
+`POST /preferences/mute` route is the one other writer, and only for muting
+an existing preference via this module's `set_status()`.
 
-`server.py`'s `POST /preferences/mute` route (issue #142) is the one other
-writer, and only for one narrow thing: flipping an existing preference to
-`muted` from the running review UI, via this module's own `set_status()` —
-the same function `set --status muted` below calls. It never creates a
-preference or moves one to `standing`/`candidate`; recording and promotion
-stay exclusively this script's job, and un-muting stays CLI-only (`set
---status standing`).
+This script only does mechanical bookkeeping — stable ids, distinct-session
+counts, promotion past a threshold, listing (json/text). Clustering free-text
+notes into a critique is the agent's job, not this script's.
 
-Division of labor matches the rest of viva: the semantic work — clustering free
--text notes into one critique, matching a new cluster to an existing preference
-across sessions — is judgment the agent does. This script only does the
-mechanical bookkeeping the agent can't be trusted to keep consistent: stable
-ids, a count of distinct sessions, promotion when recurrence crosses a
-threshold, and listing for both the agent (json) and the human (text).
-
-The store survives across sessions: it lives at `.viva/preferences.json`, which
-the skill's round-1 state clear deliberately does NOT delete. It is gitignored,
-so learned preferences are per-developer (a reviewer's own habits), not shared
-across clones. It is plain JSON — the human can open and edit it directly, and
-`set --status muted` makes a bad learned preference correctable, which is what
-keeps the fallible sign-off clustering safe.
+The store survives the round-1 state clear and is gitignored (per-developer).
+Plain JSON — `set --status muted` makes a bad learned preference correctable.
 
   preferences.json:
   {
@@ -109,14 +94,10 @@ def record(
 ) -> dict:
     """Create or reinforce one preference. Pure — returns a new store dict.
 
-    - `pref_id` matches an existing preference → reinforce it.
-    - otherwise create a new *candidate* (id = `pref_id` or `slug(label)`).
-
-    Reinforcing adds `session` to the distinct-session set (deduped), adds
-    `count` to `observations`, refreshes `label`/`guidance` when supplied, and
-    promotes candidate→standing once the distinct-session count reaches
-    `threshold`. A muted preference is never auto-promoted here — only an
-    explicit `set` moves it.
+    A matching `pref_id` reinforces it (adds `session` to the distinct set,
+    adds `count` to `observations`, promotes candidate→standing at
+    `threshold`); otherwise creates a new candidate. A muted preference is
+    never auto-promoted — only an explicit `set` moves it.
     """
     today = today or date.today().isoformat()
     out = _normalize(store)

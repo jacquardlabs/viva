@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 """Tests for scripts/drift.py — spec↔code drift producer (#11), mechanical part.
 
-The reliable, high-precision drift signals are *existence* checks: a section
-names a file or a function that the working tree no longer contains. (Stale
-signature comparison is left to the LLM-assisted pass — regex signature matching
-poisons an advisory channel with false drift.)
-
-The script reads a review-input JSON, resolves backtick-quoted file paths and
-simple `name()` symbol references per section, checks them against --root, and
-prints a sidecar annotation list (consumed by annotate.py). Prose-only sections
-with no references emit nothing.
+Checks *existence* only: a section names a file or function the working tree
+no longer contains. Reads review-input JSON, resolves backtick-quoted file
+paths and `name()` symbol references per section, prints a sidecar list.
 """
 from __future__ import annotations
 

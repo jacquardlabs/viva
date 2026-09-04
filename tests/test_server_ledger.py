@@ -58,7 +58,7 @@ def main() -> None:
                        ".ledger-verdict.v-changes"):
             assert needle in page, f"page missing: {needle}"
 
-        # round is coerced to int (stored-XSS hardening)
+        # round coerced to int (stored-XSS hardening)
         post(base, "/submit", {"round": "<img src=x>", "submitted_early": False,
                                "sections": [{"id": "s1", "verdict": "info", "note": "n"}]})
         post(base, "/next-round", dict(r1, round=4, output=str(viva / "out4.json")))

@@ -1,23 +1,7 @@
 #!/usr/bin/env python3
 """Integration test: the fixed security-header set every response carries,
 the loopback-`Host` guard on every GET, and `/next-round`'s `output`
-containment to `_output_root`.
-
-Three hardening findings from a standing security review, none reachable
-without same-origin script execution or a local process today — the
-loopback bind and the POST `Origin` guard already stand between an ordinary
-remote attacker and any of this — but each closes a gap defence-in-depth
-would otherwise leave open:
-
-- DNS rebinding reads `/input`/`/preferences` with no `Origin` header at all
-  (`Origin` is a POST-only guard); the `Host` header still names the
-  attacker's domain, so checking it catches what rebinding cannot forge.
-- A reviewed document's `![](http://attacker/beacon.gif)` fires the moment
-  its card renders, with no CSP standing between DOMPurify's default config
-  and the page's own "nothing reaches a remote host" invariant.
-- `/next-round`'s `output` field, unconstrained, is a filesystem write path
-  `/submit` later writes to — contained to the directory the operator's own
-  `--output` named at launch.
+containment to `_output_root` (defence-in-depth findings from a security review).
 """
 import json
 import sys
@@ -51,9 +35,7 @@ def main() -> None:
         assert headers.get("X-Content-Type-Options") == "nosniff"
         assert headers.get("Referrer-Policy") == "no-referrer"
 
-        # The served SPA itself carries the same headers — not only the API
-        # routes — since the page, not just its JSON endpoints, is the CSP's
-        # actual protected document.
+        # The served SPA page carries the same headers too, not just the API routes.
         status, headers = get_headers(base, "/", {})
         assert status == 200
         assert "Content-Security-Policy" in headers
@@ -64,13 +46,10 @@ def main() -> None:
             "a GET carrying a non-loopback Host must be rejected (DNS rebinding)"
         status, _ = get_headers(base, "/preferences", {"Host": "evil.example"})
         assert status == 403
-        # Exact host, not a prefix — the same reasoning the Origin guard
-        # applies (`test_server_origin_guard.py`): an ordinary attacker A
-        # record can make its own domain start with "127.0.0.1".
+        # Exact host match, not a prefix — an attacker A record can start with "127.0.0.1".
         status, _ = get_headers(base, "/input", {"Host": "127.0.0.1.evil.example"})
         assert status == 403
-        # A genuine loopback Host — what every real caller sends — still
-        # works, port and all.
+        # A genuine loopback Host still works, port and all.
         loopback_host = base.split("//", 1)[1]  # "127.0.0.1:PORT"
         status, _ = get_headers(base, "/input", {"Host": loopback_host})
         assert status == 200
@@ -78,16 +57,14 @@ def main() -> None:
         assert status == 200, "bare 'localhost', no port, must still be accepted"
 
         # ── /next-round's output containment to _output_root ───────────────
-        # A caller naming an output path outside the directory `--output`
-        # named at launch (here, `tmp`) is refused.
+        # An output path outside the directory `--output` named at launch is refused.
         outside = Path(tempfile.mkdtemp()) / "elsewhere.json"
         r2 = dict(r1, round=2, output=str(outside))
         status = post_headers(base, "/next-round", r2, {})
         assert status == 400, \
             "/next-round must refuse an 'output' outside the launch directory"
 
-        # A path inside the launch directory — the shape every real caller
-        # (loop.py, viva-write) sends — still succeeds.
+        # A path inside the launch directory still succeeds.
         inside = viva / "out2.json"
         r2b = dict(r1, round=2, output=str(inside))
         assert post(base, "/next-round", r2b) == {"ok": True}, \

@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-"""#107 asked for an automatic SKILL.md round-1 branch that auto-applies fixes
-before round 1 arms. A `/gate-should-we-build` re-evaluation on the issue
-rejected that shape outright (more of the exact round-1-branching complexity
-PRODUCT.md's "Known problems" already names, plus a visibility gap: the
-human's first view of a pre-flighted section would already be the agent's
-post-fix version) and recommended building smaller instead: a new pre-review
-*producer*, matching the existing checklist/confidence-triage pattern, that
-flags a matching standing critique as a suggested pre-fix — visible in the
-margin, never silently applied.
-
-This is a doc-contract test, in the style of test_writing_register.py and
-test_voice_grammar.py: there is no runtime code for this producer (it is a
-judgment/LLM pass the agent runs itself, like Learned preferences), so the
-test asserts the prose in references/producers.md actually describes the
-scoped-down shape rather than the rejected one.
+"""#107 asked for an auto-apply pre-flight branch; the gate scoped it down to
+a pre-review producer that flags a matching standing preference as a
+suggested fix, never auto-applied. Doc-contract test (style of
+test_writing_register.py) asserting producers.md describes that shape.
 """
 from __future__ import annotations
 
@@ -25,10 +14,8 @@ PRODUCERS = ROOT / "references" / "producers.md"
 
 
 def _bullet_text() -> str:
-    """The new bullet's own text, isolated between its header and the next
-    bullet or the following '## Confidence triage' heading — so an assertion
-    here can't accidentally pass by matching unrelated prose elsewhere in the
-    file (e.g. the Learned preferences bullet it sits beside)."""
+    """Bullet text between its header and the next heading, so assertions
+    can't accidentally match unrelated prose elsewhere in the file."""
     text = PRODUCERS.read_text(encoding="utf-8")
     start = text.index("Pre-flight pre-fix")
     end = text.index("## Confidence triage", start)
@@ -82,10 +69,8 @@ def test_never_auto_applies_and_stays_visible():
 
 
 def test_reuses_kind_preference_and_the_bracket_id_convention():
-    """No new annotation kind, no new schema/annotate.py field: the id rides
-    as a leading '[id]' token in the message, exactly like Learned
-    preferences, because annotate.py's merge whitelist has no generic
-    passthrough field."""
+    """No new annotation kind or schema field: the id rides as a leading
+    '[id]' token in the message, exactly like Learned preferences."""
     bullet = _bullet_text()
     assert 'kind: "preference"' in bullet, (
         "the pre-flight producer must reuse kind: \"preference\" — a new "

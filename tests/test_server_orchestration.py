@@ -1,36 +1,11 @@
 #!/usr/bin/env python3
 """Orchestration smoke test: one real session driven the way the agent drives it.
 
-Every other server test hand-writes a `review-input` JSON and feeds it in. This
-one drives the real agent-side pipeline instead — `parse_sections.py` produces
-round 1, `server.py` serves it, a verdict comes back, and every round after that
-goes through `scripts/loop.py`: `rearm` re-parses and POSTs `/next-round`,
-`rearm --parse-only` stops at the producer seam, and `arm` closes it. It is the
-guard against the driver's round-2+ sequence drifting from what the scripts and
-the server actually accept, and against the approved-carry-forward contract
-breaking underneath it.
-
-The two rules `loop.py` exists to keep are asserted here as well: the round
-number is derived from disk (no subcommand accepts one), and the driver
-cross-imports no sibling but `schema.py` (CLAUDE.md).
-
-The last five checks guard the other half of the same contract — the skill prose
-itself. The driver only removes bookkeeping from the agent if the prose stops
-carrying it, so the documented sequence is asserted here beside the executed
-one: no bash block in the part `loop.py` drives does the driver's job, the
-rewrite step still applies standing preferences, nothing is auto-approved, a
-suggested edit is applied verbatim, and every `references/` file is one some
-reader is handed the path to.
-
-**The bookkeeping rule has no exemptions left (#179).** `loop.py` drives doc
-review, hunk review, and the intake interview, so every bash block in every
-skill is held to it. The closed set of skills carrying their own loop is
-asserted empty below, so a skill growing one fails this test.
-
-The diff checks drive a real git repo through the driver's other mode: capture,
-parse, arm, the summaries seam, the empty re-capture that signs off as
-`resolved: "empty"`, and the freshness refusal when the diff moved after the
-human approved it.
+Drives the real pipeline (parse_sections.py -> server.py -> loop.py's round-2+
+subcommands) instead of hand-writing review-input JSON, guarding round sequencing,
+approved-carry-forward, loop.py's derivation/cross-import rules (CLAUDE.md), SKILL.md's
+prose matching the driven sequence, no skill carrying its own loop (#179), and the
+diff-mode driver path (capture, arm, summaries, empty re-capture, freshness refusal).
 """
 import ast
 import contextlib
@@ -58,13 +33,9 @@ REFERENCES = ROOT / "references"
 
 BASH_BLOCK_RE = re.compile(r"```bash\n(.*?)```", re.S)
 
-# Content-based, not fence-typed: a `/next-round` POST written with
-# `python3 -c urllib` is the same defect wearing a different hat. Scoped to
-# ```bash blocks because the File Layout tree is a plain fenced block — a map of
-# `.viva/` is orientation for a human reader, not a step the agent executes, so
-# it keeps its round-file names. The $VIVA_DIR resolve block names `server.py`
-# without running it, which is why "launches" is an invocation pattern rather
-# than a bare filename match.
+# Content-based, not fence-typed — a curl-free POST is the same defect. Scoped
+# to ```bash blocks so the File Layout tree (a map, not a step) keeps its
+# round-file names; "launches" matches invocation, not a bare `server.py` name.
 FORBIDDEN_BASH = [
     ("launches a server", re.compile(r"\bpython3?\b[^\n]*\bserver\.py\b")),
     ("POSTs an endpoint",
@@ -74,10 +45,9 @@ FORBIDDEN_BASH = [
 
 DOC = "## Goals\n\nShip the core.\n\n## Scope\n\nJust the core, nothing more.\n"
 
-# A task-card plan: `### Task N` cards with a `## Notes` block recurring inside
-# each one. Auto-detection picks the coarser repeater (`## Notes`) and swallows
-# both tasks, so the two splits are visibly different — which is what makes
-# "round 2 re-split the same way" a real assertion rather than a coincidence.
+# A task-card plan: `### Task N` cards each containing a `## Notes` block.
+# Auto-detection picks the coarser `## Notes` repeater and swallows both tasks,
+# so the two splits are visibly different, making "round 2 re-splits the same way" a real assertion.
 PLAN = (
     "# Sprint plan\n\nIntro paragraph.\n\n"
     "### Task 1: ship the flag\n\nbody one\n\n"
@@ -234,14 +204,11 @@ def check_round_trip() -> None:
 
 
 def check_split_on_session() -> None:
-    """A task-card plan review, driven start → submit → rearm by the driver.
+    """A task-card plan review, start -> submit -> rearm, through the driver.
 
-    `--split-on` is what makes a `PLAN.md` round split on its task cards rather
-    than on its own top-level headings, so the driver has to carry it — and
-    carry it *forward*: the pattern is recorded in the round file, and `rearm`
-    reads it back rather than asking the agent to re-type it. Round 2 asserting
-    the same split, the same ids, and the carried approvals is what proves the
-    round-trip.
+    `--split-on` makes the round split on task cards, not top-level headings; the
+    driver carries the pattern forward in the round file so `rearm` re-splits the
+    same way. Round 2 asserting the same split, ids, and carried approvals proves the round-trip.
     """
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
@@ -305,11 +272,9 @@ def check_split_on_session() -> None:
 def check_doc_type_session() -> None:
     """`--type` resolves where the name enters the system, then carries.
 
-    The type names the round's check set, so a name that resolves to nothing has
-    to be refused before any state is cleared — and once recorded it must reach
-    round 2 the way `split_on` does, or a typed session silently becomes untyped
-    at the first re-parse. No server here: `--parse-only` at both ends keeps the
-    carry-forward the only thing under test.
+    A name that resolves to nothing must be refused before any state is cleared, and
+    once recorded must reach round 2 the way `split_on` does, or a typed session goes
+    untyped at re-parse.
     """
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -371,13 +336,9 @@ def check_untyped_session_records_no_doc_type() -> None:
 def check_pass_carries_within_a_session_not_across_a_resume() -> None:
     """The pass is round state `rearm` carries and a resume deliberately drops.
 
-    Depth is the one round parameter a caller changes mid-session (structural,
-    then line, then checks), so `rearm` takes an override the split pattern
-    and the type have no use for — but round N+1 runs round N's depth when it is
-    given none, or every later round silently falls back to the base rule. A
-    resume is the opposite case: it is a new review of a changed doc, and
-    inheriting the prior session's finishing pass would add a conjunct nobody
-    asked for.
+    `rearm` takes an override the split pattern and type don't need, since depth
+    changes mid-session; round N+1 without one inherits round N's depth. A resume
+    is a new review, so it must not inherit the prior session's finishing pass.
     """
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -431,10 +392,9 @@ def check_pass_carries_within_a_session_not_across_a_resume() -> None:
 def check_resume_warns_on_a_type_that_no_longer_resolves() -> None:
     """A carried type is resolved like any other, but not fatally.
 
-    The name comes off the prior round file, by which point the scratch
-    carry-forward pair is already on disk — dying there would strand it and
-    make a repo that dropped a `.viva-types/` bundle unable to resume at all.
-    So: a warning, the type still recorded, and the resume proceeds."""
+    By the time the name resolves, the scratch carry-forward pair is already on
+    disk — dying there would strand a repo that dropped its `.viva-types/` bundle.
+    So: warn, keep the type recorded, and let the resume proceed."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -471,13 +431,10 @@ def check_resume_warns_on_a_type_that_no_longer_resolves() -> None:
 def check_no_subcommand_takes_a_round() -> None:
     """The counter nobody holds: no subcommand accepts a round argument.
 
-    Enumerated from `--help` rather than hardcoded, so a later eighth
-    subcommand is not silently exempt. Each is run with its own required flags
-    satisfied (pointed at a nonexistent path — the parse is what's under test,
-    never the handler) so argparse gets far enough to reject `--round` itself
-    instead of stopping at a missing required argument. Every run is aimed at a
-    throwaway `--viva-dir`, so the day this assertion regresses it fails without
-    a handler having reached anyone's real `.viva/`.
+    Enumerated from `--help` so a later subcommand isn't silently exempt; each run
+    gets its required flags satisfied (nonexistent paths) so argparse rejects
+    `--round` itself, aimed at a throwaway `--viva-dir` so a regression never
+    reaches a real `.viva/`.
     """
     sandbox = Path(tempfile.mkdtemp()) / ".viva"
     top = subprocess.run([sys.executable, str(LOOP), "--help"],
@@ -593,10 +550,9 @@ def check_skill_carries_no_bookkeeping_bash() -> None:
 def check_no_skill_carries_its_own_loop() -> None:
     """The scope of the rule above, asserted as a closed set — now empty.
 
-    Two flows used to drive themselves because `loop.py` could not reach them:
-    `/viva-write`'s interview and hand-off, and `/viva-review`'s branch B. #179
-    gave the driver both. A skill growing its own loop lands in this set and
-    fails here, by name.
+    Two flows used to drive themselves before #179 gave the driver both: `/viva-write`'s
+    interview/hand-off, and `/viva-review`'s branch B. A skill growing its own loop lands
+    in this set and fails here, by name.
     """
     undriven = {}
     for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
@@ -614,9 +570,8 @@ def check_no_skill_carries_its_own_loop() -> None:
 def check_rewrite_step_applies_standing_preferences() -> None:
     """`wait` prints the standing set; the rewrite step must still apply it.
 
-    The relocation moves the preferences reference material out of SKILL.md.
-    The operative directive is not reference material and must not move with
-    it — without it `wait` prints a standing set nothing consumes.
+    The operative directive is not reference material and must not move out of
+    SKILL.md with it, or `wait` prints a standing set nothing consumes.
     """
     text = SKILL.read_text()
     step = _numbered_step(text, "rewrite").lower()
@@ -635,9 +590,8 @@ def check_rewrite_step_applies_standing_preferences() -> None:
 def check_no_auto_approve_and_paused_branch_routed() -> None:
     """Nothing is auto-accepted, and the third round class has a row.
 
-    The Skip button's `submitted_early: true` round fit neither documented
-    branch, so a model in that gap improvised. `wait` classifies it; the table
-    has to route it.
+    The Skip button's `submitted_early: true` round fit neither documented branch,
+    so `wait` classifies it and the table must route it.
     """
     text = SKILL.read_text()
     low = text.lower()
@@ -665,12 +619,9 @@ def check_no_auto_approve_and_paused_branch_routed() -> None:
 def check_skill_applies_suggestions_verbatim() -> None:
     """A suggestion is wording, not a brief (#166).
 
-    The reviewer typed the replacement instead of describing it, so the one
-    thing the agent must not do is rewrite it — an author that "improves" the
-    phrasing hands back a diff the reviewer never asked for and cannot trust.
-    The instruction lives where the agent routes by comment type, and the
-    derivation paragraph beside it has to agree that such a section is not
-    approved.
+    The reviewer typed the replacement; the agent must not rewrite it. The
+    comment-type routing instruction and the derivation paragraph beside it
+    both have to agree such a section is not approved.
     """
     text = SKILL.read_text()
     rows = [ln for ln in text.splitlines() if ln.startswith("|")]
@@ -701,10 +652,9 @@ def check_skill_applies_suggestions_verbatim() -> None:
         "SKILL.md must state that a section holding a suggestion is not "
         "approved — the derivation is what makes it binding")
 
-    # A carried suggestion is the same instruction one round later, but by then
-    # the wording lives on the THREAD's exchange rather than on a `comments[]`
-    # entry. Prose that names the type without naming the field leaves round 2
-    # knowing to paste and not knowing what.
+    # A carried suggestion moves to the THREAD's exchange, not a `comments[]`
+    # entry — naming the type without naming the field leaves round 2 knowing
+    # to paste but not what.
     assert "carried suggestion turn keeps its `replacement` on the exchange" in low, \
         "step 4 routes a carried suggestion turn to no field"
     threads = " ".join((REFERENCES / "open-notes.md").read_text().lower().split())
@@ -720,15 +670,10 @@ def check_skill_applies_suggestions_verbatim() -> None:
 def check_references_are_reachable() -> None:
     """Every reference file is one the agent is *told* the path to.
 
-    `loop.py` never reads `references/` — the agent does, and it has no
-    `$VIVA_DIR` for a skill-relative path. So the driver prints the absolute
-    path in the output line whose next step that file documents.
-
-    Two routes now, not one: the driver's print sites, and a skill naming a file
-    for a step the driver does not reach (`qa.md` documents the interview, which
-    `loop.py` has no subcommand for). Both directions still hold — a file nothing
-    names is unreachable, and a path `loop.py` prints with no file behind it
-    makes "reachable" hollow.
+    `loop.py` never reads `references/` — it prints the absolute path in the
+    output line whose next step that file documents. Two routes: the driver's
+    print sites, and a skill naming a file for a step the driver doesn't reach
+    (e.g. `qa.md`).
     """
     assert REFERENCES.is_dir(), "%s does not exist" % REFERENCES
     on_disk = {p.name for p in REFERENCES.iterdir() if p.is_file()}
@@ -760,10 +705,8 @@ def check_references_are_reachable() -> None:
 @contextlib.contextmanager
 def stub_input_server(payload: dict, posts: list = None):
     """A loopback server answering `GET /input` with `payload` — the smallest
-    thing `loop.py`'s liveness probe can find at the other end of a
-    `server.url`. Every POST body is appended to `posts` (when given) and
-    answered `{"ok":true}`, so a test can see what `arm` hands over. Yields its
-    base URL."""
+    thing `loop.py`'s liveness probe finds at a `server.url`. Every POST body is
+    appended to `posts` (when given) and answered `{"ok":true}`. Yields its base URL."""
     body = json.dumps(payload).encode()
 
     class H(BaseHTTPRequestHandler):
@@ -801,20 +744,11 @@ def stub_input_server(payload: dict, posts: list = None):
 
 
 def check_start_refuses_over_a_live_session() -> None:
-    """`start` clears the round files and `server.url`. Without the pre-flight
-    guard it does that to a *live* session, orphaning a running server with the
-    reviewer's tab still attached — unrecoverable, and invisible until someone
-    notices the orphan.
-
-    Both branches of the refusal are checked, because they take opposite
-    recoveries (#174). A live server means the human already has the tab and
-    must be pointed at it; only a URL with nothing behind it earns the
-    delete-the-file advice.
-
-    The live fixture serves a **qa** payload deliberately: it has no `round`
-    key, so a guard that reused `probe_round` would read it as dead and tell
-    the human to delete the `server.url` of the very interview server
-    `/viva-write` left running."""
+    """`start` clears the round files and `server.url`; without a pre-flight guard
+    that orphans a live session's running server (#174). Both refusal branches are
+    checked — a live server names its URL, a dead one gets delete-the-file advice —
+    using a **qa** payload (no `round` key) so a `probe_round`-based guard couldn't
+    misread a live interview server as dead."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -853,10 +787,9 @@ def check_start_refuses_over_a_live_session() -> None:
 
 
 def check_start_handoff_refuses_without_an_interview() -> None:
-    """`--handoff` is explicit and verified, never inferred from state: it
-    needs a live server serving an interview. No `server.url`, a dead one, and
-    a live REVIEW session are three distinct refusals, and none of them parses
-    a round or touches the file."""
+    """`--handoff` is explicit and verified, never inferred from state: it needs a
+    live server serving an interview. No `server.url`, a dead one, and a live
+    REVIEW session are three distinct refusals; none parses a round or touches the file."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -885,11 +818,9 @@ def check_start_handoff_refuses_without_an_interview() -> None:
 
 
 def check_arm_hands_off_into_a_live_interview() -> None:
-    """`arm` gates its POST branch on liveness (`probe_input`), not on the round
-    the server reports (`probe_round`): a qa payload carries no `round` key, and
-    reading that as "nothing is answering" is what kept the driver out of
-    `/viva-write`'s hand-off. The stub answers `/input` as an interview would
-    and records what `arm` POSTs to `/next-round`."""
+    """`arm` gates its POST branch on liveness (`probe_input`), not the round the
+    server reports (`probe_round`) — a qa payload carries no `round` key. The stub
+    answers `/input` as an interview would and records what `arm` POSTs to `/next-round`."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -1073,10 +1004,9 @@ def check_diff_round_trip() -> None:
 
 
 def check_diff_finish_from_an_empty_recapture() -> None:
-    """#177. The reviewer asks for a hunk to go; the agent reverts it; the diff
-    is empty. `rearm` reports that and arms nothing; `finish` re-captures for
-    itself, asserts `resolved: "empty"` to `/complete`, and the server — which
-    holds a `changes` verdict and would refuse a plain finish — signs off."""
+    """#177. The reviewer asks for a hunk to go, the agent reverts it, and the diff
+    goes empty. `rearm` reports that and arms nothing; `finish` re-captures, asserts
+    `resolved: "empty"` to `/complete`, and the server signs off despite a `changes` verdict."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         viva = td / ".viva"
@@ -1138,11 +1068,9 @@ def check_finish_refuses_a_diff_that_changed_since_review() -> None:
 
 
 def check_diff_start_stops_at_the_summaries_seam() -> None:
-    """Above `SUMMARY_THRESHOLD` hunks, a diff round stops after parsing until
-    every hunk carries a one-line summary (#188): the seam prints the round
-    file and the `summarize` verb, launches nothing, and hands out no
-    producer contract. `summarize` merges the map pre-arm; `--arm-anyway`
-    declines the seam."""
+    """Above `SUMMARY_THRESHOLD` hunks, a diff round stops after parsing until every
+    hunk carries a one-line summary (#188): the seam prints the round file and the
+    `summarize` verb, launches nothing. `summarize` merges pre-arm; `--arm-anyway` declines the seam."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         viva = td / ".viva"
@@ -1220,11 +1148,9 @@ def check_start_refuses_a_bad_target_before_it_clears() -> None:
 
 
 def check_capture_failure_is_not_an_empty_diff() -> None:
-    """A capture that fails must never read as "no changes". The motivating
-    case is a `gh pr diff` that 403s because the wrong account is active: a
-    0-byte `diff.patch` left behind would sign the session off as fully
-    resolved with nothing reviewed. Here the failing capture is a `git diff`
-    against a ref that does not exist."""
+    """A capture that fails must never read as "no changes". The motivating case
+    is a `gh pr diff` 403 from the wrong account: a 0-byte `diff.patch` would sign
+    the session off as fully resolved with nothing reviewed. Here it's a `git diff` against a nonexistent ref."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         viva = td / ".viva"
@@ -1241,11 +1167,9 @@ def check_capture_failure_is_not_an_empty_diff() -> None:
 
 
 def check_start_runs_the_bundles_checks() -> None:
-    """A type's `checks[]` run inside `start`, between the parse and every
-    branch that could arm — a check nobody is told about never runs, and a
-    typed round with no flags to answer closes on the base alone. The name is
-    validated beside the type, BEFORE the clear, so a repo bundle naming a
-    check this plugin does not ship is refused with the prior state intact."""
+    """A type's `checks[]` run inside `start`, between the parse and any arming
+    branch. The name is validated beside the type, BEFORE the clear, so a repo
+    bundle naming a check this plugin doesn't ship is refused with prior state intact."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -1279,11 +1203,9 @@ def check_start_runs_the_bundles_checks() -> None:
 
 
 def check_no_skill_carries_a_server_url_guard() -> None:
-    """#174 fixed the collision message in `loop.py`, and #179 put every flow
-    on the driver — so no skill stats `server.url` any more. `start`,
-    `interview`, and `start --handoff` probe before they advise (a live tab is
-    named, never `rm`'d), and a guard line reappearing in prose is the bash
-    creeping back with the pre-#174 message it would inevitably carry."""
+    """#174 fixed the collision message in `loop.py`, and #179 put every flow on
+    the driver, so no skill stats `server.url` any more. `start`/`interview` probe
+    before advising; a guard line reappearing in prose is the pre-#174 bash creeping back."""
     for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
         guards = [ln for ln in skill_md.read_text().splitlines()
                   if "[ -f .viva/server.url ]" in ln]
@@ -1294,12 +1216,10 @@ def check_no_skill_carries_a_server_url_guard() -> None:
 
 
 def check_start_resume_carries_prior_approvals() -> None:
-    """`start`'s resume branch: a doc already carrying a sign-off ledger, with
-    the prior round still on disk. The copy-out must happen before the clear
-    glob or carry-forward dies with it, and the scratch pair must not survive.
-    Also pins that a recorded `split_on` and `doc_type` are handed back —
-    re-deciding the split by auto-detection changes every section's identity and
-    carries nothing, and a dropped type silently takes the check set with it."""
+    """`start`'s resume branch: a doc already carrying a sign-off ledger. The
+    copy-out must happen before the clear glob or carry-forward dies with it, and
+    the scratch pair must not survive. Also pins that `split_on`/`doc_type` are
+    handed back — re-detecting the split changes every section's identity."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -1350,10 +1270,9 @@ def check_start_resume_carries_prior_approvals() -> None:
 
 
 def check_start_opens_the_producer_seam() -> None:
-    """A standing preference auto-engages the preference producer, which is an
-    LLM pass — so `start` must stop after parsing rather than arm. The round
-    file's absolute path has to be printed, or the agent is back to computing
-    `review-input-r{N}.json`, the counter this driver exists to remove."""
+    """A standing preference auto-engages the preference producer (an LLM pass), so
+    `start` must stop after parsing rather than arm. The round file's absolute path
+    must be printed, or the agent is back to computing `review-input-r{N}.json`."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         viva = td / ".viva"
@@ -1422,10 +1341,9 @@ def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
 def check_decline_carries_and_insisting_wins() -> None:
     """`rearm --decline` is how the author records a refusal (#167).
 
-    Three things have to hold end to end, through the real driver: the grounds
-    reach the store as a `declined` thread; that thread carries into round N+1,
-    which is the whole holding mechanism (no new one was added); and a second
-    decline after the reviewer insists is refused before any round ships.
+    Three things must hold: grounds reach the store as a `declined` thread, that
+    thread carries into round N+1, and a second decline after the reviewer
+    insists is refused before any round ships.
     """
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -1496,9 +1414,8 @@ def check_decline_carries_and_insisting_wins() -> None:
 def check_skill_carries_the_decline_rule() -> None:
     """The half of insisting-wins that only prose can carry (#167).
 
-    `open_notes.py` can refuse a second decline; it cannot make the author
-    decline for cause, or comply once the reviewer has insisted. SKILL.md is
-    where that rule lives, so it is asserted here beside the executed one.
+    `open_notes.py` refuses a second decline, but can't make the author decline
+    for cause or comply once the reviewer has insisted — SKILL.md carries that rule.
     """
     low = " ".join(SKILL.read_text().lower().split())
     assert "--decline" in low, "SKILL.md never names the flag that records a refusal"

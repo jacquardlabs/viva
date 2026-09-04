@@ -49,10 +49,8 @@ def sections_content(data: dict) -> list[tuple[str, str]]:
 
 
 def run_expect_fail(doc_text: str, extra_args: list[str]) -> tuple[subprocess.CompletedProcess, bool]:
-    """Write doc to a temp file, run the parser, return (result, output_written)
-    without raising — for asserting on a nonzero exit, stderr content, and
-    that no output file was written (no silent one-section fallback). Output
-    existence is checked before the tempdir is torn down."""
+    """Run the parser without raising; return (result, output_written) for
+    asserting on a nonzero exit, stderr, and no silent fallback output."""
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         doc = t / "doc.md"
@@ -182,13 +180,9 @@ def test_approved_matching_same_content() -> None:
 
 
 def test_approved_carries_forward_across_non_sequential_round_numbers() -> None:
-    # Resuming review on an already-signed-off doc (SKILL.md, issue #113): a
-    # new session's round 1 references a *prior session's* final round (e.g.
-    # round 2), not round 0 — the new session's numbering restarts at 1 while
-    # --prior-input/--prior-verdicts point at a higher prior round number.
-    # _load_approved must carry forward approvals by title+content equality
-    # only, with no round-continuity check, so this must carry forward
-    # exactly like an ordinary round-to-round approval.
+    # Resuming an already-signed-off doc (#113): new round 1 may reference a
+    # prior session's higher final round. _load_approved keys on title+content
+    # only, no round-continuity check, so this must still carry forward.
     content_a = "## Alpha\n\nalpha body\n\n"
     content_b = "## Beta\n\nbeta body\n"
     doc = content_a + content_b
@@ -267,16 +261,9 @@ def test_approved_not_carried_if_content_changed() -> None:
 
 
 def test_withdrawn_approval_is_not_carried_forward() -> None:
-    """The prior round's verdict outranks the stamp that round shipped with.
-
-    `approved_ids` is static — it records what was approved *coming into* the
-    round, so a section the reviewer withdrew and commented on is still listed
-    there. Carrying it forward on that stale stamp put an unapproved section
-    back on a carried card (which renders no thread) with an APPROVED stamp and
-    a round that would sign off over it. Reachable the moment the author leaves
-    content unchanged on purpose: a declined comment (#167), or a response with
-    no edit.
-    """
+    """The prior round's verdict outranks its stale `approved_ids` stamp.
+    Otherwise a withdrawn-then-declined (#167) section with unchanged content
+    would carry forward re-labeled APPROVED and sign off unreviewed."""
     content_a = "## Alpha\n\nalpha body\n\n"
     content_b = "## Beta\n\nbeta body\n"
     prior_input = {
@@ -396,15 +383,9 @@ def test_annotations_dropped_when_content_changed() -> None:
 
 
 def test_summary_carries_forward_and_never_outlives_its_content() -> None:
-    """A section's one-line summary rides the same rule its annotations do
-    (#188), and the drop side is the load-bearing half.
-
-    Alpha is byte-identical, so its summary survives. Beta is rewritten, so it
-    arrives with a `diff` and NO summary — those two are the same event, which
-    is what makes "re-summarize any section carrying a `diff`" a rule the agent
-    can actually apply by looking at the round file. Gamma never had one and
-    must not gain a key.
-    """
+    """A section's summary carries only onto byte-identical content (#188):
+    Alpha keeps its summary, rewritten Beta arrives with a `diff` and no
+    summary, and Gamma (never had one) gains no key."""
     alpha = "## Alpha\n\nalpha body\n\n"
     gamma = "## Gamma\n\ngamma body\n"
     prior_input = {
@@ -634,10 +615,9 @@ def test_split_on_ignores_coarser_repeated_heading() -> None:
         "### Task 2\n\nbody 2\n\n"
         "## Notes\n\nnote 2\n"
     )
-    # Without --split-on: auto-detect picks the coarser, twice-repeated H2
-    # ("## Notes") over the thrice... here twice-repeated H3 ("### Task N") —
-    # sorted(counts) checks H2 before H3, so H2 wins. Both tasks get swallowed
-    # into their enclosing "Notes" section, not split out individually.
+    # Without --split-on: auto-detect prefers the coarser repeated heading
+    # level (H2 "Notes" over H3 "Task N"), so both tasks get swallowed into
+    # their enclosing "Notes" section.
     auto = run(doc)
     auto_titles = [s["title"] for s in auto["sections"]]
     assert auto_titles.count("Notes") == 2, auto_titles
@@ -718,11 +698,8 @@ def test_no_split_on_key_when_flag_absent() -> None:
 
 
 def test_doc_type_recorded_and_absent_without_the_flag() -> None:
-    # Round state, same rule as `split_on`: recorded when given so `loop.py`
-    # can type round N+1 and a later resume the same way, and no key at all
-    # otherwise — an untyped round file stays byte-identical to what it was
-    # before the field existed. The parser resolves nothing; `doc_types.py`
-    # already did that.
+    # Round state, same rule as `split_on`: recorded when given, absent
+    # otherwise. The parser resolves nothing; `doc_types.py` already did.
     doc = "# Doc\n\n## Problem & persona\n\na\n\n## Proposed design\n\nb\n"
     data = run(doc, extra_args=["--doc-type", "design-doc"])
     assert data["doc_type"] == "design-doc", data.get("doc_type")
@@ -730,10 +707,9 @@ def test_doc_type_recorded_and_absent_without_the_flag() -> None:
 
 
 def test_pass_recorded_and_absent_without_the_flag() -> None:
-    # The pass is round state like the two above, with a harder absent rule:
+    # Round state like the two above, with a harder absent rule:
     # `schema.round_is_complete` falls through to the all-approved base only
-    # when the key is missing, so a round with no `--pass` must carry NO `pass`
-    # key — a written default would add a conjunct to every round in the repo.
+    # when `pass` is missing, so no flag must mean no key.
     doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
     data = run(doc, extra_args=["--pass", "checks"])
     assert data["pass"] == {"kind": "checks"}, data.get("pass")
@@ -789,12 +765,9 @@ def test_split_on_fixture_one_section_per_task() -> None:
 
 
 def test_split_on_fixture_round2_carries_forward_through_section_key() -> None:
-    # The fixture itself, round-tripped: round 1 parses PLAN.md with
-    # --split-on, Task 1 gets approved and Task 2 gets changes, Task 3 is
-    # untouched (pending). Round 2 reparses a doc where only Task 2's body
-    # changed — Task 1 must carry forward as approved and Task 3 must show
-    # no diff, all through schema.section_key() with no fixture-specific
-    # bookkeeping.
+    # PLAN.md round-tripped: round 1 approves Task 1 and requests changes on
+    # Task 2. Round 2, with only Task 2's body edited, must carry Task 1
+    # forward approved and show Task 3 with no diff — via schema.section_key().
     doc_r1 = PLAN_FIXTURE.read_text(encoding="utf-8")
     r1 = run(doc_r1, extra_args=["--split-on", r"^Task \d+"])
     task1_id = next(s["id"] for s in r1["sections"] if s["title"] == "Task 1: Add the CLI flag")
@@ -914,11 +887,8 @@ def test_coarser_interleaved_heading_becomes_own_card() -> None:
 
 
 def test_coarser_heading_before_first_split_stays_in_preamble() -> None:
-    # Pre-mortem lane 2's negative case: a coarser heading that occurs BEFORE
-    # the first split-level heading must stay folded into the preamble — the
-    # `idx > first_split_idx` guard must not promote it too. Otherwise a
-    # document's own `# Title` (or any coarser lead-in) would fragment into
-    # its own one-line card, breaking preamble handling broadly.
+    # A coarser heading before the first split-level heading must stay folded
+    # into the preamble, not get promoted into its own card.
     doc = (
         "# Doc\n\n"
         "## Overview\n\nAn overview aside before any task.\n\n"
@@ -956,10 +926,8 @@ def test_coarser_trailing_revision_history_excluded_not_absorbed() -> None:
 
 
 def test_coarser_heading_approval_not_carried_when_boundary_moves() -> None:
-    # Pre-mortem lane 6: for a doc already mid-round when this fix ships, an
-    # approved task whose boundary moves (content byte-identity breaks) must
-    # not silently carry its approval forward — same "changed content
-    # requires re-review" rule _load_approved already documents elsewhere.
+    # An approved task whose boundary moves (byte-identity breaks) must not
+    # silently carry its approval forward.
     old_task2_content = (
         "### Task 2\n\nbody two\n\n"
         "## Not-here follow-ups\n\nfollow-up text\n"

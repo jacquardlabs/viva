@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
 """Static a11y assertions on the embedded SPA (server.HTML).
 
-Cluster A accessibility pass: card headers are native <button>s with
-aria-expanded/aria-controls (#74), a <main> landmark wraps the shell (#37),
-stats announce via aria-live and the title is set per mode/round (#35),
-decorative emoji are aria-hidden (#38), the focus-visible group covers the new
-controls (#52), action-btns carry type="button" (#51), and a keyboard legend
-ships (#39). These are string-needle checks against the HTML constant; the
-aria-expanded *toggle* behavior is verified manually in a browser.
-
-Frontend v2 phase 1 adds the sheet-ground chrome checks: the review sits on a
-bounded #paper sheet (edge border, inner rule, aria-hidden coordinate/corner
-decoration) over a flat --table ground, and the 24px grid + fixed .sheet-frame
-are gone at every layer.
+Covers card-header buttons and aria-expanded/controls (#74), the <main>
+landmark (#37), aria-live stats/title (#35), aria-hidden emoji (#38),
+focus-visible/type="button" coverage (#52, #51), the keyboard legend (#39),
+and the frontend-v2 sheet-ground chrome. String-needle checks only; toggle
+behavior is verified manually in a browser.
 """
 import re
 import sys
@@ -77,13 +70,9 @@ def test_stats_aria_live_and_dynamic_title():
 
 
 def test_tab_title_identifies_document():
-    # Tab titles lead with the doc/topic name (basename, not full path) so
-    # concurrent viva sessions are distinguishable in the tab bar; 'viva' is
-    # a fixed trailing suffix. All four title-setting sites (the shared
-    # review/diff boot tail, qa init, SSE round, SSE complete) route through
-    # one shared helper so a future site can't drift back to a hardcoded,
-    # doc-blind title. (Review and diff init share one call site inside
-    # bootReviewMode() rather than each carrying their own.)
+    # Tab titles lead with the doc/topic basename so concurrent viva sessions
+    # are distinguishable (#172). All four title sites route through one
+    # shared helper so none can drift back to a hardcoded, doc-blind title.
     assert "function tabDocName(path)" in HTML
     assert "function setTabTitle(...parts)" in HTML
     # No call site may hardcode the old doc-blind title strings.
@@ -103,11 +92,8 @@ def test_tab_title_identifies_document():
 
 
 def test_decorative_emoji_are_aria_hidden():
-    # Every leading button glyph is wrapped; spot-check a representative set and
-    # confirm no bare entity sits directly against a button open tag.
-    # (attach and dictate lost their emoji outright — the paperclip and the
-    # microphone were the only colour glyphs on a monochrome page — so they
-    # are asserted absent below rather than wrapped.)
+    # Spot-check that leading button glyphs are aria-hidden-wrapped; attach
+    # and dictate lost their emoji outright, so those are asserted absent.
     for needle in ('<span aria-hidden="true">&#10003;</span>',   # approve / confirm / settle
                    '<span aria-hidden="true">&#8595;</span>',     # skip
                    '<span aria-hidden="true">&#9662;</span>'):    # diff toggle
@@ -132,27 +118,18 @@ def test_keyboard_legend_present_and_real():
     for needle in ("<kbd>a</kbd>", "<kbd>c</kbd>", "<kbd>i</kbd>",
                    "<kbd>Tab</kbd>", "<kbd>Enter</kbd>"):
         assert needle in HTML, f"legend missing real shortcut: {needle}"
-    # Pin the 'a' row's exact copy — nothing else asserts this string, and it
-    # has drifted twice already (round-1 reviewers never see a settle
-    # control, so "unsettled" was wrong; "open comments" matches PRODUCT.md's
-    # own "Open notes" term and the primary button's "done · N comments").
+    # Pin the 'a' row's exact copy — it has drifted twice already, so nothing
+    # else asserts this string.
     assert "<dd>approve section (refused while it has open comments)</dd>" in HTML, \
         "the 'a' row's legend copy must read 'refused while it has open comments'"
     print("  ok  test_keyboard_legend_present_and_real")
 
 
 def test_the_counts_define_themselves_in_reach():
-    """Finding 08. The bar and the footer print `N items · M open`,
-    `convergence N → M`, `approved N/M` and `checks D/T`, and none of them
-    said anywhere what it counted. A reviewer who cannot reproduce the
-    arithmetic stops trusting it — on the one surface whose whole job is to be
-    trustworthy state.
-
-    An accessibility claim, which is why it lives here: `title` on the two
-    cells is hover-only, not keyboard-reachable, and most screen readers do
-    not announce it on a non-interactive div. The definitions ride in the
-    page's existing `kbd-legend` disclosure, which is a real `<details>` a
-    keyboard reaches."""
+    """Finding 08: the bar/footer counts (items, convergence, approved,
+    checks) never said what they counted. `title` is hover-only and not
+    screen-reader announced, so the definitions ride in the real, keyboard-
+    reachable `kbd-legend` `<details>` instead."""
     legend = HTML[HTML.index('<details class="kbd-legend">'):]
     legend = legend[:legend.index("</details>")]
     assert "what the counts mean" in legend, \
@@ -170,11 +147,9 @@ def test_the_counts_define_themselves_in_reach():
 
 
 def test_a_key_calls_approve_section():
-    # The 'a' shortcut must route through approveSection — which refuses to
-    # approve while the section has open comments — not the old direct
-    # setReviewVerdict(..., 'approved') call that auto-accepted regardless.
-    # Also guarded against Cmd/Ctrl/Alt modifier combos, matching the 'o'
-    # shortcut's own precedent, so Cmd+A (select-all) isn't hijacked.
+    # The 'a' shortcut must route through approveSection (refuses while open
+    # comments remain), not the old direct setReviewVerdict(..., 'approved')
+    # auto-accept, and must guard Cmd/Ctrl/Alt so Cmd+A isn't hijacked.
     idx = HTML.index("e.key === 'a'")
     branch = HTML[idx:idx + 140]  # ends before the 'c' branch begins
     assert "approveSection(rState.active)" in branch, \
@@ -187,10 +162,8 @@ def test_a_key_calls_approve_section():
 
 
 def test_catalog_ground_ships():
-    # The review sits on a catalog page: light primary, four party inks, a
-    # 72ch measure, no sheet chrome. The needle set is shared with
-    # test_frontend_v2_phase1 via assert_catalog_ground (one owner for the
-    # ground contract), checked here against the HTML constant.
+    # Catalog page: light primary, four party inks, 72ch measure, no sheet
+    # chrome. Needles shared with test_frontend_v2_phase1 via assert_catalog_ground.
     assert_catalog_ground(HTML)
     assert_ink_discipline(HTML)
     print("  ok  test_catalog_ground_ships")
@@ -204,11 +177,9 @@ def test_grid_and_sheet_frame_gone():
 
 
 def test_prefs_toggle_is_native_button_static_label():
-    # #142's bottom-bar control: a native button inside the aria-live
-    # #stats-area, with a static label — no interpolated count baked into
-    # its own text (pre-mortem lane 4: that would double-announce on every
-    # counter update). Ships display:none — see
-    # test_prefs_toggle_gated_on_empty_store for why and where it's shown.
+    # #142: a native button inside the aria-live #stats-area with a static
+    # label — no interpolated count (would double-announce on updates).
+    # Ships display:none; see test_prefs_toggle_gated_on_empty_store.
     assert ('<button type="button" class="prefs-toggle" id="prefs-toggle" '
             'style="display:none">learned prefs</button>') in HTML
     stats_open = HTML.index('id="stats-area"')
@@ -219,15 +190,9 @@ def test_prefs_toggle_is_native_button_static_label():
 
 
 def test_prefs_toggle_gated_on_empty_store():
-    # Acceptance-gate fix (Important, prefs-toggle-shown-with-empty-store): a
-    # clone with no store — every clone, until a session records a
-    # preference — has nothing to inspect or mute, so the control must not
-    # ship live (PRODUCT.md principle 4; the sibling confidence-sort toggle
-    # gets the identical treatment, references/producers.md Confidence triage:
-    # "a doc with none hides the
-    # toggle entirely"). The toggle ships hidden (checked above); the boot
-    # handler is the only thing that ever reveals it, and only once
-    # PREFS_DATA has actually been assigned from the fetched response.
+    # Fix for prefs-toggle-shown-with-empty-store: a clone with no store has
+    # nothing to inspect/mute, so the toggle ships hidden and only the boot
+    # handler reveals it, after PREFS_DATA is assigned from the response.
     assert "el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';" in HTML
     boot_start = HTML.index("Promise.all([")
     assign_at = HTML.index("PREFS_DATA  = Array.isArray(prefs)", boot_start)
@@ -244,10 +209,9 @@ def test_prefs_overlay_is_dialog_mirrors_recap():
     assert ('<div class="prefs-overlay" id="prefs-overlay" role="dialog" '
             'aria-modal="true" aria-labelledby="prefs-title" style="display:none">') in HTML
     assert '<button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences">' in HTML
-    # A dialog closes on Escape and the control says so with a keycap — but a
-    # 9px cap is not a click target. The padding is on the BUTTON, not the cap,
-    # so the hit area clears 24px (measured 48x24) while the cap keeps the size
-    # every other keycap on the page has.
+    # The 9px keycap itself isn't a click target, so padding lives on the
+    # BUTTON: hit area clears 24px (measured 48x24) while the cap stays sized
+    # like every other keycap.
     assert re.search(r'\.recap-close, \.prefs-close \{[^}]*padding:\s*6px 8px', HTML), \
         "a dialog's close control must be a real click target, not a bare keycap"
     assert "function openPrefsPanel(triggerEl, focusPrefId)" in HTML
@@ -264,16 +228,11 @@ def test_prefs_and_recap_are_mutually_exclusive():
 
 
 def test_prefs_panel_swallows_card_shortcuts_while_open():
-    # Acceptance-gate fix (BLOCKER, prefs-panel-open-verdict-shortcuts-live):
-    # the panel is a full-screen modal — inert on #paper blocks pointer/Tab
-    # into the background but not this document keydown listener, and focus
-    # inside the panel lands on #prefs-close or a .pref-row, neither TEXTAREA
-    # nor INPUT, so the tag-based guard at the top of the handler never
-    # catches it. Without a blanket swallow, a/c/i, Tab, digits, and
-    # Cmd/Ctrl+Enter all fall through to whatever section card sits behind
-    # the backdrop. The fix is a single unconditional `return` gated on
-    # prefsIsOpen(), sitting ahead of both the review and QA branches (the
-    # Escape case is handled just above it, so it isn't swallowed too).
+    # Fix for prefs-panel-open-verdict-shortcuts-live: inert on #paper blocks
+    # pointer/Tab but not this keydown listener, and focus inside the panel
+    # doesn't hit the tag-based TEXTAREA/INPUT guard. Fix is an unconditional
+    # `return` gated on prefsIsOpen(), ahead of the review/QA branches but
+    # after the Escape case.
     kd = HTML.index("document.addEventListener('keydown'")
     esc_idx = HTML.index(
         "if (e.key === 'Escape' && prefsIsOpen()) { closePrefsPanel(); return; }", kd)
@@ -287,11 +246,9 @@ def test_prefs_panel_swallows_card_shortcuts_while_open():
 
 
 def test_prefs_panel_closes_on_sse_view_swaps():
-    # Acceptance-gate fix (Important, prefs-panel-survives-round-swap): the
-    # panel is a full-screen backdrop, so a 'processing'/'round'/'complete'
-    # SSE event that swaps in a new view while it's still open would render
-    # that view entirely behind an open modal. Mirrors closeRecap()'s
-    # existing per-handler treatment in each of the three handlers.
+    # Fix for prefs-panel-survives-round-swap: an SSE view swap while the
+    # panel is open would render behind an open modal. Mirrors closeRecap()'s
+    # per-handler treatment.
     proc_start = HTML.index("es.addEventListener('processing'")
     round_start = HTML.index("es.addEventListener('round'", proc_start)
     complete_start = HTML.index("es.addEventListener('complete'", round_start)
@@ -307,11 +264,8 @@ def test_prefs_panel_closes_on_sse_view_swaps():
 
 
 def test_prefs_status_is_the_only_live_region_in_the_panel():
-    # Pre-mortem lane 3: the whole list must never be the live region — a
-    # freshly opened panel with several rows would announce every row's text
-    # on open, not just the one status change after a mute. Only the
-    # dedicated one-line #prefs-status may carry aria-live; #prefs-list must
-    # not.
+    # The whole list must never be the live region — it would announce every
+    # row's text on open. Only #prefs-status carries aria-live.
     assert 'id="prefs-status" aria-live="polite"' in HTML
     assert 'id="prefs-list" aria-live' not in HTML, \
         "#prefs-list must not itself be an aria-live region"
@@ -319,34 +273,22 @@ def test_prefs_status_is_the_only_live_region_in_the_panel():
 
 
 def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
-    # Pre-mortem lanes 5 and 6: mute is one-way from the UI (decision
-    # prefs-inspector-1) with no confirmation step, so a muted row must
-    # carry static copy naming both the recovery command and that badges
-    # already shown this round are a record, not retroactively cleared.
-    # No "next session" claim: --status standing has three SKILL.md readers
-    # (round-1 pre-flight :71, step 2's wait block :146, step 4's rewrite
-    # consult :366), so a mute during round N can still reach round N's own
-    # rewrite — "next session" was simply wrong, not just an early claim.
+    # Mute is one-way (decision prefs-inspector-1), so a muted row must name
+    # the recovery command and state that already-shown badges stay as a
+    # record, not "next session" — a mute mid-round can still reach that
+    # round's own rewrite (SKILL.md's three --status standing readers).
     assert "takes effect next session" not in HTML
     assert "stay as a record" in HTML
-    # The command must actually run from a terminal: preferences.py is not on
-    # PATH, and "$VIVA_DIR" is a local bash variable SKILL.md computes with
-    # its own `find` and never exports (viva SKILL.md, Invocation) —
-    # a copy-pasted "$VIVA_DIR/..." command 404s in a fresh terminal. The
-    # server substitutes its own resolved absolute path at import time
-    # (server.py's _PREFS_SCRIPT_PATH), so assert against that same
-    # resolution rather than any hardcoded literal — a test that computed its
-    # own separate "the right answer" and compared strings is exactly how the
-    # broken $VIVA_DIR command shipped green last round.
+    # "$VIVA_DIR" is a local bash var SKILL.md never exports, so a
+    # copy-pasted "$VIVA_DIR/..." command 404s. Assert against server.py's
+    # own resolved _PREFS_SCRIPT_PATH rather than a hardcoded literal.
     assert "$VIVA_DIR" not in HTML, "no shell-variable path may appear in the shipped recovery command"
     expected_script_path = str(ROOT / "scripts" / "preferences.py")
     assert f'python3 "{expected_script_path}" set' in HTML
     assert Path(expected_script_path).is_file(), \
         "the path embedded in the recovery command must name a real file, not just match a string"
-    # Store path quoted the same way the script path is (server.py:3466-3467)
-    # — acceptance-gate fix (SHOULD FIX, prefs-recovery-store-path-unquoted):
-    # an unquoted path breaks the copy-pasted command by word-splitting on
-    # any project path containing a space.
+    # Fix for prefs-recovery-store-path-unquoted: unquoted store path breaks
+    # the copy-pasted command on any project path with a space.
     assert '--store "__PREFS_STORE_PATH__"' in HTML and "--status standing</code>" in HTML
     assert "function prefMutedNoteHTML(id)" in HTML
     print("  ok  test_muted_row_names_the_unmute_recovery_and_this_round_effect")
@@ -354,30 +296,24 @@ def test_muted_row_names_the_unmute_recovery_and_this_round_effect():
 
 def test_mute_button_only_on_standing_rows():
     # candidate/muted rows render read-only; only a standing row grows the
-    # mute control (design: pre-flight never reads candidates, and a
-    # criterion can't verify an invisible effect there). Anchored to the
-    # actual gating expression, not just any "=== 'standing'" occurrence in
-    # the file (prefStatusLabel's own ternary would also match a weaker check).
+    # mute control. Anchored to the actual gating expression, not any
+    # "=== 'standing'" occurrence (prefStatusLabel's ternary would also match).
     assert "const muteBtn = status === 'standing'" in HTML
     assert 'class="pref-mute-btn" data-id="' in HTML
     print("  ok  test_mute_button_only_on_standing_rows")
 
 
 def test_prefs_data_fetched_once_and_cached_for_round_rebuilds():
-    # Pre-mortem lane 1: badges must survive a round-2+ SSE rebuild, which
-    # never re-fetches /input's own data. The fix is caching, not a
-    # per-render fetch — PREFS_DATA/PREFS_BY_ID are populated once in the
-    # boot Promise.all and read (never reassigned) by annotStripHTML/
-    # initReview afterward.
+    # Badges must survive a round-2+ SSE rebuild without re-fetching:
+    # PREFS_DATA/PREFS_BY_ID are populated once in the boot Promise.all and
+    # only ever read afterward.
     assert "Promise.all([" in HTML
     assert "fetch('/preferences')" in HTML
     assert HTML.count("fetch('/preferences')") == 1, \
         "preferences must be fetched exactly once, at boot — never per-render"
     assert "PREFS_BY_ID = new Map(PREFS_DATA.map(p => [p.id, p]));" in HTML
-    # Negative check that actually guards the pre-mortem's named failure: the
-    # SSE 'round' handler (the round-2+ rebuild path) must never reassign
-    # PREFS_DATA/PREFS_BY_ID — if it did, a stale/failed refetch there would
-    # silently blank every badge on the very rebuild this lane is about.
+    # The SSE 'round' handler must never reassign PREFS_DATA/PREFS_BY_ID —
+    # a stale/failed refetch there would silently blank every badge.
     round_start = HTML.index("es.addEventListener('round'")
     round_end = HTML.index("es.addEventListener('complete'")
     assert round_start < round_end, "could not locate the SSE round handler body"
@@ -387,15 +323,11 @@ def test_prefs_data_fetched_once_and_cached_for_round_rebuilds():
 
 
 def test_dead_session_overlay_is_the_one_modal_that_does_not_close():
-    # #174. The two backdrop dialogs above own Escape and each ship an `esc`
-    # keycap to say so. This third modal deliberately does neither: it is
-    # raised because the server is gone, and every dismissal would hand the
-    # reviewer back a tab whose submits POST into nothing. `alertdialog`
-    # rather than `dialog` — it interrupts rather than offering a choice.
-    # Structural coverage of the block itself lives in
-    # test_server_dead_session.py; what this file owns is that the overlay
-    # is announced and takes focus like a modal, and that adding a third
-    # dialog did not quietly add a third Escape claimant.
+    # #174. Unlike the two Escape-dismissible dialogs, this modal deliberately
+    # doesn't close: it's raised because the server is gone, so `alertdialog`
+    # interrupts rather than offering a choice. This file only checks it's
+    # announced/focused like a modal and adds no third Escape claimant;
+    # structural coverage lives in test_server_dead_session.py.
     assert 'role="alertdialog" aria-modal="true"' in HTML
     assert 'aria-labelledby="dead-title" aria-describedby="dead-body"' in HTML
     assert 'id="dead-panel" tabindex="-1"' in HTML, \

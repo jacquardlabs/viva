@@ -25,11 +25,9 @@ The merge is:
                   writes that result onto it rather than appending a twin;
   - a no-op     — an empty sidecar leaves the input byte-identical.
 
-CONVENTION EXCEPTION: unlike every other script (which separates `--input` from
-`--output`), annotate.py modifies `--input` IN PLACE and has no `--output`. This
-is deliberate — producers pipe their flags into the same round file the server
-will read, and because the merge is additive and idempotent, re-running is safe.
-See DESIGN.md → CLI conventions.
+CONVENTION EXCEPTION: unlike every other script, annotate.py modifies `--input`
+IN PLACE and has no `--output` — producers pipe flags into the round file the
+server will read. See DESIGN.md → CLI conventions.
 
 Reads the sidecar from --annotations PATH, or from stdin when the path is '-'.
 """
@@ -44,11 +42,8 @@ SEVERITIES = {"info", "warn", "error"}
 
 
 def _clean(item: dict) -> dict | None:
-    """Validate/normalize one sidecar item into a (id, annotation) pair.
-
-    Returns {"id", "annotation"} or None if the item is unusable (no id, no
-    message). Fixes data at the boundary so downstream renderers never see a
-    bad severity or a missing field.
+    """Validate/normalize one sidecar item into {"id", "annotation"}, or
+    None if unusable (no id, no message).
     """
     if not isinstance(item, dict):
         return None
@@ -64,18 +59,14 @@ def _clean(item: dict) -> dict | None:
     }
     if item.get("anchor"):
         annot["anchor"] = str(item["anchor"])
-    # Confidence annotations carry structured sort keys (issue #40) that the
-    # server's weakest-first toggle reads directly — not via `message`. Preserve
-    # them through the merge so a confidence flag can route through the shared
-    # write path like any other annotation instead of bypassing it.
+    # Confidence sort keys the server's weakest-first toggle reads (#40).
     if item.get("basis") in ("sourced", "inferred"):
         annot["basis"] = item["basis"]
     if item.get("level") in ("high", "medium", "low"):
         annot["level"] = item["level"]
-    # A check's finding for this flag (schema.CHECK_KINDS / `Annotation.result`).
-    # Preserved through the merge like basis/level, and non-empty by
-    # construction: a blank result answers nothing, and a `checks` round
-    # stays held until every check flag carries one.
+    # A check's finding (schema.CHECK_KINDS). Non-empty by construction: a
+    # blank result answers nothing, and a `checks` round stays held until
+    # every check flag carries one.
     if isinstance(item.get("result"), str) and item["result"].strip():
         annot["result"] = item["result"]
     return {"id": str(sid), "annotation": annot}
@@ -84,11 +75,9 @@ def _clean(item: dict) -> dict | None:
 def _same_flag(a: dict, b: dict) -> bool:
     """Are these the same flag, ignoring its result?
 
-    The result is the ANSWER to a flag, not part of its identity — so a producer
-    re-emitting its flag with a result lands on the flag it answers instead of
-    appending a result-less twin beside it. Without this, an answered
-    `checks` round would still carry the unanswered original and could never
-    close.
+    The result is the ANSWER to a flag, not part of its identity, so a
+    producer re-emitting a flag with a result lands on the existing flag
+    instead of appending a result-less twin.
     """
     return ({k: v for k, v in a.items() if k != "result"}
             == {k: v for k, v in b.items() if k != "result"})
@@ -118,7 +107,7 @@ def merge_annotations(data: dict, sidecar: list) -> dict:
             annots.append(new)
         elif "result" in new:
             existing["result"] = new["result"]
-        # Drop an empty list we may have just created so a no-op stays clean.
+        # Drop an empty list we may have just created.
         if not annots:
             del section["annotations"]
     return data

@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 """Review-target dispatch for the merged `/viva-review` (#170).
 
-One skill now covers both review checkpoints, so what it reviews is decided by
-one classification. Two properties carry that:
-
-  1. **Precedence is filesystem first, then shape.** A repo holding a file named
-     `187` means that file, not the pull request — a target the caller can see
-     in `ls` must never be silently reinterpreted. The cost is that a branch
-     named `42` is unreachable by derivation, which is what `--kind` exists for.
-  2. **It runs nothing.** `capture` is the argv a caller executes, as a list,
-     built only from a `\\d+` number or a target that passed `REF_RE`. No `git`,
-     no `gh`, no network, no repo — the same constraint that keeps
-     `context_refs.py` testable.
+Two invariants: precedence is filesystem first, then shape (a file named
+`187` beats the PR reading; `--kind` is the escape); and it runs nothing —
+`capture` is only the argv list a caller executes.
 """
 from __future__ import annotations
 
@@ -187,16 +179,9 @@ def test_skill_dispatch_table_covers_every_kind():
 
 
 def test_the_driver_runs_the_capture_this_script_prints():
-    """The other end of the dispatch. `capture` is only useful if something
-    runs it — and since #179 that is `loop.py`, not the skill: `start` saves
-    this script's record to `target.json` and runs `record["capture"]`, and
-    `rearm`/`finish` re-run the SAME record rather than naming a form. (A
-    re-capture that hardcoded `git diff` would silently review the working
-    tree on round 2 of a PR review — the wrong artifact, looking like a
-    shrinking diff rather than an error.)
-
-    Branch B's prose therefore shows no capture bash at all; the execution half
-    is `tests/test_server_orchestration.py`'s diff checks.
+    """Since #179, `loop.py` runs `capture` (saved to `target.json`), not the
+    skill — a hardcoded re-capture would silently review the wrong artifact
+    on round 2. Branch B's prose shows no capture bash at all.
     """
     capture_pr = " ".join(classify(["187"], cwd=_repo())["capture"])
     capture_ref = " ".join(classify(["HEAD~1"], cwd=_repo())["capture"][:2])
@@ -216,10 +201,8 @@ def test_the_driver_runs_the_capture_this_script_prints():
 
 
 def test_the_driver_knows_the_diff_parser_and_mode():
-    """The tripwire that used to say why branch B drove itself, inverted:
-    `parse_diff.py` and `--mode diff` were the two things `loop.py` had no path
-    to. Now it parses a diff with the one and launches with a mode read off the
-    round file — never a hardcoded `review` — so the prose names neither."""
+    """`loop.py` now parses the diff and launches with the mode read off the
+    round file (never hardcoded), so branch B's prose names neither."""
     loop = (ROOT / "scripts" / "loop.py").read_text()
     assert "parse_diff.py" in loop, "loop.py must parse a diff round"
     assert '_launch_server(viva, "review"' not in loop, \
@@ -235,16 +218,11 @@ def test_the_driver_knows_the_diff_parser_and_mode():
 
 
 def test_branch_b_routes_info_away_from_threads_it_does_not_have():
-    """#103. `parse_diff.py` takes no `--open-notes`, so a diff round carries no
-    threads — there is nothing to answer into and no `--response` to record one
-    against. The 2.0 merge gave both branches one shared verdict section whose
-    `info` rule said "answer it in the thread", generalizing a doc-mode-only
-    instruction onto hunks; an agent following it answered into a void on every
-    `info` comment in a PR review.
-
-    Pinned against the parser's ACTUAL flags rather than against prose alone, so
-    the day `parse_diff.py` grows open-notes support this fails and someone
-    re-reads the exception instead of leaving it stale in the other direction.
+    """#103. `parse_diff.py` has no `--open-notes`, so a diff round has no
+    threads to answer `info` into — yet the shared verdict section said
+    "answer in the thread" regardless, a doc-only rule leaking onto hunks.
+    Pinned against the parser's actual flags so open-notes support later
+    fails this loudly.
     """
     help_text = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "parse_diff.py"), "--help"],
@@ -273,13 +251,10 @@ def test_branch_b_routes_info_away_from_threads_it_does_not_have():
 
 
 def test_branch_b_summarizes_at_the_seam_before_it_arms():
-    """#188. The server loads its round once and replaces it only from
-    `POST /next-round`, so a summary written after the launch serves a
-    summary-less round for all of round 1 — 52 hunks titled `server.py hunk N`,
-    the exact complaint #188 was filed about. The driver holds the seam
-    (`start`/`rearm` stop above the threshold; `summarize` refuses an armed
-    round — `tests/test_server_orchestration.py` executes both), and the prose
-    must present the verbs in that order: an agent runs the blocks as printed.
+    """#188. The server loads its round once, so a summary written after
+    launch serves a summary-less round 1. The driver holds the seam; the
+    prose must print `summarize` before `arm` so an agent running blocks in
+    order doesn't skip it.
     """
     bash = "\n".join(re.findall(r"```bash\n(.*?)```", _branch_b(), re.S))
     assert 'loop.py" summarize' in bash, "branch B has no bash that runs `loop.py summarize`"

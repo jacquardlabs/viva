@@ -1,32 +1,19 @@
 #!/usr/bin/env python3
-"""Review-target classification — the dispatch under `/viva-review` (#170).
-
-One skill now covers both review checkpoints, and what it reviews is decided by
-what you point it at:
+"""Classify a `/viva-review` target — doc, PR, git ref, or working tree (#170).
 
   python3 review_target.py docs/spec.md   → {"kind": "doc",  "doc": "docs/spec.md"}
   python3 review_target.py 187            → {"kind": "pr",   "number": 187, ...}
   python3 review_target.py HEAD~3..HEAD   → {"kind": "ref",  "ref": "HEAD~3..HEAD", ...}
   python3 review_target.py                → {"kind": "worktree", ...}
 
-A `pr`, `ref`, or `worktree` target carries `capture` — the argv that writes the
-patch to stdout (`gh pr diff 187`, `git diff HEAD~3..HEAD`). An argv LIST, never
-a shell string, built only from a `\\d+` number or a target that passed `REF_RE`,
-so no target can carry a shell metacharacter into it. Like `context_refs.py`,
-this runs nothing: no `git`, no `gh`, no network, no repo needed to test it.
+**Precedence is filesystem first, then shape**: `187` is a PR number, but a
+repo with a *file* named `187` means the file — a target visible in `ls` is
+never silently reinterpreted as a pull request. That makes a branch literally
+named `42` unreachable by derivation; `--kind` is the escape.
 
-**Precedence is filesystem first, then shape**, and that order is the whole
-contract. `187` is a PR number, but a repo with a *file* named `187` means the
-file — checking the path first is what stops a target the caller can see in `ls`
-from being silently reinterpreted as a pull request. The same rule makes a branch
-literally named `42` unreachable by derivation; that is the documented cost, and
-`--kind` is the escape.
-
-Every failure is loud. A path that exists but is not markdown, a `--kind` that
-disagrees with its target, and a target carrying shell punctuation are all
-refused here rather than becoming a `git diff` that reviews the wrong thing.
-
-Imports no sibling: it needs no shared vocabulary, so it takes none.
+A `pr`/`ref`/`worktree` target carries `capture`, the argv (never a shell
+string) that writes the patch to stdout. Runs nothing itself: no `git`, `gh`,
+or network.
 """
 from __future__ import annotations
 
@@ -42,10 +29,8 @@ PR_URL_RE = re.compile(
     r"^https?://(?:www\.)?github\.com/"
     r"(?P<repo>[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)/pull/(?P<number>\d+)(?:[/?#].*)?$")
 
-# What may reach `git diff` as one argument. Deliberately narrower than git's own
-# refname rules: every character git allows that a shell also reads specially is
-# excluded, so the argv stays safe even if a caller later builds a command line
-# out of it. `~`, `^`, `..`, `@{…}`, and `/` all survive — the forms anyone types.
+# What may reach `git diff` as one argument — narrower than git's own refname
+# rules, excluding every character a shell also reads specially.
 REF_RE = re.compile(r"^[A-Za-z0-9_./^~@{}-]+$")
 
 DOC_SUFFIXES = (".md", ".markdown")
@@ -59,8 +44,7 @@ def die(msg: str) -> None:
 
 def as_doc(target: str, root: Path):
     """A doc record, or `None` when nothing is at that path. Raises when
-    something IS there and cannot be reviewed as a document — an existing path
-    must never fall through to be reinterpreted as a git ref."""
+    something IS there but isn't reviewable as a document."""
     path = Path(target) if Path(target).is_absolute() else root / target
     if not path.exists():
         return None
@@ -100,15 +84,13 @@ def as_ref(target: str):
 
 
 def worktree() -> dict:
-    """`git diff` with no ref — unstaged working-tree changes, the default
-    `/viva-diff` shipped with."""
+    """`git diff` with no ref — unstaged working-tree changes."""
     return {"kind": "worktree", "label": "working tree", "capture": ["git", "diff"]}
 
 
 def classify(target, root: Path, force=None) -> dict:
     """One target → one dispatch record. `target is None` is the working tree;
-    `force` is a `KINDS` value that skips derivation (and, for `pr`/`ref`, skips
-    the filesystem check that would otherwise shadow it)."""
+    `force` is a `KINDS` value that skips derivation."""
     if force == "worktree" or (force is None and target is None):
         if target is not None:
             raise ValueError("--kind worktree takes no target")
@@ -124,7 +106,7 @@ def classify(target, root: Path, force=None) -> dict:
             raise ValueError(f"--kind {force}, but {target!r} is not one")
         return record
 
-    # Derivation order IS the contract: an existing path wins over any shape.
+    # Filesystem first, then shape: an existing path wins over any shape.
     record = as_doc(target, root) or as_pr(target) or as_ref(target)
     if record is None:
         raise ValueError(

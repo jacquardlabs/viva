@@ -1,8 +1,7 @@
 """Regression pins for the 2026-09 UX walk of the review print.
 
-Every assertion here is a defect that was reproduced in a browser against a
-live round and then fixed; each one names the fix it guards. Static needles
-over the page source, in the repo's own pattern — no browser in CI.
+Each assertion pins a defect reproduced live and then fixed. Static needles
+over the page source — no browser in CI.
 """
 import re
 import sys

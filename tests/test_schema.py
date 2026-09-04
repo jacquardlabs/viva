@@ -72,12 +72,9 @@ def test_verdict_to_ledger_entry():
 
 
 def test_ledger_note_records_suggested_wording_verbatim():
-    """A suggestion is a ledger event, and the wording is the event (#166).
-
-    Verbatim means byte-for-byte inside the fragment — asserted here, on
-    `ledger_note`'s own output, not on a rendered markdown row (`esc_cell`
-    escapes pipes and flattens newlines on the way into the table).
-    """
+    """A suggestion is a ledger event; the wording is the event (#166).
+    Asserted on `ledger_note`'s own output, not a rendered markdown row —
+    `esc_cell` escapes/flattens newlines on the way into the table."""
     wording = "Ship the core in one round | no exceptions"
     # Note + wording: the note is rationale, the wording is the payload.
     assert schema.ledger_note({"comments": [
@@ -245,10 +242,9 @@ def test_validate_review_input_rejects_bad():
 
 
 def test_id_must_be_a_bare_token():
-    """A section/question `id` reaches an HTML attribute context unescaped
-    (`server.py`'s `buildReviewCard`/`buildQACard` and friends) — the
-    boundary must reject anything that could break out of one, not merely
-    require `id` to be *a string* (a security-posture finding)."""
+    """A section/question `id` reaches an HTML attribute context unescaped —
+    the boundary must reject anything that could break out of one, not just
+    require a string (a security-posture finding)."""
     for bad_id in ('s1"', "s1<script>", "s1 two", "s1'x", "s1&amp;", "", "s" * 65):
         try:
             schema.validate_review_input({"sections": [
@@ -309,18 +305,12 @@ def test_validate_verdicts_rejects_bad():
 
 
 def test_schema_reaches_no_io():
-    """`round_is_complete()` is the finish guard `loop.py finish` and the
-    server's `/complete` handler both ask, from two processes. It must judge the
-    dicts handed to it and nothing else — a disk read would let the two call
-    sites answer differently for the same round, and would make the server's
-    guard readable by whoever last wrote the file rather than by what the human
-    submitted.
+    """`schema.py` must stay pure — `round_is_complete()` is asked by
+    `loop.py finish` and the server's `/complete` handler from separate
+    processes, and must judge only the dicts handed to it, never disk.
 
-    Checked as a module property, not a call trace: `schema.py` imports no
-    filesystem or serialization module at all, so nothing in it can reach disk.
-    AST-walked rather than grepped — the module docstring names `json.dumps` and
-    `_input_data` while describing the server's `/input` merge, and a substring
-    scan would fire on prose.
+    AST-walked rather than grepped, since the module docstring mentions
+    `json.dumps` in prose and a substring scan would fire on that.
     """
     src = (Path(__file__).resolve().parent.parent / "scripts" / "schema.py")
     tree = ast.parse(src.read_text(encoding="utf-8"))
@@ -341,12 +331,8 @@ def test_schema_reaches_no_io():
 
 
 def test_round_is_complete_needs_a_row_per_input_section():
-    """The (input, verdicts) signature is what makes a *missing* row visible.
-
-    Scanning verdicts alone cannot see a section that was never submitted, and
-    no end-to-end test reaches this: every submit path sends one row per input
-    section.
-    """
+    """The (input, verdicts) signature makes a *missing* row visible — scanning
+    verdicts alone cannot see a section that was never submitted."""
     inp = {"sections": [{"id": "s1"}, {"id": "s2"}]}
     both = {"sections": [{"id": "s1", "verdict": "approved"},
                          {"id": "s2", "verdict": "approved"}]}
@@ -366,9 +352,7 @@ def test_round_is_complete_needs_a_row_per_input_section():
 
 def test_round_is_complete_rejects_an_empty_round():
     """`all([])` is True, so the empty-sections guard deliberately inverts
-    Python's default. Nothing else pins it: a server-side test asserting a 200
-    would still pass if the guard were dropped, because the guard's own shape
-    check exempts a sections-less payload first."""
+    Python's default — nothing else pins this."""
     assert not schema.round_is_complete({"sections": []}, {"sections": []})
     assert not schema.round_is_complete({}, {})
     print("  ok  test_round_is_complete_rejects_an_empty_round")
@@ -391,12 +375,9 @@ APPROVED = {"sections": [{"id": "s1", "verdict": "approved"}]}
 
 
 def test_absent_pass_is_todays_behavior_exactly():
-    """PRODUCT.md principle 4, at the one place it is load-bearing: a round with
-    no `pass` key completes on approvals alone, whatever else it carries.
-
-    The same round state that holds a `checks` round open — an unanswered
-    check flag — must not hold a passless one, or the field would have changed
-    behavior for every caller that never asked for a pass."""
+    """PRODUCT.md principle 4: a round with no `pass` key completes on
+    approvals alone, whatever else it carries. The same state that holds a
+    `checks` round open must not hold a passless one."""
     flag = [{"kind": "headings-present", "severity": "warn", "message": "missing"}]
     assert schema.round_is_complete(_round(annotations=flag), APPROVED)
     assert "pass" not in _round(), "the helper must not default a pass in"
@@ -416,12 +397,9 @@ def test_structure_and_line_are_the_base_rule():
 
 
 def test_checks_pass_holds_until_every_check_flag_is_answered():
-    """The added conjunct: approvals alone do not close a `checks` round.
-
-    A check flag is an annotation whose `kind` is in `CHECK_KINDS` — the handle
-    `headings_present.py` documents. An advisory producer's flag is not one, so
-    drift/checklist/preference/confidence flags never gate a round.
-    """
+    """The added conjunct: approvals alone do not close a `checks` round. A
+    check flag is an annotation whose `kind` is in `CHECK_KINDS`; an advisory
+    producer's flag (drift/checklist/preference/confidence) never gates one."""
     checks_pass = {"kind": "checks"}
     unanswered = [{"kind": "headings-present", "severity": "warn",
                    "message": "missing expected design-doc section: 'Goals'"}]
@@ -482,14 +460,10 @@ def test_proof_holds_on_an_unresolved_suggested_edit():
 
 
 def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
-    """A decline is a thread status, never a verdict — and it resolves nothing.
-
-    `open` and `declined` are the two unresolved statuses, which is what makes
-    `parse_sections` re-present a declined thread and `open_notes` settle it on
-    approval. The exchange keeps the REVIEWER's comment type as its `verdict`
-    (the author's answer rides in `grounds`), so a declined suggestion still
-    holds a `final` round: the author's refusal is not a resolution (#167).
-    """
+    """A decline is a thread status, never a verdict, and resolves nothing.
+    `open` and `declined` are the two unresolved statuses; a declined
+    suggestion still holds a `final` round since the author's refusal is not
+    a resolution (#167)."""
     assert schema.THREAD_STATUSES == ("open", "settled", "declined")
     assert schema.THREAD_DECLINED not in schema.VERDICTS
     assert schema.THREAD_DECLINED not in schema.COMMENT_TYPES
@@ -510,13 +484,9 @@ def test_thread_statuses_and_a_declined_suggestion_still_holds_proof():
 
 def test_no_pass_relaxes_the_all_approved_base():
     """THE invariant: a pass may only ADD conditions, never relax the base.
-
-    Enumerated from `PASS_KINDS` plus `None` rather than a hardcoded list, so a
-    fifth kind is covered the day it is added instead of being silently exempt.
-    Every round below is one today's rule refuses; no pass may accept any of
-    them, now or later — one that could would reopen the hole #102 closed,
-    `POST /complete` accepting a round the human never approved.
-    """
+    Enumerated from `PASS_KINDS` plus `None` so a new kind is covered
+    automatically; accepting any of these refused rounds would reopen the
+    hole #102 closed."""
     inp_sections = [{"id": "s1", "title": "Goals", "content": "b"},
                     {"id": "s2", "title": "Scope", "content": "c"}]
     refused = [
@@ -550,11 +520,9 @@ def test_no_pass_relaxes_the_all_approved_base():
 
 
 def test_check_kinds_covers_every_shipped_bundle_check():
-    """`CHECK_KINDS` is what a `checks` round recognizes as a check flag, and
-    a missing entry fails OPEN — the flag becomes invisible and the round closes
-    when it should have held. So every check a shipped type bundle names must be
-    in it. Not the reverse: a registered kind no bundle names yet is fine.
-    """
+    """`CHECK_KINDS` is what a `checks` round recognizes as a check flag. A
+    missing entry fails OPEN — the round closes when it should have held —
+    so every check a shipped bundle names must be here (not the reverse)."""
     types_dir = Path(__file__).resolve().parent.parent / "types"
     named = {check
              for p in sorted(types_dir.glob("*.json"))
@@ -568,19 +536,10 @@ def test_check_kinds_covers_every_shipped_bundle_check():
 
 
 def test_doc_scope_kinds_is_a_closed_set():
-    """`DOC_SCOPE_KINDS` is the scope registry: what a producer's flag is ABOUT.
-    `headings_present.py` and `checklist.py` both report a fact about the whole
-    DOCUMENT and both anchor it to `sections[0]["id"]`, because
-    `parse_sections.py`'s integrity check makes a card for an absent section
-    impossible and the first card is the only document-level handle either has.
-    A reader that takes the anchor literally prints five document facts in the
-    margin of section 1.
-
-    A DIFFERENT AXIS from `CHECK_KINDS`, which asks "does this gate a `checks`
-    round". `headings-present` is deliberately in both, and the two must not be
-    folded together: `checklist` in `CHECK_KINDS` would make a missing template
-    heading gate a `checks` round, which nothing has decided.
-    """
+    """`DOC_SCOPE_KINDS` is the scope registry — what a producer's flag is
+    ABOUT — a different axis from `CHECK_KINDS` (does it gate a `checks`
+    round). Unregistered, a flag's anchor renders in section 1's margin
+    instead of the document slip."""
     assert isinstance(schema.DOC_SCOPE_KINDS, tuple), "a vocabulary is a tuple"
     scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
     # Read the producers rather than restating their strings.
@@ -619,20 +578,10 @@ def test_has_revision_history_is_anchored():
 
 
 def test_round_is_presence_gated_and_absence_normalizes():
-    """`round` is optional on the wire and stays optional — but a present
-    malformed one is a hard failure, and an absent one is NORMALIZED rather
-    than rejected.
-
-    Absence is not harmless downstream even though the contract permits it: the
-    browser prints the value into the tab title (`String(undefined)` gives the
-    literal "REV undefined") and does round arithmetic with it
-    (`Number(last.round) !== round - 1` against `undefined` is a NaN compare
-    that is never equal, silently killing the round-2 landing and the
-    transmittal's `answered` bucket). Requiring it instead would be a wire break
-    for a field the contract has always documented as optional, and would force
-    `"round": 1` into ~85 fixtures across this suite that are probing other
-    rules entirely.
-    """
+    """`round` is optional and stays optional — a present malformed value is a
+    hard failure, but an absent one is NORMALIZED rather than rejected,
+    because the browser's tab title and round arithmetic both break on
+    `undefined`."""
     base = {"sections": [{"id": "s1", "title": "T", "content": "c"}]}
 
     # Absent is valid, and normalizes to a first round.

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """The MIT grant actually exists and agrees with the manifest (#194).
 
-`plugin.json` declaring `"license": "MIT"` is an assertion, not a grant, and
-GitHub's license detector reads the root LICENSE file — a manifest field leaves
-the sidebar badge empty and the API's `license` null. These are shape checks on
-the file the detector reads: it exists, it is canonical MIT rather than a
-paraphrase, and its copyright holder is derived from `plugin.json` rather than
-restated here, so a rename fails in one place instead of drifting.
+GitHub's license detector reads the root LICENSE file, not plugin.json's
+`"license": "MIT"` field. Checks LICENSE exists, is canonical MIT, and its
+copyright holder matches plugin.json's author.
 """
 from __future__ import annotations
 

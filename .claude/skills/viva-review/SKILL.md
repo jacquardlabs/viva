@@ -6,12 +6,11 @@ description: Human sign-off on an artifact, section by section or hunk by hunk. 
 # viva-review
 
 Human sign-off on an artifact an agent produced. Named after the PhD oral exam —
-you present, they question, you defend and revise, and it passes only when all of
-it holds up.
+you present, they question, you defend and revise, and it passes only when all
+of it holds up.
 
-`/viva-write` produces a doc; `/viva-review` judges one. The split is by
-**intent**, not by mechanism: what you point this at decides whether the unit of
-trust is a section or a hunk.
+`/viva-write` produces a doc; `/viva-review` judges one. What you point this at
+decides whether the unit of trust is a section or a hunk.
 
 ## Invocation
 
@@ -49,8 +48,7 @@ python3 "$VIVA_DIR/scripts/review_target.py" [target]
 It prints `{kind, label, …}` — `doc` sends you to **A**, everything else to
 **B**, where `loop.py start` runs its `capture` argv for you. Precedence is
 filesystem first, then shape: a repo holding a *file* named `187` means that
-file, not the PR. Pass `--kind pr|ref|doc` to override — a branch named `42`
-needs it.
+file, not the PR. Pass `--kind pr|ref|doc` to override.
 
 **A markdown target with no path given**: scan the current directory for a
 single `.md` file. Two candidate readings (a lone `.md` and a dirty working
@@ -104,11 +102,11 @@ suggestion turn keeps its `replacement` on the exchange, beside `note`.
 
 **Declining.** Comply by default. When a comment is wrong on the record — it
 contradicts a decision made this session, a source, or a measurement — refuse it
-with grounds instead of complying. Taste is not grounds, and a decline without
-them reads as a refusal to work. It settles nothing: the thread carries to the
-next round marked `declined`, so the card stays held. The reviewer then settles
-it (they accept) or replies (they insist) — **insisting wins**: apply the change
-that round. There is no second decline on a thread.
+with grounds instead of complying. Taste is not grounds. It settles nothing:
+the thread carries to the next round marked `declined`, so the card stays
+held. The reviewer then settles it (they accept) or replies (they insist) —
+**insisting wins**: apply the change that round. There is no second decline on
+a thread.
 
 ---
 
@@ -118,10 +116,9 @@ that round. There is no second decline on a thread.
 every round file and every call to the server, and refuses to start when a
 previous session may still be running. You bring the judgment.
 
-The loop is **start → wait → route → (rewrite & re-arm | finish)**. It is tuned
-so you never make the human wait on a tool round-trip and never load the doc into
-context until a rewrite needs it — an all-approved round finishes without ever
-reading the doc.
+The loop is **start → wait → route → (rewrite & re-arm | finish)**. Never load
+the doc into context until a rewrite needs it — an all-approved round finishes
+without ever reading it.
 
 **A1. Start** (round 1)
 
@@ -138,17 +135,15 @@ branch itself: a plain launch; a **resumed sign-off**, where a doc already
 carrying a `## Revision History` gets the prior session's approvals carried
 forward so the human re-reviews only what changed; or a stop after parsing when
 the preferences store holds a standing preference. It **refuses** when
-`.viva/server.url` exists — a prior session may still be running with the
-reviewer's tab open. It probes before advising, so the refusal already names
-which case it is: a live session names the tab's URL, and only a URL nothing
-answers on is told to delete the file. Report whichever it printed verbatim.
+`.viva/server.url` exists: a live session names the tab's URL, and only a URL
+nothing answers on is told to delete the file. Report whichever it printed
+verbatim.
 
 Pass `--split-on '<REGEX>'` for a task-card plan document: a heading is a split
 point iff its title matches (`re.search`, at any depth), replacing the
-split-level heuristic entirely. Zero matches is a hard error, not a fallback. The
-pattern is recorded in the round file, so every later round re-splits the same
-way — and `start` reads it back off the prior round when resuming a signed-off
-doc, so a resume does not need it retyped.
+split-level heuristic entirely. Zero matches is a hard error, not a fallback.
+The pattern is recorded in the round file and carried into later rounds,
+including a resume, so it never needs retyping.
 
 Without it the parser splits on the highest heading level occurring more than
 once (usually `##`, one level coarser past 20 sections), verbatim; content before
@@ -158,10 +153,10 @@ section is omitted and exempt from the integrity check.
 by hand or read the parser's output back into context.
 
 Pass `--type <name>` when the doc has one (`doc_types.py --list` is the menu) —
-it names the round's check set and, with `--pass <kind>`, the depth it runs at. A
-doc `/viva-write` produced already carries both. `start` runs the bundle's checks
-itself, before anything could arm, and prints what it merged; the seam below is
-for the producers only you can run.
+it names the round's check set and, with `--pass <kind>`, the depth it runs at.
+A doc `/viva-write` produced already carries both. `start` runs the bundle's
+checks itself, before anything could arm, and prints what it merged; the seam
+below is for the producers only you can run.
 
 **If `start` stops after parsing**, it prints the path of the producer contract
 to read: run the producer, then `loop.py annotate --sidecar <path>` and
@@ -176,10 +171,8 @@ python3 "$VIVA_DIR/scripts/loop.py" wait
 Blocks on human review time, then prints the verdicts, the round's id→title map,
 the standing preferences, and a classification line. Read all four straight from
 stdout — the next steps reuse them instead of re-fetching. Issue it with a
-generous timeout (~10 min / 600000ms); a tool's default 2 minutes would
-spuriously fail mid-review, and re-issuing the identical command after a timeout
-is safe. It exits non-zero when the server disappears, so a killed session ends
-the wait instead of outliving it.
+generous timeout (~10 min / 600000ms); re-issuing the identical command after a
+timeout is safe. It exits non-zero when the server disappears.
 
 **A3. Route the round.** The classification line routes you. Four destinations,
 no fifth:
@@ -200,22 +193,20 @@ context). Loop over `comments[]` for each section and act by type, per the
 verdict rules above, rewriting directly in the source file. **Preserve each
 heading's text exactly** — next-round title matching depends on it.
 
-**Apply standing preferences while you rewrite.** The doc is already open, so
-consulting the standing set `wait` printed costs nothing: apply each relevant
-preference to the sections you touch, so a recurring fix is already in when the
-card re-presents instead of waiting for the human to flag it again. An empty set
-is a no-op.
+**Apply standing preferences while you rewrite.** Apply each relevant
+preference to the sections you touch, so a recurring fix is already in when
+the card re-presents. An empty set is a no-op.
 
-**Rewrite in the register.** `wait` prints the path to `style.md` beside the
-thread rules: what you write is concise and technical — decisions as fact, no
-preamble, no provenance in the text — and every section you touch gets its trim
-pass. The register edits your prose only: a `suggestion`'s wording is still
-pasted verbatim, and a `changes` comment asking for more gets more.
+**Rewrite in the register.** `wait` prints the path to `style.md`: what you
+write is concise and technical — decisions as fact, no preamble, no provenance
+in the text — and every section you touch gets its trim pass. The register
+edits your prose only: a `suggestion`'s wording is still pasted verbatim, and
+a `changes` comment asking for more gets more.
 
-Then re-arm — one `--response "<cid>=<what you changed>"` per comment you rewrote
-or answered. The `cid` is the server's own `{sectionId}-c{n}` (e.g. `s2-c1`); use
-it verbatim, never synthesize it. Approving a section settles all of its threads,
-so those need no response. A decline replaces that comment's `--response`.
+Then re-arm — one `--response "<cid>=<what you changed>"` per comment you
+rewrote or answered. The `cid` is the server's own `{sectionId}-c{n}` (e.g.
+`s2-c1`); use it verbatim. Approving a section settles all of its threads, so
+those need no response. A decline replaces that comment's `--response`.
 
 ```bash
 python3 "$VIVA_DIR/scripts/loop.py" rearm \
@@ -226,13 +217,13 @@ python3 "$VIVA_DIR/scripts/loop.py" rearm \
 `open_notes.py` owns the one-decline-per-thread rule and refuses a second; the
 round does not ship until you comply.
 
-`rearm` records the exchanges, re-parses the doc, and ships the next round to the
-running tab — the browser updates in place, no new tab. A section carries forward
-as approved only when its title matches exactly (case-insensitive) AND its
-content is byte-for-byte identical; changed content comes back for re-review.
-`--pass <kind>` changes the round's depth (a structural round 1, a line round 2,
-a `checks` or `final` round later). Add `--parse-only` when a producer must flag
-the new round before the reviewer sees it. Back to A2.
+`rearm` records the exchanges, re-parses the doc, and ships the next round to
+the running tab — the browser updates in place, no new tab. A section carries
+forward as approved only when its title matches exactly (case-insensitive)
+AND its content is byte-for-byte identical; changed content comes back for
+re-review. `--pass <kind>` changes the round's depth (a structural round 1, a
+line round 2, a `checks` or `final` round later). Add `--parse-only` when a
+producer must flag the new round before the reviewer sees it. Back to A2.
 
 **A5. Finish** (all sections approved)
 
@@ -245,12 +236,12 @@ python3 "$VIVA_DIR/scripts/loop.py" finish --doc <doc_file>
 `changes`/`info` note and every suggestion's wording, and an **Open notes**
 subsection carrying each thread's full exchange when any were tracked. On a
 re-reviewed doc the new block is appended under the existing heading. It
-**refuses** on any non-approved section and prints the pending count: nothing is
-auto-accepted.
+**refuses** on any non-approved section and prints the pending count: nothing
+is auto-accepted.
 
-It then names the preferences reference — cluster this session's `changes`/`info`
-notes into distinct critiques and record each, so a recurring one is learned. A
-session with no recurring critique records nothing.
+It then names the preferences reference — cluster this session's
+`changes`/`info` notes into distinct critiques and record each. A session with
+no recurring critique records nothing.
 
 Give the sign-off report — how many sections, how many rounds, what was revised —
 and ask:
@@ -267,11 +258,10 @@ git commit -m "docs: sign off on <filename>"
 ## B. Diff review (`kind: pr | ref | worktree`)
 
 The unit of trust is the hunk: nothing in the diff is done until a human has
-approved the hunk it lives in. `loop.py` drives this branch the way it drives A
-— it runs the capture `review_target.py` printed, parses with `parse_diff.py`,
-launches `--mode diff`, and re-captures on every re-arm and at the finish. The
-round file carries the mode, so every command after `start` knows which loop
-it is in.
+approved the hunk it lives in. `loop.py` drives this branch the way it drives
+A — it runs the capture `review_target.py` printed, parses with
+`parse_diff.py`, launches `--mode diff`, and re-captures on every re-arm and
+at the finish.
 
 **Reviewing a PR you are not checked out on is read-only.** The rewrite step
 edits working-tree files, so if you intend to revise rather than only sign off,
@@ -294,8 +284,8 @@ target `review_target.py` classified, with the same `--kind` if you overrode
 one; the working tree takes no target. It **refuses** over a live session
 exactly as A1 does, naming the tab's URL. `no changes to review` means the
 capture was empty — nothing to launch, report it and stop. A capture that
-fails (a `gh` that 403s, a ref that does not exist) is an error naming the
-argv, never an empty diff.
+fails (a `gh` that 403s, a ref that does not exist) is an error naming the argv,
+never an empty diff.
 
 **B1a. Summarize the hunks** (whenever `start` or `rearm` stops after parsing)
 
@@ -303,12 +293,9 @@ argv, never an empty diff.
 collapses to `server.py hunk 1 … hunk 41` — an index with no entries in it.
 Write a one-line `summary` per section and the tab renders it under each title.
 
-**Only above 10 hunks.** Below that the collapsed list is already navigable and
-the summaries are not worth the tokens — so the driver holds the seam only
-there: `start` and `rearm` stop after parsing when the round has more than 10
-hunks and any of them lacks a summary, and print the round file's path. `Read`
-it — the one place branch B pays for its output deliberately, because the
-hunks are what you are about to review anyway — then merge the map and arm:
+**Only above 10 hunks.** `start` and `rearm` stop after parsing when the round
+has more than 10 hunks and any of them lacks a summary, and print the round
+file's path. `Read` it, then merge the map and arm:
 
 ```bash
 python3 "$VIVA_DIR/scripts/loop.py" summarize --map - <<'JSON'
@@ -323,12 +310,10 @@ which names where the change sits and not what it is. Lowercase, no trailing
 period, no filename (the title already carries it). Ids you omit keep whatever
 they carried; an id the round does not have is refused.
 
-**It must land before the server reads the round.** The server loads its round
-once and replaces it only from `POST /next-round`, so `summarize` refuses a
-round that is already armed. `parse_diff.py` carries a summary forward onto any
-hunk whose body is unchanged — a hunk that only moved keeps it — so each round
-only needs the hunks that were actually rewritten. `--arm-anyway` declines the
-seam.
+**It must land before the server reads the round.** `summarize` refuses a
+round that is already armed. `parse_diff.py` carries a summary forward onto
+any hunk whose body is unchanged, so each round only needs the hunks that
+were actually rewritten. `--arm-anyway` declines the seam.
 
 **B2. Wait for verdicts** (every round)
 
@@ -337,20 +322,20 @@ python3 "$VIVA_DIR/scripts/loop.py" wait
 ```
 
 Same as A2: the verdicts, the id→title map, and the classification line, with
-the same ~10 minute timeout. It prints no thread or register rail here — there
-are no threads and no prose.
+the same ~10 minute timeout. No thread or register rail here — there are no
+threads and no prose.
 
 **B3. Act on verdicts.** The verdict rules above apply with the hunk as the card,
 and **one exception: there are no threads here.** `parse_diff.py` takes no
 `--open-notes`, so a diff round carries none, nothing re-presents an exchange,
 and there is no `--response` to record one against.
 
-So answer an **`info`** comment **in the chat conversation with the human**, and
-re-present the hunk unchanged next round. Do not write a response into a thread
-that does not exist, and do not edit the file — an `info` is still a question,
-not a directive. The reviewer's note is not lost either way: it lands in the
-round's verdicts JSON and in the Revisions ledger the tab renders. If they
-escalate to a `changes` turn, act on it then like any other `changes` comment.
+Answer an **`info`** comment **in the chat conversation with the human**, and
+re-present the hunk unchanged next round. Do not write a response into a
+thread that does not exist, and do not edit the file. The reviewer's note is
+not lost either way: it lands in the round's verdicts JSON and in the
+Revisions ledger the tab renders. If they escalate to a `changes` turn, act on
+it then like any other `changes` comment.
 
 For each section with a `changes` comment: parse the section `title` to extract
 the filepath (`title` = `"{filepath} hunk N"`), then apply the targeted edit to
@@ -365,9 +350,9 @@ Every hunk approved → B5. Any `changes`/`info` → B4.
 python3 "$VIVA_DIR/scripts/loop.py" rearm
 ```
 
-`rearm` re-runs the capture `start` recorded — the same argv, never a different
-one — re-parses with round N as prior so an approved, unchanged hunk carries its
-approval, and ships round N+1 to the running tab. Two outcomes, on stdout:
+`rearm` re-runs the capture `start` recorded, re-parses with round N as prior
+so an approved, unchanged hunk carries its approval, and ships round N+1 to
+the running tab. Two outcomes, on stdout:
 
 - `round N+1 armed` — back to B2 (after B1a, if it stopped at the seam).
 - `diff is empty after re-capture` — every hunk was applied or reverted at the
@@ -381,8 +366,7 @@ approval, and ships round N+1 to the running tab. Two outcomes, on stdout:
 python3 "$VIVA_DIR/scripts/loop.py" finish
 ```
 
-`finish` re-captures for itself and decides from what it sees, never from what
-`rearm` printed. Three outcomes:
+`finish` re-captures for itself and decides from what it sees. Three outcomes:
 
 - **`diff fully resolved — nothing to commit`** — the capture was empty. It
   signed off with `resolved: "empty"`, the one signal the server's diff gate
@@ -403,23 +387,24 @@ python3 "$VIVA_DIR/scripts/loop.py" finish
 
 `/viva-review` is a **human gate**, not an LLM reviewer. It composes with
 `/code-review` (an LLM pass) from the `code-review` plugin in the
-`claude-plugins-official` marketplace, if installed — not bundled with viva:
-run `/code-review` first to apply automated suggestions, then `/viva-review`
-for human sign-off before committing.
+`claude-plugins-official` marketplace, if installed: run `/code-review` first
+to apply automated suggestions, then `/viva-review` for human sign-off before
+committing.
 
 ## Reference material
 
-The opt-in layers live at the plugin root, under `references/`, so a plain review
-never loads them:
+The opt-in layers live at the plugin root, under `references/`, so a plain
+review never loads them:
 
 - `producers.md` — annotations, the producer contract, confidence triage
 - `open-notes.md` — comment threads carried across rounds
 - `preferences.md` — recurring critiques learned across sessions
 - `qa.md` — the batch-question gate, for a caller that needs one directly
 
-`loop.py` prints the absolute path of whichever one documents the step you have
-reached — read the path it printed rather than deriving it. To engage an opt-in
-producer the driver has not named, pass `--parse-only` to `start` or `rearm`.
+`loop.py` prints the absolute path of whichever one documents the step you
+have reached — read the path it printed rather than deriving it. To engage an
+opt-in producer the driver has not named, pass `--parse-only` to `start` or
+`rearm`.
 
 ## File layout
 
