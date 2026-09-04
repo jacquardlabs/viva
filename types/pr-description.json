@@ -1,7 +1,7 @@
 {
   "name": "pr-description",
   "title": "PR description",
-  "sections": [],
-  "checks": [],
+  "sections": ["Summary", "Test plan"],
+  "checks": ["headings-present"],
   "default_pass": "line"
 }

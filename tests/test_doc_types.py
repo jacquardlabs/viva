@@ -93,6 +93,35 @@ def test_shipped_checks_name_a_real_producer() -> None:
     print("  ok  test_shipped_checks_name_a_real_producer")
 
 
+def test_shipped_grammars_are_checked() -> None:
+    """A grammar nothing checks is decoration: `headings-present` is the
+    producer that turns `sections[]` into flags, so every shipped bundle that
+    names a heading must also name the check. `pr-description` and
+    `progress-note` shipped with sections but no checks before the agent-era
+    grammars landed, and a typed draft missing a heading drew no flag."""
+    for name in sorted(EXPECTED_SHIPPED):
+        bundle = resolve_ok(name)
+        if bundle["sections"]:
+            assert "headings-present" in bundle["checks"], (
+                f"types/{name}.json names a grammar but not the "
+                f"headings-present check — a missing heading is never flagged")
+    print("  ok  test_shipped_grammars_are_checked")
+
+
+def test_checks_default_pass_names_a_check() -> None:
+    """A `checks` pass holds the round until every check flag carries a result.
+    With no checks to run there are no flags, the conjunct is vacuous, and the
+    round closes on the all-approved base alone — the depth is a label. Fails
+    open, so it is pinned here rather than in the resolver."""
+    for name in sorted(EXPECTED_SHIPPED):
+        bundle = resolve_ok(name)
+        if bundle["default_pass"] == "checks":
+            assert bundle["checks"], (
+                f"types/{name}.json defaults to a checks pass but names no "
+                f"check — the pass gates nothing")
+    print("  ok  test_checks_default_pass_names_a_check")
+
+
 def test_repo_copy_wins_wholesale() -> None:
     """A repo's `.viva-types/<name>.json` replaces the shipped bundle, not
     key-merged into it — otherwise a repo could add a check but never drop one."""
@@ -267,6 +296,8 @@ def main() -> None:
     test_shipped_set_resolves_and_validates()
     test_shipped_grammars_exclude_revision_history()
     test_shipped_checks_name_a_real_producer()
+    test_shipped_grammars_are_checked()
+    test_checks_default_pass_names_a_check()
     test_repo_copy_wins_wholesale()
     test_repo_adds_a_type_shipped_set_survives()
     test_unknown_name_fails_loudly_and_lists_what_exists()
@@ -278,7 +309,7 @@ def main() -> None:
     test_list_is_the_merged_namespace_with_titles()
     test_list_refuses_rather_than_offering_a_broken_bundle()
     test_bundles_live_outside_the_cleared_state_dir()
-    print("OK (14 tests)")
+    print("OK (16 tests)")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
     "User journey",
     "Out of scope",
     "Alternatives considered",
+    "Verification",
     "Open questions"
   ],
   "checks": ["headings-present"],

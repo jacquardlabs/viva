@@ -145,13 +145,22 @@ Write the doc at the resolved path. The grammar is fixed by the bundle: one
 heading per entry in `sections`, in that order, plus whatever the material needs
 beyond them. Attachments supply the facts, the answers supply the residue.
 
-Name where each load-bearing fact came from, in the prose, where a reader would
-want it (`config.py:42`, `#170`, the URL). Structured citations are #145's call,
-not this flow's — do not invent a field for them.
+**The register is fixed by `references/style.md`** at the plugin root — read it
+before you write. Concise and technical: the point first, decisions stated as
+fact, no preamble restating the brief, no filler, and a trim pass on your own
+draft before step 5 parses it.
 
-**Nothing in this file is advice on how to write a good document.** The type
-fixes the sections, the attachments fix the facts, the human fixes the rest at
-the gate. If this step starts accumulating craft guidance, the product has
+Cite a source a reader can open, in the prose, where they would want it
+(`config.py:42`, `#170`, the URL). **The interview is not a source, and neither
+is this session.** An answer settles a decision; write the decision, not
+"(per the interview)" or "decided this session" — that provenance lives in the
+confidence sidecar you emit at step 5, never in the doc text. Structured
+citations are #145's call, not this flow's — do not invent a field for them.
+
+**Nothing in this file is advice on what to argue.** The type fixes the
+sections, the register fixes the density, the attachments fix the facts, the
+human fixes the rest at the gate. If this step starts accumulating craft
+guidance — how to make the case, what a good design doc says — the product has
 drifted.
 
 **5. Parse, produce, hand off**
@@ -227,7 +236,9 @@ anchored span verbatim, character for character, nothing outside the anchor. An
 the section. `anchor.offset` locates the span and `anchor.text` confirms it;
 `offset: -1` means that ordinal did not resolve, so scope by the section and the
 note rather than by the first match. `Read` any `comment.attachments` first.
-Preserve each heading's text exactly — next-round title matching depends on it.
+Rewrite in the register step 4 drafted in — `wait` prints the path to
+`style.md` beside the thread rules — and trim what you touched. Preserve each
+heading's text exactly — next-round title matching depends on it.
 
 ```bash
 python3 "$VIVA_DIR/scripts/loop.py" rearm \

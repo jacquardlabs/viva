@@ -488,6 +488,10 @@ def cmd_wait(args) -> int:
         # round can carry comments too, so it needs the same pointer.
         print(f"viva-loop: thread rules for the rewrite → "
               f"{REFERENCES / 'open-notes.md'}")
+        # The register is the other half of the rewrite: a section rewritten
+        # loose re-presents with the same filler the reviewer just flagged.
+        print(f"viva-loop: register for the rewrite → "
+              f"{REFERENCES / 'style.md'}")
     return 0
 
 

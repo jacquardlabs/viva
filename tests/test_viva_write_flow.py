@@ -78,13 +78,18 @@ SMS.
 ## Alternatives considered
 
 SMS was considered and declined.
+
+## Verification
+
+An alert fires in staging and the email arrives.
 """
 
 REPO_TYPE = {
     "name": "gated-note",
     "title": "Gated note",
     "sections": ["Problem & persona", "Proposed design", "User journey",
-                 "Out of scope", "Alternatives considered", "Open questions"],
+                 "Out of scope", "Alternatives considered", "Verification",
+                 "Open questions"],
     "checks": ["headings-present"],
     "default_pass": "checks",
 }
