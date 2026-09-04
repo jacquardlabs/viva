@@ -48,7 +48,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import server  # noqa: E402
-from _server_harness import SERVER, get, poll_for, post, wait_for_url  # noqa: E402
+from _server_harness import SERVER, get, poll_for, post, post_result, wait_for_url  # noqa: E402
 
 QA_INPUT = {
     "mode": "qa",
@@ -259,6 +259,54 @@ def test_standalone_qa_has_no_handoff_line():
     print("  ok  test_standalone_qa_has_no_handoff_line")
 
 
+def test_a_diff_round_is_refused_by_a_qa_server():
+    """#126. A qa-launched server hands off to review and to nothing else.
+
+    The browser stamps `mode-diff` and injects the diff2html stylesheet only
+    at boot; the `round` SSE handler does neither. So a `mode: "diff"` round
+    POSTed to this server would be answered `{"ok":true}` and render as raw
+    fenced code at review width — a broken tab with no error on either side.
+    `/next-round` refuses it instead, ahead of the `_data_lock` swap, so the
+    served interview is untouched and no hand-off line is printed.
+    """
+    tmp = Path(tempfile.mkdtemp())
+    viva = tmp / ".viva"
+    viva.mkdir()
+    qa_in = viva / "qa-input.json"
+    qa_out = viva / "answers.json"
+    qa_in.write_text(json.dumps(QA_INPUT))
+
+    proc = subprocess.Popen(
+        [sys.executable, str(SERVER), "--mode", "qa",
+         "--input", str(qa_in), "--output", str(qa_out), "--no-browser"],
+        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    try:
+        base = wait_for_url(qa_out)
+        diff_round = {
+            "mode": "diff", "round": 1, "doc_file": "HEAD~1..HEAD",
+            "output": str(viva / "review-r1.json"),
+            "sections": [{"id": "s1", "title": "a.py hunk 1",
+                          "content": "```diff\n@@ -1 +1 @@\n-a\n+b\n```"}],
+        }
+        status, body = post_result(base, "/next-round", diff_round)
+        assert status == 400, (status, body)
+        assert "'diff'" in body["error"] and "--mode qa" in body["error"], body
+        served = get(base, "/input")
+        assert served.get("mode") == "qa" and "questions" in served, \
+            "a refused round must leave the served interview untouched: %r" % (served,)
+        post(base, "/complete", {})
+    finally:
+        proc.terminate()
+        try:
+            out, _ = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate(timeout=5)
+    assert "viva · hand-off qa → review ·" not in out, out
+    print("  ok  test_a_diff_round_is_refused_by_a_qa_server")
+
+
 def main() -> None:
     test_round_handler_hides_qa_view()
     test_round_handler_populates_titleblock()
@@ -266,7 +314,8 @@ def main() -> None:
     test_qa_keydown_branch_guarded_by_review_data()
     test_handoff_same_server_no_second_launch()
     test_standalone_qa_has_no_handoff_line()
-    print("OK (6 tests)")
+    test_a_diff_round_is_refused_by_a_qa_server()
+    print("OK (7 tests)")
 
 
 if __name__ == "__main__":

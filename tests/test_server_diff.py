@@ -16,6 +16,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import post_result  # noqa: E402
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -206,6 +208,30 @@ def test_diff_mode_next_round() -> None:
             proc.wait()
 
 
+def test_review_round_refused_by_a_diff_server() -> None:
+    """#126, the symmetric half: a `--mode diff` server serves diff rounds and
+    nothing else. A `mode: "review"` body — or one with no `mode` at all, which
+    reads as review — is refused `400` and leaves round 1 served."""
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
+        try:
+            r2_out = str(Path(tmp) / ".viva" / "review-r2.json")
+            as_review = dict(DIFF_INPUT, mode="review", round=2, output=r2_out)
+            status, body = post_result(base, "/next-round", as_review)
+            assert status == 400, (status, body)
+            assert "'review'" in body["error"] and "--mode diff" in body["error"], body
+            modeless = {k: v for k, v in DIFF_INPUT.items() if k != "mode"}
+            status, body = post_result(base, "/next-round",
+                                       dict(modeless, round=2, output=r2_out))
+            assert status == 400, "an absent mode reads as review: %r" % (body,)
+            data = get(base, "/input")
+            assert data["round"] == 1 and data["mode"] == "diff", data
+            print("test_review_round_refused_by_a_diff_server: OK")
+        finally:
+            proc.terminate()
+            proc.wait()
+
+
 def test_diff_mode_complete_shuts_down() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         proc, base, _ = _start_server(Path(tmp), DIFF_INPUT)
@@ -271,6 +297,7 @@ def main() -> None:
     test_diff_mode_input_endpoint()
     test_diff_mode_submit_writes_output()
     test_diff_mode_next_round()
+    test_review_round_refused_by_a_diff_server()
     test_diff_mode_complete_shuts_down()
     test_diff_mode_complete_from_empty_diff_branch_shuts_down()
     print("\nAll server diff tests passed.")
