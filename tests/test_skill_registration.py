@@ -114,7 +114,8 @@ def test_shared_references_live_at_the_plugin_root():
     the driver, not to either skill — `/viva-write` needing `producers.md` must
     not mean reaching into `/viva-review`'s directory."""
     references = ROOT / "references"
-    expected = {"producers.md", "open-notes.md", "preferences.md", "qa.md"}
+    expected = {"producers.md", "open-notes.md", "preferences.md", "qa.md",
+                "style.md"}
     found = {p.name for p in references.glob("*.md")}
     assert expected <= found, f"missing shared references: {sorted(expected - found)}"
     for d in sorted(SKILLS_DIR.iterdir()):

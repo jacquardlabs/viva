@@ -204,6 +204,12 @@ preference to the sections you touch, so a recurring fix is already in when the
 card re-presents instead of waiting for the human to flag it again. An empty set
 is a no-op.
 
+**Rewrite in the register.** `wait` prints the path to `style.md` beside the
+thread rules: what you write is concise and technical — decisions as fact, no
+preamble, no provenance in the text — and every section you touch gets its trim
+pass. The register edits your prose only: a `suggestion`'s wording is still
+pasted verbatim, and a `changes` comment asking for more gets more.
+
 Then re-arm — one `--response "<cid>=<what you changed>"` per comment you rewrote
 or answered. The `cid` is the server's own `{sectionId}-c{n}` (e.g. `s2-c1`); use
 it verbatim, never synthesize it. Approving a section settles all of its threads,

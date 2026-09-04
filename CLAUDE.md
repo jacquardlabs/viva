@@ -184,6 +184,19 @@ second skill for the same job.
 and `loop.py` prints its paths, so `/viva-write` needing `producers.md` must not
 mean reaching into `/viva-review`'s directory.
 
+**`references/style.md` is the register**, the one reference about the prose
+itself: the point first, decisions as fact, one term per concept, no provenance
+or preamble in the doc text, a trim pass before parse. Its rules are the
+practitioner consensus (Google's technical-writing course and style guide,
+Microsoft's, Nielsen Norman's reading studies) and it cites them, so a rule is
+checkable against a source rather than defended as taste. `/viva-write` step 4 reads it before
+drafting and `loop.py wait` prints its path on every `has-work` round, so both
+flows rewrite in it. It is a rail, not craft — it fixes what a doc may not carry,
+never what to argue — which is the line `PRODUCT.md`'s "not a writing assistant"
+draws. It edits the agent's prose only: a `suggestion` is still pasted verbatim
+and a `changes` comment asking for more wins. `tests/test_writing_register.py`
+pins those seams.
+
 **The no-bookkeeping-bash rule is scoped, deliberately.** `loop.py` drives doc
 review only, so only `viva-review`'s **branch A** is held to it. Branch B (hunks
 — `parse_diff.py` and `--mode diff`, neither of which the driver knows) and
@@ -263,7 +276,15 @@ cost is that a branch named `42` needs `--kind ref`.
   config and deliberately outside `.viva/`, which is cleared every `start`.
   `scripts/doc_types.py` is the only place a name becomes a bundle and the read
   boundary that validates one; a bundle's `checks[]` names producers by the
-  mechanical mapping `<name with - as _>.py`.
+  mechanical mapping `<name with - as _>.py`. Two invariants the shipped set
+  keeps and `tests/test_doc_types.py` pins: a non-empty grammar names
+  `headings-present` (a grammar nothing checks is decoration), and a
+  `checks` default pass names at least one check (a `checks` round with no
+  flags to answer closes on the base alone and the depth is a label). Every
+  shipped grammar with a build in it carries a **Verification** heading, and
+  `progress-note` is the handoff shape (Goal, Done, Next, Blockers, Gotchas):
+  the agent-era sources converge on a runnable check in the doc and a fixed
+  handoff form, and `references/style.md` cites them.
 - **State lifecycle.** `preferences.json` survives the round-1 state clear (it is
   cross-session, gitignored, per-clone); everything else under `.viva/` is
   disposable and reset each session. Don't add new state that must survive

@@ -1,7 +1,7 @@
 {
   "name": "progress-note",
   "title": "Progress note",
-  "sections": [],
-  "checks": [],
+  "sections": ["Goal", "Done", "Next", "Blockers", "Gotchas"],
+  "checks": ["headings-present"],
   "default_pass": "checks"
 }

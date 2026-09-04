@@ -72,11 +72,13 @@ a different product.
   span they selected — a comment with a payload, applied by the author and
   recorded in the ledger — but there is no cursor in the document.
 - **Not a writing assistant.** `/viva-write` drafts, but only within rails: the
-  type's grammar fixes the sections, the attachments fix the facts, the
-  interview covers the residue, and the human gate decides. The checkpoints are
-  the contribution, not the prose. Craft advice — how to write a good design doc
-  — belongs in a different product; its appearance in a skill file is the tell
-  that this one has drifted.
+  type's grammar fixes the sections, the register (`references/style.md`) fixes
+  the density, the attachments fix the facts, the interview covers the residue,
+  and the human gate decides. The checkpoints are the contribution, not the
+  prose. The register is a rail because it says what a doc may not carry —
+  provenance, preamble, filler — not how to make its case. Craft advice — how
+  to write a good design doc — belongs in a different product; its appearance
+  in a skill file is the tell that this one has drifted.
 - **Not a heavyweight dependency.** stdlib-only server; no runtime packages.
 
 ## Surface

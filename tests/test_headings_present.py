@@ -147,6 +147,7 @@ def test_results_survive_annotate_and_are_findable_by_kind() -> None:
             "## Proposed design\n\nwhat\n\n"
             "## User journey\n\nhow\n\n"
             "## Alternatives considered\n\nother\n\n"
+            "## Verification\n\nhow we know\n\n"
             "## Open questions\n\nq\n", encoding="utf-8")
         inp = tmp / ".viva" / "review-input-r1.json"
         subprocess.run(

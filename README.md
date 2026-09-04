@@ -141,6 +141,8 @@ The other end of the lifecycle. Instead of composing a document and then finding
 
 Every argument is optional. With no type, question one is *what's the deliverable*; with no path, the interview asks where the draft should land.
 
+The draft is written in a fixed register (`references/style.md`) and every rewrite stays in it: decisions stated as fact, sources cited where a reader can open them, no preamble restating the brief, and no provenance in the text — the interview shapes the doc without being narrated in it. The register never touches a reviewer's own wording.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/interview-dark.jpg">
   <img alt="The viva interview: one question expanded with three answer chips carrying digit shortcuts and a recommended badge, the agent's hint and a free-text context box beside them, and two further questions collapsed below" src="assets/interview-light.jpg">
