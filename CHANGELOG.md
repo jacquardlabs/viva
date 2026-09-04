@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.3.0 (2026-09-04)
+
+### Features
+
+- The register and the agent-era grammars ([#208](https://github.com/jacquardlabs/viva/pull/208),
+  [`caaf44f`](https://github.com/jacquardlabs/viva/commit/caaf44ff3f5b338bd7b794a6c50c69e018c89526))
+
+
 ## v2.2.0 (2026-08-25)
 
 ### Bug Fixes
