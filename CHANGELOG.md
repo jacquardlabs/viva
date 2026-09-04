@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.4.0 (2026-09-04)
+
+### Features
+
+- Hold the print's measure, and the 30 defects a UX walk of the review page uncovered
+  ([#210](https://github.com/jacquardlabs/viva/pull/210),
+  [`4ee81db`](https://github.com/jacquardlabs/viva/commit/4ee81db784fbe661b96845725d141c629c4d9125))
+
+
 ## v2.3.0 (2026-09-04)
 
 ### Features
