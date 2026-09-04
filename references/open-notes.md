@@ -52,7 +52,8 @@ Each reviewer turn (the original comment, then each reply) carries its own
 - latest turn `suggestion` → **apply its `replacement` verbatim** to the
   thread's quoted span, then say so in the response. The wording rides on the
   exchange itself, beside `note` — the note is the reviewer's reason, never a
-  second instruction, and nothing gets rewritten on the way in.
+  second instruction, and nothing gets rewritten on the way in. An un-anchored
+  suggestion names no span: treat it as a `changes` turn scoped to the section.
 
 A turn you already declined is answered: its thread reads `declined` and its
 exchange carries your grounds, so act on it again only when the reviewer's reply

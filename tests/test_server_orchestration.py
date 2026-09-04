@@ -523,6 +523,43 @@ def check_loop_cross_imports_only_schema() -> None:
         % sorted(imported & siblings)
 
 
+def _cross_imports(path) -> set:
+    imported = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            imported |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    return imported
+
+
+def check_every_script_cross_imports_only_schema() -> None:
+    """CLAUDE.md's one-cross-import rule, asserted on every `scripts/*.py`
+    filter, not `loop.py` alone. Each may import `schema` and nothing else
+    among its siblings, so each stays independently testable."""
+    script_paths = list((ROOT / "scripts").glob("*.py"))
+    siblings = {p.stem for p in script_paths}
+    for path in script_paths:
+        if path.stem == "schema":
+            continue
+        imported = _cross_imports(path) & siblings
+        assert imported == {"schema"} or not imported, \
+            "%s may cross-import schema and nothing else — found %r" \
+            % (path.name, sorted(imported))
+
+
+def check_server_cross_imports_only_schema_and_preferences() -> None:
+    """`server.py`'s documented exception to the one-cross-import rule
+    (CLAUDE.md): it may import `schema` and `preferences` (both stdlib-only,
+    both independently testable) and no other `scripts/*.py` sibling."""
+    siblings = {p.stem for p in (ROOT / "scripts").glob("*.py")}
+    server_path = ROOT / "server.py"
+    imported = _cross_imports(server_path) & siblings
+    assert imported == {"schema", "preferences"}, \
+        "server.py may cross-import only schema and preferences — found %r" \
+        % sorted(imported)
+
+
 def _numbered_step(text: str, keyword: str) -> str:
     """Body of the `**N. Title**` step whose title names `keyword`."""
     # `A4.` as well as `4.`: the merged review skill numbers its steps within a
@@ -1483,6 +1520,8 @@ def main() -> None:
     check_resume_warns_on_a_type_that_no_longer_resolves()
     check_no_subcommand_takes_a_round()
     check_loop_cross_imports_only_schema()
+    check_every_script_cross_imports_only_schema()
+    check_server_cross_imports_only_schema_and_preferences()
     check_skill_carries_no_bookkeeping_bash()
     check_no_skill_carries_its_own_loop()
     check_rewrite_step_applies_standing_preferences()

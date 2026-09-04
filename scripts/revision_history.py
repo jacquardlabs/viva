@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -61,8 +60,14 @@ def build_threads_block(threads: list[dict]) -> str:
             lines.append("")
             current_title = title
         status = t.get("status", schema.THREAD_OPEN)
+        # The one shared status→label map (`schema.THREAD_STATUS_LABELS`), so
+        # this report describes a thread status in the same words the web tab
+        # does rather than the bare enum value — a reader comparing the two
+        # records of one event (the live review, this appended report) should
+        # not see two vocabularies for it.
+        label = schema.THREAD_STATUS_LABELS.get(status, status)
         quote = t.get("quote", "")
-        head = f"- _{flat(quote)}_ — {status}" if quote else f"- (whole section) — {status}"
+        head = f"- _{flat(quote)}_ — {label}" if quote else f"- (whole section) — {label}"
         lines.append(head)
         for x in t.get("exchanges", []):
             note = flat(x.get("note", ""))
@@ -89,15 +94,14 @@ def build_threads_block(threads: list[dict]) -> str:
 def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
     """Return (entries, rounds_total, sections_total) from round file pairs."""
     rounds = sorted(
-        int(m.group(1))
-        for p in viva_dir.glob("review-input-r*.json")
-        if (m := re.fullmatch(r"review-input-r(\d+)", p.stem))
+        n for p in viva_dir.glob(schema.round_input_glob())
+        if (n := schema.parse_round_input_stem(p.stem)) is not None
     )
     entries: list[dict] = []
     sections_total = 0
     for n in rounds:
-        inp = json.loads((viva_dir / f"review-input-r{n}.json").read_text())
-        out_path = viva_dir / f"review-r{n}.json"
+        inp_path, out_path = schema.round_file_paths(viva_dir, n)
+        inp = json.loads(inp_path.read_text())
         if not out_path.exists():
             continue
         out = json.loads(out_path.read_text())
@@ -130,8 +134,12 @@ def build_block(entries: list[dict], rounds_total: int,
         lines += ["", "| Round | Section | Verdict | Note |",
                   "|-------|---------|---------|------|"]
         lines += [
+            # Curly-quoted, matching the live web ledger's rendering
+            # (`server.py`'s `ledgerRowsHTML`) — a reviewer comparing the two
+            # records of one note should see the same typographic quoting in
+            # both, not a bare cell here against a quoted span there.
             f"| {e['round']} | {esc_cell(e['section_title'])} | {e['verdict']} "
-            f"| {esc_cell(e['note']) or '—'} |"
+            f"| {('“' + esc_cell(e['note']) + '”') if esc_cell(e['note']) else '—'} |"
             for e in entries
         ]
     return "\n".join(lines)

@@ -71,8 +71,10 @@ def test_declined_exchange_renders_its_grounds():
     block = rh.build_threads_block(threads)
     assert ("  - R2 changes: cut the caveat — declined: " + grounds
             + " → narrowed it instead") in block, block
-    # The thread's own status reaches the head line too, not just the exchange.
-    assert "in most cases_ — declined" in block, block
+    # The thread's own status reaches the head line too, not just the
+    # exchange — as the shared human label (schema.THREAD_STATUS_LABELS),
+    # the same words the web tab uses, not the bare enum value.
+    assert "in most cases_ — author kept as-is" in block, block
 
     # A decline with no grounds is still a decline — it just reads weaker.
     bare = [{"title": "Goals", "quote": "", "status": "declined",

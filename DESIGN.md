@@ -1647,6 +1647,30 @@ the page discloses that once before it first listens.
 10. A control whose label states its current mode (`theme: system`, `voice: off`) must carry an `aria-label` saying what activating it DOES — otherwise a screen reader hears a state and cannot tell it from an action.
 11. Live-region content that updates continuously (voice interim results) must be `aria-hidden`; only the settled reading announces.
 
+## Surfaces
+
+viva's user-facing surface, so a cross-surface consistency check has a fixed
+list to audit against rather than deriving one from source each time:
+
+- **Web** — the single-page app `server.py` serves (the embedded `HTML`
+  constant): accordion, print/doc, diff, Q&A, and the recap/complete views —
+  one file, several rendering modes within it.
+- **Report** — the markdown appended to the reviewed doc at sign-off
+  (`scripts/revision_history.py`'s Revision History block and Open notes
+  section).
+- **CLI / skill text** — `scripts/loop.py`'s stdout (the classification lines
+  and printed reference paths `wait` emits) and the two `SKILL.md` files. This
+  is legitimately user-facing: `PRODUCT.md` names the agent author as the
+  primary persona, and this is the surface it reads.
+
+No TUI, HTTP API-for-humans, or plugin UI exists — those are correctly absent
+from every review, not skipped. A concept that appears on more than one
+surface (a thread's status, a verdict, a pass depth) should read the same
+word in each; `scripts/schema.py`'s shared vocabulary tuples and label maps
+(`THREAD_STATUSES`, `THREAD_STATUS_LABELS`, `VERDICTS`, `PASS_KINDS`) are
+where a surface goes to agree with the others rather than hand-keeping its
+own copy.
+
 ## API conventions
 
 - All POST endpoints return `{"ok": true}` on success.

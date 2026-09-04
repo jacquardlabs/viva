@@ -23,15 +23,31 @@ only by JSON files under `.viva/`:
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
    `context_refs`, `review_target`, `drift`, `checklist`, `doc_types`,
-   `headings_present`, `open_notes`, `preferences`, `revision_history`). Each
+   `headings_present`, `open_notes`, `preferences`, `revision_history`,
+   `docket`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.
+   `docket.py` (#173) is the one exception to "one round file in, one round
+   file out": rather than filtering a single `.viva/`'s round, it sweeps
+   every `.viva/` session under a set of roots and reports a status line per
+   session (`--format text|json`; still stdlib-only JSON on the `json` path,
+   like every other filter here). Run by a human or agent in a terminal and
+   deliberately never wired into `server.py` (its own docstring explains
+   why).
 4. **`server.py` — the SPA host** (the embedded HTML/CSS/JS constant `HTML` is
    the overwhelming majority of it; the Python HTTP handler around it is
    small). The bulk being a
    frontend is intentional — one file, no build step, no npm. Don't "fix" the
-   line count by splitting the constant out. Its one read outside `.viva/` is
+   line count by splitting the constant out. `server.py` carries one documented
+   exception to part 3's one-cross-import rule: it imports `preferences.py`
+   directly, for its pure `empty_store`/`select`/`set_status` helpers, rather
+   than shelling out as `loop.py` does — those three are read/derive-only, so
+   the exception doesn't reopen part 3's independent-testability guarantee.
+   `tests/test_server_orchestration.py`'s
+   `check_server_cross_imports_only_schema_and_preferences` pins the exception
+   to exactly those two modules; every other `scripts/*.py` file is still
+   checked against `schema` alone. Its one read outside `.viva/` is
    `assets/vendor/`: ten pinned third-party browser assets (#79, #144) — six JS
    and CSS bundles plus four Fragment Mono woff2 subsets — served at
    `/vendor/<file>` from an exact-match route table, resolved off `__file__`
@@ -54,6 +70,20 @@ only by JSON files under `.viva/`:
    comment and never commits one, so nothing in it may call `addComment` — is
    pinned by `tests/test_server_voice.py`; DESIGN.md says why that is
    load-bearing rather than stylistic.
+
+   **The embedded JS has no execution seam, by the same no-npm decision.**
+   CI runs no JS runner, so tests verify `HTML`'s ~240 functions by asserting
+   source substrings are present, never by executing them. This is a
+   deliberate, accepted cost of principle 6's stdlib-only rule (`PRODUCT.md`),
+   not an oversight: the alternative is a JS test runner, which is the exact
+   dependency the principle refuses. It means a function carrying a product
+   invariant end to end — `deriveVerdict` deriving the section verdict from
+   its active comments, never a directly-picked value (`PRODUCT.md`'s Feature
+   map) — is verified only by string match on the client side; the server-side
+   boundary validator (`schema.validate_verdicts`) checks that a submitted
+   verdict is a member of `VERDICTS`, not that it agrees with the comments
+   that produced it. Closing that gap, if it is ever worth the added
+   validator complexity, is a `schema.py` change, not a JS-runner one.
 5. **The `.viva/*.json` schema — the real contract.** See `scripts/schema.py`
    for the shapes.
 

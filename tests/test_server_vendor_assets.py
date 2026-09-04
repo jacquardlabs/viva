@@ -37,6 +37,7 @@ forbids the host outright. Bricolage Grotesque is not vendored — it was an
 undocumented third family on three rules (DESIGN.md: "Two families only"), and
 those rules now inherit body's grotesque stack instead.
 """
+import hashlib
 import http.client
 import json
 import re
@@ -139,6 +140,24 @@ def test_every_route_has_a_file_and_a_license() -> None:
     print("  ok  test_every_route_has_a_file_and_a_license")
 
 
+def test_every_asset_matches_its_recorded_sha256() -> None:
+    """A tampered blob, a wrong-version download, or a compromised CDN
+    response in a future bump is otherwise a 300KB minified diff nobody
+    reads — README.md now records a SHA-256 per file, and this asserts every
+    on-disk byte matches it."""
+    readme = (server._VENDOR_DIR / "README.md").read_text()
+    rows = dict(re.findall(
+        r"\| `([^`]+)` \|.*\| `([0-9a-f]{64})` \|$", readme, re.M))
+    for name, _ctype in server._VENDOR_ASSETS:
+        assert name in rows, f"assets/vendor/README.md records no SHA-256 for {name}"
+        actual = hashlib.sha256((server._VENDOR_DIR / name).read_bytes()).hexdigest()
+        assert actual == rows[name], (
+            f"{name}: on-disk SHA-256 {actual} does not match "
+            f"README.md's recorded {rows[name]} — a bad download or a "
+            f"tampered blob was committed")
+    print("  ok  test_every_asset_matches_its_recorded_sha256")
+
+
 def test_no_hljs_stylesheet_is_vendored() -> None:
     """Only highlight.js's engine is vendored. viva hand-writes its own `.hljs`
     theme; a stock one would spend catalog yellow on syntax, which belongs to
@@ -206,6 +225,7 @@ def main() -> None:
     test_no_cdn_reference_survives_in_any_mode()
     test_every_vendor_url_in_the_page_has_a_route()
     test_every_route_has_a_file_and_a_license()
+    test_every_asset_matches_its_recorded_sha256()
     test_no_hljs_stylesheet_is_vendored()
 
     tmp = Path(tempfile.mkdtemp())
@@ -218,7 +238,7 @@ def main() -> None:
         test_vendor_routes_are_exact_match_only(base)
         test_live_page_matches_the_constant(base)
 
-    print("OK (7 tests)")
+    print("OK (8 tests)")
 
 
 if __name__ == "__main__":

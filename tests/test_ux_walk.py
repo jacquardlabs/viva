@@ -89,7 +89,7 @@ def test_one_number_prints_once():
     assert "sub.textContent = 'approve — dispatch';" in HTML
     assert "conv.style.display = b.open !== b.atStart ? '' : 'none';" in HTML
     assert "(s.comments ? item('comments open', s.comments, true) : '')" in HTML
-    assert "(s.declined ? item('author kept as-is', s.declined, true) : '')" in HTML, \
+    assert "(s.declined ? item(THREAD_STATUS_LABELS.declined, s.declined, true) : '')" in HTML, \
         "a decline is open judgment and prints in the open ink"
     assert "_lastRTT < SLOW_RTT_MS" in HTML
     print("  ok  test_one_number_prints_once")

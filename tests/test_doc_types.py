@@ -217,6 +217,42 @@ def test_structurally_invalid_bundles_are_refused() -> None:
     print("  ok  test_structurally_invalid_bundles_are_refused")
 
 
+def test_checks_entry_must_be_a_bare_token() -> None:
+    """`checks[]` becomes a path (`SKILL.md`'s "the script name is the check
+    name with - as _"), the same way a bundle's own `name` does — so a
+    `.viva-types/` override naming a traversal string in `checks[]` must be
+    refused before any path is built, exactly as `name` already is."""
+    for bad in ("../../../../tmp/x", "a/b", "Headings-Present", "a b", ""):
+        with tempfile.TemporaryDirectory() as td:
+            types_dir = Path(td) / ".viva-types"
+            write_bundle(types_dir, "x", {
+                "name": "x", "title": "X", "sections": [],
+                "checks": [bad], "default_pass": "architecture"})
+            r = resolve("x", types_dir)
+        assert r.returncode != 0, f"checks entry {bad!r} must be refused"
+        assert "checks entry" in r.stderr, (bad, r.stderr)
+    print("  ok  test_checks_entry_must_be_a_bare_token")
+
+
+def test_unregistered_check_kind_warns_but_still_resolves() -> None:
+    """`CHECK_KINDS` fails open by design (CLAUDE.md) — an unregistered kind
+    is invisible to `round_is_complete`, not a hard failure. `.viva-types/`
+    override coverage of that registry check is the gap
+    `test_check_kinds_covers_every_shipped_bundle_check` (test_schema.py)
+    only closes for `types/`; this pins the warning `doc_types.py` prints for
+    a repo-committed bundle instead."""
+    with tempfile.TemporaryDirectory() as td:
+        types_dir = Path(td) / ".viva-types"
+        write_bundle(types_dir, "x", {
+            "name": "x", "title": "X", "sections": [],
+            "checks": ["not-a-registered-kind"], "default_pass": "architecture"})
+        r = resolve("x", types_dir)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["name"] == "x"
+    assert "not in schema.CHECK_KINDS" in r.stderr, r.stderr
+    print("  ok  test_unregistered_check_kind_warns_but_still_resolves")
+
+
 def test_name_must_be_a_bare_token() -> None:
     """Rejected before any path is built — the name is a filename component."""
     with tempfile.TemporaryDirectory() as td:
@@ -304,12 +340,14 @@ def main() -> None:
     test_malformed_json_fails_loudly()
     test_bundle_name_must_match_its_filename()
     test_structurally_invalid_bundles_are_refused()
+    test_checks_entry_must_be_a_bare_token()
+    test_unregistered_check_kind_warns_but_still_resolves()
     test_name_must_be_a_bare_token()
     test_doc_types_cross_imports_no_sibling()
     test_list_is_the_merged_namespace_with_titles()
     test_list_refuses_rather_than_offering_a_broken_bundle()
     test_bundles_live_outside_the_cleared_state_dir()
-    print("OK (16 tests)")
+    print("OK (18 tests)")
 
 
 if __name__ == "__main__":

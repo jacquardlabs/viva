@@ -56,17 +56,26 @@ a different product.
    a product feature, not an implementation detail.
 6. **Local and keyless.** A single stdlib-only Python server, one browser tab,
    no API key, no hosted service. The reviewer's data and learned preferences
-   stay on their machine (preferences are gitignored, per-clone).
+   stay on their machine (preferences are gitignored, per-clone). The one
+   documented exception: dictating a comment through the browser's voice input
+   sends audio to the browser vendor's speech-recognition service, off by
+   default and disclosed in-page before first use (see README, "Voice — the
+   oral examination").
 
 ## What we are NOT building
 
 - **Not a linter or CI gate.** Producers (checklist, drift, grounding) flag;
-  they never fail a build or block sign-off. A human always decides.
+  they never decide a verdict, and a human always chooses whether a flag
+  matters. A `checks` pass (principle 1: "a pass may require more before a
+  round closes") can hold `/complete` on an unanswered flag — the human still
+  answers it, viva just refuses to call the round done silently.
 - **Not autonomous review.** viva does not approve its own work. The human gate
   is the product; "nothing is auto-accepted" is a hard line.
 - **Not multi-user or hosted.** No accounts, no shared server, no cloud sync.
   One reviewer, one local tab, one clone. Learned preferences are per-clone, not
-  shared.
+  shared. When a team wants to share preferences or reviews, that distributes
+  through the repo — a committed seed file, `git clone` — never a hosted
+  workspace or a synced server; see #86, #189.
 - **Not a general document editor.** viva reviews and signs off; it provides no
   free editing surface. A reviewer may supply exact replacement wording for a
   span they selected — a comment with a payload, applied by the author and
@@ -96,7 +105,18 @@ not a third command. Naming the surface by mechanism — `/viva`, `/viva-qa`,
 `/viva-diff` — made a reviewer learn viva's internals to find the checkpoint they
 wanted.
 
+`scripts/docket.py` is a third, CLI-only entry point: a read-only status line
+across every `.viva/` session on disk, for a reviewer or agent juggling more
+than one review at once. It is deliberately outside the two-command surface —
+never wired into `server.py` (see its own docstring) — so it is named here
+rather than counted as a checkpoint.
+
 ## Feature map
+
+Illustrative, not authoritative — GitHub Issues (below) is the backlog of
+record and the place a specific feature's status is current. This map is
+refreshed opportunistically, not on every merge, so treat a shipped feature's
+absence here as the map lagging, not as the feature not existing.
 
 The core loop (parse → review → rewrite → loop → sign off with ledger) plus
 opt-in layers that all funnel through the section card:
@@ -123,12 +143,22 @@ opt-in layers that all funnel through the section card:
   issue refs, files, URLs) starts the flow; the interview covers only what the
   attachments could not answer, and the draft reaches editorial rounds in the
   same tab without a second server launch
+- Voice input — dictate a comment via the browser's speech recognizer, off by
+  default and disclosed before first use
+- Grounds-classed recommendations in the Q&A interview — sourced / inferred /
+  taste
+- Editorial pass depth and declines — a suggestion can be kept as-is by the
+  author, recorded rather than silently dropped
+- A named tab and turn-state favicon, so a reviewer juggling several reviews
+  can tell them apart at a glance
+- `scripts/docket.py` — a cross-session status line across every `.viva/`
+  session on disk (see Surface, above)
 
 ## Known problems
 
-- **README trails the deeper layers.** It now covers both commands, intake, doc
-  types, verdicts, and pass depth, but confidence triage and the producer
-  contract are still documented only in `references/` and `CLAUDE.md`.
+- **README trails one deeper layer.** It now covers both commands, intake, doc
+  types, verdicts, pass depth, and the producer contract, but confidence
+  triage is still documented only in `references/` and `CLAUDE.md`.
 - **Stamps are prose, not bundle data.** A type bundle carries no `stamp` field,
   so `/viva-write`'s per-type consequence (commit vs. `gh pr edit`) lives in the
   skill's table rather than in the type it belongs to.

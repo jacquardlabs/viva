@@ -45,8 +45,10 @@ def main() -> None:
     text = doc.read_text()
     assert text.count("## Revision History") == 1
     assert "Signed off via viva review — 2 rounds, 2 sections, 2 with comments. 2026-06-09" in text
-    assert "| 1 | Goals | changes | Use 30s \\| not 60s |" in text
-    assert "| 2 | Error Handling | info | DLQ retention? |" in text
+    # Curly-quoted, matching the live web ledger's rendering — the two
+    # records of one note read with the same typographic quoting.
+    assert "| 1 | Goals | changes | “Use 30s \\| not 60s” |" in text
+    assert "| 2 | Error Handling | info | “DLQ retention?” |" in text
 
     # Second sign-off session appends its own block under the same heading
     run(viva, doc)
@@ -160,7 +162,7 @@ def main() -> None:
         ]}))
     run(viva7, doc7)
     text7 = doc7.read_text()
-    assert "| 1 | Goals | changes | tighten the intro \\u00b7 drop the aside |".replace(
+    assert "| 1 | Goals | changes | “tighten the intro \\u00b7 drop the aside” |".replace(
         "\\u00b7", "·") in text7, text7
     # One commented section, two comments on it: the count is sections, and the
     # singular form of the row is pinned here.

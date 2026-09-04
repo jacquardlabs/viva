@@ -90,6 +90,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -141,18 +142,19 @@ def find_viva_dirs(root_globs: List[str]) -> List[Path]:
 
 
 # ── round derivation — mirrors loop.py's current_round/round_files, not
-#    imported from it (scripts/*.py may import only schema.py) ─────────────
+#    imported from it (scripts/*.py may import only schema.py). Both now
+#    format the round-file names through schema.py's shared helpers instead
+#    of independently re-deriving the convention. ───────────────────────────
 def current_round(viva: Path) -> int:
     """Highest *parsed* round on disk. 0 when none — matches
     `loop.py.current_round`'s contract exactly (see that docstring)."""
-    rounds = [int(p.stem[len("review-input-r"):])
-              for p in viva.glob("review-input-r*.json")
-              if p.stem[len("review-input-r"):].isdigit()]
-    return max(rounds, default=0)
+    rounds = [schema.parse_round_input_stem(p.stem)
+              for p in viva.glob(schema.round_input_glob())]
+    return max((n for n in rounds if n is not None), default=0)
 
 
 def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
-    return viva / f"review-input-r{n}.json", viva / f"review-r{n}.json"
+    return schema.round_file_paths(viva, n)
 
 
 def load_json(p: Path) -> Optional[dict]:
@@ -184,6 +186,17 @@ def mtime_of(paths: List[Path]) -> Optional[float]:
 # ── liveness — probed, not stat'ed (mirrors loop.py's server_url/probe_input,
 #    with a short timeout: a docket run must never hang on a dead process) ──
 def server_url(viva: Path) -> Optional[str]:
+    """`server.url`'s content is repo-supplied — every root this walks may be
+    someone else's clone. Constrained to loopback, the same rule `loop.py`'s
+    `server_url` enforces (and `server.py`'s own `Origin` guard): a repo
+    naming an attacker's host in `.viva/server.url` must not turn a docket
+    sweep into an SSRF probe of that host. Unlike `loop.py`, this returns
+    `None` rather than dying — one bad `.viva/` among many roots must not
+    stop the sweep. `None` reads to the caller exactly as "no server.url file
+    exists" does (`classify`'s `state = "your-turn"` branch): a
+    rejected non-loopback URL is indistinguishable from no server ever
+    having launched, not reported as `dead` — `dead` means a real `server.url`
+    named a real (loopback) address and nothing answered there."""
     f = viva / "server.url"
     if not f.exists():
         return None
@@ -191,7 +204,12 @@ def server_url(viva: Path) -> Optional[str]:
         text = f.read_text().strip()
     except OSError:
         return None
-    return text or None
+    if not text:
+        return None
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+        return None
+    return text
 
 
 def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> Optional[dict]:

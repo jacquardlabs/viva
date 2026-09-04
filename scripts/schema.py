@@ -29,7 +29,27 @@ the `review-input-r{N}.json` file schema the `ReviewInput` TypedDict describes.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, TypedDict
+from typing import List, Optional, Tuple, TypedDict
+
+# `Path` appears only in type annotations below (never at runtime): with
+# `from __future__ import annotations` active, annotations are stored as
+# strings and never evaluated, so this name is never looked up. Deliberately
+# NOT imported — `tests/test_schema.py`'s `test_schema_reaches_no_io` bans
+# `pathlib` from this module's imports precisely so nothing in it can reach
+# disk; a real import would defeat the AST check that guarantee relies on.
+
+# A section or question `id`'s shape — every mechanical producer mints one of
+# `s{N}` (`parse_sections.py`, `parse_diff.py`) or `q{N}` (the Q&A intake,
+# `references/qa.md`), so this is generous, not tight, to that shape. The
+# actual job is closing the class of injection the frontend's HTML builders
+# were otherwise exposed to (`server.py`'s `buildReviewCard`/`buildQACard`
+# interpolate `id` unescaped into `id`/`aria-controls`/`data-*` attributes,
+# on the reasoning that a mechanically-minted id needs no HTML-escaping) — a
+# hand-written or POSTed round previously supplied whatever it liked into an
+# attribute context, since `validate_review_input`/`validate_qa_input` only
+# required `id` to be *a string*. Bare token: no `"`, `<`, `>`, `'`, `&`,
+# or whitespace can reach an attribute context this way again.
+ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 # Verdicts that earn a Revision-History ledger row. `approved`/`pending` do not.
 LEDGER_VERDICTS = ("changes", "info")
@@ -95,6 +115,20 @@ THREAD_OPEN = "open"
 THREAD_SETTLED = "settled"
 THREAD_DECLINED = "declined"
 THREAD_STATUSES = (THREAD_OPEN, THREAD_SETTLED, THREAD_DECLINED)
+
+# The one human-facing label per status, shared by the web tab (injected as
+# `__THREAD_STATUS_LABELS__`, the way `__CHECK_KINDS__` is) and the appended
+# Revision History report (`revision_history.py`). Before this map, the two
+# surfaces described the same thread status in different words — the web tab
+# said "author kept as-is", the report printed the bare enum value
+# "declined" — so a reviewer reading both records of one event saw two
+# vocabularies for it. A status absent here is a bug in this table, not a
+# silent fallback: every member of `THREAD_STATUSES` has an entry.
+THREAD_STATUS_LABELS = {
+    THREAD_OPEN: "open note",
+    THREAD_DECLINED: "author kept as-is",
+    THREAD_SETTLED: "settled",
+}
 
 # ── Q&A recommendation grounds (issue #175) ───────────────────────────────────
 # How a QAQuestion's `recommended_choice` was arrived at, so the interview can
@@ -421,6 +455,12 @@ def validate_review_input(data: dict) -> None:
                 raise ValueError(
                     f"review-input.sections[{i}] missing required string {field!r}"
                 )
+        if not ID_RE.match(s["id"]):
+            raise ValueError(
+                f"review-input.sections[{i}].id {s['id']!r} must match "
+                f"{ID_RE.pattern!r} — it reaches an HTML attribute context "
+                f"unescaped (server.py's buildReviewCard)"
+            )
         # Presence-gated like the round-level three above: the key is optional,
         # but a present non-string is a hard failure. It reaches a render site
         # rather than a flag, so a `null` or a stray object would print as
@@ -452,6 +492,10 @@ def validate_verdicts(data: dict) -> None:
             raise ValueError(f"review output.sections[{i}] must be an object")
         if not isinstance(s.get("id"), str):
             raise ValueError(f"review output.sections[{i}] missing required string 'id'")
+        if not ID_RE.match(s["id"]):
+            raise ValueError(
+                f"review output.sections[{i}].id {s['id']!r} must match {ID_RE.pattern!r}"
+            )
         if s.get("verdict") not in VERDICTS:
             raise ValueError(
                 f"review output.sections[{i}] has invalid verdict {s.get('verdict')!r}"
@@ -549,6 +593,45 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
             if isinstance(last, dict) and last.get("verdict") == SUGGESTION:
                 return True
     return False
+
+
+def round_file_paths(viva_dir: Path, n: int) -> Tuple[Path, Path]:
+    """The `(review-input-r{n}.json, review-r{n}.json)` pair for round `n`.
+
+    The one place the round-file naming convention is spelled out. Pure
+    name-to-path formatting, no disk I/O — schema.py's "no disk" rule
+    (`round_is_complete`'s docstring) is about deciding policy from state on
+    disk, not about a function that only formats a filename. Before this
+    helper, the convention was independently re-derived in `loop.py`
+    (`round_files`), `docket.py` (a byte-identical copy), `revision_history.py`
+    (a regex plus f-strings), and `server.py` (an f-string in
+    `_with_revision_counts`) — four places to update in lockstep for #179's
+    driver-unification work, with no shared symbol and no test linking them.
+    """
+    return (viva_dir / f"review-input-r{n}.json", viva_dir / f"review-r{n}.json")
+
+
+def round_input_glob() -> str:
+    """The glob pattern every `review-input-r{N}.json` scan uses, so a caller
+    deriving the current round number from disk (`loop.py`, `docket.py`) reads
+    the pattern from one place too."""
+    return "review-input-r*.json"
+
+
+def round_output_glob() -> str:
+    """The `review-r{N}.json` half of the same convention."""
+    return "review-r*.json"
+
+
+def parse_round_input_stem(stem: str) -> Optional[int]:
+    """`"review-input-r7"` -> `7`; anything else -> `None`. The inverse of
+    `round_file_paths`' input half, for scanning `viva_dir.glob(...)` results
+    back into round numbers."""
+    prefix = "review-input-r"
+    if not stem.startswith(prefix):
+        return None
+    tail = stem[len(prefix):]
+    return int(tail) if tail.isdigit() else None
 
 
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:
@@ -696,6 +779,11 @@ def validate_qa_input(data: dict) -> None:
                 raise ValueError(
                     f"qa-input.questions[{i}] missing required string {field!r}"
                 )
+        if not ID_RE.match(q["id"]):
+            raise ValueError(
+                f"qa-input.questions[{i}].id {q['id']!r} must match {ID_RE.pattern!r} "
+                f"— it reaches an HTML attribute context unescaped (buildQACard)"
+            )
         if "recommended_choice" in q:
             recommended = q.get("recommended_choice")
             if not isinstance(recommended, str):

@@ -236,6 +236,19 @@ def post_result(base: str, path: str, payload: dict) -> tuple:
         return e.code, json.loads(e.read())
 
 
+def get_headers(base: str, path: str, headers: dict) -> "tuple[int, dict]":
+    """GET with extra request headers (e.g. a forged `Host`) merged in atop
+    the default set; return `(status, response_headers)` — for boundary
+    tests exercising the loopback-`Host` guard and pinning the fixed
+    security-header set every response carries."""
+    req = urllib.request.Request(base + path, headers=headers)
+    try:
+        r = urllib.request.urlopen(req, timeout=5)
+        return r.status, dict(r.headers.items())
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers.items())
+
+
 def post_headers(base: str, path: str, payload: dict, headers: dict) -> int:
     """POST a JSON payload with extra request headers (e.g. `Origin`) merged
     in atop `Content-Type`; return the HTTP status code. For boundary tests

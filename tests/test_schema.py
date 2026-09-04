@@ -244,6 +244,44 @@ def test_validate_review_input_rejects_bad():
     print("  ok  test_validate_review_input_rejects_bad")
 
 
+def test_id_must_be_a_bare_token():
+    """A section/question `id` reaches an HTML attribute context unescaped
+    (`server.py`'s `buildReviewCard`/`buildQACard` and friends) — the
+    boundary must reject anything that could break out of one, not merely
+    require `id` to be *a string* (a security-posture finding)."""
+    for bad_id in ('s1"', "s1<script>", "s1 two", "s1'x", "s1&amp;", "", "s" * 65):
+        try:
+            schema.validate_review_input({"sections": [
+                {"id": bad_id, "title": "T", "content": "c"}]})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for id {bad_id!r}")
+        try:
+            schema.validate_verdicts({"sections": [
+                {"id": bad_id, "verdict": "approved"}]})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for output id {bad_id!r}")
+        try:
+            schema.validate_qa_input({"questions": [
+                {"id": bad_id, "text": "Which?"}]})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for question id {bad_id!r}")
+    # The shapes every mechanical producer actually mints still pass.
+    for good_id in ("s1", "s12", "q1", "a-b_c.1"):
+        schema.validate_review_input({"sections": [
+            {"id": good_id, "title": "T", "content": "c"}]})
+        schema.validate_verdicts({"sections": [
+            {"id": good_id, "verdict": "approved"}]})
+        schema.validate_qa_input({"questions": [
+            {"id": good_id, "text": "Which?"}]})
+    print("  ok  test_id_must_be_a_bare_token")
+
+
 def test_validate_verdicts_accepts_valid():
     schema.validate_verdicts({"round": 1, "submitted_early": False, "sections": [
         {"id": "s1", "verdict": "approved"},
@@ -636,6 +674,7 @@ def main():
     test_validate_verdicts_requires_replacement_on_a_suggestion()
     test_validate_review_input_accepts_valid()
     test_validate_review_input_rejects_bad()
+    test_id_must_be_a_bare_token()
     test_validate_verdicts_accepts_valid()
     test_validate_verdicts_rejects_bad()
     test_schema_reaches_no_io()
@@ -651,7 +690,7 @@ def main():
     test_doc_scope_kinds_is_a_closed_set()
     test_has_revision_history_is_anchored()
     test_round_is_presence_gated_and_absence_normalizes()
-    print("OK (25 tests)")
+    print("OK (26 tests)")
 
 
 if __name__ == "__main__":

@@ -3481,7 +3481,7 @@ function sectionTitleFor(id) {
 
 /* Render one git hunk via diff2html: unified (line-by-line),
    line-by-line below, word-level intra-line diffs. Pure view transform —
-   section.content stays the verbatim fence the /viva-diff skill
+   section.content stays the verbatim fence /viva-review's diff branch
    (anchor-based edit relocation) and round-to-round carry-forward
    (byte-for-byte compare) depend on; the ---/+++ preamble diff2html needs
    to parse a bare @@ hunk is synthesized here at render time only, from
@@ -4128,7 +4128,7 @@ function openThreadItemHTML(t) {
       + '" id="rthread-' + cid + '" data-cid="' + cid + '">'
       + '<div class="open-thread-head">'
       +   '<span class="nh-num" id="rnum-' + cid + '" aria-hidden="true"></span>'
-      +   '<span class="open-thread-label">' + (declined ? 'author kept as-is' : 'open note')
+      +   '<span class="open-thread-label">' + (declined ? THREAD_STATUS_LABELS.declined : THREAD_STATUS_LABELS.open)
       +   '</span><span class="pn">&middot; ' + cid + '</span>' + quote
       + '</div>'
       + '<div class="open-thread-body">' + openNotesHTML(exs) + '</div>'
@@ -4356,6 +4356,12 @@ const CHECK_KINDS = __CHECK_KINDS__;
    copy would fail open the same silent way: an unregistered kind is treated as
    section-scope and piles onto whichever card its producer anchored it to. */
 const DOC_SCOPE_KINDS = __DOC_SCOPE_KINDS__;
+/* The thread-status label map, injected for the same reason: a hand-kept
+   copy of "declined" -> "author kept as-is" here would drift from the
+   appended Revision History report's own copy in scripts/schema.py, and a
+   reviewer comparing the two records of one event would read two
+   vocabularies for the same status. */
+const THREAD_STATUS_LABELS = __THREAD_STATUS_LABELS__;
 
 /* ─── The seam: the grammar is not the print ─────────────────
    The restructure is TWO things, and one class stamped for both is what
@@ -4731,7 +4737,7 @@ function specHTML(section) {
   // it takes the open ink like the other two.
   return (s.comments ? item('comments open', s.comments, true) : '')
     + (s.suggestions ? item('suggestions open', s.suggestions, true) : '')
-    + (s.declined ? item('author kept as-is', s.declined, true) : '')
+    + (s.declined ? item(THREAD_STATUS_LABELS.declined, s.declined, true) : '')
     + (s.checks ? item('checks', s.checksDone + '/' + s.checks
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
     + (conf ? item('agent confidence',
@@ -5790,8 +5796,8 @@ function offsetInSource(id, text, occurrence) {
 // The third chip, `suggest wording`, adds a replacement field: the reviewer
 // types the exact wording instead of describing the change, and the author
 // applies it verbatim to the anchored span. Review mode only — a diff hunk's
-// suggestion would be a verbatim code edit, and /viva-diff carries no
-// instruction to apply one (issue #166 scopes that out).
+// suggestion would be a verbatim code edit, and /viva-review's diff branch
+// carries no instruction to apply one (issue #166 scopes that out).
 function openCommentPopover(id, { anchor, type } = {}) {
   const pop = el('rpop-' + id); if (!pop) return;
   pop.dataset.type = 'changes';
@@ -8338,6 +8344,11 @@ Promise.all([
     # one table, in `_VOICE_RULES` above, already sorted longest-phrase-first so
     # the browser can take the first match and be right.
     "__VOICE_RULES__", json.dumps(list(_VOICE_RULES))
+).replace(
+    # The thread-status label map, injected for the same reason: one table,
+    # shared with `revision_history.py`'s report, so the tab and the appended
+    # Revision History describe a thread's status in the same words.
+    "__THREAD_STATUS_LABELS__", json.dumps(dict(schema.THREAD_STATUS_LABELS))
 )
 
 _HTML_BYTES = HTML.encode()
@@ -8345,6 +8356,14 @@ _HTML_BYTES = HTML.encode()
 _shutdown = threading.Event()
 _input_data: dict = {}
 _output_path: str = ""
+# Set once at startup from `Path(--output).resolve().parent` and never
+# reassigned — the one launch-time root `/next-round`'s `output` field is
+# contained to. `--output` is documented (headless-contract.md §4) to
+# legitimately live outside `.viva/`, so this is NOT hardcoded to `_viva_dir`;
+# it is whatever directory the operator chose at launch, fixed for the life
+# of the process so a POSTed round cannot redirect a later write to a
+# different directory than the one this session was launched to write into.
+_output_root: Path = Path(".")
 # Set once at startup from --input; historical round files for the
 # revision-count derivation (issue #141) live here, never reassigned after.
 _viva_dir: Path = Path(".")
@@ -8448,8 +8467,9 @@ def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> tuple[di
     counts: dict[str, int] = {}
     partial = False
     for k in range(1, round_num):
+        hist_path, _ = schema.round_file_paths(viva_dir, k)
         try:
-            hist = json.loads((viva_dir / f"review-input-r{k}.json").read_text(encoding="utf-8"))
+            hist = json.loads(hist_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             partial = True
             continue
@@ -8683,7 +8703,28 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args) -> None:
         pass  # silence access log
 
+    def _check_host(self) -> bool:
+        """Loopback-only `Host` header guard for every GET route. Every POST
+        route already refuses a non-loopback `Origin`
+        (`_check_origin_and_length`), but a GET carries no `Origin` header at
+        all — so without this, a page on an attacker-controlled domain whose
+        DNS is rebound to 127.0.0.1 reaches `/input`/`/preferences` as an
+        ordinary same-origin request (from the browser's perspective) and
+        reads the document under review, the session ledger, and the
+        preference store. The `Host` header still names the domain the
+        browser's address bar shows, not the IP the rebound DNS answer
+        resolved to, so checking it (exact match, the same reasoning
+        `_check_origin_and_length` gives for `Origin`) catches what rebinding
+        cannot forge. Sends the 403 itself and returns False on rejection."""
+        host = urlparse("//" + self.headers.get("Host", "")).hostname
+        if host not in ("127.0.0.1", "localhost"):
+            self._error(403, "forbidden host")
+            return False
+        return True
+
     def do_GET(self) -> None:
+        if not self._check_host():
+            return
         path = urlparse(self.path).path
         if path in ("/", ""):
             self._send(200, "text/html; charset=utf-8", _HTML_BYTES)
@@ -8795,325 +8836,377 @@ class Handler(BaseHTTPRequestHandler):
         return length
 
     def do_POST(self) -> None:
-        global _input_data, _output_path, _last_verdicts
         parsed = urlparse(self.path)
         path   = parsed.path
         if path == "/submit":
-            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
-            if length is None:
-                return
+            self._post_submit()
+        elif path == "/next-round":
+            self._post_next_round()
+        elif path == "/complete":
+            self._post_complete()
+        elif path == "/abandon":
+            self._post_abandon()
+        elif path == "/preferences/mute":
+            self._post_preferences_mute()
+        else:
+            self._error(404, "not found")
 
-            body = self.rfile.read(length)
+    def _post_submit(self) -> None:
+        global _last_verdicts
+        length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+        if length is None:
+            return
 
+        body = self.rfile.read(length)
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._error(400, "invalid json")
+            return
+        if not isinstance(data, dict):
+            self._error(400, "body must be a JSON object")
+            return
+
+        # Validate review verdicts at the boundary. Q&A submits an `answers`
+        # payload with no `sections`, so it is gated out (shape, not mode).
+        if "sections" in data:
             try:
-                data = json.loads(body)
-            except json.JSONDecodeError:
-                self._error(400, "invalid json")
-                return
-            if not isinstance(data, dict):
-                self._error(400, "body must be a JSON object")
+                schema.validate_verdicts(data)
+            except ValueError as e:
+                self._error(400, f"invalid verdicts: {e}")
                 return
 
-            # Validate review verdicts at the boundary. Q&A submits an `answers`
-            # payload with no `sections`, so it is gated out (shape, not mode).
+        with _data_lock:
+            out = _output_path
+            # Snapshot for /complete's finish guard, taken here under the
+            # same lock that guards `_input_data` so the two always describe
+            # the same round. Same shape gate as the validation above: a Q&A
+            # `answers` payload is not a verdict set.
             if "sections" in data:
-                try:
-                    schema.validate_verdicts(data)
-                except ValueError as e:
-                    self._error(400, f"invalid verdicts: {e}")
-                    return
-
-            with _data_lock:
-                out = _output_path
-                # Snapshot for /complete's finish guard, taken here under the
-                # same lock that guards `_input_data` so the two always describe
-                # the same round. Same shape gate as the validation above: a Q&A
-                # `answers` payload is not a verdict set.
-                if "sections" in data:
-                    _last_verdicts = data
-                titles = {s.get("id"): s.get("title", "")
-                          for s in _input_data.get("sections", [])}
-                # Snapshotted under the same lock, for the same reason `titles`
-                # is: a QA `answers` payload's recommendations are read off
-                # the round actually on record, never off anything the client
-                # posted (issue #175's accept-rate instrumentation, below).
-                questions_snapshot = _input_data.get("questions", [])
-                try:
-                    rnd = int(data.get("round", _input_data.get("round", 0)))
-                except (TypeError, ValueError):
-                    rnd = 0
-                for s in data.get("sections", []):
-                    entry = schema.verdict_to_ledger_entry(
-                        rnd, titles.get(s.get("id"), s.get("id", "?")), s)
-                    if entry is not None:
-                        _ledger.append(entry)
-            data = extract_attachments(data, out, rnd)
-            if "answers" in data:
-                data = annotate_qa_acceptance(data, questions_snapshot)
+                _last_verdicts = data
+            titles = {s.get("id"): s.get("title", "")
+                      for s in _input_data.get("sections", [])}
+            # Snapshotted under the same lock, for the same reason `titles`
+            # is: a QA `answers` payload's recommendations are read off
+            # the round actually on record, never off anything the client
+            # posted (issue #175's accept-rate instrumentation, below).
+            questions_snapshot = _input_data.get("questions", [])
             try:
-                write_output(out, data)
+                rnd = int(data.get("round", _input_data.get("round", 0)))
+            except (TypeError, ValueError):
+                rnd = 0
+            for s in data.get("sections", []):
+                entry = schema.verdict_to_ledger_entry(
+                    rnd, titles.get(s.get("id"), s.get("id", "?")), s)
+                if entry is not None:
+                    _ledger.append(entry)
+        data = extract_attachments(data, out, rnd)
+        if "answers" in data:
+            data = annotate_qa_acceptance(data, questions_snapshot)
+        try:
+            write_output(out, data)
+        except (IOError, OSError) as e:
+            self._error(500, f"write failed: {e}")
+            return
+
+        self._send(200, "application/json", b'{"ok":true}')
+        _push_sse("processing", {})
+
+    def _post_next_round(self) -> None:
+        global _input_data, _output_path, _last_verdicts
+        length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+        if length is None:
+            return
+        body = self.rfile.read(length)
+        try:
+            new_data = json.loads(body)
+        except json.JSONDecodeError:
+            self._error(400, "invalid json")
+            return
+        if not isinstance(new_data, dict):
+            self._error(400, "body must be a JSON object")
+            return
+        # `output` travels in the JSON body like every other POST field. The
+        # legacy `?output=` query param is gone (#103): its last sender was
+        # branch B's re-arm curl, which `loop.py rearm` replaced.
+        # ORDER IS LOAD-BEARING: the missing-`output` refusal stays AHEAD of
+        # the shape validation — `test_server_api.py`'s missing-output case
+        # POSTs a structurally valid round and pins that error text.
+        output = new_data.pop("output", None)
+        if not output:
+            self._error(400, "missing 'output' in body")
+            return
+        # `output` is a filesystem write path this process will later write
+        # to from /submit — contain it to `_output_root`, the directory the
+        # operator's own `--output` named at launch (headless-contract.md §4
+        # documents `--output` as legitimately living outside `.viva/`, so
+        # this is deliberately NOT hardcoded to `_viva_dir`). Resolved the
+        # same way every existing caller already sends it (`loop.py arm`'s
+        # `str(round_files(...))`): relative to the server's own cwd, not to
+        # `_output_path`.
+        resolved = Path(output).resolve()
+        try:
+            resolved.relative_to(_output_root)
+        except ValueError:
+            self._error(400, "'output' must resolve inside %s" % _output_root)
+            return
+        # EVERY body, not only one that happens to carry `sections`. The
+        # shape gate that used to stand here let a round nested one level
+        # deep (`{"round": {...}, "output": …}`) through untouched: the
+        # server answered `{"ok":true}`, replaced `_input_data` with it, and
+        # pushed a sections-less `round` event that threw inside the
+        # client's initReview — a tab stuck on "the agent is revising"
+        # forever with no error on either side. `/next-round` is
+        # review-shaped only; a `questions`-shaped body is refused here too,
+        # and that is correct, since the `round` SSE handler has always
+        # assumed review shape (`REVIEW_DATA = data; QA_DATA = null`).
+        try:
+            schema.validate_review_input(new_data)
+        except ValueError as e:
+            self._error(400, f"invalid review-input: {e}")
+            return
+        # The launch mode gates which round shape may replace the served
+        # one (#126). The browser stamps `mode-diff` and injects the
+        # diff2html stylesheet ONLY at boot (`data.mode === 'diff'`); the
+        # `round` SSE handler does neither, so a diff payload landing here
+        # on a non-diff server renders raw fenced code at review width — a
+        # broken tab behind an `{"ok":true}`. Refused rather than
+        # re-stamped: a caller whose two mode declarations disagree has a
+        # bug this server cannot repair from one side. Absent `mode` reads
+        # as "review", the browser's own default. A qa-launched server
+        # hands off to review and to nothing else (§7 of the contract),
+        # which is what makes the hand-off line below true by construction.
+        incoming = new_data.get("mode", "review")
+        allowed = "diff" if _launch_mode == "diff" else "review"
+        if incoming != allowed:
+            self._error(400, "round mode %r does not match the server's "
+                             "launch mode (--mode %s, which serves %r "
+                             "rounds) — the browser's view is fixed at "
+                             "boot and cannot be re-stamped from a round "
+                             "push" % (incoming, _launch_mode, allowed))
+            return
+        with _data_lock:
+            # Unified Q&A → review session (#109): a qa-originated review
+            # round carries no distinguishing field in the wire payload —
+            # ReviewInput's shape is deliberately unchanged by that story:
+            # schema changes were out of scope. The signal instead is
+            # operational and inferred here, never persisted: the prior
+            # round on this server was Q&A-shaped (`questions`) and this
+            # one is review-shaped (`sections`). #111's headless-contract
+            # should describe this session type as "a review round POSTed
+            # to a server launched with --mode qa", not as a payload field.
+            handoff = "questions" in _input_data and "sections" in new_data
+            # Normalize on the way in, the same as the startup boundary: an
+            # absent `round` renders as the literal "REV undefined" and
+            # turns the author-answered freshness test into a NaN
+            # comparison that silently never matches.
+            _input_data = schema.default_round(new_data)
+            _output_path = str(resolved)
+            # The verdict snapshot belongs to the round that produced it.
+            # Section ids are stable across rounds (s1…sN), so a carried
+            # all-approved snapshot would sign off a round nobody has seen.
+            _last_verdicts = None
+            ledger_snapshot = list(_ledger)
+        if handoff:
+            # Distinct from the per-mode startup line so a terminal-watching
+            # caller (or a human tailing stdout) can see the hand-off happen,
+            # not just infer it from the browser reflowing.
+            print(f"viva · hand-off qa → review · {_url}", flush=True)
+        self._send(200, "application/json", b'{"ok":true}')
+        _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
+                            "ledger": ledger_snapshot,
+                            "repo": _viva_dir.parent.name})
+
+    def _post_complete(self) -> None:
+        length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+        if length is None:
+            return
+        body = self.rfile.read(length) if length else b'{}'
+        try:
+            summary = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            summary = {}
+        if not isinstance(summary, dict):
+            # `[]` and `3` parse; `.get` on either below would 500.
+            summary = {}
+        # The finish guard. "Nothing is auto-accepted" is a hard product
+        # line, and a check that lives only in `loop.py finish` is a norm the
+        # next caller walks around — so the server refuses on its own too,
+        # asking `schema.round_is_complete`, the one predicate both processes
+        # share.
+        with _data_lock:
+            round_input = _input_data
+            submitted   = _last_verdicts
+        # Q&A is exempt by shape: it carries `questions`, never `sections`.
+        # Diff mode is NOT exempt by mode any more (#177). It used to be —
+        # `parse_diff.py` emits `sections`, and branch B's empty-re-diff
+        # finish signs off with `changes` verdicts on record by design, the
+        # diff having reached zero because a hunk was reverted at the
+        # reviewer's request — but a blanket exemption let a `--mode diff`
+        # server accept `/complete` with ANY verdicts, which reopened for
+        # hunks the hole #102 closed for sections. The caller now says WHY
+        # the round may sign off unapproved: `resolved: "empty"` in the
+        # body, which `loop.py finish` derives from a fresh capture rather
+        # than from memory. The signal is honored only on a `--mode diff`
+        # server: `_launch_mode` is an argparse choice fixed at startup and
+        # unreachable from any request, whereas the body is caller-supplied
+        # — and a doc cannot go empty, so on any other server a present
+        # `resolved` is a caller bug, refused rather than ignored. Either
+        # way a round nobody has submitted is refused first: a diff can be
+        # resolved empty only after the human has seen it.
+        if "sections" in round_input:
+            if submitted is None:
+                self._error(400, "no verdicts submitted for this round — "
+                                 "nothing to complete")
+                return
+            resolved = summary.get("resolved")
+            if resolved is not None and resolved != "empty":
+                self._error(400, "unknown 'resolved' value %r — the only "
+                                 "signal is \"empty\", and only a --mode "
+                                 "diff server honors it" % (resolved,))
+                return
+            if resolved is not None and _launch_mode != "diff":
+                self._error(400, "'resolved' is a diff-review signal — a "
+                                 "%s session cannot resolve empty; every "
+                                 "section must be approved" % _launch_mode)
+                return
+            resolved_empty = resolved == "empty" and _launch_mode == "diff"
+            if not resolved_empty and not schema.round_is_complete(
+                    round_input, submitted):
+                # `round_is_complete` above is the gate; the detail below is
+                # only the message, and it follows the predicate rather than
+                # deciding anything. A round's `pass` ADDS a conjunct to the
+                # all-approved base, so a refusal with nothing pending is
+                # now reachable — reporting "0 of N not approved" there would
+                # send the caller to re-present a round the human already
+                # approved, instead of to the conjunct that held it.
+                by_id = {s.get("id"): s
+                         for s in submitted.get("sections", [])}
+                sections = round_input.get("sections", [])
+                pending = sum(
+                    1 for s in sections
+                    if (by_id.get(s.get("id")) or {}).get("verdict")
+                    != "approved")
+                spec = round_input.get("pass")
+                kind = spec.get("kind") if isinstance(spec, dict) else None
+                if not sections:
+                    # Before the pass branch: an empty round is refused by
+                    # the base rule, and naming a conjunct here would blame
+                    # a `architecture`/`line` pass that adds none.
+                    why = "the round carries no sections to approve"
+                elif pending:
+                    why = ("%d of %d section(s) not approved"
+                           % (pending, len(sections)))
+                elif kind:
+                    # The recovery is the next round, not a merge into this
+                    # round's file: the round this process serves was loaded
+                    # once and is replaced only by `/next-round`, so a check
+                    # answered on disk under it is one this guard never sees.
+                    why = ("every section is approved, but the %s pass is "
+                           "not satisfied — a checks round holds until "
+                           "every check flag carries a result, a final round "
+                           "until no suggested edit is unresolved. Answer "
+                           "the flags in the next round and POST it to "
+                           "/next-round" % kind)
+                else:
+                    why = "the round carries no sections to approve"
+                self._error(409, "refusing to complete: %s. Nothing is "
+                                 "auto-accepted; re-present the round or "
+                                 "abandon it." % why)
+                return
+        self._send(200, "application/json", b'{"ok":true}')
+        _push_sse("complete", summary)
+        threading.Timer(2.0, _shutdown.set).start()
+
+    def _post_abandon(self) -> None:
+        # The shutdown route with no sign-off meaning: `loop.py abandon` is
+        # a different process from the one that launched the server (start
+        # detaches it), holds no child handle, and `server.url` carries a
+        # URL and nothing else — so abandon reaches the server over HTTP,
+        # not by signal. Deliberately *not* /complete: no `complete` SSE
+        # event (the browser's `es.onerror` fires when `_shutdown` releases
+        # the /events wait, which is the honest "connection lost" signal for
+        # a session that was dropped, not finished) and no 2-second grace.
+        length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+        if length is None:
+            return
+        if length:
+            self.rfile.read(length)  # drain: unread body turns close() into RST
+        self._send(200, "application/json", b'{"ok":true}')
+        _shutdown.set()
+
+    def _post_preferences_mute(self) -> None:
+        # Second, narrow writer of `.viva/preferences.json` (#142) —
+        # flips one existing preference to `muted` via the same
+        # `preferences.set_status()` the CLI's `set --status muted`
+        # already calls. Doesn't restrict by current status (neither
+        # does `set_status` itself); the client only ever renders the
+        # mute control on a `standing` row. Un-muting stays CLI-only —
+        # scripts/preferences.py's own docstring documents the split.
+        length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
+        if length is None:
+            return
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            self._error(400, "invalid json")
+            return
+        if not isinstance(payload, dict):
+            self._error(400, "body must be a JSON object")
+            return
+        pref_id = payload.get("id")
+        if not isinstance(pref_id, str) or not pref_id:
+            self._error(400, "missing 'id'")
+            return
+        with _prefs_lock:
+            store = _load_preferences_store(_viva_dir)
+            try:
+                store = preferences.set_status(store, pref_id, "muted")
+            except KeyError:
+                self._error(404, f"no preference {pref_id!r}")
+                return
+            try:
+                _atomic_write(_viva_dir / "preferences.json",
+                             json.dumps(store, indent=2, ensure_ascii=False))
             except (IOError, OSError) as e:
                 self._error(500, f"write failed: {e}")
                 return
-
-            self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("processing", {})
-        elif path == "/next-round":
-            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
-            if length is None:
-                return
-            body = self.rfile.read(length)
-            try:
-                new_data = json.loads(body)
-            except json.JSONDecodeError:
-                self._error(400, "invalid json")
-                return
-            if not isinstance(new_data, dict):
-                self._error(400, "body must be a JSON object")
-                return
-            # `output` travels in the JSON body like every other POST field. The
-            # legacy `?output=` query param is gone (#103): its last sender was
-            # branch B's re-arm curl, which `loop.py rearm` replaced.
-            # ORDER IS LOAD-BEARING: the missing-`output` refusal stays AHEAD of
-            # the shape validation — `test_server_api.py`'s missing-output case
-            # POSTs a structurally valid round and pins that error text.
-            output = new_data.pop("output", None)
-            if not output:
-                self._error(400, "missing 'output' in body")
-                return
-            # EVERY body, not only one that happens to carry `sections`. The
-            # shape gate that used to stand here let a round nested one level
-            # deep (`{"round": {...}, "output": …}`) through untouched: the
-            # server answered `{"ok":true}`, replaced `_input_data` with it, and
-            # pushed a sections-less `round` event that threw inside the
-            # client's initReview — a tab stuck on "the agent is revising"
-            # forever with no error on either side. `/next-round` is
-            # review-shaped only; a `questions`-shaped body is refused here too,
-            # and that is correct, since the `round` SSE handler has always
-            # assumed review shape (`REVIEW_DATA = data; QA_DATA = null`).
-            try:
-                schema.validate_review_input(new_data)
-            except ValueError as e:
-                self._error(400, f"invalid review-input: {e}")
-                return
-            # The launch mode gates which round shape may replace the served
-            # one (#126). The browser stamps `mode-diff` and injects the
-            # diff2html stylesheet ONLY at boot (`data.mode === 'diff'`); the
-            # `round` SSE handler does neither, so a diff payload landing here
-            # on a non-diff server renders raw fenced code at review width — a
-            # broken tab behind an `{"ok":true}`. Refused rather than
-            # re-stamped: a caller whose two mode declarations disagree has a
-            # bug this server cannot repair from one side. Absent `mode` reads
-            # as "review", the browser's own default. A qa-launched server
-            # hands off to review and to nothing else (§7 of the contract),
-            # which is what makes the hand-off line below true by construction.
-            incoming = new_data.get("mode", "review")
-            allowed = "diff" if _launch_mode == "diff" else "review"
-            if incoming != allowed:
-                self._error(400, "round mode %r does not match the server's "
-                                 "launch mode (--mode %s, which serves %r "
-                                 "rounds) — the browser's view is fixed at "
-                                 "boot and cannot be re-stamped from a round "
-                                 "push" % (incoming, _launch_mode, allowed))
-                return
-            with _data_lock:
-                # Unified Q&A → review session (#109): a qa-originated review
-                # round carries no distinguishing field in the wire payload —
-                # ReviewInput's shape is deliberately unchanged by that story:
-                # schema changes were out of scope. The signal instead is
-                # operational and inferred here, never persisted: the prior
-                # round on this server was Q&A-shaped (`questions`) and this
-                # one is review-shaped (`sections`). #111's headless-contract
-                # should describe this session type as "a review round POSTed
-                # to a server launched with --mode qa", not as a payload field.
-                handoff = "questions" in _input_data and "sections" in new_data
-                # Normalize on the way in, the same as the startup boundary: an
-                # absent `round` renders as the literal "REV undefined" and
-                # turns the author-answered freshness test into a NaN
-                # comparison that silently never matches.
-                _input_data = schema.default_round(new_data)
-                _output_path = output
-                # The verdict snapshot belongs to the round that produced it.
-                # Section ids are stable across rounds (s1…sN), so a carried
-                # all-approved snapshot would sign off a round nobody has seen.
-                _last_verdicts = None
-                ledger_snapshot = list(_ledger)
-            if handoff:
-                # Distinct from the per-mode startup line so a terminal-watching
-                # caller (or a human tailing stdout) can see the hand-off happen,
-                # not just infer it from the browser reflowing.
-                print(f"viva · hand-off qa → review · {_url}", flush=True)
-            self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
-                                "ledger": ledger_snapshot,
-                                "repo": _viva_dir.parent.name})
-        elif path == "/complete":
-            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
-            if length is None:
-                return
-            body = self.rfile.read(length) if length else b'{}'
-            try:
-                summary = json.loads(body) if body.strip() else {}
-            except json.JSONDecodeError:
-                summary = {}
-            if not isinstance(summary, dict):
-                # `[]` and `3` parse; `.get` on either below would 500.
-                summary = {}
-            # The finish guard. "Nothing is auto-accepted" is a hard product
-            # line, and a check that lives only in `loop.py finish` is a norm the
-            # next caller walks around — so the server refuses on its own too,
-            # asking `schema.round_is_complete`, the one predicate both processes
-            # share.
-            with _data_lock:
-                round_input = _input_data
-                submitted   = _last_verdicts
-            # Q&A is exempt by shape: it carries `questions`, never `sections`.
-            # Diff mode is NOT exempt by mode any more (#177). It used to be —
-            # `parse_diff.py` emits `sections`, and branch B's empty-re-diff
-            # finish signs off with `changes` verdicts on record by design, the
-            # diff having reached zero because a hunk was reverted at the
-            # reviewer's request — but a blanket exemption let a `--mode diff`
-            # server accept `/complete` with ANY verdicts, which reopened for
-            # hunks the hole #102 closed for sections. The caller now says WHY
-            # the round may sign off unapproved: `resolved: "empty"` in the
-            # body, which `loop.py finish` derives from a fresh capture rather
-            # than from memory. The signal is honored only on a `--mode diff`
-            # server: `_launch_mode` is an argparse choice fixed at startup and
-            # unreachable from any request, whereas the body is caller-supplied
-            # — and a doc cannot go empty, so on any other server a present
-            # `resolved` is a caller bug, refused rather than ignored. Either
-            # way a round nobody has submitted is refused first: a diff can be
-            # resolved empty only after the human has seen it.
-            if "sections" in round_input:
-                if submitted is None:
-                    self._error(400, "no verdicts submitted for this round — "
-                                     "nothing to complete")
-                    return
-                resolved = summary.get("resolved")
-                if resolved is not None and resolved != "empty":
-                    self._error(400, "unknown 'resolved' value %r — the only "
-                                     "signal is \"empty\", and only a --mode "
-                                     "diff server honors it" % (resolved,))
-                    return
-                if resolved is not None and _launch_mode != "diff":
-                    self._error(400, "'resolved' is a diff-review signal — a "
-                                     "%s session cannot resolve empty; every "
-                                     "section must be approved" % _launch_mode)
-                    return
-                resolved_empty = resolved == "empty" and _launch_mode == "diff"
-                if not resolved_empty and not schema.round_is_complete(
-                        round_input, submitted):
-                    # `round_is_complete` above is the gate; the detail below is
-                    # only the message, and it follows the predicate rather than
-                    # deciding anything. A round's `pass` ADDS a conjunct to the
-                    # all-approved base, so a refusal with nothing pending is
-                    # now reachable — reporting "0 of N not approved" there would
-                    # send the caller to re-present a round the human already
-                    # approved, instead of to the conjunct that held it.
-                    by_id = {s.get("id"): s
-                             for s in submitted.get("sections", [])}
-                    sections = round_input.get("sections", [])
-                    pending = sum(
-                        1 for s in sections
-                        if (by_id.get(s.get("id")) or {}).get("verdict")
-                        != "approved")
-                    spec = round_input.get("pass")
-                    kind = spec.get("kind") if isinstance(spec, dict) else None
-                    if not sections:
-                        # Before the pass branch: an empty round is refused by
-                        # the base rule, and naming a conjunct here would blame
-                        # a `architecture`/`line` pass that adds none.
-                        why = "the round carries no sections to approve"
-                    elif pending:
-                        why = ("%d of %d section(s) not approved"
-                               % (pending, len(sections)))
-                    elif kind:
-                        # The recovery is the next round, not a merge into this
-                        # round's file: the round this process serves was loaded
-                        # once and is replaced only by `/next-round`, so a check
-                        # answered on disk under it is one this guard never sees.
-                        why = ("every section is approved, but the %s pass is "
-                               "not satisfied — a checks round holds until "
-                               "every check flag carries a result, a final round "
-                               "until no suggested edit is unresolved. Answer "
-                               "the flags in the next round and POST it to "
-                               "/next-round" % kind)
-                    else:
-                        why = "the round carries no sections to approve"
-                    self._error(409, "refusing to complete: %s. Nothing is "
-                                     "auto-accepted; re-present the round or "
-                                     "abandon it." % why)
-                    return
-            self._send(200, "application/json", b'{"ok":true}')
-            _push_sse("complete", summary)
-            threading.Timer(2.0, _shutdown.set).start()
-        elif path == "/abandon":
-            # The shutdown route with no sign-off meaning: `loop.py abandon` is
-            # a different process from the one that launched the server (start
-            # detaches it), holds no child handle, and `server.url` carries a
-            # URL and nothing else — so abandon reaches the server over HTTP,
-            # not by signal. Deliberately *not* /complete: no `complete` SSE
-            # event (the browser's `es.onerror` fires when `_shutdown` releases
-            # the /events wait, which is the honest "connection lost" signal for
-            # a session that was dropped, not finished) and no 2-second grace.
-            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
-            if length is None:
-                return
-            if length:
-                self.rfile.read(length)  # drain: unread body turns close() into RST
-            self._send(200, "application/json", b'{"ok":true}')
-            _shutdown.set()
-        elif path == "/preferences/mute":
-            # Second, narrow writer of `.viva/preferences.json` (#142) —
-            # flips one existing preference to `muted` via the same
-            # `preferences.set_status()` the CLI's `set --status muted`
-            # already calls. Doesn't restrict by current status (neither
-            # does `set_status` itself); the client only ever renders the
-            # mute control on a `standing` row. Un-muting stays CLI-only —
-            # scripts/preferences.py's own docstring documents the split.
-            length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
-            if length is None:
-                return
-            body = self.rfile.read(length)
-            try:
-                payload = json.loads(body)
-            except json.JSONDecodeError:
-                self._error(400, "invalid json")
-                return
-            if not isinstance(payload, dict):
-                self._error(400, "body must be a JSON object")
-                return
-            pref_id = payload.get("id")
-            if not isinstance(pref_id, str) or not pref_id:
-                self._error(400, "missing 'id'")
-                return
-            with _prefs_lock:
-                store = _load_preferences_store(_viva_dir)
-                try:
-                    store = preferences.set_status(store, pref_id, "muted")
-                except KeyError:
-                    self._error(404, f"no preference {pref_id!r}")
-                    return
-                try:
-                    _atomic_write(_viva_dir / "preferences.json",
-                                 json.dumps(store, indent=2, ensure_ascii=False))
-                except (IOError, OSError) as e:
-                    self._error(500, f"write failed: {e}")
-                    return
-            self._send(200, "application/json", b'{"ok":true}')
-        else:
-            self._error(404, "not found")
+        self._send(200, "application/json", b'{"ok":true}')
 
     def _send(self, status: int, content_type: str, body: bytes,
               cache_control: str = "") -> None:
         """Send one response. `cache_control` is opt-in and defaults to absent:
         every other endpoint here serves live session state, and only the
-        version-stamped /vendor routes are safe to cache."""
+        version-stamped /vendor routes are safe to cache.
+
+        Every response also carries a fixed set of security headers (defence
+        in depth, not a functional requirement — the loopback-`Origin` guard
+        on every POST is the actual write-sink protection). The CSP's
+        `img-src 'self' data:` matters most: DOMPurify's default config keeps
+        a reviewed document's `![](http://...)` remote image, which would
+        otherwise beacon to whatever host it names the moment the card
+        renders — silently contradicting this file's "nothing in the page
+        reaches a remote host" invariant, which otherwise covers only the
+        page's own assets. `'unsafe-inline'` on script/style is required by
+        the page itself: one inline `<script>`, one inline `<style>`, and
+        `style="..."` attributes throughout the generated markup, none of
+        which a build step here could nonce without the npm dependency
+        principle 6 (`PRODUCT.md`) refuses."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         if cache_control:
             self.send_header("Cache-Control", cache_control)
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "font-src 'self'; connect-src 'self'; form-action 'self'; "
+            "base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(body)
 
@@ -9162,6 +9255,7 @@ if __name__ == "__main__":
         # still fails loudly here rather than being quietly replaced by 1.
         schema.default_round(_input_data)
     _output_path = args.output
+    _output_root = Path(args.output).resolve().parent
     _launch_mode = args.mode
 
     port = find_free_port()

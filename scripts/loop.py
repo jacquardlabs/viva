@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
@@ -101,14 +102,13 @@ def run_stdin_or_die(cmd, text: str, what: str, recovery: str = "") -> str:
 def current_round(viva: Path) -> int:
     """Highest *parsed* round on disk — not necessarily the armed one; `wait`
     reconciles the two against the server. 0 when none."""
-    rounds = [int(p.stem[len("review-input-r"):])
-              for p in viva.glob("review-input-r*.json")
-              if p.stem[len("review-input-r"):].isdigit()]
-    return max(rounds, default=0)
+    rounds = [schema.parse_round_input_stem(p.stem)
+              for p in viva.glob(schema.round_input_glob())]
+    return max((n for n in rounds if n is not None), default=0)
 
 
 def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
-    return viva / f"review-input-r{n}.json", viva / f"review-r{n}.json"
+    return schema.round_file_paths(viva, n)
 
 
 def load_json(p: Path) -> dict:
@@ -118,10 +118,25 @@ def load_json(p: Path) -> dict:
 
 # ── liveness — probed, not stat'ed ────────────────────────────────────────────
 def server_url(viva: Path) -> Optional[str]:
+    """`.viva/server.url`'s content is repo-supplied state — `--viva-dir`
+    defaults to a path inside whatever repo is under review, and every reader
+    of this file (`probe_input`, `post`) sends a request to whatever it names.
+    Constrained to loopback, mirroring `server.py`'s own `Origin` guard
+    (`_check_origin_and_length`) exactly: a repo committing a `server.url`
+    naming an attacker's host must not turn `loop.py start`'s liveness probe,
+    or `arm`/`rearm`/`abandon`'s POST of the round under review, into an SSRF
+    against that host."""
     f = viva / "server.url"
     if not f.exists():
         return None
-    return f.read_text().strip() or None
+    url = f.read_text().strip()
+    if not url:
+        return None
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+        die(f"{f} names {url!r}, which is not a loopback address. Refusing to "
+            f"contact it — delete the file and re-run `loop.py start`.")
+    return url
 
 
 def _request(req: urllib.request.Request, what: str, recovery: str) -> bytes:
@@ -280,7 +295,7 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
     `interview` adds `answers.json`, which `start` must never touch: a hand-off
     `start` runs while the draft written from those answers is still the
     agent's source."""
-    for p in list(viva.glob("review-input-r*.json")) + list(viva.glob("review-r*.json")):
+    for p in list(viva.glob(schema.round_input_glob())) + list(viva.glob(schema.round_output_glob())):
         p.unlink()
     names = ["open-notes.json", "target.json", "diff.patch"]
     if not keep_server_url:
@@ -701,8 +716,9 @@ def _start_doc(args, viva: Path) -> int:
         bundle = resolve_doc_type(doc_type, fatal=False)
         if bundle:
             _validate_checks(bundle, fatal=False)
+    round1_input, _ = schema.round_file_paths(viva, 1)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
-           "--output", viva / "review-input-r1.json", "--round", "1",
+           "--output", round1_input, "--round", "1",
            "--doc-file", args.doc]
     if split_on is not None:
         cmd += ["--split-on", split_on]
@@ -727,7 +743,7 @@ def _start_doc(args, viva: Path) -> int:
             prior_in.unlink(missing_ok=True)
             prior_out.unlink(missing_ok=True)
 
-    round_file = viva / "review-input-r1.json"
+    round_file = round1_input
     if bundle:
         # The type's check set, named once where it is resolved — and RUN here,
         # before any branch that could arm. A check nobody is told about never

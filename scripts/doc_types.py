@@ -89,6 +89,33 @@ def validate_bundle(bundle: object, name: str, where: str) -> None:
         value = bundle.get(field)
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise ValueError(f"{where}: {field!r} must be a list of strings")
+    # `checks[]` becomes a path, the same way `name` does: SKILL.md tells the
+    # agent "the script name is the check name with - as _" and runs
+    # `python3 "$VIVA_DIR/scripts/<name>.py"`. `name` already gets NAME_RE
+    # before any path is built (the doc-type-name comment above); `checks[]`
+    # did not, and `.viva-types/` is committed, repo-supplied config a
+    # `checks` entry of `../../../../tmp/x` would reach unvalidated.
+    for kind in bundle["checks"]:
+        if not NAME_RE.match(kind):
+            raise ValueError(
+                f"{where}: checks entry {kind!r} is not a bare lowercase "
+                f"token (matching {NAME_RE.pattern}) — it becomes the "
+                f"producer script name '{kind.replace('-', '_')}.py'")
+        # `CHECK_KINDS` fails open by design (CLAUDE.md) — an unregistered
+        # kind is simply invisible to `round_is_complete`, so a `checks`
+        # round closes on the base alone with the depth reduced to a label.
+        # `tests/test_schema.py`'s `test_check_kinds_covers_every_shipped_bundle_check`
+        # catches this for `types/`; a `.viva-types/` override is invisible
+        # to that scan, so this is the one place a repo-committed bundle
+        # gets the same warning. Deliberately a warning, not a ValueError —
+        # the registry failing open is the existing contract, and refusing
+        # to load the bundle would be a stricter failure mode than the
+        # `checks` pass itself has.
+        if kind not in schema.CHECK_KINDS:
+            print(f"doc_types: warning: {where}: checks entry {kind!r} is "
+                  f"not in schema.CHECK_KINDS — a 'checks' pass will not "
+                  f"gate on it; the round closes with this check invisible",
+                  file=sys.stderr)
     if bundle["name"] != name:
         raise ValueError(
             f"{where}: bundle names itself {bundle['name']!r} but resolves as "

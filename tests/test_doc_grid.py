@@ -324,6 +324,16 @@ def test_check_kinds_is_injected_never_restated(page: str) -> None:
     # And it is the registry the spec table and the segmented rule ask.
     assert "CHECK_KINDS.includes(a.kind)" in page, \
         "the checks row and the balance must both read the injected registry"
+    # THREAD_STATUS_LABELS is injected the same way and for the same reason:
+    # a broken `.replace()` chain leaves the placeholder in the page, the
+    # assignment throws on an undefined identifier, and the tab bricks with
+    # no server-side error — the exact failure mode this pins for CHECK_KINDS.
+    expected_labels = ("const THREAD_STATUS_LABELS = "
+                       + json.dumps(dict(schema.THREAD_STATUS_LABELS)) + ";")
+    assert expected_labels in page, \
+        f"THREAD_STATUS_LABELS must be injected from schema.py, got neither {expected_labels!r}"
+    assert "__THREAD_STATUS_LABELS__" not in page, \
+        "the injection placeholder must be substituted"
     print("test_check_kinds_is_injected_never_restated: OK")
 
 

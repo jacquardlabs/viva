@@ -402,8 +402,10 @@ python3 "$VIVA_DIR/scripts/loop.py" finish
 ## Scope
 
 `/viva-review` is a **human gate**, not an LLM reviewer. It composes with
-`/code-review` (which is an LLM pass): run `/code-review` first to apply
-automated suggestions, then `/viva-review` for human sign-off before committing.
+`/code-review` (an LLM pass) from the `code-review` plugin in the
+`claude-plugins-official` marketplace, if installed — not bundled with viva:
+run `/code-review` first to apply automated suggestions, then `/viva-review`
+for human sign-off before committing.
 
 ## Reference material
 
