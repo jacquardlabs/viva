@@ -8893,6 +8893,26 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 self._error(400, f"invalid review-input: {e}")
                 return
+            # The launch mode gates which round shape may replace the served
+            # one (#126). The browser stamps `mode-diff` and injects the
+            # diff2html stylesheet ONLY at boot (`data.mode === 'diff'`); the
+            # `round` SSE handler does neither, so a diff payload landing here
+            # on a non-diff server renders raw fenced code at review width — a
+            # broken tab behind an `{"ok":true}`. Refused rather than
+            # re-stamped: a caller whose two mode declarations disagree has a
+            # bug this server cannot repair from one side. Absent `mode` reads
+            # as "review", the browser's own default. A qa-launched server
+            # hands off to review and to nothing else (§7 of the contract),
+            # which is what makes the hand-off line below true by construction.
+            incoming = new_data.get("mode", "review")
+            allowed = "diff" if _launch_mode == "diff" else "review"
+            if incoming != allowed:
+                self._error(400, "round mode %r does not match the server's "
+                                 "launch mode (--mode %s, which serves %r "
+                                 "rounds) — the browser's view is fixed at "
+                                 "boot and cannot be re-stamped from a round "
+                                 "push" % (incoming, _launch_mode, allowed))
+                return
             with _data_lock:
                 # Unified Q&A → review session (#109): a qa-originated review
                 # round carries no distinguishing field in the wire payload —

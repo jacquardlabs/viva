@@ -98,6 +98,20 @@ def _integration() -> None:
                 f"round={bad!r} must be refused at the boundary"
         assert get(base, "/input")["round"] == 1, "and must not have replaced the round"
 
+        # ── `mode` at /next-round: must agree with the launch mode (#126) ──
+        # Absent is legal and reads as "review", the browser's own default —
+        # so a review server still accepts a modeless round.
+        modeless = {k: v for k, v in r1.items() if k != "mode"}
+        assert post_status(base, "/next-round",
+                           dict(modeless, round=3, output=out2)) == 200, \
+            "a modeless round is a review round and must still be accepted"
+        assert get(base, "/input")["round"] == 3
+        # ...while a diff round on this review server is refused, untouched.
+        assert post_status(base, "/next-round",
+                           dict(r1, mode="diff", round=4, output=out2)) == 400, \
+            "a diff round must not replace a review server's round"
+        assert get(base, "/input")["round"] == 3, "still untouched"
+
     # The startup boundary normalizes too — the same file, launched cold.
     (viva / "in3.json").write_text(json.dumps(roundless))
     with launch_server(viva / "in3.json", viva / "out3.json", cwd=tmp) as base:
