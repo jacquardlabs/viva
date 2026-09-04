@@ -171,7 +171,7 @@ Nothing is fetched by the manifest itself: an issue entry carries the exact `gh`
 
 ## Document types
 
-A type bundle is **section grammar + check set + default pass depth**, one JSON file per name. Five ship (`design-doc`, `plan`, `readme`, `pr-description`, `progress-note`); a repo adds or overrides one by committing `.viva-types/<name>.json`, which wins wholesale on a name collision so it can drop a shipped check as well as add one.
+A type bundle is **section grammar + check set + default pass depth**, one JSON file per name. Six ship (`design-doc`, `plan`, `readme`, `pr-description`, `progress-note`, `handoff`); a repo adds or overrides one by committing `.viva-types/<name>.json`, which wins wholesale on a name collision so it can drop a shipped check as well as add one.
 
 Invoking `/viva-write` with no type asks *what's the deliverable* and offers the
 merged menu — the shipped bundles plus whatever your repo committed. (The

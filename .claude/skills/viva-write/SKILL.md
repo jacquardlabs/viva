@@ -21,7 +21,7 @@ making a thing, or judging one.
 ```
 
 - **type** — a name `doc_types.py` resolves (`design-doc`, `plan`, `readme`,
-  `pr-description`, `progress-note`, or one the repo committed under
+  `pr-description`, `progress-note`, `handoff`, or one the repo committed under
   `.viva-types/`). Omitted → the interview's first question is *what's the
   deliverable*.
 - **path** — where the draft lands. Omitted → asked in the interview. Nothing is
@@ -270,6 +270,7 @@ the type calls for:
 | Type | Stamp |
 |------|-------|
 | `pr-description` | `gh pr view --json number` on the current branch names the PR; `gh pr edit <n> --body-file <doc>` if it resolves, `gh pr create --body-file <doc>` if it does not |
+| `handoff` | if intake attached an issue ref for the receiving team, `gh issue comment <n> --body-file <doc>` posts the handoff there; otherwise `git add <doc> && git commit -m "docs: <title>"` |
 | everything else | `git add <doc> && git commit -m "docs: <title>"` |
 
 Ask before running it — a stamp is outward-facing. A stamp that does nothing

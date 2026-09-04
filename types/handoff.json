@@ -1,0 +1,16 @@
+{
+  "name": "handoff",
+  "title": "Handoff",
+  "sections": [
+    "Handoff context",
+    "Deliverable intent",
+    "Inputs & assumptions",
+    "Environment & dependencies",
+    "Artifact parity",
+    "Verification",
+    "Known limits",
+    "Receiving-team owner"
+  ],
+  "checks": ["headings-present"],
+  "default_pass": "checks"
+}
