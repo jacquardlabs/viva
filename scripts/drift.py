@@ -20,6 +20,8 @@ import re
 import sys
 from pathlib import Path
 
+import schema
+
 # Extensions that mark a backtick token as a file reference, not a version
 # string or prose.
 FILE_EXTS = {
@@ -33,8 +35,8 @@ CODE_EXTS = {
     "py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "rb", "c", "h", "hpp",
     "cpp", "cc", "cs", "php", "swift", "kt", "scala", "sh", "bash",
 }
-SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "dist", "build",
-             "__pycache__", ".mypy_cache", ".pytest_cache", "target", ".viva"}
+# Shared with server.py's `/evidence` route (#106) via schema.SKIP_DIRS.
+SKIP_DIRS = schema.SKIP_DIRS
 _BACKTICK = re.compile(r"`([^`]+)`")
 _FILE_TOKEN = re.compile(r"^[\w./-]+$")
 _CALL = re.compile(r"^([A-Za-z_]\w*)\s*\([^)]*\)$")
