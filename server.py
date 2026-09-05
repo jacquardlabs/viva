@@ -20,7 +20,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # The sibling `scripts/` dir holds the shared schema contract (section_key, the
 # ledger rule, boundary validation). It sits beside server.py in both the repo
@@ -1329,6 +1329,40 @@ h1.tb-val { margin: 0; }
 /* The one thing that is open takes the reviewer's ink, exactly as
    `.spec .spec-open td:last-child` did. */
 .sp-open .sp-v { color: var(--acc); font-weight: 600; }
+/* #106 — a servable `source` earns a tiny button in the state run; the
+   fetched lines land in a fixed popover, never inside `.spec-strip` itself,
+   so the one-line state run never grows to fit a file excerpt. */
+.ev-btn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--soft);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1.6;
+}
+.ev-btn:hover { border-color: var(--ink); color: var(--ink); }
+.ev-panel {
+  position: fixed;
+  z-index: 500;
+  max-width: 480px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--text2);
+  font-size: 10.5px;
+  padding: 6px 8px;
+}
+.ev-panel-h { color: var(--soft); margin-bottom: 4px; }
+.ev-panel-body {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
 /* At narrow widths the state run leads the left edge instead of right-aligning.
    This sits AFTER `.spec-strip { margin-left: auto }` deliberately — the two
    rules tie on specificity, so source order is the whole mechanism. */
@@ -4153,7 +4187,26 @@ function specHTML(section) {
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
     + (conf ? item('agent confidence',
         [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
-        conf.level === 'low', conf.source) : '');
+        conf.level === 'low', conf.source) : '')
+    + evidenceBtnHTML(conf);
+}
+
+// #106 — `path`, `path:N`, or `path:A-B` at the START of a `source` string;
+// trailing free text ("&mdash; CACHE_TTL = 300") is ignored. Mirrors
+// server.py's `_EVIDENCE_REF_RE` — the two must agree on what is servable.
+const EVIDENCE_REF_RE = /^([\w./-]+\.\w+)(?::(\d+)(?:-(\d+))?)?/;
+function evidenceRef(source) {
+  const m = source ? EVIDENCE_REF_RE.exec(String(source).trim()) : null;
+  return m ? m[0] : null;
+}
+
+// A confidence row with no `source`, or one that doesn't parse as a ref,
+// renders no button — absent `source` is unchanged from before #106/#145.
+function evidenceBtnHTML(conf) {
+  const ref = conf ? evidenceRef(conf.source) : null;
+  if (!ref) return '';
+  return '<button type="button" class="ev-btn" data-ref="' + esc(ref)
+    + '" title="show cited lines">evidence</button>';
 }
 
 /* ─── Segmented rule ─────────────────────────────────────────
@@ -4915,6 +4968,49 @@ function renderPrimaryButton(id) {
     : n ? (n + (n === 1 ? ' comment' : ' comments') + ' open')
         : '<span aria-hidden="true">&#10003;</span> approve<kbd>a</kbd>';
 }
+
+/* ─── Evidence popover (#106) ────────────────────────────────
+   A `.ev-btn` click fetches `/evidence?ref=...` and shows the cited lines in
+   a small fixed panel near the button — never inside `.spec-strip` itself
+   (see the CSS comment), so the state run stays one line regardless. One
+   panel at a time: a second click on the SAME button closes it; a click
+   anywhere outside the panel closes it too. */
+let _evidencePanel = null;
+function closeEvidencePanel() {
+  if (_evidencePanel) { _evidencePanel.remove(); _evidencePanel = null; }
+}
+function openEvidencePanel(btn) {
+  if (_evidencePanel && _evidencePanel.dataset.forRef === btn.dataset.ref) {
+    closeEvidencePanel();
+    return;
+  }
+  closeEvidencePanel();
+  const panel = document.createElement('div');
+  panel.className = 'ev-panel';
+  panel.dataset.forRef = btn.dataset.ref;
+  panel.textContent = 'loading…';
+  document.body.appendChild(panel);
+  const r = btn.getBoundingClientRect();
+  panel.style.top = Math.round(r.bottom + 4) + 'px';
+  panel.style.left = Math.round(r.left) + 'px';
+  _evidencePanel = panel;
+  fetch('/evidence?ref=' + encodeURIComponent(btn.dataset.ref))
+    .then(r2 => { if (!r2.ok) throw new Error('not found'); return r2.json(); })
+    .then(d => {
+      if (_evidencePanel !== panel) return; // closed/replaced while in flight
+      panel.innerHTML = '<div class="ev-panel-h">' + esc(d.path) + ':'
+        + d.start + '-' + d.end + '</div><pre class="ev-panel-body">'
+        + esc(d.lines.join('\n')) + '</pre>';
+    })
+    .catch(() => {
+      if (_evidencePanel === panel) panel.textContent = 'evidence unavailable';
+    });
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.ev-btn');
+  if (btn) { e.stopPropagation(); openEvidencePanel(btn); return; }
+  if (_evidencePanel && !e.target.closest('.ev-panel')) closeEvidencePanel();
+});
 
 /* ─── Selection → popover comment creation ─────────────────────
    Finishing a text selection inside a section's rendered content auto-opens
@@ -7567,6 +7663,75 @@ def _load_preferences_store(viva_dir: Path) -> dict:
     return data
 
 
+def _evidence_refs(data: dict) -> set[str]:
+    """The `/evidence` allowlist: every servable ref parseable from a
+    confidence annotation's `source`, across every section in the LIVE round.
+    A ref not in this set 404s before any path is even resolved — the request
+    can only ask for evidence the round itself is currently citing."""
+    refs: set[str] = set()
+    for section in data.get("sections", []) or []:
+        for a in section.get("annotations", []) or []:
+            if not isinstance(a, dict) or a.get("kind") != "confidence":
+                continue
+            source = a.get("source")
+            if not isinstance(source, str):
+                continue
+            m = _EVIDENCE_REF_RE.match(source.strip())
+            if m:
+                refs.add(m.group(0))
+    return refs
+
+
+def _parse_evidence_ref(ref: str) -> tuple[str, int | None, int | None] | None:
+    """`path`, `path:N`, or `path:A-B` → (path, start, end), 1-indexed and
+    inclusive, or None for `path`/`path:N` alone (whole file / single line
+    read the same way `end = start`)."""
+    m = _EVIDENCE_REF_RE.match(ref)
+    if not m or m.group(0) != ref:
+        return None
+    path, start, end = m.group(1), m.group(2), m.group(3)
+    return path, (int(start) if start else None), (int(end) if end else None)
+
+
+def _resolve_evidence(ref: str, viva_dir: Path) -> dict | None:
+    """Resolve an allowlisted ref to `{path, start, end, lines}`, or None on
+    any failure — every failure 404s identically, so this never leaks WHY."""
+    parsed = _parse_evidence_ref(ref)
+    if parsed is None:
+        return None
+    rel_path, start, end = parsed
+    root = viva_dir.parent
+    # A denylisted segment anywhere in the path (not just a literal `../`)
+    # refuses — `schema.SKIP_DIRS` is the one table `drift.py` also honors.
+    if any(part in schema.SKIP_DIRS for part in Path(rel_path).parts):
+        return None
+    try:
+        resolved = (root / rel_path).resolve()
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError):
+        return None
+    if not resolved.is_file():
+        return None
+    try:
+        if resolved.stat().st_size > MAX_EVIDENCE_BYTES:
+            return None
+        text = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    all_lines = text.splitlines()
+    if start is None:
+        start, end = 1, len(all_lines)
+    elif end is None:
+        end = start
+    if start < 1 or end < start:
+        return None
+    end = min(end, start + MAX_EVIDENCE_LINES - 1, len(all_lines))
+    if start > len(all_lines):
+        return None
+    return {"path": rel_path, "start": start, "end": end,
+            "lines": all_lines[start - 1:end]}
+
+
 # Raster formats only — SVG is excluded deliberately because it can carry
 # embedded JavaScript. The MIME is also the sole source of the on-disk
 # extension, so this allowlist doubles as the extension allowlist.
@@ -7578,6 +7743,17 @@ ALLOWED_IMAGE_MIMES = {
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB decoded, per image
 MAX_SUBMIT_BYTES = 256 * 1024 * 1024  # 256 MiB total /submit request body
+
+# `/evidence` (#106): a cited file is read whole only up to this size, and a
+# cited range is capped in line count — a confidence `source` is agent-
+# written, not reviewer-written, so these bound its cost rather than trusting it.
+MAX_EVIDENCE_BYTES = 1 * 1024 * 1024  # 1 MiB
+MAX_EVIDENCE_LINES = 400
+# `path`, `path:N`, or `path:A-B` at the start of a `source` string — the
+# trailing text (" — CACHE_TTL = 300") is free-form and ignored. Mirrored in
+# the embedded JS (search `EVIDENCE_REF_RE`) so the button and the route agree
+# on what counts as a servable ref.
+_EVIDENCE_REF_RE = re.compile(r"^([\w./-]+\.\w+)(?::(\d+)(?:-(\d+))?)?")
 
 
 def _write_item_images(item: dict, prefix: str, safe_id: str, attach_dir: Path) -> None:
@@ -7720,6 +7896,23 @@ class Handler(BaseHTTPRequestHandler):
             store = _load_preferences_store(_viva_dir)
             body = json.dumps(preferences.select(store, "all")).encode()
             self._send(200, "application/json", body)
+        elif path == "/evidence":
+            # #106 — serve the lines a confidence annotation's `source` cites.
+            # The allowlist is derived from the LIVE round, not from the
+            # request: a `ref` the round isn't currently citing 404s before
+            # any path is resolved. Same-failure-mode-for-every-reason: this
+            # never distinguishes "not cited" from "denylisted" from
+            # "too big" in its response.
+            qs = parse_qs(urlparse(self.path).query)
+            ref = (qs.get("ref") or [None])[0]
+            with _data_lock:
+                allowed = _evidence_refs(_input_data)
+            evidence = _resolve_evidence(ref, _viva_dir) \
+                if ref and ref in allowed else None
+            if evidence is None:
+                self._error(404, "no such evidence")
+                return
+            self._send(200, "application/json", json.dumps(evidence).encode())
         elif path == "/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

@@ -51,9 +51,9 @@ only by JSON files under `.viva/`:
    `loop.py` does — read/derive-only, so it doesn't reopen the
    independent-testability guarantee. `tests/test_server_orchestration.py`'s
    `check_server_cross_imports_only_schema_and_preferences` pins the
-   exception to exactly those two modules. Its one read outside `.viva/` is
-   `assets/vendor/`: ten pinned third-party browser assets (#79, #144) — six
-   JS/CSS bundles plus four Fragment Mono woff2 subsets — served at
+   exception to exactly those two modules. It has two reads outside `.viva/`.
+   One is `assets/vendor/`: ten pinned third-party browser assets (#79, #144)
+   — six JS/CSS bundles plus four Fragment Mono woff2 subsets — served at
    `/vendor/<file>` from an exact-match route table resolved off `__file__`,
    not the cwd. A version bump edits three places — the file,
    `_VENDOR_ASSETS`, and the URL in `HTML` — and `test_server_vendor_assets.py`
@@ -63,6 +63,16 @@ only by JSON files under `.viva/`:
    separately by the same test, since a missed font URL fails invisibly into
    a system font. Nothing in the page reaches a remote host, fonts included;
    `tests/test_typography.py` forbids the host by name.
+
+   The other is `GET /evidence` (#106): a confidence annotation's `source`
+   field can cite `path`, `path:N`, or `path:A-B`, and a click on the card
+   serves those lines. Confined three ways, in order: the `ref` must be one
+   the LIVE round is currently citing (`_evidence_refs`, built from
+   `_input_data` under `_data_lock`, not from the request); the resolved path
+   must land under `_viva_dir.parent` and carry no `schema.SKIP_DIRS` segment
+   (the same denylist `drift.py` honors); and the read is capped in bytes and
+   line count. A `source` is agent-written, not reviewer-written, so all three
+   layers apply even though the agent is presumed non-adversarial.
    It also owns **`_VOICE_VERBS`/`_VOICE_RULES`** — the spoken grammar of the
    voice layer, injected as `__VOICE_RULES__` the way `__CHECK_KINDS__` is,
    deliberately here rather than in `schema.py` since the browser is its
