@@ -192,6 +192,41 @@ The type's `checks[]` run as pre-review producers, flagging findings on the card
 
 **Round-to-round diff.** Rewritten sections carry a collapsible line-level diff against the prior round, so you can see exactly what changed without re-reading the whole thing.
 
+## Re-certifying a signed doc
+
+A signed doc is a commitment — `## Revision History` says so — and it goes
+stale silently when the code it cites moves. `--recheck` re-opens it:
+
+```bash
+python3 "$VIVA_DIR/scripts/loop.py" start --doc <path> --recheck
+```
+
+Refuses on a doc with no ledger. It seeds every section approved from the
+doc's own sign-off, runs the drift producer against the current working
+tree, and withdraws approval only from sections a drift flag lands on — you
+re-review just those. Zero drift means nothing to re-certify; `start` says
+so and arms nothing. The ledger's next line reads "Re-certified via viva
+review", not "Signed off".
+
+**Drift hook (opt-in).** A `post-commit` hook that warns, after a commit,
+when a file it touched is one a signed doc's own text cites:
+
+```bash
+python3 "$VIVA_DIR/scripts/install_hook.py"
+```
+
+Advisory only — it never blocks the commit, and is silent in a repo with no
+signed docs. Appends to an existing `post-commit` rather than overwriting it.
+The warning names the doc, its sign-off date, and the changed file, and
+points at `--recheck` above:
+
+```
+viva: docs/notifications.md was signed off 2026-05-01 and references
+      alerts/dispatch.py (changed in this commit).
+      Run `loop.py start --doc docs/notifications.md --recheck` to verify
+      the doc still holds.
+```
+
 ## How it works
 
 A single Python file with no dependencies beyond stdlib. Claude Code is the agent, so there is no API key. Claude launches the server as a background subprocess, polls for the output JSON, and calls HTTP endpoints to signal between rounds. `scripts/loop.py` is the driver that owns the bookkeeping — round numbers, the state clear, liveness, and the sign-off guard — so the skills carry judgment work only.
