@@ -698,6 +698,12 @@ def test_the_foot_band_states_and_acts(page: str) -> None:
     # `confidence` annotation to NEITHER column precisely because this is it.
     assert "item('agent confidence'," in page, \
         "dropping confidence here makes a documented feature invisible with no error"
+    # A decision (#211) carries no anchor to jump to, so the generic
+    # jump-based rule would send it to the glyph-only gutter — words in the
+    # margin is the whole point ("the reviewer sees the answer beside the
+    # prose"), so it routes there unconditionally, ahead of that rule.
+    assert "if (a.kind === 'decision') { margin.push(a); return; }" in page, \
+        "a decision must render as words in the margin, not a gutter glyph"
     print("test_the_foot_band_states_and_acts: OK")
 
 
