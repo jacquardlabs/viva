@@ -82,6 +82,59 @@ def test_dotted_method_call_not_flagged() -> None:
     assert out == [], f"dotted method call must not be flagged, got {out}"
 
 
+def run_scan(paths: list) -> list:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--scan", *paths],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"drift --scan exited {result.returncode}:\n{result.stderr}")
+    return json.loads(result.stdout)
+
+
+def test_scan_finds_a_signed_doc_and_its_references() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / "spec.md").write_text(
+            "# Spec\n\n## Alpha\n\nSee `mod.py`.\n\n"
+            "---\n\n## Revision History\n\n"
+            "Signed off via viva review — 1 round, 1 section, 0 with comments. "
+            "2026-06-01\n",
+            encoding="utf-8")
+        out = run_scan([str(t)])
+        assert len(out) == 1, out
+        assert out[0]["signed"] is True
+        assert out[0]["last_signoff_date"] == "2026-06-01", out
+        assert out[0]["files"] == ["mod.py"], out
+
+
+def test_scan_skips_an_unsigned_doc() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / "draft.md").write_text("# Draft\n\nSee `mod.py`.\n", encoding="utf-8")
+        assert run_scan([str(t)]) == []
+
+
+def test_scan_excludes_ledger_table_references() -> None:
+    """A row in the ledger's own table quoting a filename must not be
+    mistaken for a doc reference — the extractor truncates at the heading."""
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / "spec.md").write_text(
+            "# Spec\n\n## Alpha\n\nSee `mod.py`.\n\n"
+            "---\n\n## Revision History\n\n"
+            "Signed off via viva review — 1 round, 1 section, 1 with comments. "
+            "2026-06-01\n\n"
+            "| Round | Section | Verdict | Note |\n"
+            "|-------|---------|---------|------|\n"
+            "| 1 | Alpha | changes | “drop `ledger_only.py`” |\n",
+            encoding="utf-8")
+        out = run_scan([str(t)])
+        assert len(out) == 1, out
+        assert out[0]["files"] == ["mod.py"], \
+            "the ledger table's own filename must not appear in files[]"
+
+
 def main() -> None:
     tests = [
         test_missing_file_flagged,
@@ -91,6 +144,9 @@ def main() -> None:
         test_existing_symbol_not_flagged,
         test_version_string_not_treated_as_file,
         test_dotted_method_call_not_flagged,
+        test_scan_finds_a_signed_doc_and_its_references,
+        test_scan_skips_an_unsigned_doc,
+        test_scan_excludes_ledger_table_references,
     ]
     failed = 0
     for t in tests:
