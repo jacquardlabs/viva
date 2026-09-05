@@ -180,7 +180,9 @@ for the producers only you can run — **before the hand-off, never after**;
 
 You just wrote every section, so emit the **confidence** self-annotation now,
 while the basis for each is still in hand — `sourced` for a fact an attachment
-carried, `inferred` for a call you made. Write the sidecar and merge it with
+carried, `inferred` for a call you made. Name the evidence in `source`: what you
+read for a `sourced` claim, what you searched and didn't find for an `inferred`
+one (#145). Write the sidecar and merge it with
 `loop.py annotate --sidecar <path>` (`producers.md` has the shape). If the
 preferences store holds standing preferences, run the learned-preference
 producer too and merge that sidecar.

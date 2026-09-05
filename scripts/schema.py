@@ -191,6 +191,9 @@ class Annotation(TypedDict, total=False):
     anchor: str
     basis: str      # confidence only — sourced | inferred
     level: str      # confidence only — high | medium | low
+    # confidence only — the evidence named at write time: what was read for a
+    # `sourced` claim, what was searched and not found for an `inferred` one.
+    source: str
     # optional — the check's finding for this flag (producer-written, or
     # merged later by `annotate.py`). Load-bearing only for a `checks` pass:
     # `round_is_complete()` holds until every `CHECK_KINDS` flag has one.
