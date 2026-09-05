@@ -133,11 +133,29 @@ python3 "$VIVA_DIR/scripts/loop.py" start --doc <relative/path/to/doc.md>
 browser tab, and prints the round and `$BASE`. It reads disk to pick the round-1
 branch itself: a plain launch; a **resumed sign-off**, where a doc already
 carrying a `## Revision History` gets the prior session's approvals carried
-forward so the human re-reviews only what changed; or a stop after parsing when
-the preferences store holds a standing preference. It **refuses** when
-`.viva/server.url` exists: a live session names the tab's URL, and only a URL
-nothing answers on is told to delete the file. Report whichever it printed
-verbatim.
+forward so the human re-reviews only what changed; a **recheck** (`--recheck`,
+#83), below; or a stop after parsing when the preferences store holds a
+standing preference. It **refuses** when `.viva/server.url` exists: a live
+session names the tab's URL, and only a URL nothing answers on is told to
+delete the file. Report whichever it printed verbatim.
+
+**Recheck a signed doc when it may have drifted** (`--recheck`, #83) — pass it
+instead of a plain `start` when the doc already carries a `## Revision
+History` and the code it describes may have moved:
+
+```bash
+python3 "$VIVA_DIR/scripts/loop.py" start --doc <path> --recheck
+```
+
+Refuses on a doc with no ledger. It seeds every section approved from the
+doc's own sign-off, runs `drift.py` against the current working tree, and
+withdraws approval from whichever sections a drift flag lands on — the human
+re-reviews only those, same as an ordinary resume re-reviews only what
+changed. `drift.py` is spec↔code existence checks only (missing files,
+undefined symbols); it never claims a section's PROSE is still accurate, only
+that what it cites still exists. **If drift finds nothing**, `start` prints
+so and stops — nothing is armed, and there is nothing to re-certify. On
+sign-off the ledger reads "Re-certified via viva review", not "Signed off".
 
 Pass `--split-on '<REGEX>'` for a task-card plan document: a heading is a split
 point iff its title matches (`re.search`, at any depth), replacing the

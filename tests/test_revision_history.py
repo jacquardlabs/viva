@@ -237,6 +237,29 @@ def main() -> None:
     run(viva10, doc10)
     assert "### Decisions" not in doc10.read_text()
 
+    # A recheck (#83): the finishing round's own `recheck` flag picks the verb.
+    viva11 = tmp / ".viva11"
+    viva11.mkdir()
+    doc11 = tmp / "doc11.md"
+    doc11.write_text("# Doc11\n\n## Goals\n\nbody\n")
+    (viva11 / "review-input-r1.json").write_text(json.dumps(
+        {"mode": "review", "doc_file": "doc.md", "round": 1, "recheck": True,
+         "approved_ids": [], "sections": secs}))
+    (viva11 / "review-r1.json").write_text(json.dumps(
+        {"round": 1, "submitted_early": False, "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ]}))
+    run(viva11, doc11)
+    text11 = doc11.read_text()
+    assert "Re-certified via viva review — 1 round, 2 sections, 0 with comments. " \
+           "2026-06-09" in text11, text11
+    assert "Signed off" not in text11, text11
+
+    # An ordinary session (no `recheck` key) is unaffected — the default stays
+    # "Signed off", not conditioned on some other round carrying the flag.
+    assert "Signed off via viva review" in doc.read_text()
+
     print("OK")
 
 
