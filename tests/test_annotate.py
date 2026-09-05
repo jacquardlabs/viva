@@ -222,6 +222,54 @@ def test_loop_annotate_merges_into_the_derived_round() -> None:
             "only the current round may be annotated"
 
 
+def test_loop_annotate_snapshots_decisions() -> None:
+    """A `decision`-kind flag (#211) merges through `annotate.py` like any
+    other, and `loop.py annotate` additionally snapshots it into
+    `.viva/decisions.json`, keyed by section identity — idempotent, same as
+    the merge itself."""
+    with tempfile.TemporaryDirectory() as tmp:
+        viva = Path(tmp) / ".viva"
+        viva.mkdir()
+        r1 = viva / "review-input-r1.json"
+        data = base_input([
+            {"id": "s1", "title": "Goals", "content": "body"},
+            {"id": "s2", "title": "Scope", "content": "body2"},
+        ])
+        r1.write_text(json.dumps(data), encoding="utf-8")
+
+        side = Path(tmp) / "sidecar.json"
+        side.write_text(json.dumps([
+            {"id": "s1", "kind": "decision", "severity": "info",
+             "message": "Which channel? → email"},
+        ]), encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva),
+             "annotate", "--sidecar", str(side)],
+            capture_output=True, text=True)
+        assert result.returncode == 0, f"loop annotate failed:\n{result.stderr}"
+
+        store = json.loads((viva / "decisions.json").read_text(encoding="utf-8"))
+        assert store == {
+            "goals": {"title": "Goals", "flags": [
+                {"kind": "decision", "severity": "info",
+                 "message": "Which channel? → email"},
+            ]},
+        }, store
+        # A section with no decision flag never earns an entry.
+        assert "scope" not in store, store
+
+        # Re-running the same sidecar is idempotent — the annotation merge is
+        # idempotent, so the store's snapshot of it is too.
+        again = subprocess.run(
+            [sys.executable, str(LOOP), "--viva-dir", str(viva),
+             "annotate", "--sidecar", str(side)],
+            capture_output=True, text=True)
+        assert again.returncode == 0, again.stderr
+        store_again = json.loads((viva / "decisions.json").read_text(encoding="utf-8"))
+        assert store_again == store, store_again
+
+
 def main() -> None:
     tests = [
         test_merge_adds_annotation_to_section,
@@ -235,6 +283,7 @@ def main() -> None:
         test_check_result_answers_the_flag_in_place,
         test_split_on_survives_the_merge,
         test_loop_annotate_merges_into_the_derived_round,
+        test_loop_annotate_snapshots_decisions,
     ]
     failed = 0
     for t in tests:

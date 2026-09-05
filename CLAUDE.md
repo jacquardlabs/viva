@@ -338,7 +338,11 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   disposable and reset each session. Don't add new state that must survive
   without documenting why here. The state clear lives in `scripts/loop.py`'s
   `_clear_state`, not in prose — it removes the round files, `server.url`,
-  `open-notes.json`, `target.json`, `diff.patch`, and `attachments/`.
+  `open-notes.json`, `target.json`, `diff.patch`, `decisions.json`, and
+  `attachments/`. `decisions.json` (#211) is this session's snapshot of
+  interview-answer annotations; the durable copy is the ledger's
+  `### Decisions` block written at `finish`, so it resets like everything
+  else here rather than surviving alongside `preferences.json`.
   `interview` adds `answers.json` to it (a stale one would satisfy the wait
   before the human typed a word); `start` deliberately does not, since
   `start --handoff` runs while the draft written from those answers is still

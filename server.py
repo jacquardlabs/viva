@@ -3866,6 +3866,10 @@ function docFlagSplit(section) {
     // section (drives the triage sort; rendered in the spec table) — not a
     // passage flag, so it's skipped here rather than holding the gutter open.
     if (a.kind === 'confidence') return;
+    // A decision (#211) carries no anchor to jump to — it's the answer
+    // behind the section, not a passage flag — but "the reviewer sees the
+    // answer beside the prose" means words, not a glyph. Margin unconditionally.
+    if (a.kind === 'decision') { margin.push(a); return; }
     const anchorId = a.anchor != null ? String(a.anchor) : '';
     const m = a.kind === 'preference' ? PREF_ID_RE.exec(a.message || '') : null;
     const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
