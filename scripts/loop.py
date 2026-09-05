@@ -348,6 +348,27 @@ def _run_bundle_checks(bundle: dict, round_file: Path) -> int:
     return len(flags)
 
 
+def _run_recheck_drift(round_file: Path) -> int:
+    """A recheck's (#83) one producer: `drift.py`, merged, then `recheck.py`
+    withdraws the seeded approval per flag. Returns the count withdrawn —
+    computed from `approved_ids` before/after, not by parsing either
+    script's printed line, since that's for a human, not this comparison."""
+    before = set(load_json(round_file).get("approved_ids") or [])
+    drift = run([sys.executable, SCRIPTS / "drift.py", "--input", round_file],
+                capture_output=True, text=True)
+    if drift.returncode != 0:
+        die(f"drift producer failed:\n{drift.stderr}")
+    run_stdin_or_die(
+        [sys.executable, SCRIPTS / "annotate.py",
+         "--input", round_file, "--annotations", "-"],
+        drift.stdout, "drift merge",
+        f"{round_file} may be partially annotated; fix and re-run.")
+    run_or_die([sys.executable, SCRIPTS / "recheck.py", "--input", round_file],
+               "recheck", f"{round_file} is unchanged on failure.")
+    after = set(load_json(round_file).get("approved_ids") or [])
+    return len(before - after)
+
+
 def _seam_stop(round_no: int, round_file: Path, why: str,
                diff: bool = False) -> int:
     print(f"viva-loop: round {round_no} parsed, NOT armed — {why}")
@@ -514,6 +535,13 @@ def cmd_start(args) -> int:
     if args.handoff and diff_form:
         die("--handoff hands a round to an interview, which is a doc review — "
             "use --doc")
+    if args.recheck and diff_form:
+        die("--recheck re-opens a signed DOC — a diff review (--target/--kind) "
+            "has no ledger to recheck against")
+    if args.recheck and args.handoff:
+        die("--recheck re-opens a doc already signed off; --handoff hands a "
+            "fresh draft to an interview still in progress — the two describe "
+            "opposite states of the same doc")
     if diff_form:
         record = _classify(args.target, args.kind)
         if record.get("kind") != "doc":
@@ -597,7 +625,11 @@ def _start_doc(args, viva: Path) -> int:
     # is a false positive.
     prior_in = prior_out = None
     prior_split_on = prior_doc_type = None
-    if not args.handoff and schema.has_revision_history(doc.read_text()):
+    # A recheck skips the plain resume branch outright — the two both fire on
+    # `has_revision_history`, and running the ledger seed (below) and the
+    # prior-pair carry together would be two mechanisms deciding the same
+    # thing. `--recheck` alone answers "was this signed off" here.
+    if not args.handoff and not args.recheck and schema.has_revision_history(doc.read_text()):
         n = current_round(viva)
         if n:
             src_in, src_out = round_files(viva, n)
@@ -649,6 +681,8 @@ def _start_doc(args, viva: Path) -> int:
         cmd += ["--posture", args.posture]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
+    if args.recheck:
+        cmd += ["--recheck"]
     try:
         if run(cmd).returncode != 0:
             die("parse failed")
@@ -667,6 +701,17 @@ def _start_doc(args, viva: Path) -> int:
         if bundle.get("checks"):
             merged = _run_bundle_checks(bundle, round_file)
             print(f"viva-loop: checks run: {checks} · {merged} flag(s) merged")
+
+    if args.recheck:
+        # The driver runs the producer itself, same shape as `_run_bundle_checks`
+        # above: between parse and any branch that could arm.
+        withdrawn = _run_recheck_drift(round_file)
+        if withdrawn == 0:
+            print("viva-loop: recheck — drift found nothing against the doc's "
+                  "own references; nothing to re-certify")
+            return 0
+        print(f"viva-loop: recheck — drift withdrew approval from "
+              f"{withdrawn} section(s)")
 
     if args.parse_only:
         return _seam_stop(1, round_file, "--parse-only")
@@ -862,6 +907,10 @@ def cmd_rearm(args) -> int:
     split_on = round_data.get("split_on")
     doc_type = round_data.get("doc_type")
     prior_pass = round_data.get("pass")
+    # A per-session fact, not a per-round decision like `pass` — a recheck
+    # stays a recheck for the life of the session, or round 2's finishing
+    # ledger would silently read "Signed off" instead of "Re-certified".
+    recheck = bool(round_data.get("recheck"))
     if not doc:
         die(f"round {n}'s input names no doc_file — cannot re-parse")
     if not Path(doc).exists():
@@ -915,6 +964,8 @@ def cmd_rearm(args) -> int:
         cmd += ["--pass", next_pass["kind"]]
         if next_pass.get("posture") is not None:
             cmd += ["--posture", next_pass["posture"]]
+    if recheck:
+        cmd += ["--recheck"]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
 
     # Round 2+ producer seam. Order is load-bearing: flags must merge before
@@ -1195,6 +1246,13 @@ def main() -> int:
                         "instead of refusing over it — the /viva-write seam. "
                         "Requires a live qa session; the round is armed into "
                         "that same process and its tab reflows in place.")
+    p.add_argument("--recheck", action="store_true",
+                   help="re-certification (#83): re-open a SIGNED doc "
+                        "(`--doc` only), seed every section approved from its "
+                        "own `## Revision History`, run drift.py, and withdraw "
+                        "approval per flag before the round arms. Refuses on "
+                        "an unsigned doc, and skips the plain resume branch "
+                        "(one mechanism decides 'was this signed off').")
     p.set_defaults(func=cmd_start)
 
     p = sub.add_parser("annotate", help="merge a producer sidecar into the "

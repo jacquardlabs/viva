@@ -32,7 +32,7 @@ only by JSON files under `.viva/`:
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
    `context_refs`, `review_target`, `drift`, `checklist`, `doc_types`,
    `headings_present`, `open_notes`, `preferences`, `revision_history`,
-   `docket`). Each
+   `recheck`, `docket`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
    They import no sibling **except** the shared contract, `schema.py` (below) —
    keep that the only cross-import so each stays independently testable.

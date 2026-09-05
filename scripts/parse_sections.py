@@ -27,10 +27,13 @@ Optional:
                       before the field existed.
   --posture P        normal | hard — a setting ON the pass, written inside the
                       `pass` object, never as its own round field. Needs --pass.
+  --recheck          Re-certification (#83): seeds every section approved
+                      from the doc's own `## Revision History` instead of a
+                      prior round file. Refuses on an unsigned doc.
 
 Exits non-zero if the doc can't be read, parsing fails the integrity check,
---split-on matches no heading, or prior round files are specified but can't
-be read.
+--split-on matches no heading, --recheck names an unsigned doc, or prior
+round files are specified but can't be read.
 """
 from __future__ import annotations
 
@@ -82,6 +85,16 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
     p.add_argument("--open-notes", help="Open-note store JSON (.viva/open-notes.json)")
+    p.add_argument(
+        "--recheck",
+        action="store_true",
+        help="Re-certification (#83): refuses unless `doc` already carries a "
+             "`## Revision History`. Seeds every section approved from the "
+             "doc's own ledger — a drift producer withdraws approval from "
+             "whichever sections it flags before the round arms. Recorded as "
+             "`recheck: true`; --prior-input, when also given, carries a "
+             "recheck's own round 1 forward the normal way.",
+    )
     return p.parse_args()
 
 
@@ -414,6 +427,10 @@ def main() -> None:
     except OSError as e:
         sys.exit(f"viva: cannot read {args.doc}: {e}")
 
+    if args.recheck and not schema.has_revision_history(text):
+        sys.exit(f"viva: --recheck requires a signed doc — {args.doc} carries "
+                 f"no ## Revision History")
+
     sections, rev_line = _split_sections(text, args.doc, args.split_on)
 
     if not sections:
@@ -422,7 +439,17 @@ def main() -> None:
     _integrity_check(text, sections, rev_line)
 
     prior_in, prior_v = _load_prior(args.prior_input, args.prior_verdicts)
-    approved_ids = _load_approved(prior_in, prior_v, sections)
+    if args.recheck and prior_in is None:
+        # Round 1 of a recheck: no round file carries the doc's prior sign-off,
+        # so the doc's own ledger IS the approval — seed every section, and
+        # `recheck.py` withdraws whichever ones a drift flag lands on before
+        # the round arms. Round 2+ of a recheck passes --prior-input, and the
+        # normal carry below already does the right thing with no special
+        # case: it intersects round 1's approved_ids with this round's
+        # verdicts, keyed on title+content match.
+        approved_ids = [s["id"] for s in sections]
+    else:
+        approved_ids = _load_approved(prior_in, prior_v, sections)
     _carry_annotations(prior_in, sections)
     _carry_summaries(prior_in, sections)
     _compute_diffs(prior_in, sections)
@@ -450,6 +477,11 @@ def main() -> None:
         if args.posture is not None:
             pass_spec["posture"] = args.posture
         data["pass"] = pass_spec
+    # Round state `loop.py rearm` reads back and carries forward, same as
+    # split_on/doc_type — a recheck's round 2 must still say so, or the
+    # finishing ledger silently reads "Signed off" instead of "Re-certified".
+    if args.recheck:
+        data["recheck"] = True
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)
