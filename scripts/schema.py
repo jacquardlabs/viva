@@ -45,6 +45,12 @@ PASS_POSTURES = ("normal", "hard")
 # checklist, contradiction, confidence, preference) are not check flags.
 CHECK_KINDS = ("headings-present",)
 
+# An interview answer projected onto the section it shaped (#211) — advisory,
+# section-scoped, and not in CHECK_KINDS or DOC_SCOPE_KINDS. `loop.py`'s
+# `.viva/decisions.json` snapshot and `revision_history.py`'s `### Decisions`
+# block both key on this literal so a rename can't silently split them.
+DECISION_KIND = "decision"
+
 # The scope a producer's flag is ABOUT — a DIFFERENT AXIS from CHECK_KINDS
 # ("does this gate a checks round"). `headings_present.py`/`checklist.py`
 # report whole-document facts but anchor to `sections[0]["id"]` (the only

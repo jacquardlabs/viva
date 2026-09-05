@@ -41,6 +41,9 @@ def test_draft_step_reads_the_register_and_disowns_the_interview():
         "in the doc text")
     assert "confidence sidecar" in low, \
         "the draft step must name where provenance goes instead of the prose"
+    assert re.search(r"decision\**\s*sidecar", low), \
+        "the draft step must also name the decision sidecar (#211) as a home " \
+        "for interview-answer provenance"
     assert "trim pass" in low, "the draft step must run the trim pass before parse"
     print("  ok  test_draft_step_reads_the_register_and_disowns_the_interview")
 

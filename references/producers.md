@@ -168,3 +168,23 @@ server reads `basis`/`level` directly — never the message — to offer a
 **weakest-first** sort toggle; document order stays the default. A section with
 no confidence annotation keeps document order, and a doc with none hides the
 toggle entirely.
+
+## Decisions (interview answers on the record)
+
+```json
+{ "kind": "decision", "severity": "info", "id": "s2",
+  "message": "Retry budget? → 3 attempts, exponential backoff" }
+```
+
+Like confidence, this is the generating agent's own self-annotation from
+`/viva-write`, one flag per answered interview question per section it
+shaped — `message` is the question and the chosen answer, verbatim, never
+paraphrased. Route it through `loop.py annotate` the same way; the driver
+additionally snapshots every `decision` flag it merges into
+`.viva/decisions.json`, keyed by `schema.section_key(title)` rather than the
+section's id, since a decision's identity is the section it describes, not
+the id a later round happens to re-assign. `loop.py rearm` re-merges from
+that store before arming, so a decision survives a rewrite that the parser's
+normal byte-identical carry would otherwise drop it from. At sign-off,
+`revision_history.py` folds the store into a `### Decisions` block in the
+ledger, grouped by section heading (issue #211).
