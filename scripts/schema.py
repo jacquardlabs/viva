@@ -339,6 +339,11 @@ def validate_review_input(data: dict) -> None:
             raise ValueError(
                 "review-input.pass.posture %r is not one of %s"
                 % (spec.get("posture"), "|".join(PASS_POSTURES)))
+    # Presence-gated: `recheck` (#83) moves the ledger phrasing at `finish`
+    # and `loop.py rearm` carries it forward — a malformed value would
+    # silently revert a re-certification session to an ordinary one.
+    if "recheck" in data and not isinstance(data["recheck"], bool):
+        raise ValueError("review-input.recheck must be a boolean")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")
@@ -414,6 +419,24 @@ def has_revision_history(doc_text: str) -> bool:
     branch both ask this.
     """
     return REVISION_HISTORY_RE.search(doc_text) is not None
+
+
+# The literal line shape `revision_history.py`'s `build_block` writes —
+# "Signed off" or "Re-certified" (#83), never a bare date search: a doc can
+# quote a date anywhere in its own prose.
+_SIGNOFF_LINE_RE = re.compile(
+    r"(?m)^(?:Signed off|Re-certified) via viva review — .*?(\d{4}-\d{2}-\d{2})\s*$"
+)
+
+
+def last_signoff_date(doc_text: str) -> str | None:
+    """The ISO date off the LAST sign-off/re-certification line, or None if
+    the doc carries none. `revision_history.py` appends a new summary line
+    under the one `## Revision History` heading each session, so this is the
+    most RECENT sign-off, not the first — the one a recheck (#83) or the
+    drift hook (#143) needs."""
+    matches = list(_SIGNOFF_LINE_RE.finditer(doc_text))
+    return matches[-1].group(1) if matches else None
 
 
 def _check_flags(input_data: dict) -> list:

@@ -577,6 +577,50 @@ def test_has_revision_history_is_anchored():
     print("  ok  test_has_revision_history_is_anchored")
 
 
+def test_last_signoff_date_on_one_several_and_zero_blocks():
+    """The date a recheck (#83) and the drift hook (#143) both need — the
+    LAST sign-off/re-certification line, never the first, and never a bare
+    date mentioned anywhere else in the doc's prose."""
+    assert schema.last_signoff_date("# D\n\nno ledger here\n") is None
+
+    one = ("# D\n\n## Revision History\n\n"
+           "Signed off via viva review — 1 round, 1 section, 0 with comments. "
+           "2026-06-01\n")
+    assert schema.last_signoff_date(one) == "2026-06-01"
+
+    several = one + (
+        "\nSigned off via viva review — 1 round, 1 section, 0 with comments. "
+        "2026-06-15\n"
+        "\nRe-certified via viva review — 1 round, 1 section, 0 with comments. "
+        "2026-07-01\n"
+    )
+    assert schema.last_signoff_date(several) == "2026-07-01", \
+        "the LAST block's date, not the first"
+
+    # A date mentioned in ordinary prose, not on the literal summary line,
+    # must not be mistaken for a sign-off.
+    prose = "# D\n\nThe incident on 2026-08-08 prompted this rewrite.\n"
+    assert schema.last_signoff_date(prose) is None
+    print("  ok  test_last_signoff_date_on_one_several_and_zero_blocks")
+
+
+def test_recheck_is_presence_gated_and_boolean_only():
+    """`recheck` (#83) moves the ledger phrasing at `finish` — a malformed
+    present value must fail loudly where it was written, not silently revert
+    a re-certification session to an ordinary one."""
+    base = {"sections": [{"id": "s1", "title": "T", "content": "c"}]}
+    schema.validate_review_input(dict(base))  # absent — fine
+    schema.validate_review_input(dict(base, recheck=True))
+    schema.validate_review_input(dict(base, recheck=False))
+    for bad in ("true", 1, None, [], {}):
+        try:
+            schema.validate_review_input(dict(base, recheck=bad))
+            raise AssertionError(f"recheck={bad!r} should have been rejected")
+        except ValueError:
+            pass
+    print("  ok  test_recheck_is_presence_gated_and_boolean_only")
+
+
 def test_round_is_presence_gated_and_absence_normalizes():
     """`round` is optional and stays optional — a present malformed value is a
     hard failure, but an absent one is NORMALIZED rather than rejected,
@@ -638,8 +682,10 @@ def main():
     test_check_kinds_covers_every_shipped_bundle_check()
     test_doc_scope_kinds_is_a_closed_set()
     test_has_revision_history_is_anchored()
+    test_last_signoff_date_on_one_several_and_zero_blocks()
+    test_recheck_is_presence_gated_and_boolean_only()
     test_round_is_presence_gated_and_absence_normalizes()
-    print("OK (26 tests)")
+    print("OK (28 tests)")
 
 
 if __name__ == "__main__":

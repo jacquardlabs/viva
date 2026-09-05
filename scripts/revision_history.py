@@ -79,17 +79,22 @@ def build_threads_block(threads: list[dict]) -> str:
     return "\n".join(lines).rstrip()
 
 
-def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
-    """Return (entries, rounds_total, sections_total) from round file pairs."""
+def collect(viva_dir: Path) -> tuple[list[dict], int, int, bool]:
+    """Return (entries, rounds_total, sections_total, is_recheck) from round
+    file pairs. `is_recheck` reads the HIGHEST round's own `recheck` flag
+    (#83) — a recheck's round 1 seeds it and `loop.py rearm` carries it
+    forward, so the finishing round always carries the true answer."""
     rounds = sorted(
         n for p in viva_dir.glob(schema.round_input_glob())
         if (n := schema.parse_round_input_stem(p.stem)) is not None
     )
     entries: list[dict] = []
     sections_total = 0
+    is_recheck = False
     for n in rounds:
         inp_path, out_path = schema.round_file_paths(viva_dir, n)
         inp = json.loads(inp_path.read_text())
+        is_recheck = bool(inp.get("recheck"))
         if not out_path.exists():
             continue
         out = json.loads(out_path.read_text())
@@ -100,16 +105,19 @@ def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
             if (e := schema.verdict_to_ledger_entry(
                 n, titles.get(s.get("id"), s.get("id", "?")), s)) is not None
         )
-    return entries, len(rounds), sections_total
+    return entries, len(rounds), sections_total, is_recheck
 
 
 def build_block(entries: list[dict], rounds_total: int,
-                sections_total: int, day: str) -> str:
+                sections_total: int, day: str, is_recheck: bool = False) -> str:
     # `with comments`, not `revised` (#178) — an `info` question earns a
     # ledger row too, with no edit behind it.
     commented = len({e["section_title"] for e in entries})
+    # A recheck (#83) re-certifies, it doesn't re-sign — the two verbs read
+    # differently in a ledger scanned for "when was this last touched".
+    verb = "Re-certified" if is_recheck else "Signed off"
     lines = [
-        f"Signed off via viva review — {rounds_total} "
+        f"{verb} via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
         f"section{'s' if sections_total != 1 else ''}, "
         f"{commented} with comments. {day}"
@@ -127,10 +135,10 @@ def build_block(entries: list[dict], rounds_total: int,
 
 
 def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
-    entries, rounds_total, sections_total = collect(viva_dir)
+    entries, rounds_total, sections_total, is_recheck = collect(viva_dir)
     if rounds_total == 0:
         sys.exit(f"no review round files found in {viva_dir}")
-    block = build_block(entries, rounds_total, sections_total, day)
+    block = build_block(entries, rounds_total, sections_total, day, is_recheck)
     threads = collect_threads(viva_dir)
     if threads:
         block = block + "\n\n" + build_threads_block(threads)
