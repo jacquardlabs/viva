@@ -22,7 +22,7 @@ The merge is:
   - validated   — severity normalized to info|warn|error, kind/message required;
   - idempotent  — an identical flag already present is not re-added;
   - answering   — a flag that matches one already there except for its `result`
-                  writes that result onto it rather than appending a twin;
+                  or `source` writes that onto it rather than appending a twin;
   - a no-op     — an empty sidecar leaves the input byte-identical.
 
 CONVENTION EXCEPTION: unlike every other script, annotate.py modifies `--input`
@@ -64,6 +64,11 @@ def _clean(item: dict) -> dict | None:
         annot["basis"] = item["basis"]
     if item.get("level") in ("high", "medium", "low"):
         annot["level"] = item["level"]
+    # The evidence behind a confidence claim — not identity-bearing (see
+    # _same_flag), so re-emitting the same flag with corrected evidence
+    # updates it in place rather than appending a twin.
+    if isinstance(item.get("source"), str) and item["source"].strip():
+        annot["source"] = item["source"]
     # A check's finding (schema.CHECK_KINDS). Non-empty by construction: a
     # blank result answers nothing, and a `checks` round stays held until
     # every check flag carries one.
@@ -72,15 +77,20 @@ def _clean(item: dict) -> dict | None:
     return {"id": str(sid), "annotation": annot}
 
 
+_NON_IDENTITY = ("result", "source")
+
+
 def _same_flag(a: dict, b: dict) -> bool:
-    """Are these the same flag, ignoring its result?
+    """Are these the same flag, ignoring its result and source?
 
     The result is the ANSWER to a flag, not part of its identity, so a
     producer re-emitting a flag with a result lands on the existing flag
-    instead of appending a result-less twin.
+    instead of appending a result-less twin. Source is evidence about an
+    existing claim, not a new claim — re-emitting corrected evidence must
+    update the flag in place, the same way.
     """
-    return ({k: v for k, v in a.items() if k != "result"}
-            == {k: v for k, v in b.items() if k != "result"})
+    return ({k: v for k, v in a.items() if k not in _NON_IDENTITY}
+            == {k: v for k, v in b.items() if k not in _NON_IDENTITY})
 
 
 def merge_annotations(data: dict, sidecar: list) -> dict:
@@ -105,8 +115,11 @@ def merge_annotations(data: dict, sidecar: list) -> dict:
         existing = next((a for a in annots if _same_flag(a, new)), None)
         if existing is None:
             annots.append(new)
-        elif "result" in new:
-            existing["result"] = new["result"]
+        else:
+            if "result" in new:
+                existing["result"] = new["result"]
+            if "source" in new:
+                existing["source"] = new["source"]
         # Drop an empty list we may have just created.
         if not annots:
             del section["annotations"]
