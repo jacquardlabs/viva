@@ -250,7 +250,10 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
     adds `answers.json`, which `start` must never touch."""
     for p in list(viva.glob(schema.round_input_glob())) + list(viva.glob(schema.round_output_glob())):
         p.unlink()
-    names = ["open-notes.json", "target.json", "diff.patch"]
+    # `decisions.json` is this session's snapshot (#211) — the durable copy is
+    # the ledger's `### Decisions` block, written at `finish`, so it resets
+    # like everything else here.
+    names = ["open-notes.json", "target.json", "diff.patch", "decisions.json"]
     if not keep_server_url:
         names.append("server.url")
     if include_answers:
@@ -679,6 +682,73 @@ def _start_doc(args, viva: Path) -> int:
     return cmd_arm(args)
 
 
+def _snapshot_decisions(viva: Path, round_file: Path) -> None:
+    """After a merge, capture every `decision`-kind flag (#211) from
+    `round_file` into `.viva/decisions.json`, keyed by `schema.section_key`.
+
+    A round file itself can't be the durable copy: annotations carry forward
+    only onto a byte-identical section (`parse_sections._carry_identical`),
+    so a decision on a section a later round rewrites would otherwise vanish.
+    `cmd_rearm`'s `_reapply_decisions` re-merges from this store before
+    arming the next round. Additive — never deletes an entry no longer
+    present in `round_file` — since a decision's flag is only ever emitted
+    once, at hand-off."""
+    data = load_json(round_file)
+    store_path = viva / "decisions.json"
+    store = {}
+    if store_path.exists():
+        try:
+            store = json.loads(store_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            store = {}
+    changed = False
+    for section in data.get("sections", []) or []:
+        flags = [a for a in section.get("annotations", []) or []
+                 if isinstance(a, dict) and a.get("kind") == schema.DECISION_KIND]
+        if not flags:
+            continue
+        key = schema.section_key(section.get("title", ""))
+        store[key] = {"title": section.get("title", ""), "flags": flags}
+        changed = True
+    if changed:
+        store_path.write_text(json.dumps(store, indent=2, ensure_ascii=False),
+                              encoding="utf-8")
+
+
+def _reapply_decisions(viva: Path, round_file: Path) -> None:
+    """Re-merge `.viva/decisions.json` onto `round_file` by `section_key`,
+    before it arms — the parser's byte-identical carry drops a decision
+    annotation from any section the rewrite touched, and `section_key` is the
+    identity a decision travels on, not the section's (re-assigned) id.
+    No-op absent a store; idempotent, same as any `annotate.py` merge."""
+    store_path = viva / "decisions.json"
+    if not store_path.exists():
+        return
+    try:
+        store = json.loads(store_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    data = load_json(round_file)
+    sidecar = []
+    for section in data.get("sections", []) or []:
+        entry = store.get(schema.section_key(section.get("title", "")))
+        if not entry:
+            continue
+        for flag in entry.get("flags", []):
+            sidecar.append({**flag, "id": section["id"]})
+    if not sidecar:
+        return
+    sidecar_path = viva / "decisions-sidecar.json"
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    try:
+        run_or_die([sys.executable, SCRIPTS / "annotate.py",
+                    "--input", round_file, "--annotations", sidecar_path],
+                   "annotate (decisions)",
+                   f"{round_file} may be partially annotated; fix and re-run.")
+    finally:
+        sidecar_path.unlink(missing_ok=True)
+
+
 def cmd_annotate(args) -> int:
     viva = Path(args.viva_dir)
     n = current_round(viva)
@@ -699,6 +769,7 @@ def cmd_annotate(args) -> int:
                 "--input", inp, "--annotations", args.sidecar],
                "annotate",
                f"Fix the sidecar and re-run; {inp} is unchanged on failure.")
+    _snapshot_decisions(viva, inp)
     print(f"viva-loop: round {n} annotated · {inp}")
     return 0
 
@@ -916,6 +987,10 @@ def cmd_rearm(args) -> int:
         if next_pass.get("posture") is not None:
             cmd += ["--posture", next_pass["posture"]]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
+    # A decision (#211) carries by `section_key`, not by the parser's
+    # byte-identical carry — re-merge it before anything downstream reads
+    # this round file.
+    _reapply_decisions(viva, nxt_in)
 
     # Round 2+ producer seam. Order is load-bearing: flags must merge before
     # the round ships to the running server.
