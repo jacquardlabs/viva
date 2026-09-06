@@ -110,12 +110,16 @@ def server_url(viva: Path) -> str | None:
     return url
 
 
-def _request(req: urllib.request.Request, what: str, recovery: str) -> bytes:
-    """One error shape for every HTTP call — the server's `{"error": ...}`
-    body reaches the agent instead of a traceback."""
+def post(base: str, path: str, payload: dict, what: str, recovery: str = "") -> None:
+    """The server's `{"error": ...}` body reaches the agent instead of a
+    traceback — the one error shape every caller gets."""
+    req = urllib.request.Request(
+        base + path, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
     try:
         with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
-            return resp.read()
+            resp.read()
     except urllib.error.HTTPError as e:
         detail = ""
         try:
@@ -127,15 +131,6 @@ def _request(req: urllib.request.Request, what: str, recovery: str) -> bytes:
             + (f" — {detail}" if detail else "") + f". {recovery}")
     except (urllib.error.URLError, OSError) as e:
         die(f"{what}: could not reach the server ({e}). {recovery}")
-    return b""  # unreachable; die() raises
-
-
-def post(base: str, path: str, payload: dict, what: str, recovery: str = "") -> None:
-    req = urllib.request.Request(
-        base + path, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    _request(req, what, recovery)
 
 
 def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:

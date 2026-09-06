@@ -616,7 +616,7 @@ def test_qa_wears_the_grammar_not_the_print(page: str) -> None:
     assert "pickQAChoice(qState.active, q.choices[n - 1]);" in page
     # The palette is a directory of that same layer, on this surface too — it
     # used to refuse to open at all without REVIEW_DATA.
-    assert "return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();" in page
+    assert "(REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands())" in page
     assert "if ((!REVIEW_DATA && !QA_DATA) || paletteIsOpen()) return;" in page, \
         "the palette must open on the interview too"
     print("test_qa_wears_the_grammar_not_the_print: OK")
@@ -720,7 +720,7 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
     assert "if (DOC_SCOPE_KINDS.includes(a.kind)) { doc.push(a); return; }" in page, \
         "a document fact goes to neither column"
     # The slip.
-    for fn in ("function documentFlags(", "function docSlipHTML(", "function renderDocSlip("):
+    for fn in ("function docSlipHTML(", "function renderDocSlip("):
         assert fn in page, f"the document slip is missing {fn}"
     assert page.index('id="transmittal"') < page.index('id="doc-slip"') \
         < page.index('id="review-cards"'), \

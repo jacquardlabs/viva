@@ -3,7 +3,7 @@
 client unchanged, and the page ships the annotation-strip renderer + styles.
 
 Annotations are advisory badges a pre-review pass writes into review-input.
-The server is a dumb pipe for them (load_input is verbatim), so the contract is:
+The server is a dumb pipe for them (the input read is verbatim), so the contract is:
 GET /input and the /next-round push must both preserve the annotations array,
 and the page must define the renderer that turns them into colored badges.
 """

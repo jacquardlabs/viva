@@ -606,11 +606,13 @@ h1.tb-val { margin: 0; }
 .sort-toggle:hover { color: var(--ink); border-color: var(--ink); }
 .sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
 
-/* ─── Preferences panel toggle (issue #142) ──────────────────
-   Lives inside #stats-area beside the (aria-live) verdict counters — a
-   static label, never an interpolated count, so it never competes with the
-   counters for that region's announcement. */
-.prefs-toggle {
+/* ─── Bottom-bar toggles (prefs #142, theme, voice) ───────────
+   One face for all three: prefs lives inside #stats-area beside the
+   (aria-live) verdict counters — a static label, never an interpolated
+   count, so it never competes with the counters for that region's
+   announcement. Theme and voice each state their mode in words rather than
+   a glyph — a glyph makes the reader guess which state it names. */
+.prefs-toggle, .theme-toggle, .voice-toggle {
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
@@ -622,22 +624,9 @@ h1.tb-val { margin: 0; }
   border-radius: 0;
   background: none;
 }
-.prefs-toggle:hover { color: var(--ink); border-color: var(--ink); }
-
-/* States the current mode in words rather than a sun/moon glyph — a glyph
-   makes the reader guess which state it names. */
-.theme-toggle {
-  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--soft);
-  padding: 4px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  background: none;
-}
+.prefs-toggle:hover, .theme-toggle:hover, .voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
+/* Cobalt only while listening — an idle control isn't doing anything yet. */
+.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
 
 /* Session controls — prefs, voice, theme — as ONE unit so they wrap together;
    an auto margin on a single item would wrap that item alone. */
@@ -647,25 +636,6 @@ h1.tb-val { margin: 0; }
   gap: 6px;
   margin-left: auto;
 }
-.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
-
-/* ─── Voice — the oral examination ───────────────────────────
-   States its mode in words, same reason as the theme toggle. Cobalt only
-   while listening — an idle control isn't doing anything yet. */
-.voice-toggle {
-  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--soft);
-  padding: 4px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  background: none;
-}
-.voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
-.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
 
 /* The transcript: every utterance prints here with the reading it got,
    INCLUDING ones that matched no verb, so nothing is silently swallowed. */
@@ -2390,7 +2360,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    Pre-flight index over every section: id, title, verdict dot + label,
    active-note count. btn-submit's ready click opens this instead of
    submitting; only #recap-confirm calls submitReview(false). */
-.recap-overlay {
+.recap-overlay, .prefs-overlay {
   position: fixed; inset: 0; z-index: 200;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -2399,7 +2369,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 /* The palette's materials, since the palette is what a catalog overlay looks
    like here: paper rather than the recessed panel `--bg` gave it, a square 1px
    ink border, and the same lift off the scrim. */
-.recap-panel {
+.recap-panel, .prefs-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
   background: var(--paper);
@@ -2497,21 +2467,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 /* ─── Preferences panel — view/mute learned preferences (#142) ────
    A second modal, built on the recap overlay's shape (role="dialog", inert
-   background, focus trap); at most one of the two is ever open at a time. */
-.prefs-overlay {
-  position: fixed; inset: 0; z-index: 200;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-  background: var(--scrim);
-}
-.prefs-panel {
-  width: min(640px, 92vw); max-height: 82vh;
-  display: flex; flex-direction: column;
-  background: var(--paper);
-  border: 1px solid var(--ink);
-  border-radius: 0;
-  box-shadow: 0 18px 50px var(--scrim);
-}
+   background, focus trap); at most one of the two is ever open at a time —
+   its overlay/panel shell is the shared .recap-overlay/.recap-panel rule
+   above. */
 .prefs-head {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 14px;
@@ -3298,6 +3256,14 @@ function transmittalHTML(data) {
     + '<div class="transmittal-rows" id="transmittal-rows" hidden>' + rows.join('') + '</div>';
 }
 
+function wireDisclosure(headId, bodyId) {
+  const head = el(headId), body = el(bodyId);
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+}
+
 function renderTransmittal() {
   const panel = el('transmittal');
   if (!panel) return;
@@ -3308,27 +3274,18 @@ function renderTransmittal() {
   panel.querySelectorAll('.transmittal-row').forEach(btn => {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
   });
-  const head = el('transmittal-head'), body = el('transmittal-rows');
-  if (head && body) head.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-  });
+  wireDisclosure('transmittal-head', 'transmittal-rows');
 }
 
 /* ─── The document slip ──────────────────────────────────────
    Every doc-scope flag in the round, once, in section order — stated once as
    a slip instead of five amber lines duplicated in section 1's margin. */
-function documentFlags() {
-  return ((REVIEW_DATA && REVIEW_DATA.sections) || [])
-    .flatMap(s => docFlagSplit(s).doc);
-}
-
 function docSlipHTML() {
   /* Every mode renders this, not review alone: `docFlagSplit` routes a
      doc-scope flag out of both columns unconditionally, so gating it here
      would make the flag render NOWHERE while round_is_complete still enforces it. */
   if (!REVIEW_DATA) return '';
-  const flags = documentFlags();
+  const flags = (REVIEW_DATA.sections || []).flatMap(s => docFlagSplit(s).doc);
   if (!flags.length) return '';
   // The checks tally rides in the head because `sectionSpec` no longer draws
   // one: today's only CHECK_KIND is doc-scope, so without this the gate would
@@ -3359,11 +3316,7 @@ function renderDocSlip() {
   if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
   panel.innerHTML = html;
   panel.style.display = '';
-  const head = el('doc-slip-head'), body = el('doc-slip-rows');
-  if (head && body) head.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-  });
+  wireDisclosure('doc-slip-head', 'doc-slip-rows');
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -5605,10 +5558,6 @@ function reviewFootSeg(sections, total) {
    every verb listed here is one the page also carries as a control or a
    keycap. Built from live state on each open, so "approve section 9" names
    the section actually under the reader. ═══════════════════════════════ */
-function paletteCommands() {
-  return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();
-}
-
 /* The interview's own directory. Every verb here is one the Q&A page also
    carries as a control or a keycap — the choices by their digits, confirm by
    `c`, skip by its button — which is the rule the palette exists under: a
@@ -5721,7 +5670,8 @@ function closePalette() {
 
 function renderPalette(query) {
   const q = String(query || '').trim().toLowerCase();
-  _palCmds = paletteCommands().filter(c => !q || c.label.toLowerCase().includes(q));
+  _palCmds = (REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands())
+    .filter(c => !q || c.label.toLowerCase().includes(q));
   _palIdx = 0;
   const list = el('pal-list');
   if (!_palCmds.length) { list.innerHTML = '<div class="pal-empty">no matching command</div>'; return; }
@@ -7167,6 +7117,11 @@ el('pal-overlay').addEventListener('mousedown', e => {
 });
 
 /* ─── Keyboard shortcuts ────────────────────────────────── */
+function submitOnCmdEnter(e) {
+  const sub = el('btn-submit');
+  if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
+}
+
 document.addEventListener('keydown', e => {
   // Nothing on this page can reach the server any more (#174) — the
   // dead-session overlay is the one modal that doesn't close on Escape.
@@ -7288,11 +7243,7 @@ document.addEventListener('keydown', e => {
         return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      const sub = el('btn-submit');
-      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
-      return;
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { submitOnCmdEnter(e); return; }
   }
 
   // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
@@ -7320,11 +7271,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault(); advanceQA(qState.active); return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      const sub = el('btn-submit');
-      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
-      return;
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { submitOnCmdEnter(e); return; }
   }
 });
 
@@ -7519,11 +7466,6 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def load_input(path: str) -> dict:
-    with open(path, encoding='utf-8') as f:
-        return json.load(f)
-
-
 def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> tuple[dict[str, int], bool]:
     """Cumulative per-section revision count for the round served (#141) —
     wire-only, never written to disk. Walks historical rounds 1..round_num-1
@@ -7609,10 +7551,6 @@ def _atomic_write(path: Path, text: str) -> None:
     # implementation; this wrapper only adds the mkdir its 3 callers rely on.
     path.parent.mkdir(parents=True, exist_ok=True)
     schema.atomic_write(path, text)
-
-
-def write_output(path: str, data: dict) -> None:
-    _atomic_write(Path(path), json.dumps(data, indent=2))
 
 
 def _load_preferences_store(viva_dir: Path) -> dict:
@@ -8014,7 +7952,7 @@ class Handler(BaseHTTPRequestHandler):
         if "answers" in data:
             data = annotate_qa_acceptance(data, questions_snapshot)
         try:
-            write_output(out, data)
+            _atomic_write(Path(out), json.dumps(data, indent=2))
         except (IOError, OSError) as e:
             self._error(500, f"write failed: {e}")
             return
@@ -8282,7 +8220,8 @@ if __name__ == "__main__":
     _PREFS_STORE_PATH = str(_viva_dir / "preferences.json")
     _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
     _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
-    _input_data = load_input(args.input)
+    with open(args.input, encoding='utf-8') as f:
+        _input_data = json.load(f)
     # Validate the input on read, keyed on the LAUNCH MODE — same reason as
     # `/complete`'s guard: keying on shape let a file with neither `sections`
     # nor `questions` through unvalidated. A shape/mode mismatch now exits 1

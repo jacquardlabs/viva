@@ -19,6 +19,20 @@ def _rule(selector: str) -> str:
     return m.group(0)
 
 
+def _rule_in_list(selector: str) -> str:
+    """Like `_rule`, but the selector may sit in a comma-joined list (a
+    shared rule collapsing several toggles/panels into one) — the tail
+    before `{` must start with a comma or whitespace, so a same-token suffix
+    like `:focus-visible` or `.is-live` can't be mistaken for the rule's own
+    body. Kept separate from `_rule` rather than loosening it for every
+    caller: a bare word like "html" is a substring of "innerHTML" all over
+    this page, and the loosened tail would bridge straight past it to the
+    next brace anywhere downstream."""
+    m = re.search(re.escape(selector) + r"(?:[,\s][^{}]*)?\{[^}]*\}", HTML)
+    assert m, f"page missing rule: {selector}"
+    return m.group(0)
+
+
 def _keydown() -> str:
     start = HTML.index("document.addEventListener('keydown', e => {")
     return HTML[start:]
@@ -175,7 +189,7 @@ def test_the_bar_s_controls_keep_one_grammar():
     assert "border: 1px solid var(--rule)" in _rule(".btn-skip")
     assert ".btn-skip:hover { border-color: var(--ink); color: var(--ink); }" in HTML
     assert ".sort-toggle:hover { color: var(--ink); border-color: var(--ink); }" in HTML
-    prefs = _rule(".prefs-toggle")
+    prefs = _rule_in_list(".prefs-toggle")
     assert "border-radius: 0" in prefs and "var(--rule)" in prefs and "ui-monospace" in prefs
     assert ".cmt-save { --c: var(--acc); color: var(--acc); }" in HTML
     assert ".lflag-error { color: var(--fact)" in HTML and "var(--violet)" in _rule(".annot-error")
