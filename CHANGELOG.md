@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.13.0 (2026-09-06)
+
+### Documentation
+
+- Name recheck.py in CLAUDE.md's stateless-filter list
+  ([#231](https://github.com/jacquardlabs/viva/pull/231),
+  [`715197f`](https://github.com/jacquardlabs/viva/commit/715197f231d9247d6a25cab27158b3b01a2a9ce7))
+
+### Features
+
+- Loop.py start --recheck re-certifies a signed doc against drift
+  ([#231](https://github.com/jacquardlabs/viva/pull/231),
+  [`715197f`](https://github.com/jacquardlabs/viva/commit/715197f231d9247d6a25cab27158b3b01a2a9ce7))
+
+
 ## v2.12.0 (2026-09-06)
 
 ### Bug Fixes
