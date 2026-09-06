@@ -959,6 +959,67 @@ def test_coarser_heading_approval_not_carried_when_boundary_moves() -> None:
     assert followups["id"] not in data["approved_ids"], "new card was never approved"
 
 
+SIGNED_DOC = (
+    "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n\n## Gamma\n\ng\n\n"
+    "---\n\n## Revision History\n\n"
+    "Signed off via viva review — 1 round, 3 sections, 0 with comments. 2026-06-01\n"
+)
+
+
+def test_recheck_seeds_every_section_approved() -> None:
+    data = run(SIGNED_DOC, extra_args=["--recheck"])
+    assert data["recheck"] is True, data
+    assert sorted(data["approved_ids"]) == sorted(s["id"] for s in data["sections"]), data
+
+
+def test_recheck_refuses_an_unsigned_doc() -> None:
+    result, wrote = run_expect_fail("# Doc\n\n## Alpha\n\na\n", ["--recheck"])
+    assert result.returncode != 0, "recheck must refuse a doc with no ledger"
+    assert not wrote, "no round file must be written on refusal"
+    assert "signed doc" in result.stderr, result.stderr
+
+
+def test_no_recheck_key_when_flag_absent() -> None:
+    assert "recheck" not in run(SIGNED_DOC), "no flag, no key"
+
+
+def test_recheck_round_two_carries_the_normal_way() -> None:
+    """Round 2 of a recheck passes `--prior-input`/`--prior-verdicts` — the
+    existing carry (`_load_approved`) needs no special case, exercised across
+    the three arms CLAUDE.md's PR plan calls out: a `changes` verdict is
+    pending (Alpha); a section rewritten with NO verdict submitted is pending
+    too, since content no longer matches (Beta); a section neither commented
+    on nor rewritten stays approved (Gamma)."""
+    round1 = run(SIGNED_DOC, extra_args=["--recheck"])
+    alpha = next(s for s in round1["sections"] if s["title"] == "Alpha")
+    prior_verdicts = {
+        "round": 1, "submitted_early": False,
+        "sections": [
+            # The human requests changes on Alpha — pending in round 2.
+            {"id": alpha["id"], "verdict": "changes", "note": "reword"},
+            # Beta and Gamma carry no verdict at all.
+        ],
+    }
+    # The agent rewrites Alpha in response to the comment, and unilaterally
+    # tidies Beta's wording though nobody asked — Gamma is untouched.
+    new_doc = (SIGNED_DOC
+               .replace("## Alpha\n\na\n", "## Alpha\n\na, reworded\n")
+               .replace("## Beta\n\nb\n", "## Beta\n\nb, tidied\n"))
+    round2 = run(new_doc, extra_args=["--recheck"],
+                 prior_input=round1, prior_verdicts=prior_verdicts)
+    assert round2["recheck"] is True, round2
+    by_title = {s["title"]: s for s in round2["sections"]}
+    assert set(by_title) == {"Doc", "Alpha", "Beta", "Gamma"}, round2["sections"]
+    assert by_title["Alpha"]["id"] not in round2["approved_ids"], \
+        "a section with a changes verdict must not carry its approval forward"
+    assert by_title["Beta"]["id"] not in round2["approved_ids"], \
+        "a rewritten section (no verdict, content changed) must not carry " \
+        "its approval forward — content is no longer byte-identical"
+    assert by_title["Gamma"]["id"] in round2["approved_ids"], \
+        "Gamma was left alone (no verdict, no rewrite) — its recheck-seeded " \
+        "approval must survive round 2"
+
+
 def main() -> None:
     tests = [
         test_basic_h2_split,
@@ -1007,6 +1068,10 @@ def main() -> None:
         test_coarser_heading_before_first_split_stays_in_preamble,
         test_coarser_trailing_revision_history_excluded_not_absorbed,
         test_coarser_heading_approval_not_carried_when_boundary_moves,
+        test_recheck_seeds_every_section_approved,
+        test_recheck_refuses_an_unsigned_doc,
+        test_no_recheck_key_when_flag_absent,
+        test_recheck_round_two_carries_the_normal_way,
     ]
     failed = 0
     for t in tests:
