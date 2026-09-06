@@ -30,7 +30,7 @@ only by JSON files under `.viva/`:
    siblings as subprocesses** rather than importing them, so part 3's
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
-   `context_refs`, `review_target`, `drift`, `checklist`, `doc_types`,
+   `context_refs`, `review_target`, `drift`, `doc_types`,
    `headings_present`, `open_notes`, `preferences`, `revision_history`,
    `recheck`, `docket`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
@@ -102,9 +102,7 @@ import. It holds:
 - **`section_key(title)`** — the ONE section-identity normalization. Approval
   carry-forward, annotation carry-forward, round-to-round diffs, and open-note
   threads all key on it, so a title edit changes identity in exactly one place.
-  Never reimplement it inline. (Note: `checklist.py._norm` is deliberately
-  *different* — it strips all punctuation for tolerant template matching, a
-  fuzzy match, not an identity. Don't fold the two together.)
+  Never reimplement it inline.
 - **`verdict_to_ledger_entry()`** — the single rule for which verdicts become a
   Revision-History row and how the note is derived (join `comments[]`, else the
   section `note`). Both the live `/input` ledger and `revision_history.py` use it.
@@ -117,7 +115,7 @@ import. It holds:
   suggestion derives to the section verdict `changes` and is never a verdict),
   `THREAD_STATUSES` plus `thread_is_unresolved()` (`open` and `declined` are
   both live; only `settled` closes — membership, never `!= settled`, so an
-  unknown status is not silently treated as live), `PASS_KINDS`/`PASS_POSTURES`,
+  unknown status is not silently treated as live), `PASS_KINDS`,
   `CHECK_KINDS`, and `DOC_SCOPE_KINDS`. Add a value here, not at a call site.
 
   `DOC_SCOPE_KINDS` is **a different axis from `CHECK_KINDS`** — that one asks
@@ -153,22 +151,28 @@ import. It holds:
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
+- **`read_json_or_exit(path, prog)`** / **`atomic_write(path, text)`** — the
+  shared read/write boundary every script and `server.py` route their round
+  files through, so a partial write is never observed and a bad file names
+  its caller in the error. `LOOPBACK_HOSTS` sits beside them: the one tuple
+  the four loopback guards (`loop.py`, `docket.py`, `server.py` Host/Origin
+  checks) read, each keeping its own on-rejection behavior.
 
 **Adding a field to the round schema is a coordinated edit.** Update: the
 TypedDict in `schema.py`, `parse_sections.py` (the producer), `server.py`'s load
 and the embedded JS that renders it, `scripts/loop.py` if the driver must carry
 it between rounds, and any store script that carries it forward. A field the
-server only passes through needs no `server.py` change — `load_input` is a bare
-`json.load` and `/next-round` replaces `_input_data` wholesale — but say so
+server only passes through needs no `server.py` change — the startup load is a
+bare `json.load` and `/next-round` replaces `_input_data` wholesale — but say so
 rather than leaving the omission to be re-derived. `split_on`, `doc_type`, and
 `pass` are that case: none renders, and `pass` reaches `server.py` only through
 `round_is_complete()`. All three are also **presence-gated** in
 `validate_review_input` — optional key, but a present *malformed* value is a
 hard failure, since each feeds a `parse_sections.py` flag and a `null` would
 silently revert the next round instead of failing where it was written.
-`split_on`/`doc_type` must be strings; `pass` is checked three ways (an object,
-a `kind` in `PASS_KINDS`, and — if present — a `posture` in `PASS_POSTURES`),
-since it's the one field that moves the completion gate.
+`split_on`/`doc_type` must be strings; `pass` is checked two ways (an object,
+a `kind` in `PASS_KINDS`), since it's the one field that moves the
+completion gate.
 
 A section's **`summary`** is presence-gated the same way but is the opposite
 case: per-section, not per-round, and `server.py` *renders* it under the card

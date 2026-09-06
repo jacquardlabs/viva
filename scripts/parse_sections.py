@@ -25,8 +25,6 @@ Optional:
                       checks | final). Omit for a round with no pass, which
                       carries no `pass` key and completes exactly as it did
                       before the field existed.
-  --posture P        normal | hard — a setting ON the pass, written inside the
-                      `pass` object, never as its own round field. Needs --pass.
   --recheck          Re-certification (#83): seeds every section approved
                       from the doc's own `## Revision History` instead of a
                       prior round file. Refuses on an unsigned doc.
@@ -74,13 +72,6 @@ def _parse_args() -> argparse.Namespace:
         help="Depth this round runs at. Recorded only — the parser owns no pass "
              "semantics; `schema.round_is_complete` is what reads it. Omit for a "
              "round with no pass (today's behavior, unchanged).",
-    )
-    p.add_argument(
-        "--posture",
-        dest="posture",
-        choices=schema.PASS_POSTURES,
-        help="Posture setting on the pass ('hard' licenses the author to argue "
-             "rather than concede). Requires --pass; absent reads as normal.",
     )
     p.add_argument("--prior-input", help="Prior round review-input JSON (for round 2+)")
     p.add_argument("--prior-verdicts", help="Prior round verdicts JSON (for round 2+)")
@@ -268,7 +259,7 @@ def _load_approved(
     # Truthy check, not `is not None`: a row with no verdict decides nothing and
     # leaves the stamp standing; `pending` is a withdrawal and drops it.
     withdrawn: set[str] = {
-        s.get("id") for s in prior_v.get("sections", []) or []
+        s.get("id") for s in prior_v.get("sections", [])
         if s.get("id") and s.get("verdict") and s.get("verdict") != "approved"
     }
     all_approved = (pre_approved | verdict_approved) - withdrawn
@@ -417,11 +408,6 @@ def _attach_open_notes(open_notes_path: str | None, new_sections: list[dict]) ->
 def main() -> None:
     args = _parse_args()
 
-    # A posture with no pass is a setting on nothing — refused at the boundary.
-    if args.posture is not None and args.pass_kind is None:
-        sys.exit("viva: --posture needs --pass — a posture is a setting on a "
-                 "pass, not a round field of its own")
-
     try:
         text = Path(args.doc).read_text(encoding="utf-8")
     except OSError as e:
@@ -473,10 +459,7 @@ def main() -> None:
     # A round with no pass must carry NO `pass` key — absence is what makes
     # `round_is_complete` fall through to the base rule.
     if args.pass_kind is not None:
-        pass_spec = {"kind": args.pass_kind}
-        if args.posture is not None:
-            pass_spec["posture"] = args.posture
-        data["pass"] = pass_spec
+        data["pass"] = {"kind": args.pass_kind}
     # Round state `loop.py rearm` reads back and carries forward, same as
     # split_on/doc_type — a recheck's round 2 must still say so, or the
     # finishing ledger silently reads "Signed off" instead of "Re-certified".

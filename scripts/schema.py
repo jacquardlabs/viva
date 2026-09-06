@@ -13,12 +13,20 @@ key, injected by the server at serve time — not part of the on-disk schema
 """
 from __future__ import annotations
 
+import json
+import os
 import re
-from typing import List, Optional, Tuple, TypedDict
+import sys
+from pathlib import Path
+from typing import TypedDict
 
-# `Path` is used only in type annotations (never evaluated, thanks to
-# `from __future__ import annotations`) and deliberately NOT imported —
-# `test_schema_reaches_no_io` bans `pathlib` so nothing here can reach disk.
+# `json`/`os`/`pathlib` are used only by `read_json_or_exit`/`atomic_write`
+# below — shared I/O helpers `scripts/*.py` call at the caller's request.
+# `round_is_complete()` itself must still reach no disk: it is asked by
+# `loop.py finish` and the server's `/complete` handler from separate
+# processes and must judge only the dicts handed to it — pinned by
+# `tests/test_schema.py`'s `test_round_is_complete_reaches_no_io`, which
+# AST-walks that one function's body, not the whole module.
 
 # Bare token for a section/question `id`: no `"`, `<`, `>`, `'`, `&`, or
 # whitespace, since `server.py` interpolates `id` unescaped into HTML
@@ -30,19 +38,16 @@ LEDGER_VERDICTS = ("changes", "info")
 # Every verdict a review output section may carry.
 VERDICTS = ("approved", "changes", "info", "pending")
 
-# ── Passes — depth and posture as round parameters ────────────────────────────
+# ── Passes — depth as a round parameter ───────────────────────────────────────
 # The four depths a round can run at. Optional on `ReviewInput`; absent means
 # today's behavior exactly (PRODUCT.md principle 4). `doc_types.py`'s
 # `default_pass` must name one of these.
 PASS_KINDS = ("architecture", "line", "checks", "final")
-# A setting ON the pass, not a second round field — `hard` licenses the
-# author to argue rather than concede. Absent reads as `normal`.
-PASS_POSTURES = ("normal", "hard")
 
 # Annotation `kind`s a check producer emits — the handle `round_is_complete`
 # reads to find a `checks` round's flags. A new check producer ADDS ITS KIND
 # HERE or a `checks` pass never sees its flags. Advisory producers (drift,
-# checklist, contradiction, confidence, preference) are not check flags.
+# contradiction, confidence, preference) are not check flags.
 CHECK_KINDS = ("headings-present",)
 
 # Directories no reference should ever resolve into: `drift.py`'s file-
@@ -54,6 +59,13 @@ SKIP_DIRS = frozenset({
     "__pycache__", ".mypy_cache", ".pytest_cache", "target", ".viva",
 })
 
+# The loopback allowlist every Host/Origin guard checks against — `loop.py`,
+# `docket.py`, and server.py's Host and Origin guards each refuse a request
+# or URL naming anything else, on their own terms (die/return None/403).
+# Shared here so the four agree on the one fact without server.py importing
+# loop.py or docket.py.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+
 # An interview answer projected onto the section it shaped (#211) — advisory,
 # section-scoped, and not in CHECK_KINDS or DOC_SCOPE_KINDS. `loop.py`'s
 # `.viva/decisions.json` snapshot and `revision_history.py`'s `### Decisions`
@@ -61,13 +73,13 @@ SKIP_DIRS = frozenset({
 DECISION_KIND = "decision"
 
 # The scope a producer's flag is ABOUT — a DIFFERENT AXIS from CHECK_KINDS
-# ("does this gate a checks round"). `headings_present.py`/`checklist.py`
-# report whole-document facts but anchor to `sections[0]["id"]` (the only
-# document-level handle `parse_sections.py`'s integrity check leaves them);
-# registering here renders them once in the document slip instead of five
+# ("does this gate a checks round"). `headings_present.py` reports a
+# whole-document fact but anchors to `sections[0]["id"]` (the only
+# document-level handle `parse_sections.py`'s integrity check leaves it);
+# registering here renders it once in the document slip instead of five
 # times in section 1's margin. Fails open: an unregistered kind is treated
 # as section-scope.
-DOC_SCOPE_KINDS = ("headings-present", "checklist")
+DOC_SCOPE_KINDS = ("headings-present",)
 
 # A reviewer's suggested-edit comment type: the exact `replacement` wording
 # for the anchored span, applied VERBATIM — no rewrite pass.
@@ -130,8 +142,7 @@ def section_key(title: str) -> str:
 
     The ONE normalization matching a section across rounds — approvals,
     carried annotations, diffs, open threads — so a title edit changes
-    identity in exactly one place. Distinct from `checklist.py`'s `_norm`
-    (a fuzzy match, not an identity); do not merge the two.
+    identity in exactly one place.
     """
     return (title or "").strip().lower()
 
@@ -176,7 +187,7 @@ def ledger_note(section: dict) -> str:
 
 def verdict_to_ledger_entry(
     rnd: int, section_title: str, section: dict
-) -> Optional[dict]:
+) -> dict | None:
     """The single source of truth for one ledger row.
 
     Returns `{round, section_title, verdict, note}` for a `changes`/`info`
@@ -224,7 +235,7 @@ class ReviewSection(TypedDict, total=False):
     # `title` (branch B parses `title` as `{filepath} hunk N`, #188). Carried
     # round to round only onto a byte-identical section; else drops.
     summary: str
-    annotations: List[Annotation]  # optional — advisory badges
+    annotations: list[Annotation]  # optional — advisory badges
     diff: dict                    # optional — round-to-round change
     # optional — carried-forward threads (`parse_sections._attach_open_notes`'s
     # projection of `.viva/open-notes.json`): `{cid, quote, status, exchanges}`,
@@ -236,10 +247,9 @@ class ReviewSection(TypedDict, total=False):
 
 class ReviewPass(TypedDict, total=False):
     kind: str      # required when a pass is present — one of PASS_KINDS
-    posture: str   # optional — one of PASS_POSTURES; absent reads as `normal`
 
 
-# `ReviewInput.pass` — optional depth/posture; absent is today's behavior
+# `ReviewInput.pass` — optional depth; absent is today's behavior
 # exactly (PRODUCT.md principle 4) and can only make `round_is_complete()`
 # stricter, never looser. Recorded by `parse_sections.py`; carried within a
 # session by `loop.py rearm`, NOT across a resume (a per-round decision,
@@ -253,7 +263,7 @@ class ReviewInput(_ReviewInputPass, total=False):
     mode: str                       # "review"
     doc_file: str                   # relative path for the UI
     round: int                      # round number
-    approved_ids: List[str]         # ids approved in prior rounds
+    approved_ids: list[str]         # ids approved in prior rounds
     # optional — `--split-on` regex this round was parsed with, so `loop.py
     # rearm` re-splits round N+1 identically. Absent = auto-detected split.
     split_on: str
@@ -261,7 +271,7 @@ class ReviewInput(_ReviewInputPass, total=False):
     # round to round like `split_on`. Passthrough — `server.py` ignores it.
     doc_type: str
     # `pass` — see `_ReviewInputPass` above; the key cannot be spelled here.
-    sections: List[ReviewSection]
+    sections: list[ReviewSection]
 
 
 class SectionVerdict(TypedDict, total=False):
@@ -281,7 +291,7 @@ class SectionVerdict(TypedDict, total=False):
 class ReviewOutput(TypedDict, total=False):
     round: int
     submitted_early: bool
-    sections: List[SectionVerdict]
+    sections: list[SectionVerdict]
 
 
 # ── Boundary validation ───────────────────────────────────────────────────────
@@ -347,16 +357,12 @@ def validate_review_input(data: dict) -> None:
         spec = data["pass"]
         if not isinstance(spec, dict):
             raise ValueError(
-                "review-input.pass must be an object {kind, posture} — omit the "
+                "review-input.pass must be an object {kind} — omit the "
                 "key entirely for a round that runs no pass, never null")
         if spec.get("kind") not in PASS_KINDS:
             raise ValueError(
                 "review-input.pass.kind %r is not one of %s"
                 % (spec.get("kind"), "|".join(PASS_KINDS)))
-        if "posture" in spec and spec["posture"] not in PASS_POSTURES:
-            raise ValueError(
-                "review-input.pass.posture %r is not one of %s"
-                % (spec.get("posture"), "|".join(PASS_POSTURES)))
     # Presence-gated: `recheck` (#83) moves the ledger phrasing at `finish`
     # and `loop.py rearm` carries it forward — a malformed value would
     # silently revert a re-certification session to an ordinary one.
@@ -461,7 +467,7 @@ def _check_flags(input_data: dict) -> list:
     """Every check-producer flag on this round — annotations whose `kind` is
     in `CHECK_KINDS`."""
     return [a
-            for s in input_data.get("sections", []) or []
+            for s in input_data.get("sections", [])
             for a in (s.get("annotations") or [])
             if isinstance(a, dict) and a.get("kind") in CHECK_KINDS]
 
@@ -485,12 +491,12 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     suggestion still holds a `final` round, since only the reviewer's settle
     resolves it.
     """
-    for s in verdicts.get("sections", []) or []:
+    for s in verdicts.get("sections", []):
         for c in s.get("comments") or []:
             if (isinstance(c, dict) and c.get("type") == SUGGESTION
                     and not c.get("settled")):
                 return True
-    for s in input_data.get("sections", []) or []:
+    for s in input_data.get("sections", []):
         for thread in s.get("open_notes") or []:
             exchanges = (thread or {}).get("exchanges") or []
             last = exchanges[-1] if exchanges else None
@@ -499,7 +505,7 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     return False
 
 
-def round_file_paths(viva_dir: Path, n: int) -> Tuple[Path, Path]:
+def round_file_paths(viva_dir: Path, n: int) -> tuple[Path, Path]:
     """The `(review-input-r{n}.json, review-r{n}.json)` pair for round `n`.
 
     The one place the round-file naming convention is spelled out. Pure
@@ -520,7 +526,7 @@ def round_output_glob() -> str:
     return "review-r*.json"
 
 
-def parse_round_input_stem(stem: str) -> Optional[int]:
+def parse_round_input_stem(stem: str) -> int | None:
     """`"review-input-r7"` -> `7`; anything else -> `None`. The inverse of
     `round_file_paths`' input half, for scanning `viva_dir.glob(...)` results
     back into round numbers."""
@@ -529,6 +535,34 @@ def parse_round_input_stem(stem: str) -> Optional[int]:
         return None
     tail = stem[len(prefix):]
     return int(tail) if tail.isdigit() else None
+
+
+def read_json_or_exit(path, prog: str):
+    """Parse `path` as JSON or exit with a `{prog}: cannot read ...` message.
+
+    `path == "-"` reads stdin instead — the shape every producer's
+    `--input`/`--bundle` flag needs. The one place this try/except was
+    written; every caller had its own copy before.
+    """
+    try:
+        text = sys.stdin.read() if str(path) == "-" else Path(path).read_text(encoding="utf-8")
+        return json.loads(text)
+    except (OSError, ValueError) as e:
+        sys.exit(f"{prog}: cannot read {path}: {e}")
+
+
+def atomic_write(path, text: str) -> None:
+    """Write `text` to `path` without a reader ever observing a partial file.
+
+    A sibling `.tmp` written in full, then `os.replace`d over `path` — an
+    atomic rename on every OS this runs on. A reader polling with
+    `[ -f path ]` then `cat path` must never see a truncated file, and a
+    bare `write_text` cannot promise that.
+    """
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:
@@ -588,7 +622,7 @@ class QAQuestion(TypedDict, total=False):
     id: str           # required
     text: str         # required
     hint: str         # optional — shown below the question text
-    choices: List[str]  # optional — rendered as chip buttons
+    choices: list[str]  # optional — rendered as chip buttons
     # optional — must exactly match an entry in `choices` (value, not index;
     # validate_qa_input). Renders as a badge on that chip, advisory only
     # (PRODUCT.md's "advisory, never gating") — never pre-selected or required.
@@ -602,14 +636,14 @@ class QAQuestion(TypedDict, total=False):
 class QAInput(TypedDict, total=False):
     mode: str                   # "qa"
     context: str                # one-liner shown in the title block
-    questions: List[QAQuestion]
+    questions: list[QAQuestion]
 
 
 class QAAnswer(TypedDict, total=False):
     id: str               # question id
     choice: str           # selected chip value
     note: str             # free-text field value
-    attachments: List[str]  # server-written image paths
+    attachments: list[str]  # server-written image paths
     # optional — present only when that question had a `recommended_choice`;
     # True iff the chosen `choice` matches it. Written server-side at
     # `POST /submit` (#175's accept-rate instrumentation); unvalidated here.
@@ -617,7 +651,7 @@ class QAAnswer(TypedDict, total=False):
 
 
 class QAOutput(TypedDict, total=False):
-    answers: List[QAAnswer]
+    answers: list[QAAnswer]
     submitted_early: bool
 
 
@@ -626,8 +660,8 @@ class DiffInput(TypedDict, total=False):
     mode: str                       # "diff"
     doc_file: str                   # ref description shown in UI
     round: int
-    approved_ids: List[str]
-    sections: List[ReviewSection]   # one entry per hunk
+    approved_ids: list[str]
+    sections: list[ReviewSection]   # one entry per hunk
 
 
 def validate_qa_input(data: dict) -> None:

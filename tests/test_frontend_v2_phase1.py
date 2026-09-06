@@ -51,7 +51,7 @@ REVIEW_INPUT_R2 = {
         {"id": "s5", "title": "Rollout", "content": "## Rollout\n\nBehind a flag.",
          "diff": [{"op": "+", "text": "Behind a flag."}]},
         {"id": "s6", "title": "Risks", "content": "## Risks\n\nCache stampede.",
-         "annotations": [{"kind": "checklist", "severity": "warn",
+         "annotations": [{"kind": "drift", "severity": "warn",
                           "message": "no mitigation listed"}]},
         {"id": "s7", "title": "Open questions", "content": "## Open questions\n\nTBD.",
          "annotations": [{"kind": "drift", "severity": "info",
@@ -710,19 +710,9 @@ def test_design_md_matches_shipped_surface() -> None:
     print("test_design_md_matches_shipped_surface: OK")
 
 
-def test_draft_plan_superseded() -> None:
-    """The superseded draft plan for this story is deleted. Does not assert
-    PLAN.md's own presence — it's disposable, branch-local scaffolding a
-    later story may replace or remove."""
-    draft = ROOT / "docs" / "superpowers" / "plans" / "2026-07-16-frontend-v2-phase1.md"
-    assert not draft.exists(), f"superseded draft plan still on the branch: {draft}"
-    print("test_draft_plan_superseded: OK")
-
-
 def main() -> None:
     # Task 6 docs alignment — static file checks, no server boot.
     test_design_md_matches_shipped_surface()
-    test_draft_plan_superseded()
 
     # Round-1 boot — sheet ground plus the zero-carried hold. Its own tmp dir:
     # wait_for_url polls for `server.url` beside the output file, so each boot

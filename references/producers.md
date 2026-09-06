@@ -27,7 +27,7 @@ card, so the reviewer sees a flagged weak spot *before* choosing a verdict.
 ```
 
 - `kind` *(required)* — short producer tag shown as the badge label (e.g.
-  `grounding`, `drift`, `checklist`).
+  `grounding`, `drift`).
 - `severity` *(required)* ∈ `info | warn | error` → color slot
   `teal | violet | orange`. Any other value renders as `info`.
 - `message` *(required)* — the inline text shown beside the badge.
@@ -103,7 +103,6 @@ agent-run through the sidecar contract above.
 
 | Producer | Script | Flags |
 |----------|--------|-------|
-| **Checklist gating** | `checklist.py --input IN [--type spec\|adr\|runbook]` | `error` per required section missing for the doc's type. Type is inferred from the filename/H1 when `--type` is omitted; an untyped doc emits nothing. Missing-section flags land on the **first** card — the integrity check forbids a card for a section that isn't in the doc. |
 | **Spec↔code drift** | `drift.py --input IN [--root .]` | `error` for a referenced file path that doesn't exist; `warn` for a simple `` `name()` `` symbol with no definition anywhere in the code. Prose-only sections emit nothing. |
 
 ### Judgment producers (LLM passes)

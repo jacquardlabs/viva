@@ -56,10 +56,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import schema  # noqa: E402  — the one permitted sibling import (CLAUDE.md)
+import schema
 
 _DEFAULT_ROOTS = ["~/Projects/*"]
 # Short: a dead server.url must not stall the whole report waiting on it.
@@ -67,7 +65,7 @@ _PROBE_TIMEOUT = 0.7
 
 
 # ── roots ──────────────────────────────────────────────────────────────────
-def resolve_roots(root_args: List[str]) -> List[str]:
+def resolve_roots(root_args: list[str]) -> list[str]:
     """`--root` wins outright; otherwise `VIVA_DOCKET_ROOTS`; otherwise the
     single default."""
     if root_args:
@@ -78,14 +76,14 @@ def resolve_roots(root_args: List[str]) -> List[str]:
     return list(_DEFAULT_ROOTS)
 
 
-def find_viva_dirs(root_globs: List[str]) -> List[Path]:
+def find_viva_dirs(root_globs: list[str]) -> list[Path]:
     """Every `.viva/` directory reachable from `root_globs`, one level deep.
 
     Checks each expanded root two ways — does it directly hold `.viva/`, and
     does any immediate child — so a repo root and a directory-of-repos root
     both work.
     """
-    found: Dict[str, Path] = {}
+    found: dict[str, Path] = {}
     for pattern in root_globs:
         expanded = os.path.expanduser(pattern)
         for candidate in sorted(glob.glob(expanded)):
@@ -110,23 +108,19 @@ def current_round(viva: Path) -> int:
     return max((n for n in rounds if n is not None), default=0)
 
 
-def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
-    return schema.round_file_paths(viva, n)
-
-
-def load_json(p: Path) -> Optional[dict]:
+def load_json(p: Path) -> dict | None:
     """`None` on anything short of a clean parse of a JSON *object* — must
     never crash on a mid-write or wrong-shape round file. Callers do
     `load_json(p) or {}`, so a non-dict payload must not reach them as-is."""
     try:
-        with p.open() as fh:
+        with p.open(encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
 
 
-def mtime_of(paths: List[Path]) -> Optional[float]:
+def mtime_of(paths: list[Path]) -> float | None:
     """The newest mtime among the paths that exist, or `None` if none do."""
     times = []
     for p in paths:
@@ -139,7 +133,7 @@ def mtime_of(paths: List[Path]) -> Optional[float]:
 
 # ── liveness — probed, not stat'ed (mirrors loop.py's server_url/probe_input,
 #    with a short timeout: a docket run must never hang on a dead process) ──
-def server_url(viva: Path) -> Optional[str]:
+def server_url(viva: Path) -> str | None:
     """`server.url` is repo-supplied — constrained to loopback so a repo
     naming an attacker's host can't turn a sweep into an SSRF probe. Returns
     `None` on a rejected URL rather than raising, same as a missing file, so
@@ -149,18 +143,18 @@ def server_url(viva: Path) -> Optional[str]:
     if not f.exists():
         return None
     try:
-        text = f.read_text().strip()
+        text = f.read_text(encoding="utf-8").strip()
     except OSError:
         return None
     if not text:
         return None
     parsed = urllib.parse.urlparse(text)
-    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+    if parsed.scheme != "http" or parsed.hostname not in schema.LOOPBACK_HOSTS:
         return None
     return text
 
 
-def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> Optional[dict]:
+def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> dict | None:
     """The payload a live server at `base` is serving, or `None` if nothing
     answers within `timeout`. "No server" (`None`) and "no round" (a dict
     with no `round` key, e.g. a live qa payload during the `/viva-write`
@@ -176,7 +170,7 @@ def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> Optional[dict]:
 
 
 # ── classification — the entire point of this tool ─────────────────────────
-def classify(viva: Path) -> Dict[str, object]:
+def classify(viva: Path) -> dict[str, object]:
     """One `.viva/` session's status: state, doc identity, round, mtime."""
     n = current_round(viva)
 
@@ -202,7 +196,7 @@ def classify(viva: Path) -> Dict[str, object]:
             "mtime": None,
         }
 
-    inp, out = round_files(viva, n)
+    inp, out = schema.round_file_paths(viva, n)
     input_data = load_json(inp) or {}
     doc_file = input_data.get("doc_file")
     doc_type = input_data.get("doc_type")
@@ -244,7 +238,7 @@ def classify(viva: Path) -> Dict[str, object]:
     }
 
 
-def build_docket(root_globs: List[str]) -> List[Dict[str, object]]:
+def build_docket(root_globs: list[str]) -> list[dict[str, object]]:
     now = time.time()
     rows = []
     for viva in find_viva_dirs(root_globs):
@@ -267,7 +261,7 @@ def build_docket(root_globs: List[str]) -> List[Dict[str, object]]:
 
 
 # ── age ──────────────────────────────────────────────────────────────────
-def format_age(mtime: Optional[float], now: float) -> str:
+def format_age(mtime: float | None, now: float) -> str:
     if mtime is None:
         return "unknown"
     delta = max(0.0, now - mtime)
@@ -290,7 +284,7 @@ def format_age(mtime: Optional[float], now: float) -> str:
 
 
 # ── rendering ───────────────────────────────────────────────────────────────
-def render_text(rows: List[Dict[str, object]], roots: List[str]) -> str:
+def render_text(rows: list[dict[str, object]], roots: list[str]) -> str:
     if not rows:
         return f"docket: no .viva/ sessions found under: {', '.join(roots)}"
     headers = ("REPO", "STATE", "ROUND", "DOC", "TYPE", "AGE")
@@ -314,12 +308,12 @@ def render_text(rows: List[Dict[str, object]], roots: List[str]) -> str:
     return "\n".join(lines)
 
 
-def render_json(rows: List[Dict[str, object]]) -> str:
-    return json.dumps(rows, indent=2)
+def render_json(rows: list[dict[str, object]]) -> str:
+    return json.dumps(rows, indent=2, ensure_ascii=False)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="docket.py",
         description="List open viva review sessions across repos: whose "

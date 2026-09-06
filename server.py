@@ -10,7 +10,6 @@ from __future__ import annotations  # 3.8-safe `X | None` hints (CI matrix runs 
 import argparse
 import base64
 import json
-import os
 import re
 import signal
 import socket
@@ -192,7 +191,6 @@ HTML = r"""<!DOCTYPE html>
   --bg:        var(--sunk);
   --bg2:       var(--paper);
   --bg3:       #f0f0ee;
-  --table:     var(--paper);
   --border:    var(--rule);
   --border2:   var(--ink);
   --text:      var(--ink2);
@@ -608,11 +606,13 @@ h1.tb-val { margin: 0; }
 .sort-toggle:hover { color: var(--ink); border-color: var(--ink); }
 .sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
 
-/* ─── Preferences panel toggle (issue #142) ──────────────────
-   Lives inside #stats-area beside the (aria-live) verdict counters — a
-   static label, never an interpolated count, so it never competes with the
-   counters for that region's announcement. */
-.prefs-toggle {
+/* ─── Bottom-bar toggles (prefs #142, theme, voice) ───────────
+   One face for all three: prefs lives inside #stats-area beside the
+   (aria-live) verdict counters — a static label, never an interpolated
+   count, so it never competes with the counters for that region's
+   announcement. Theme and voice each state their mode in words rather than
+   a glyph — a glyph makes the reader guess which state it names. */
+.prefs-toggle, .theme-toggle, .voice-toggle {
   font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
@@ -624,22 +624,9 @@ h1.tb-val { margin: 0; }
   border-radius: 0;
   background: none;
 }
-.prefs-toggle:hover { color: var(--ink); border-color: var(--ink); }
-
-/* States the current mode in words rather than a sun/moon glyph — a glyph
-   makes the reader guess which state it names. */
-.theme-toggle {
-  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--soft);
-  padding: 4px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  background: none;
-}
+.prefs-toggle:hover, .theme-toggle:hover, .voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
+/* Cobalt only while listening — an idle control isn't doing anything yet. */
+.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
 
 /* Session controls — prefs, voice, theme — as ONE unit so they wrap together;
    an auto margin on a single item would wrap that item alone. */
@@ -649,25 +636,6 @@ h1.tb-val { margin: 0; }
   gap: 6px;
   margin-left: auto;
 }
-.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
-
-/* ─── Voice — the oral examination ───────────────────────────
-   States its mode in words, same reason as the theme toggle. Cobalt only
-   while listening — an idle control isn't doing anything yet. */
-.voice-toggle {
-  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  color: var(--soft);
-  padding: 4px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  background: none;
-}
-.voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
-.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
 
 /* The transcript: every utterance prints here with the reading it got,
    INCLUDING ones that matched no verb, so nothing is silently swallowed. */
@@ -1326,8 +1294,6 @@ h1.tb-val { margin: 0; }
 }
 .sp-k { color: var(--soft); }
 .sp-v { color: var(--text2); }
-/* The one thing that is open takes the reviewer's ink, exactly as
-   `.spec .spec-open td:last-child` did. */
 .sp-open .sp-v { color: var(--acc); font-weight: 600; }
 /* #106 — a servable `source` earns a tiny button in the state run; the
    fetched lines land in a fixed popover, never inside `.spec-strip` itself,
@@ -1503,10 +1469,6 @@ h1.tb-val { margin: 0; }
 }
 .nt-fact  .nh { color: var(--fact); }
 .nt-check .nh { color: var(--machine); }
-/* The author's party, not the reviewer's: a declined thread is the author
-   answering, and it speaks in the neutral ink. */
-.nt-author .nh { color: var(--soft); }
-.nt-author { border-left: 2px solid var(--soft); }
 .nt-body { color: var(--text2); overflow-wrap: anywhere; }
 .nt-quote {
   display: block;
@@ -1841,10 +1803,6 @@ h1.tb-val { margin: 0; }
   transition: --c 0.12s, color 0.12s, background 0.12s;
 }
 
-/* The per-section action row is gone from every surface. A section's verbs
-   live in its margin (`.nt-acts`, `.nt-btn`) beside the notes they answer —
-   the one place a reviewer is already looking — so `.actions` and
-   `.action-btn` have no host left. */
 
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
@@ -2114,9 +2072,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   max-width: 60%;
 }
 
-/* The comment list is gone: a comment lives in the margin beside its own
-   anchor now. `.cmt-del` survives as a WIRING HOOK only. The wording a
-   suggestion carries, in a carried thread's exchange — accent-inked,
+/* The wording a suggestion carries, in a carried thread's exchange — accent-inked,
    arrow-led like `.exchange-a`'s reply. */
 .cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
 .cmt-repl::before { content: '→ '; }
@@ -2404,7 +2360,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
    Pre-flight index over every section: id, title, verdict dot + label,
    active-note count. btn-submit's ready click opens this instead of
    submitting; only #recap-confirm calls submitReview(false). */
-.recap-overlay {
+.recap-overlay, .prefs-overlay {
   position: fixed; inset: 0; z-index: 200;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -2413,7 +2369,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 /* The palette's materials, since the palette is what a catalog overlay looks
    like here: paper rather than the recessed panel `--bg` gave it, a square 1px
    ink border, and the same lift off the scrim. */
-.recap-panel {
+.recap-panel, .prefs-panel {
   width: min(640px, 92vw); max-height: 82vh;
   display: flex; flex-direction: column;
   background: var(--paper);
@@ -2511,21 +2467,9 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 
 /* ─── Preferences panel — view/mute learned preferences (#142) ────
    A second modal, built on the recap overlay's shape (role="dialog", inert
-   background, focus trap); at most one of the two is ever open at a time. */
-.prefs-overlay {
-  position: fixed; inset: 0; z-index: 200;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-  background: var(--scrim);
-}
-.prefs-panel {
-  width: min(640px, 92vw); max-height: 82vh;
-  display: flex; flex-direction: column;
-  background: var(--paper);
-  border: 1px solid var(--ink);
-  border-radius: 0;
-  box-shadow: 0 18px 50px var(--scrim);
-}
+   background, focus trap); at most one of the two is ever open at a time —
+   its overlay/panel shell is the shared .recap-overlay/.recap-panel rule
+   above. */
 .prefs-head {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 14px;
@@ -2842,14 +2786,14 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <div class="titleblock">
         <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="qa-title"></div></div>
         <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
-        <div class="tb-cell tb-flex"><div class="tb-val" id="qa-mode-title">viva <em>interview</em></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val">viva <em>interview</em></div></div>
         <div class="tb-cell"><div class="tb-label">questions</div><div class="tb-val mono" id="qa-count-badge"></div></div>
         <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
         <div class="tb-cell"><button type="button" class="pal-hint" id="qa-pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
     </div>
     <div class="cards" id="qa-cards"></div>
-    <div class="doc-hint" id="qa-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
+    <div class="doc-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Processing / between-rounds state ────────────────── -->
@@ -3087,7 +3031,7 @@ function setProcessingTabTitle(docName) {
 const FAVICON_COLOR = { turn: '2946c4', processing: 'a06a12', done: '0c7f6b' };
 function setTabFavicon(state) {
   const color = FAVICON_COLOR[state] || FAVICON_COLOR.turn;
-  const link = document.getElementById('favicon-link');
+  const link = el('favicon-link');
   if (!link) return;
   link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23" + color + "'/%3E%3C/svg%3E";
 }
@@ -3217,7 +3161,7 @@ function renderLedger() {
   const paint = () => head.setAttribute('aria-expanded',
     el('ledger').classList.contains('is-collapsed') ? 'false' : 'true');
   paint();
-  head.onclick = () => { el('ledger').classList.toggle('is-collapsed'); paint(); };
+  head.addEventListener('click', () => { el('ledger').classList.toggle('is-collapsed'); paint(); });
 }
 
 // The palette's and `l`'s one path to the ledger: open, expand, scroll.
@@ -3250,8 +3194,8 @@ function sectionAnswered(s, round) {
 }
 
 // A DOC_SCOPE flag is skipped: it's a fact about the document, not this
-// section, and `checklist` emits severity:"error" — without this, one missing
-// template heading would brand section 1 "flagged & unreviewed".
+// section — without this, one missing type heading would brand section 1
+// "flagged & unreviewed".
 function flagRank(section) {
   const ranks = ((section && section.annotations) || [])
     .filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))
@@ -3312,6 +3256,14 @@ function transmittalHTML(data) {
     + '<div class="transmittal-rows" id="transmittal-rows" hidden>' + rows.join('') + '</div>';
 }
 
+function wireDisclosure(headId, bodyId) {
+  const head = el(headId), body = el(bodyId);
+  if (head && body) head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+}
+
 function renderTransmittal() {
   const panel = el('transmittal');
   if (!panel) return;
@@ -3322,27 +3274,18 @@ function renderTransmittal() {
   panel.querySelectorAll('.transmittal-row').forEach(btn => {
     btn.addEventListener('click', () => activateReviewCard(btn.dataset.target));
   });
-  const head = el('transmittal-head'), body = el('transmittal-rows');
-  if (head && body) head.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-  });
+  wireDisclosure('transmittal-head', 'transmittal-rows');
 }
 
 /* ─── The document slip ──────────────────────────────────────
    Every doc-scope flag in the round, once, in section order — stated once as
    a slip instead of five amber lines duplicated in section 1's margin. */
-function documentFlags() {
-  return ((REVIEW_DATA && REVIEW_DATA.sections) || [])
-    .flatMap(s => docFlagSplit(s).doc);
-}
-
 function docSlipHTML() {
   /* Every mode renders this, not review alone: `docFlagSplit` routes a
      doc-scope flag out of both columns unconditionally, so gating it here
      would make the flag render NOWHERE while round_is_complete still enforces it. */
   if (!REVIEW_DATA) return '';
-  const flags = documentFlags();
+  const flags = (REVIEW_DATA.sections || []).flatMap(s => docFlagSplit(s).doc);
   if (!flags.length) return '';
   // The checks tally rides in the head because `sectionSpec` no longer draws
   // one: today's only CHECK_KIND is doc-scope, so without this the gate would
@@ -3373,11 +3316,7 @@ function renderDocSlip() {
   if (!html) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
   panel.innerHTML = html;
   panel.style.display = '';
-  const head = el('doc-slip-head'), body = el('doc-slip-rows');
-  if (head && body) head.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-  });
+  wireDisclosure('doc-slip-head', 'doc-slip-rows');
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -4170,9 +4109,7 @@ function specHTML(section) {
   // leaves section 1's band as bare verbs when its only flags are doc-scope.
   const conf0 = confidenceAnnot(section);
   if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
-  // A RUN, not a table: five label/value pairs fit one line at 10.5px mono
-  // vs ~120px for a table. `<caption>` is gone; `.doc-apparatus`'s
-  // `role="group"`/`aria-label` names the band instead.
+  // A RUN, not a table: `.doc-apparatus`'s `role="group"`/`aria-label` names the band.
   const item = (label, value, open, title) =>
     '<span class="sp' + (open ? ' sp-open' : '') + '"' +
     (title ? ' title="' + esc(title) + '"' : '') + '>'
@@ -5216,7 +5153,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
     info:       'Describe the change or question…',
     suggestion: 'Replacement wording — applied verbatim',
   };
-  pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
+  pop.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => {
       c.classList.toggle('is-on', c === ch);
@@ -5224,7 +5161,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
     });
     ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
     ta.focus();
-  });
+  }));
   // Opening with a type is the same act as picking its chip — driven through
   // the chip so the dataset, the `is-on` mark and the placeholder can never
   // disagree with each other about what the box means.
@@ -5238,7 +5175,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
   // chips.
   ta.focus({ preventScroll: true });
   revealWithinBars(pop);
-  pop.querySelector('.cmt-save').onclick = () => {
+  pop.querySelector('.cmt-save').addEventListener('click', () => {
     const text = ta.value.trim();
     // A suggestion ships on its wording: the same box the other types use for
     // a note carries the replacement the author applies verbatim.
@@ -5261,8 +5198,8 @@ function openCommentPopover(id, { anchor, type } = {}) {
                      replacement: isSuggestion ? text : undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
-  };
-  pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
+  });
+  pop.querySelector('.cmt-cancel').addEventListener('click', () => closeCommentPopover(id));
   // Dictation just fills this box — save is still the only thing that makes
   // a comment. The button turns the mic on and returns focus; a focused note
   // field is what the modal voice rule keys on.
@@ -5270,7 +5207,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
   if (mic) {
     // Built after paintVoiceToggle last ran, so it paints its own live state.
     mic.classList.toggle('is-live', voiceIsOn());
-    mic.onclick = () => startVoice(() => ta.focus());
+    mic.addEventListener('click', () => startVoice(() => ta.focus()));
   }
 }
 
@@ -5472,15 +5409,6 @@ function updateReviewStats() {
   // already carries the blocking count, and restating it here uppercased the
   // same number a second time in the same bar.
   sub.textContent = 'approve — dispatch';
-  // The composite's footer states four things; this one was stating seven, and
-  // at the doc page's width that wrapped the stamp onto a second line. The bar
-  // above already carries `approved N/M` and the item counts, so the footer
-  // keeps only what is about DISPATCHING: what blocks it, whether the round is
-  // converging, and what the last round trip cost. The two cells that stated
-  // `N approved` and `N with feedback` are GONE, not hidden: they were set and
-  // then hidden on every path, and the feedback cell's else-branch hid without
-  // clearing, so `#stats-area` — an `aria-live` region — kept announcing a
-  // stale `3 with feedback` beside a live `8 open` forever.
   const cap = ' <kbd>&#8984;&#9166;</kbd>';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unreviewed`
@@ -5630,10 +5558,6 @@ function reviewFootSeg(sections, total) {
    every verb listed here is one the page also carries as a control or a
    keycap. Built from live state on each open, so "approve section 9" names
    the section actually under the reader. ═══════════════════════════════ */
-function paletteCommands() {
-  return REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands();
-}
-
 /* The interview's own directory. Every verb here is one the Q&A page also
    carries as a control or a keycap — the choices by their digits, confirm by
    `c`, skip by its button — which is the rule the palette exists under: a
@@ -5746,7 +5670,8 @@ function closePalette() {
 
 function renderPalette(query) {
   const q = String(query || '').trim().toLowerCase();
-  _palCmds = paletteCommands().filter(c => !q || c.label.toLowerCase().includes(q));
+  _palCmds = (REVIEW_DATA ? reviewPaletteCommands() : qaPaletteCommands())
+    .filter(c => !q || c.label.toLowerCase().includes(q));
   _palIdx = 0;
   const list = el('pal-list');
   if (!_palCmds.length) { list.innerHTML = '<div class="pal-empty">no matching command</div>'; return; }
@@ -6420,7 +6345,7 @@ function renderPrefsList() {
 // Mutates the one row's DOM in place, never a list rebuild, so a mute never
 // disturbs scroll position or any other row.
 function markPrefRowMuted(id) {
-  const row = document.getElementById('pref-row-' + id);
+  const row = el('pref-row-' + id);
   if (!row) return;
   const statusEl = row.querySelector('.pref-status');
   if (statusEl) { statusEl.textContent = 'muted'; statusEl.className = 'pref-status pref-status-muted'; }
@@ -6431,7 +6356,7 @@ function markPrefRowMuted(id) {
 }
 
 function mutePreference(id) {
-  const row = document.getElementById('pref-row-' + id);
+  const row = el('pref-row-' + id);
   const btn = row && row.querySelector('.pref-mute-btn');
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -6466,7 +6391,7 @@ function openPrefsPanel(triggerEl, focusPrefId) {
   _prefsTriggerEl = triggerEl || el('prefs-toggle');
   el('prefs-overlay').style.display = '';
   setBackgroundInert(true);
-  const row = focusPrefId && document.getElementById('pref-row-' + focusPrefId);
+  const row = focusPrefId && el('pref-row-' + focusPrefId);
   if (row) { row.scrollIntoView({ block: 'center' }); row.focus(); }
   else      { el('prefs-close').focus(); }
 }
@@ -6811,11 +6736,11 @@ function showVoiceNotice(after) {
     + '(Google, in Chrome). viva itself stays keyless and keeps no recording.'
     + '<button type="button" id="voice-ack">start listening</button>'
     + '<button type="button" id="voice-nack">not now</button></span>';
-  el('voice-ack').onclick = () => {
+  el('voice-ack').addEventListener('click', () => {
     try { localStorage.setItem(VOICE_ACK_KEY, 'ack'); } catch (e) { /* holds for this tab */ }
     beginVoice(after);
-  };
-  el('voice-nack').onclick = () => hideVoiceStrip();
+  });
+  el('voice-nack').addEventListener('click', () => hideVoiceStrip());
   el('voice-ack').focus();
 }
 
@@ -7192,6 +7117,11 @@ el('pal-overlay').addEventListener('mousedown', e => {
 });
 
 /* ─── Keyboard shortcuts ────────────────────────────────── */
+function submitOnCmdEnter(e) {
+  const sub = el('btn-submit');
+  if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
+}
+
 document.addEventListener('keydown', e => {
   // Nothing on this page can reach the server any more (#174) — the
   // dead-session overlay is the one modal that doesn't close on Escape.
@@ -7313,11 +7243,7 @@ document.addEventListener('keydown', e => {
         return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      const sub = el('btn-submit');
-      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
-      return;
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { submitOnCmdEnter(e); return; }
   }
 
   // Guarded by !REVIEW_DATA in addition to the round handler's QA_DATA/
@@ -7345,11 +7271,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault(); advanceQA(qState.active); return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      const sub = el('btn-submit');
-      if (sub.classList.contains('ready') && !sub.disabled) { e.preventDefault(); sub.click(); }
-      return;
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { submitOnCmdEnter(e); return; }
   }
 });
 
@@ -7544,11 +7466,6 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def load_input(path: str) -> dict:
-    with open(path, encoding='utf-8') as f:
-        return json.load(f)
-
-
 def _revision_counts(sections: list, round_num: int, viva_dir: Path) -> tuple[dict[str, int], bool]:
     """Cumulative per-section revision count for the round served (#141) —
     wire-only, never written to disk. Walks historical rounds 1..round_num-1
@@ -7630,16 +7547,10 @@ def _with_revision_counts(data: dict, viva_dir: Path) -> dict:
 
 def _atomic_write(path: Path, text: str) -> None:
     # A reader polling with `[ -f path ]` then `cat path` must never observe a
-    # truncated/partial file. Write a sibling tmp, then rename atomically.
+    # truncated/partial file — schema.atomic_write is the shared
+    # implementation; this wrapper only adds the mkdir its 3 callers rely on.
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding='utf-8') as f:
-        f.write(text)
-    os.replace(tmp, path)
-
-
-def write_output(path: str, data: dict) -> None:
-    _atomic_write(Path(path), json.dumps(data, indent=2))
+    schema.atomic_write(path, text)
 
 
 def _load_preferences_store(viva_dir: Path) -> dict:
@@ -7853,7 +7764,7 @@ class Handler(BaseHTTPRequestHandler):
         names the browser's address-bar domain, which rebinding can't forge.
         Sends the 403 itself and returns False on rejection."""
         host = urlparse("//" + self.headers.get("Host", "")).hostname
-        if host not in ("127.0.0.1", "localhost"):
+        if host not in schema.LOOPBACK_HOSTS:
             self._error(403, "forbidden host")
             return False
         return True
@@ -7955,7 +7866,7 @@ class Handler(BaseHTTPRequestHandler):
             # an ordinary A record whose Origin starts with `http://127.0.0.1`,
             # so a prefix test would admit an attacker page to every write sink.
             o = urlparse(origin)
-            if o.scheme != "http" or o.hostname not in ("127.0.0.1", "localhost"):
+            if o.scheme != "http" or o.hostname not in schema.LOOPBACK_HOSTS:
                 self._error(403, "forbidden origin")
                 return None
         # A cross-origin `fetch` with `Content-Type: text/plain` is a
@@ -8041,7 +7952,7 @@ class Handler(BaseHTTPRequestHandler):
         if "answers" in data:
             data = annotate_qa_acceptance(data, questions_snapshot)
         try:
-            write_output(out, data)
+            _atomic_write(Path(out), json.dumps(data, indent=2))
         except (IOError, OSError) as e:
             self._error(500, f"write failed: {e}")
             return
@@ -8309,7 +8220,8 @@ if __name__ == "__main__":
     _PREFS_STORE_PATH = str(_viva_dir / "preferences.json")
     _PREFS_STORE_PATH_JS = _PREFS_STORE_PATH.replace("\\", "\\\\").replace("'", "\\'")
     _HTML_BYTES = HTML.replace("__PREFS_STORE_PATH__", _PREFS_STORE_PATH_JS).encode()
-    _input_data = load_input(args.input)
+    with open(args.input, encoding='utf-8') as f:
+        _input_data = json.load(f)
     # Validate the input on read, keyed on the LAUNCH MODE — same reason as
     # `/complete`'s guard: keying on shape let a file with neither `sections`
     # nor `questions` through unvalidated. A shape/mode mismatch now exits 1

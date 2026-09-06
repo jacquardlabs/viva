@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
+
+import schema
 
 
 def withdraw(data: dict, kinds: set[str]) -> int:
@@ -31,7 +32,7 @@ def withdraw(data: dict, kinds: set[str]) -> int:
     withdrawn."""
     flagged = {
         s["id"]
-        for s in data.get("sections", []) or []
+        for s in data.get("sections", [])
         if any(isinstance(a, dict) and a.get("kind") in kinds
                for a in (s.get("annotations") or []))
     }
@@ -53,15 +54,12 @@ def main() -> None:
     args = p.parse_args()
 
     inp = Path(args.input)
-    try:
-        data = json.loads(inp.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"recheck: cannot read {args.input}: {e}")
+    data = schema.read_json_or_exit(inp, "recheck")
 
     kinds = set(args.kinds) if args.kinds else {"drift"}
     n = withdraw(data, kinds)
 
-    inp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    schema.atomic_write(inp, json.dumps(data, indent=2, ensure_ascii=False))
     print(f"recheck: {n} section(s) withdrawn from approval", flush=True)
 
 

@@ -237,10 +237,7 @@ def main() -> None:
         sys.stdout.write("\n")
         return
 
-    try:
-        data = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"drift: cannot read {args.input}: {e}")
+    data = schema.read_json_or_exit(args.input, "drift")
 
     sidecar = build_sidecar(data, Path(args.root))
     json.dump(sidecar, sys.stdout, ensure_ascii=False)

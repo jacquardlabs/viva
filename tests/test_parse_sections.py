@@ -71,6 +71,7 @@ def test_basic_h2_split() -> None:
     assert "Beta" in titles
     assert data["round"] == 1
     assert data["mode"] == "review"
+    print("  ok  test_basic_h2_split")
 
 
 def test_no_headings_single_section() -> None:
@@ -78,6 +79,7 @@ def test_no_headings_single_section() -> None:
     data = run(doc)
     assert len(data["sections"]) == 1
     assert data["sections"][0]["content"] == doc
+    print("  ok  test_no_headings_single_section")
 
 
 def test_single_heading_single_section() -> None:
@@ -85,6 +87,7 @@ def test_single_heading_single_section() -> None:
     data = run(doc)
     assert len(data["sections"]) == 1
     assert data["sections"][0]["title"] == "Only one section"
+    print("  ok  test_single_heading_single_section")
 
 
 def test_integrity_check_passes() -> None:
@@ -92,6 +95,7 @@ def test_integrity_check_passes() -> None:
     data = run(doc)
     reconstructed = "".join(s["content"] for s in data["sections"])
     assert reconstructed == doc
+    print("  ok  test_integrity_check_passes")
 
 
 def test_revision_history_excluded() -> None:
@@ -109,6 +113,7 @@ def test_revision_history_excluded() -> None:
     expected_source = doc[:rh_start]
     reconstructed = "".join(s["content"] for s in data["sections"])
     assert reconstructed == expected_source
+    print("  ok  test_revision_history_excluded")
 
 
 def test_preamble_uses_h1_title() -> None:
@@ -117,6 +122,7 @@ def test_preamble_uses_h1_title() -> None:
     first = data["sections"][0]
     assert first["title"] == "My Document"
     assert "Intro text." in first["content"]
+    print("  ok  test_preamble_uses_h1_title")
 
 
 def test_preamble_empty_omitted() -> None:
@@ -125,6 +131,7 @@ def test_preamble_empty_omitted() -> None:
     titles = [s["title"] for s in data["sections"]]
     assert "Preamble" not in titles
     assert titles == ["First", "Second"]
+    print("  ok  test_preamble_empty_omitted")
 
 
 def test_ids_are_sequential() -> None:
@@ -132,6 +139,7 @@ def test_ids_are_sequential() -> None:
     data = run(doc)
     ids = [s["id"] for s in data["sections"]]
     assert ids == ["s1", "s2", "s3"]
+    print("  ok  test_ids_are_sequential")
 
 
 def test_approved_matching_same_content() -> None:
@@ -177,6 +185,7 @@ def test_approved_matching_same_content() -> None:
     approved_section = next(s for s in data["sections"]
                             if s["id"] == data["approved_ids"][0])
     assert approved_section["title"] == "Alpha"
+    print("  ok  test_approved_matching_same_content")
 
 
 def test_approved_carries_forward_across_non_sequential_round_numbers() -> None:
@@ -225,6 +234,7 @@ def test_approved_carries_forward_across_non_sequential_round_numbers() -> None:
     assert len(data["approved_ids"]) == 2
     titles = {s["title"] for s in data["sections"] if s["id"] in data["approved_ids"]}
     assert titles == {"Alpha", "Beta"}
+    print("  ok  test_approved_carries_forward_across_non_sequential_round_numbers")
 
 
 def test_approved_not_carried_if_content_changed() -> None:
@@ -258,6 +268,7 @@ def test_approved_not_carried_if_content_changed() -> None:
         data = json.loads(out.read_text())
     # Content changed → must not be auto-approved
     assert data["approved_ids"] == []
+    print("  ok  test_approved_not_carried_if_content_changed")
 
 
 def test_withdrawn_approval_is_not_carried_forward() -> None:
@@ -303,6 +314,7 @@ def test_withdrawn_approval_is_not_carried_forward() -> None:
     silent = {"round": 2, "submitted_early": False,
               "sections": [{"id": "s2", "verdict": "approved", "note": ""}]}
     assert "s1" in _run_round2(content_a + content_b, prior_input, silent)["approved_ids"]
+    print("  ok  test_withdrawn_approval_is_not_carried_forward")
 
 
 def test_no_annotations_key_when_absent() -> None:
@@ -312,6 +324,7 @@ def test_no_annotations_key_when_absent() -> None:
     data = run(doc)
     for s in data["sections"]:
         assert "annotations" not in s, f"unexpected annotations key on {s['id']}"
+    print("  ok  test_no_annotations_key_when_absent")
 
 
 def _run_round2(doc: str, prior_input: dict, prior_verdicts: dict) -> dict:
@@ -359,6 +372,7 @@ def test_annotations_carried_forward_when_unchanged() -> None:
     beta  = next(s for s in data["sections"] if s["title"] == "Beta")
     assert alpha.get("annotations") == annots, "Alpha annotations must carry forward"
     assert "annotations" not in beta, "Beta had none — must stay absent"
+    print("  ok  test_annotations_carried_forward_when_unchanged")
 
 
 def test_annotations_dropped_when_content_changed() -> None:
@@ -380,6 +394,7 @@ def test_annotations_dropped_when_content_changed() -> None:
     data = _run_round2(new_content, prior_input, prior_verdicts)
     alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
     assert "annotations" not in alpha, "stale annotations must not carry to changed content"
+    print("  ok  test_annotations_dropped_when_content_changed")
 
 
 def test_summary_carries_forward_and_never_outlives_its_content() -> None:
@@ -418,6 +433,7 @@ def test_summary_carries_forward_and_never_outlives_its_content() -> None:
         "precondition: the rewritten section is the one carrying a diff"
     assert "summary" not in by_title["Gamma"], \
         "a section that never had a summary must not gain the key"
+    print("  ok  test_summary_carries_forward_and_never_outlives_its_content")
 
 
 def test_diff_computed_for_changed_section() -> None:
@@ -440,6 +456,7 @@ def test_diff_computed_for_changed_section() -> None:
     ops = {(d["op"], d["text"]) for d in diff}
     assert ("-", "original body") in ops, f"removed line missing in {diff}"
     assert ("+", "modified body") in ops, f"added line missing in {diff}"
+    print("  ok  test_diff_computed_for_changed_section")
 
 
 def test_diff_keeps_dash_prefixed_content_line() -> None:
@@ -459,6 +476,7 @@ def test_diff_keeps_dash_prefixed_content_line() -> None:
     alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
     ops = {(d["op"], d["text"]) for d in alpha.get("diff", [])}
     assert ("-", "-- caveat about retries") in ops, f"dash-prefixed line dropped: {alpha.get('diff')}"
+    print("  ok  test_diff_keeps_dash_prefixed_content_line")
 
 
 def test_no_diff_for_unchanged_carried_section() -> None:
@@ -484,6 +502,7 @@ def test_no_diff_for_unchanged_carried_section() -> None:
     data = _run_round2(doc, prior_input, prior_verdicts)
     alpha = next(s for s in data["sections"] if s["title"] == "Alpha")
     assert "diff" not in alpha, "unchanged carried section must not carry a diff"
+    print("  ok  test_no_diff_for_unchanged_carried_section")
 
 
 def test_no_diff_for_new_section() -> None:
@@ -501,6 +520,7 @@ def test_no_diff_for_new_section() -> None:
     data = _run_round2(new_doc, prior_input, prior_verdicts)
     new_sec = next(s for s in data["sections"] if s["title"] == "Brand New")
     assert "diff" not in new_sec, "new section must not carry a diff"
+    print("  ok  test_no_diff_for_new_section")
 
 
 def test_no_diff_key_round_one() -> None:
@@ -509,6 +529,7 @@ def test_no_diff_key_round_one() -> None:
     data = run(doc)
     for s in data["sections"]:
         assert "diff" not in s, f"unexpected diff key on {s['id']} in round 1"
+    print("  ok  test_no_diff_key_round_one")
 
 
 def test_open_notes_attached_by_title() -> None:
@@ -541,6 +562,7 @@ def test_open_notes_attached_by_title() -> None:
     assert goals["open_notes"][0]["cid"] == "goals-c1"
     assert goals["open_notes"][0]["exchanges"] == exchanges
     assert "open_notes" not in scope, "settled thread must not attach"
+    print("  ok  test_open_notes_attached_by_title")
 
 
 def test_no_open_notes_key_when_store_absent() -> None:
@@ -548,6 +570,7 @@ def test_no_open_notes_key_when_store_absent() -> None:
     data = run("## A\n\na\n\n## B\n\nb\n")
     for s in data["sections"]:
         assert "open_notes" not in s, f"unexpected open_notes on {s['id']}"
+    print("  ok  test_no_open_notes_key_when_store_absent")
 
 
 def test_content_verbatim_no_whitespace_drift() -> None:
@@ -555,6 +578,7 @@ def test_content_verbatim_no_whitespace_drift() -> None:
     data = run(doc)
     reconstructed = "".join(s["content"] for s in data["sections"])
     assert reconstructed == doc, "content must be byte-for-byte verbatim"
+    print("  ok  test_content_verbatim_no_whitespace_drift")
 
 
 def test_nonzero_exit_on_missing_doc() -> None:
@@ -566,6 +590,7 @@ def test_nonzero_exit_on_missing_doc() -> None:
             capture_output=True,
         )
     assert result.returncode != 0
+    print("  ok  test_nonzero_exit_on_missing_doc")
 
 
 def test_doc_file_override() -> None:
@@ -582,6 +607,7 @@ def test_doc_file_override() -> None:
         ], capture_output=True, check=True)
         data = json.loads(out.read_text())
     assert data["doc_file"] == "path/to/my.md"
+    print("  ok  test_doc_file_override")
 
 
 def test_split_on_matches_regardless_of_depth() -> None:
@@ -602,6 +628,7 @@ def test_split_on_matches_regardless_of_depth() -> None:
     # end of doc since Task 2 is the last split heading).
     task2 = next(s for s in data["sections"] if s["title"] == "Task 2: deep")
     assert "### Aside" in task2["content"]
+    print("  ok  test_split_on_matches_regardless_of_depth")
 
 
 def test_split_on_ignores_coarser_repeated_heading() -> None:
@@ -630,6 +657,7 @@ def test_split_on_ignores_coarser_repeated_heading() -> None:
     assert split_titles == ["Doc", "Task 1", "Task 2"], split_titles
     task1 = next(s for s in split["sections"] if s["title"] == "Task 1")
     assert "## Notes\n\nnote 1" in task1["content"]
+    print("  ok  test_split_on_ignores_coarser_repeated_heading")
 
 
 def test_split_on_zero_matches_is_hard_error() -> None:
@@ -642,6 +670,7 @@ def test_split_on_zero_matches_is_hard_error() -> None:
     assert "doc.md" in result.stderr, result.stderr
     # No silent fallback to a one-section (or auto-detected) JSON.
     assert not output_written, "output file must not be written on a zero-match error"
+    print("  ok  test_split_on_zero_matches_is_hard_error")
 
 
 def test_split_on_invalid_regex_errors() -> None:
@@ -652,6 +681,7 @@ def test_split_on_invalid_regex_errors() -> None:
     assert "Traceback" not in result.stderr, result.stderr
     assert "invalid --split-on pattern" in result.stderr, result.stderr
     assert not output_written, "output file must not be written on an invalid pattern"
+    print("  ok  test_split_on_invalid_regex_errors")
 
 
 def test_split_on_20_section_fallback_not_applied() -> None:
@@ -666,6 +696,7 @@ def test_split_on_20_section_fallback_not_applied() -> None:
     titles = [s["title"] for s in data["sections"]]
     assert titles[0] == "Doc"
     assert titles[1:] == [f"Task {i}" for i in range(1, 26)]
+    print("  ok  test_split_on_20_section_fallback_not_applied")
 
 
 def test_split_on_default_path_byte_identical_without_flag() -> None:
@@ -676,6 +707,7 @@ def test_split_on_default_path_byte_identical_without_flag() -> None:
     with_flag_absent = run(doc)
     again = run(doc)
     assert with_flag_absent == again
+    print("  ok  test_split_on_default_path_byte_identical_without_flag")
 
 
 def test_split_on_recorded_in_round_file() -> None:
@@ -685,6 +717,7 @@ def test_split_on_recorded_in_round_file() -> None:
     doc = "# Doc\n\n### Task 1\n\nbody 1\n\n### Task 2\n\nbody 2\n"
     data = run(doc, extra_args=["--split-on", r"^Task \d+"])
     assert data["split_on"] == r"^Task \d+", data.get("split_on")
+    print("  ok  test_split_on_recorded_in_round_file")
 
 
 def test_no_split_on_key_when_flag_absent() -> None:
@@ -695,6 +728,7 @@ def test_no_split_on_key_when_flag_absent() -> None:
     data = run(doc)
     assert "split_on" not in data, data
     assert [s["title"] for s in data["sections"]] == ["Doc", "Task 1", "Task 2"]
+    print("  ok  test_no_split_on_key_when_flag_absent")
 
 
 def test_doc_type_recorded_and_absent_without_the_flag() -> None:
@@ -704,6 +738,7 @@ def test_doc_type_recorded_and_absent_without_the_flag() -> None:
     data = run(doc, extra_args=["--doc-type", "design-doc"])
     assert data["doc_type"] == "design-doc", data.get("doc_type")
     assert "doc_type" not in run(doc), "no flag, no key"
+    print("  ok  test_doc_type_recorded_and_absent_without_the_flag")
 
 
 def test_pass_recorded_and_absent_without_the_flag() -> None:
@@ -713,20 +748,8 @@ def test_pass_recorded_and_absent_without_the_flag() -> None:
     doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
     data = run(doc, extra_args=["--pass", "checks"])
     assert data["pass"] == {"kind": "checks"}, data.get("pass")
-    posture = run(doc, extra_args=["--pass", "line", "--posture", "hard"])
-    assert posture["pass"] == {"kind": "line", "posture": "hard"}, posture.get("pass")
     assert "pass" not in run(doc), "no flag, no key"
-
-
-def test_posture_without_a_pass_is_refused() -> None:
-    # A posture is a setting ON a pass, never a round field of its own. Dropping
-    # it on write would run the round at a posture the caller asked for and did
-    # not get, so the boundary refuses instead.
-    doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
-    result, written = run_expect_fail(doc, ["--posture", "hard"])
-    assert result.returncode != 0, result
-    assert "--posture needs --pass" in result.stderr, result.stderr
-    assert not written, "no round file may be written on a refused parse"
+    print("  ok  test_pass_recorded_and_absent_without_the_flag")
 
 
 def test_unknown_pass_kind_is_refused() -> None:
@@ -736,6 +759,7 @@ def test_unknown_pass_kind_is_refused() -> None:
     result, written = run_expect_fail(doc, ["--pass", "polish"])
     assert result.returncode == 2, result
     assert not written
+    print("  ok  test_unknown_pass_kind_is_refused")
 
 
 def test_split_on_fixture_one_section_per_task() -> None:
@@ -762,6 +786,7 @@ def test_split_on_fixture_one_section_per_task() -> None:
     # Preamble (H1 + intro paragraph) becomes its own first-class section,
     # same rule as default parsing.
     assert data["sections"][0]["title"] == "Sprint 12 plan"
+    print("  ok  test_split_on_fixture_one_section_per_task")
 
 
 def test_split_on_fixture_round2_carries_forward_through_section_key() -> None:
@@ -798,6 +823,7 @@ def test_split_on_fixture_round2_carries_forward_through_section_key() -> None:
     assert any("tightened" in t for t in diff_ops), task2.get("diff")
     assert task3["id"] not in r2["approved_ids"], "pending Task 3 was never approved"
     assert "diff" not in task3, "untouched Task 3 must show no diff"
+    print("  ok  test_split_on_fixture_round2_carries_forward_through_section_key")
 
 
 def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
@@ -806,7 +832,6 @@ def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
     # through the exact same functions default-parsed sections use.
     content_t1 = "### Task 1\n\ntask one body\n\n"
     content_t2 = "### Task 2\n\ntask two body\n"
-    doc_r1 = content_t1 + content_t2
     prior_input = {
         "mode": "review", "doc_file": "PLAN.md", "round": 1, "approved_ids": [],
         "sections": [
@@ -842,6 +867,7 @@ def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
     diff_ops = {(d["op"], d["text"]) for d in task2.get("diff", [])}
     assert ("-", "task two body") in diff_ops, task2.get("diff")
     assert ("+", "task two body, expanded") in diff_ops, task2.get("diff")
+    print("  ok  test_split_on_identity_reuses_section_key_no_new_rule")
 
 
 def test_coarser_trailing_heading_gets_own_card() -> None:
@@ -865,6 +891,7 @@ def test_coarser_trailing_heading_gets_own_card() -> None:
     assert "Follow-up A" in followups["content"]
     # Integrity check still holds (every source char in exactly one section).
     assert "".join(s["content"] for s in data["sections"]) == doc
+    print("  ok  test_coarser_trailing_heading_gets_own_card")
 
 
 def test_coarser_interleaved_heading_becomes_own_card() -> None:
@@ -884,6 +911,7 @@ def test_coarser_interleaved_heading_becomes_own_card() -> None:
     assert "Aside" not in task1["content"]
     assert "aside text" in aside["content"]
     assert "".join(s["content"] for s in data["sections"]) == doc
+    print("  ok  test_coarser_interleaved_heading_becomes_own_card")
 
 
 def test_coarser_heading_before_first_split_stays_in_preamble() -> None:
@@ -902,6 +930,7 @@ def test_coarser_heading_before_first_split_stays_in_preamble() -> None:
     assert "## Overview" in preamble["content"]
     assert "overview aside" in preamble["content"]
     assert "".join(s["content"] for s in data["sections"]) == doc
+    print("  ok  test_coarser_heading_before_first_split_stays_in_preamble")
 
 
 def test_coarser_trailing_revision_history_excluded_not_absorbed() -> None:
@@ -923,6 +952,7 @@ def test_coarser_trailing_revision_history_excluded_not_absorbed() -> None:
     rh_start = doc.index("## Revision History")
     expected_source = doc[:rh_start]
     assert "".join(s["content"] for s in data["sections"]) == expected_source
+    print("  ok  test_coarser_trailing_revision_history_excluded_not_absorbed")
 
 
 def test_coarser_heading_approval_not_carried_when_boundary_moves() -> None:
@@ -957,6 +987,7 @@ def test_coarser_heading_approval_not_carried_when_boundary_moves() -> None:
         "prior approved blob) — approval must not carry forward"
     )
     assert followups["id"] not in data["approved_ids"], "new card was never approved"
+    print("  ok  test_coarser_heading_approval_not_carried_when_boundary_moves")
 
 
 SIGNED_DOC = (
@@ -970,6 +1001,7 @@ def test_recheck_seeds_every_section_approved() -> None:
     data = run(SIGNED_DOC, extra_args=["--recheck"])
     assert data["recheck"] is True, data
     assert sorted(data["approved_ids"]) == sorted(s["id"] for s in data["sections"]), data
+    print("  ok  test_recheck_seeds_every_section_approved")
 
 
 def test_recheck_refuses_an_unsigned_doc() -> None:
@@ -977,10 +1009,12 @@ def test_recheck_refuses_an_unsigned_doc() -> None:
     assert result.returncode != 0, "recheck must refuse a doc with no ledger"
     assert not wrote, "no round file must be written on refusal"
     assert "signed doc" in result.stderr, result.stderr
+    print("  ok  test_recheck_refuses_an_unsigned_doc")
 
 
 def test_no_recheck_key_when_flag_absent() -> None:
     assert "recheck" not in run(SIGNED_DOC), "no flag, no key"
+    print("  ok  test_no_recheck_key_when_flag_absent")
 
 
 def test_recheck_round_two_carries_the_normal_way() -> None:
@@ -1018,72 +1052,60 @@ def test_recheck_round_two_carries_the_normal_way() -> None:
     assert by_title["Gamma"]["id"] in round2["approved_ids"], \
         "Gamma was left alone (no verdict, no rewrite) — its recheck-seeded " \
         "approval must survive round 2"
+    print("  ok  test_recheck_round_two_carries_the_normal_way")
 
 
 def main() -> None:
-    tests = [
-        test_basic_h2_split,
-        test_no_headings_single_section,
-        test_single_heading_single_section,
-        test_integrity_check_passes,
-        test_revision_history_excluded,
-        test_preamble_uses_h1_title,
-        test_preamble_empty_omitted,
-        test_ids_are_sequential,
-        test_approved_matching_same_content,
-        test_approved_carries_forward_across_non_sequential_round_numbers,
-        test_approved_not_carried_if_content_changed,
-        test_withdrawn_approval_is_not_carried_forward,
-        test_no_annotations_key_when_absent,
-        test_annotations_carried_forward_when_unchanged,
-        test_annotations_dropped_when_content_changed,
-        test_summary_carries_forward_and_never_outlives_its_content,
-        test_diff_computed_for_changed_section,
-        test_diff_keeps_dash_prefixed_content_line,
-        test_no_diff_for_unchanged_carried_section,
-        test_no_diff_for_new_section,
-        test_no_diff_key_round_one,
-        test_open_notes_attached_by_title,
-        test_no_open_notes_key_when_store_absent,
-        test_content_verbatim_no_whitespace_drift,
-        test_nonzero_exit_on_missing_doc,
-        test_doc_file_override,
-        test_split_on_matches_regardless_of_depth,
-        test_split_on_ignores_coarser_repeated_heading,
-        test_split_on_zero_matches_is_hard_error,
-        test_split_on_invalid_regex_errors,
-        test_split_on_20_section_fallback_not_applied,
-        test_split_on_default_path_byte_identical_without_flag,
-        test_split_on_recorded_in_round_file,
-        test_no_split_on_key_when_flag_absent,
-        test_doc_type_recorded_and_absent_without_the_flag,
-        test_pass_recorded_and_absent_without_the_flag,
-        test_posture_without_a_pass_is_refused,
-        test_unknown_pass_kind_is_refused,
-        test_split_on_fixture_one_section_per_task,
-        test_split_on_fixture_round2_carries_forward_through_section_key,
-        test_split_on_identity_reuses_section_key_no_new_rule,
-        test_coarser_trailing_heading_gets_own_card,
-        test_coarser_interleaved_heading_becomes_own_card,
-        test_coarser_heading_before_first_split_stays_in_preamble,
-        test_coarser_trailing_revision_history_excluded_not_absorbed,
-        test_coarser_heading_approval_not_carried_when_boundary_moves,
-        test_recheck_seeds_every_section_approved,
-        test_recheck_refuses_an_unsigned_doc,
-        test_no_recheck_key_when_flag_absent,
-        test_recheck_round_two_carries_the_normal_way,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"  ok  {t.__name__}")
-        except Exception as e:
-            print(f"  FAIL {t.__name__}: {e}")
-            failed += 1
-    if failed:
-        sys.exit(f"\n{failed}/{len(tests)} tests failed")
-    print(f"\nOK ({len(tests)} tests)")
+    test_basic_h2_split()
+    test_no_headings_single_section()
+    test_single_heading_single_section()
+    test_integrity_check_passes()
+    test_revision_history_excluded()
+    test_preamble_uses_h1_title()
+    test_preamble_empty_omitted()
+    test_ids_are_sequential()
+    test_approved_matching_same_content()
+    test_approved_carries_forward_across_non_sequential_round_numbers()
+    test_approved_not_carried_if_content_changed()
+    test_withdrawn_approval_is_not_carried_forward()
+    test_no_annotations_key_when_absent()
+    test_annotations_carried_forward_when_unchanged()
+    test_annotations_dropped_when_content_changed()
+    test_summary_carries_forward_and_never_outlives_its_content()
+    test_diff_computed_for_changed_section()
+    test_diff_keeps_dash_prefixed_content_line()
+    test_no_diff_for_unchanged_carried_section()
+    test_no_diff_for_new_section()
+    test_no_diff_key_round_one()
+    test_open_notes_attached_by_title()
+    test_no_open_notes_key_when_store_absent()
+    test_content_verbatim_no_whitespace_drift()
+    test_nonzero_exit_on_missing_doc()
+    test_doc_file_override()
+    test_split_on_matches_regardless_of_depth()
+    test_split_on_ignores_coarser_repeated_heading()
+    test_split_on_zero_matches_is_hard_error()
+    test_split_on_invalid_regex_errors()
+    test_split_on_20_section_fallback_not_applied()
+    test_split_on_default_path_byte_identical_without_flag()
+    test_split_on_recorded_in_round_file()
+    test_no_split_on_key_when_flag_absent()
+    test_doc_type_recorded_and_absent_without_the_flag()
+    test_pass_recorded_and_absent_without_the_flag()
+    test_unknown_pass_kind_is_refused()
+    test_split_on_fixture_one_section_per_task()
+    test_split_on_fixture_round2_carries_forward_through_section_key()
+    test_split_on_identity_reuses_section_key_no_new_rule()
+    test_coarser_trailing_heading_gets_own_card()
+    test_coarser_interleaved_heading_becomes_own_card()
+    test_coarser_heading_before_first_split_stays_in_preamble()
+    test_coarser_trailing_revision_history_excluded_not_absorbed()
+    test_coarser_heading_approval_not_carried_when_boundary_moves()
+    test_recheck_seeds_every_section_approved()
+    test_recheck_refuses_an_unsigned_doc()
+    test_no_recheck_key_when_flag_absent()
+    test_recheck_round_two_carries_the_normal_way()
+    print("OK (49 tests)")
 
 
 if __name__ == "__main__":

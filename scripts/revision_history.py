@@ -23,6 +23,10 @@ import schema
 HEADING = "## Revision History"
 
 
+def die(msg: str) -> None:
+    sys.exit(f"revision_history: {msg}")
+
+
 def esc_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
@@ -39,7 +43,7 @@ def collect_threads(viva_dir: Path) -> list[dict]:
     if not path.exists():
         return []
     try:
-        store = json.loads(path.read_text())
+        store = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
     threads = [t for t in store.values() if t.get("exchanges")]
@@ -88,7 +92,7 @@ def collect_decisions(viva_dir: Path) -> list[dict]:
     if not path.exists():
         return []
     try:
-        store = json.loads(path.read_text())
+        store = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
     entries = [e for e in store.values() if isinstance(e, dict) and e.get("flags")]
@@ -124,11 +128,11 @@ def collect(viva_dir: Path) -> tuple[list[dict], int, int, bool]:
     is_recheck = False
     for n in rounds:
         inp_path, out_path = schema.round_file_paths(viva_dir, n)
-        inp = json.loads(inp_path.read_text())
+        inp = json.loads(inp_path.read_text(encoding="utf-8"))
         is_recheck = bool(inp.get("recheck"))
         if not out_path.exists():
             continue
-        out = json.loads(out_path.read_text())
+        out = json.loads(out_path.read_text(encoding="utf-8"))
         titles = {s["id"]: s.get("title", s["id"]) for s in inp.get("sections", [])}
         sections_total = max(sections_total, len(inp.get("sections", [])))
         entries.extend(
@@ -168,7 +172,7 @@ def build_block(entries: list[dict], rounds_total: int,
 def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     entries, rounds_total, sections_total, is_recheck = collect(viva_dir)
     if rounds_total == 0:
-        sys.exit(f"no review round files found in {viva_dir}")
+        die(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day, is_recheck)
     decisions = collect_decisions(viva_dir)
     if decisions:
@@ -176,12 +180,12 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     threads = collect_threads(viva_dir)
     if threads:
         block = block + "\n\n" + build_threads_block(threads)
-    doc = doc_path.read_text()
+    doc = doc_path.read_text(encoding="utf-8")
     if schema.has_revision_history(doc):
         new_doc = doc.rstrip("\n") + "\n\n" + block + "\n"
     else:
         new_doc = doc.rstrip("\n") + f"\n\n---\n\n{HEADING}\n\n" + block + "\n"
-    doc_path.write_text(new_doc)
+    doc_path.write_text(new_doc, encoding="utf-8")
 
 
 if __name__ == "__main__":

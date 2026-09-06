@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "docket.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import docket  # noqa: E402
+import schema  # noqa: E402
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────
@@ -82,8 +83,11 @@ def test_current_round_highest_and_zero():
 
 
 def test_round_files_names():
+    # docket.py no longer wraps this — it calls schema.round_file_paths
+    # directly, same as loop.py. Pinned here so a regression in either
+    # module's call surfaces where docket's own tests run.
     viva = Path("/nonexistent/.viva")
-    inp, out = docket.round_files(viva, 5)
+    inp, out = schema.round_file_paths(viva, 5)
     assert inp.name == "review-input-r5.json"
     assert out.name == "review-r5.json"
 

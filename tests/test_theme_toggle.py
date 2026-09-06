@@ -108,7 +108,10 @@ def test_toggle_is_reachable_and_labelled() -> None:
         "the toggle must carry the suite's visible focus state"
     assert "'Theme: ' + (t || 'following system') + '. Activate to switch to '" in HTML, \
         "the accessible name must say what activating the button does"
-    assert re.search(r'\.theme-toggle\s*\{[^}]*border-radius:\s*0', HTML), \
+    # Tolerates the selector sitting in a comma-joined list (the shared
+    # bottom-bar toggle rule) — the tail before `{` must start with a comma
+    # or whitespace, excluding a same-token suffix like `:focus-visible`.
+    assert re.search(r'\.theme-toggle(?:[,\s][^{}]*)?\{[^}]*border-radius:\s*0', HTML), \
         "square per the catalog's shape rule"
     print("  ok  test_toggle_is_reachable_and_labelled")
 

@@ -12,7 +12,7 @@ import schema  # noqa: E402
 def test_section_key_normalizes():
     assert schema.section_key("  Error Handling  ") == "error handling"
     assert schema.section_key("GOALS") == "goals"
-    # Identity keeps internal punctuation/spaces — distinct from checklist._norm
+    # Identity keeps internal punctuation/spaces
     assert schema.section_key("Non-goals") == "non-goals"
     assert schema.section_key("Non-goals") != "nongoals"
     print("  ok  test_section_key_normalizes")
@@ -165,18 +165,12 @@ def test_validate_review_input_accepts_valid():
         "mode": "review", "doc_type": "design-doc",
         "sections": [{"id": "s1", "title": "Problem & persona", "content": "b"}],
     })
-    # `pass` — the round's depth. Every kind, with and without a posture, and
-    # the posture is a key INSIDE the object, never beside it.
+    # `pass` — the round's depth. Every kind.
     for kind in schema.PASS_KINDS:
         schema.validate_review_input({
             "mode": "review", "pass": {"kind": kind},
             "sections": [{"id": "s1", "title": "Goals", "content": "b"}],
         })
-        for posture in schema.PASS_POSTURES:
-            schema.validate_review_input({
-                "mode": "review", "pass": {"kind": kind, "posture": posture},
-                "sections": [{"id": "s1", "title": "Goals", "content": "b"}],
-            })
     # `summary` — the agent's one-liner under the card title. Optional; a
     # string when present, and an empty one is legal (a section the agent
     # deliberately left undescribed carries no key, but "" is not malformed).
@@ -219,8 +213,6 @@ def test_validate_review_input_rejects_bad():
         {"sections": [], "pass": {}},              # no kind
         {"sections": [], "pass": {"kind": "polish"}},        # unknown kind
         {"sections": [], "pass": {"kind": None}},
-        {"sections": [], "pass": {"kind": "line", "posture": "brutal"}},
-        {"sections": [], "pass": {"kind": "line", "posture": None}},
         # `summary` reaches a render site under the card title, so a present
         # non-string must fail on write rather than print as `null` or
         # `[object Object]` in the one place the reviewer navigates by.
@@ -304,30 +296,36 @@ def test_validate_verdicts_rejects_bad():
     print("  ok  test_validate_verdicts_rejects_bad")
 
 
-def test_schema_reaches_no_io():
-    """`schema.py` must stay pure — `round_is_complete()` is asked by
-    `loop.py finish` and the server's `/complete` handler from separate
-    processes, and must judge only the dicts handed to it, never disk.
+def test_round_is_complete_reaches_no_io():
+    """`round_is_complete()` must stay pure — asked by `loop.py finish` and
+    the server's `/complete` handler from separate processes, it must judge
+    only the dicts handed to it, never disk. The pin is per-function, not
+    per-module: `schema.py` itself may use `json`/`pathlib` for shared
+    helpers like `read_json_or_exit`/`atomic_write`, which perform I/O at
+    the caller's request rather than deciding completion from disk state.
 
     AST-walked rather than grepped, since the module docstring mentions
     `json.dumps` in prose and a substring scan would fire on that.
     """
     src = (Path(__file__).resolve().parent.parent / "scripts" / "schema.py")
     tree = ast.parse(src.read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "round_is_complete")
     banned = {"os", "pathlib", "json", "io", "shutil", "tempfile", "subprocess"}
-    for node in ast.walk(tree):
+    for node in ast.walk(fn):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".")[0]
                 assert root not in banned, \
-                    "schema.py must stay pure — imports %s" % alias.name
+                    "round_is_complete must stay pure — imports %s" % alias.name
         elif isinstance(node, ast.ImportFrom):
             root = (node.module or "").split(".")[0]
             assert root not in banned, \
-                "schema.py must stay pure — imports from %s" % node.module
+                "round_is_complete must stay pure — imports from %s" % node.module
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            assert node.func.id != "open", "schema.py must stay pure — calls open()"
-    print("  ok  test_schema_reaches_no_io")
+            assert node.func.id != "open", \
+                "round_is_complete must stay pure — calls open()"
+    print("  ok  test_round_is_complete_reaches_no_io")
 
 
 def test_round_is_complete_needs_a_row_per_input_section():
@@ -391,15 +389,13 @@ def test_structure_and_line_are_the_base_rule():
     for kind in ("architecture", "line"):
         assert schema.round_is_complete(
             _round({"kind": kind}, annotations=flag), APPROVED), kind
-        assert schema.round_is_complete(
-            _round({"kind": kind, "posture": "hard"}), APPROVED), kind
     print("  ok  test_structure_and_line_are_the_base_rule")
 
 
 def test_checks_pass_holds_until_every_check_flag_is_answered():
     """The added conjunct: approvals alone do not close a `checks` round. A
     check flag is an annotation whose `kind` is in `CHECK_KINDS`; an advisory
-    producer's flag (drift/checklist/preference/confidence) never gates one."""
+    producer's flag (drift/preference/confidence) never gates one."""
     checks_pass = {"kind": "checks"}
     unanswered = [{"kind": "headings-present", "severity": "warn",
                    "message": "missing expected design-doc section: 'Goals'"}]
@@ -538,27 +534,23 @@ def test_check_kinds_covers_every_shipped_bundle_check():
 def test_doc_scope_kinds_is_a_closed_set():
     """`DOC_SCOPE_KINDS` is the scope registry — what a producer's flag is
     ABOUT — a different axis from `CHECK_KINDS` (does it gate a `checks`
-    round). Unregistered, a flag's anchor renders in section 1's margin
-    instead of the document slip."""
+    round), even though the one shipped producer sits on both today.
+    Unregistered, a flag's anchor renders in section 1's margin instead of
+    the document slip."""
     assert isinstance(schema.DOC_SCOPE_KINDS, tuple), "a vocabulary is a tuple"
     scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
-    # Read the producers rather than restating their strings.
+    # Read the producer rather than restating its string.
     hp_src = (scripts_dir / "headings_present.py").read_text(encoding="utf-8")
-    cl_src = (scripts_dir / "checklist.py").read_text(encoding="utf-8")
     assert 'KIND = "headings-present"' in hp_src, "headings_present.py's KIND moved"
-    assert '"kind": "checklist"' in cl_src, "checklist.py's emitted kind moved"
-    assert set(schema.DOC_SCOPE_KINDS) == {"headings-present", "checklist"}, \
-        "the registry must name exactly the two document-level producers"
+    assert set(schema.DOC_SCOPE_KINDS) == {"headings-present"}, \
+        "the registry must name exactly the one document-level producer"
     # The same mechanical mapping a bundle's `checks[]` uses.
     for kind in schema.DOC_SCOPE_KINDS:
         producer = scripts_dir / (kind.replace("-", "_") + ".py")
         assert producer.exists(), f"{kind} names no producer at {producer}"
-    assert set(schema.DOC_SCOPE_KINDS) != set(schema.CHECK_KINDS), \
-        "scope and gating are different axes; collapsing them makes checklist gate a round"
     assert "headings-present" in schema.DOC_SCOPE_KINDS, "it is doc-scope"
     assert "headings-present" in schema.CHECK_KINDS, "...and it gates a checks round"
     print("  ok  test_doc_scope_kinds_is_a_closed_set")
-
 
 def test_has_revision_history_is_anchored():
     """Substring matching is the defect this replaces: viva's own SKILL.md and
@@ -670,7 +662,7 @@ def main():
     test_id_must_be_a_bare_token()
     test_validate_verdicts_accepts_valid()
     test_validate_verdicts_rejects_bad()
-    test_schema_reaches_no_io()
+    test_round_is_complete_reaches_no_io()
     test_round_is_complete_needs_a_row_per_input_section()
     test_round_is_complete_rejects_an_empty_round()
     test_absent_pass_is_todays_behavior_exactly()

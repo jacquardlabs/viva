@@ -55,8 +55,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import schema
+
 VERSION = 1
 STATUSES = ("candidate", "standing", "muted")
+
+
+def die(msg: str) -> None:
+    sys.exit(f"viva preferences: {msg}")
 
 
 def slug(label: str) -> str:
@@ -159,16 +165,12 @@ def select(store: dict, status: str = "standing") -> list:
 def _load(path: Path) -> dict:
     if not path.exists():
         return empty_store()
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"viva preferences: cannot read {path}: {e}")
+    return schema.read_json_or_exit(path, "viva preferences")
 
 
 def _write(path: Path, store: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(store, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    schema.atomic_write(path, json.dumps(store, indent=2, ensure_ascii=False))
 
 
 def _format_text(prefs: list) -> str:
@@ -225,7 +227,7 @@ def main() -> None:
                            label=args.label, guidance=args.guidance,
                            count=args.count, threshold=args.threshold)
         except ValueError as e:
-            sys.exit(f"viva preferences: {e}")
+            die(str(e))
         _write(store_path, store)
         pid = args.pref_id or slug(args.label)
         pref = store["preferences"][pid]
@@ -246,7 +248,7 @@ def main() -> None:
         try:
             store = set_status(store, args.pref_id, args.status)
         except KeyError:
-            sys.exit(f"viva preferences: no preference {args.pref_id!r}")
+            die(f"no preference {args.pref_id!r}")
         _write(store_path, store)
         print(f"viva preferences: {args.pref_id!r} → {args.status}", flush=True)
 
