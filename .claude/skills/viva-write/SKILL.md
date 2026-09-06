@@ -150,9 +150,8 @@ parses it.
 Cite a source a reader can open, in the prose, where they would want it
 (`config.py:42`, `#170`, the URL). **The interview is not a source, and neither
 is this session.** Write the decision, not "(per the interview)" or "decided
-this session" — that provenance lives in the confidence sidecar you emit at
-step 5, never in the doc text. Structured citations are #145's call, not this
-flow's.
+this session" — that provenance lives in the confidence sidecar and the
+**decision** sidecar you emit at step 5, never in the doc text.
 
 **Nothing in this file is advice on what to argue.** The type fixes the
 sections, the register fixes the density, the attachments fix the facts, the
@@ -183,9 +182,18 @@ while the basis for each is still in hand — `sourced` for a fact an attachment
 carried, `inferred` for a call you made. Name the evidence in `source`: what you
 read for a `sourced` claim, what you searched and didn't find for an `inferred`
 one (#145). Write the sidecar and merge it with
-`loop.py annotate --sidecar <path>` (`producers.md` has the shape). If the
-preferences store holds standing preferences, run the learned-preference
-producer too and merge that sidecar.
+`loop.py annotate --sidecar <path>` (`producers.md` has the shape).
+
+Also emit a **decision** flag (#211) for every question the interview
+answered, one flag per section the answer shaped: `kind: "decision"`,
+`message` the question text and chosen answer verbatim (no paraphrase), `id`
+the section's id. `loop.py annotate` snapshots these into
+`.viva/decisions.json`, keyed by section identity rather than id, so they
+survive a later round's rewrite; they show up on the card and fold into the
+ledger's `### Decisions` block at sign-off — never in the doc text itself.
+
+If the preferences store holds standing preferences, run the
+learned-preference producer too and merge that sidecar.
 
 Then hand the round to the running server:
 

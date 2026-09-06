@@ -188,6 +188,55 @@ def main() -> None:
             "2026-06-09") in text8, text8
     assert "revised" not in text8, text8
 
+    # Decisions (#211): `.viva/decisions.json` folds into a `### Decisions`
+    # block, before `### Open notes` when both are present.
+    viva9 = tmp / ".viva9"
+    viva9.mkdir()
+    doc9 = tmp / "doc9.md"
+    doc9.write_text("# Doc9\n\n## Goals\n\nbody\n\n## Error Handling\n\nbody\n")
+    write_round(viva9, 1, secs, [
+        {"id": "s1", "verdict": "approved", "note": ""},
+        {"id": "s2", "verdict": "approved", "note": ""},
+    ])
+    (viva9 / "decisions.json").write_text(json.dumps({
+        "goals": {"title": "Goals", "flags": [
+            {"kind": "decision", "severity": "info",
+             "message": "Which channel? → email"},
+        ]},
+        "error handling": {"title": "Error Handling", "flags": [
+            {"kind": "decision", "severity": "info",
+             "message": "Retry budget? → 3 attempts"},
+        ]},
+    }))
+    (viva9 / "open-notes.json").write_text(json.dumps({
+        "goals": {"title": "Goals", "status": "settled", "exchanges": [
+            {"round": 1, "verdict": "info", "note": "why 3?", "response": "Matches the SLA."},
+        ]},
+    }))
+    run(viva9, doc9)
+    text9 = doc9.read_text()
+    assert "### Decisions" in text9, text9
+    assert "**Goals**" in text9 and "Which channel? → email" in text9, text9
+    assert "**Error Handling**" in text9 and "Retry budget? → 3 attempts" in text9, text9
+    assert text9.index("### Decisions") < text9.index("### Open notes"), \
+        "Decisions must render before Open notes"
+
+    # No decisions.json → no Decisions section (principle 4, no-op when absent).
+    assert "### Decisions" not in doc.read_text()
+
+    # An empty decisions.json (no section carries a flag) writes nothing new.
+    viva10 = tmp / ".viva10"
+    viva10.mkdir()
+    doc10 = tmp / "doc10.md"
+    doc10.write_text("# Doc10\n\n## Goals\n\nbody\n")
+    write_round(viva10, 1, secs, [
+        {"id": "s1", "verdict": "approved", "note": ""},
+        {"id": "s2", "verdict": "approved", "note": ""},
+    ])
+    (viva10 / "decisions.json").write_text("{}")
+    run(viva10, doc10)
+    assert "### Decisions" not in doc10.read_text()
+
     print("OK")
 
 

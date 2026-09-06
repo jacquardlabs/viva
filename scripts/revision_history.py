@@ -6,7 +6,9 @@ Usage: revision_history.py --viva-dir .viva --doc doc.md [--date 2026-06-28]
 Reads review-input-rN.json / review-rN.json pairs, collects every
 changes/info verdict with its note verbatim, and appends a summary line +
 table under `## Revision History` (creating the heading on first use,
-appending a new session block thereafter).
+appending a new session block thereafter). `.viva/decisions.json` (#211),
+when present, folds in as a `### Decisions` block beside the existing
+`### Open notes`.
 """
 from __future__ import annotations
 
@@ -79,6 +81,35 @@ def build_threads_block(threads: list[dict]) -> str:
     return "\n".join(lines).rstrip()
 
 
+def collect_decisions(viva_dir: Path) -> list[dict]:
+    """Read `.viva/decisions.json` (#211), return `{title, flags}` entries in
+    title order. Absent or empty → no decisions."""
+    path = viva_dir / "decisions.json"
+    if not path.exists():
+        return []
+    try:
+        store = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    entries = [e for e in store.values() if isinstance(e, dict) and e.get("flags")]
+    entries.sort(key=lambda e: (e.get("title") or "").strip().lower())
+    return entries
+
+
+def build_decisions_block(entries: list[dict]) -> str:
+    """Render decision flags grouped by section heading, one bullet per
+    answered question — `message` is the question and answer verbatim,
+    exactly as `loop.py annotate` merged it."""
+    lines = ["### Decisions", ""]
+    for e in entries:
+        lines.append(f"**{e.get('title', '')}**")
+        lines.append("")
+        for flag in e.get("flags", []):
+            lines.append(f"- {flat(flag.get('message', ''))}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def collect(viva_dir: Path) -> tuple[list[dict], int, int]:
     """Return (entries, rounds_total, sections_total) from round file pairs."""
     rounds = sorted(
@@ -131,6 +162,9 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     if rounds_total == 0:
         sys.exit(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day)
+    decisions = collect_decisions(viva_dir)
+    if decisions:
+        block = block + "\n\n" + build_decisions_block(decisions)
     threads = collect_threads(viva_dir)
     if threads:
         block = block + "\n\n" + build_threads_block(threads)

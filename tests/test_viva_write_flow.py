@@ -326,6 +326,81 @@ def test_checks_default_pass_holds_the_round_until_the_flag_is_answered():
     print("  ok  test_checks_default_pass_holds_the_round_until_the_flag_is_answered")
 
 
+# ── test 3: a decision (#211) survives a rewrite ─────────────────────────────
+def test_decision_survives_a_rewrite_through_rearm():
+    """A decision emitted at hand-off is snapshotted into `.viva/decisions.json`
+    keyed by section identity, not id — so it re-attaches to the section a
+    later round rewrites, which the parser's byte-identical carry alone would
+    drop it from."""
+    tmp, viva = _tmp_session()
+    proc, base = _interview(tmp, viva)
+    try:
+        _answer(proc, base, ANSWERS)
+
+        doc = "docs/notifications.md"
+        (tmp / "docs").mkdir()
+        (tmp / doc).write_text(DRAFT)
+        started = _loop(tmp, "start", "--doc", doc, "--type", "design-doc",
+                        "--pass", "architecture", "--handoff", "--parse-only")
+        assert started.returncode == 0, started.stderr
+
+        # Parse-only means the round file is on disk but unarmed — find the
+        # target section's freshly assigned id there, never assume "s1".
+        round1 = json.loads((viva / "review-input-r1.json").read_text())
+        target_id = next(s["id"] for s in round1["sections"]
+                         if s["title"] == "Problem & persona")
+        decision = [{"id": target_id, "kind": "decision", "severity": "info",
+                    "message": "Which channel? → email"}]
+
+        # As merged (no "id" — that lives on the section, not the annotation).
+        expected_annot = {k: v for k, v in decision[0].items() if k != "id"}
+
+        merged = _loop(tmp, "annotate", "--sidecar", "-",
+                       stdin=json.dumps(decision + CONFIDENCE))
+        assert merged.returncode == 0, merged.stderr
+        store = json.loads((viva / "decisions.json").read_text())
+        key = next(iter(store))
+        assert store[key]["title"] == "Problem & persona", store
+        assert store[key]["flags"] == [expected_annot], store
+
+        assert _loop(tmp, "arm").returncode == 0
+        served = get(base, "/input")
+        s1 = next(s for s in served["sections"] if s["id"] == target_id)
+        assert s1["title"] == "Problem & persona", s1
+        assert _flags(served, "decision") == [expected_annot], served
+
+        # A "changes" verdict on the target, everything else approved — round
+        # 1 is not all-approved, so the agent rewrites the section instead of
+        # finishing.
+        ids = [s["id"] for s in served["sections"]]
+        post(base, "/submit", {"round": 1, "submitted_early": False,
+                               "sections": [
+                                   {"id": target_id, "verdict": "changes",
+                                    "note": "say which team is on-call"},
+                                   *({"id": i, "verdict": "approved"}
+                                     for i in ids if i != target_id),
+                               ]})
+        assert poll_for(viva / "review-r1.json")
+
+        # The agent rewrites the section — same heading, different content —
+        # so the parser's carry (title+content match) alone would drop it.
+        (tmp / doc).write_text(DRAFT.replace(
+            "On-call engineers miss incidents (#170).",
+            "On-call engineers miss incidents; the primary responder is paged (#170)."))
+
+        rearmed = _loop(tmp, "rearm")
+        assert rearmed.returncode == 0, rearmed.stderr
+
+        served2 = get(base, "/input")
+        assert served2["round"] == 2, served2
+        s1_2 = next(s for s in served2["sections"] if s["title"] == "Problem & persona")
+        assert _flags({"sections": [s1_2]}, "decision") == [expected_annot], \
+            "the decision must survive the rewrite: %s" % s1_2
+    finally:
+        _reap(tmp, viva)
+    print("  ok  test_decision_survives_a_rewrite_through_rearm")
+
+
 # ── the skill carries no bookkeeping of its own ──────────────────────────────
 def test_skill_runs_the_interview_through_the_driver():
     """The bookkeeping in steps 3 and 5 is all `loop.py`'s now; what stays
@@ -351,8 +426,9 @@ def test_skill_runs_the_interview_through_the_driver():
 def main() -> None:
     test_typed_draft_hands_off_and_signs_off()
     test_checks_default_pass_holds_the_round_until_the_flag_is_answered()
+    test_decision_survives_a_rewrite_through_rearm()
     test_skill_runs_the_interview_through_the_driver()
-    print("OK (3 tests)")
+    print("OK (4 tests)")
 
 
 if __name__ == "__main__":
