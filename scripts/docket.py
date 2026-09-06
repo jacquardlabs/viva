@@ -113,7 +113,7 @@ def load_json(p: Path) -> dict | None:
     never crash on a mid-write or wrong-shape round file. Callers do
     `load_json(p) or {}`, so a non-dict payload must not reach them as-is."""
     try:
-        with p.open() as fh:
+        with p.open(encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         return None

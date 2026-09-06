@@ -10,7 +10,6 @@ from __future__ import annotations  # 3.8-safe `X | None` hints (CI matrix runs 
 import argparse
 import base64
 import json
-import os
 import re
 import signal
 import socket
@@ -7606,12 +7605,10 @@ def _with_revision_counts(data: dict, viva_dir: Path) -> dict:
 
 def _atomic_write(path: Path, text: str) -> None:
     # A reader polling with `[ -f path ]` then `cat path` must never observe a
-    # truncated/partial file. Write a sibling tmp, then rename atomically.
+    # truncated/partial file — schema.atomic_write is the shared
+    # implementation; this wrapper only adds the mkdir its 3 callers rely on.
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding='utf-8') as f:
-        f.write(text)
-    os.replace(tmp, path)
+    schema.atomic_write(path, text)
 
 
 def write_output(path: str, data: dict) -> None:

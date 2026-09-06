@@ -87,7 +87,7 @@ def current_round(viva: Path) -> int:
 
 
 def load_json(p: Path) -> dict:
-    with p.open() as fh:
+    with p.open(encoding="utf-8") as fh:
         return json.load(fh)
 
 
