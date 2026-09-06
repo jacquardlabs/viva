@@ -31,6 +31,10 @@ from pathlib import Path
 import schema
 
 
+def die(msg: str) -> None:
+    sys.exit(f"viva open_notes: {msg}")
+
+
 def update(
     store: dict,
     round_num: int,
@@ -159,7 +163,7 @@ def main() -> None:
                        declines)
     except ValueError as e:
         # Nothing is written on a refusal — the store keeps its prior state.
-        sys.exit(f"viva open_notes: {e}")
+        die(str(e))
 
     store_path.parent.mkdir(parents=True, exist_ok=True)
     schema.atomic_write(store_path, json.dumps(store, indent=2, ensure_ascii=False))

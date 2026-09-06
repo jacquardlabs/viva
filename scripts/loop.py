@@ -9,6 +9,8 @@ Nine subcommands: `interview`, `start`, `annotate`, `summarize`, `arm`, `wait`,
 `--mode diff`. Every subcommand after `start` derives the round and reads the
 mode off the round file — never typed.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -20,10 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import schema  # noqa: E402  — the one permitted sibling import (CLAUDE.md)
+import schema
 
 # Resolved from __file__, not a caller's $VIVA_DIR — the plugin root is this
 # file's grandparent.
@@ -86,17 +86,13 @@ def current_round(viva: Path) -> int:
     return max((n for n in rounds if n is not None), default=0)
 
 
-def round_files(viva: Path, n: int) -> Tuple[Path, Path]:
-    return schema.round_file_paths(viva, n)
-
-
 def load_json(p: Path) -> dict:
     with p.open() as fh:
         return json.load(fh)
 
 
 # ── liveness — probed, not stat'ed ────────────────────────────────────────────
-def server_url(viva: Path) -> Optional[str]:
+def server_url(viva: Path) -> str | None:
     """`.viva/server.url` is repo-supplied state, so its host is constrained to
     loopback (mirrors `server.py`'s own Origin guard) — a repo committing a
     `server.url` naming an attacker's host must not turn a probe or POST into
@@ -104,11 +100,11 @@ def server_url(viva: Path) -> Optional[str]:
     f = viva / "server.url"
     if not f.exists():
         return None
-    url = f.read_text().strip()
+    url = f.read_text(encoding="utf-8").strip()
     if not url:
         return None
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+    if parsed.scheme != "http" or parsed.hostname not in schema.LOOPBACK_HOSTS:
         die(f"{f} names {url!r}, which is not a loopback address. Refusing to "
             f"contact it — delete the file and re-run `loop.py start`.")
     return url
@@ -142,7 +138,7 @@ def post(base: str, path: str, payload: dict, what: str, recovery: str = "") -> 
     _request(req, what, recovery)
 
 
-def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> Optional[dict]:
+def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:
     """The payload the server at `base` is serving, or None if nothing answers.
     File existence proves neither liveness nor armed-ness (a killed process
     skips the `finally` that unlinks `server.url`). This is the liveness
@@ -157,7 +153,7 @@ def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> Optional[dict]:
     return payload if isinstance(payload, dict) else {}
 
 
-def probe_round(base: str) -> Optional[int]:
+def probe_round(base: str) -> int | None:
     """The round actually being served, or None if not answering — or
     answering with no round (a qa payload)."""
     payload = probe_input(base)
@@ -190,7 +186,7 @@ def standing_preferences(viva: Path) -> list:
         return []
 
 
-def resolve_doc_type(name: str, fatal: bool = True) -> Optional[dict]:
+def resolve_doc_type(name: str, fatal: bool = True) -> dict | None:
     """Resolve a type name to its bundle — the name enters the system here.
     A subprocess, not an import: `schema.py` stays the one cross-import
     (CLAUDE.md). `fatal=False` is the resume path (name from the prior round
@@ -281,7 +277,7 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
             break
         if proc.poll() is not None:
             # Last line of the log: the headless contract's one-line error shape.
-            tail = log.read_text().strip().splitlines()
+            tail = log.read_text(encoding="utf-8").strip().splitlines()
             why = tail[-1] if tail else "no output"
             die(f"server exited during startup ({why}). Full log: {log}")
         time.sleep(_POLL_INTERVAL)
@@ -389,7 +385,7 @@ def _seam_stop(round_no: int, round_file: Path, why: str,
 
 
 # ── diff review: the target record and the capture ───────────────────────────
-def _classify(target: Optional[str], kind: Optional[str]) -> dict:
+def _classify(target: str | None, kind: str | None) -> dict:
     """One target → one dispatch record, from `review_target.py`. Runs before
     the pre-flight and any clear, so a bad target costs nothing."""
     argv = [sys.executable, SCRIPTS / "review_target.py"]
@@ -407,7 +403,7 @@ def _classify(target: Optional[str], kind: Optional[str]) -> dict:
     return {}  # unreachable; die() raises
 
 
-def _target_record(viva: Path) -> Tuple[dict, Path]:
+def _target_record(viva: Path) -> tuple[dict, Path]:
     """The record `start` saved, and the directory its capture runs in."""
     path = viva / "target.json"
     if not path.exists():
@@ -514,7 +510,7 @@ def cmd_interview(args) -> int:
 
     # Answers verbatim, then a classification line LAST — the agent routes on
     # the token, never its own scan.
-    text = answers.read_text()
+    text = answers.read_text(encoding="utf-8")
     print(text, end="" if text.endswith("\n") else "\n")
     try:
         early = bool(json.loads(text).get("submitted_early"))
@@ -568,12 +564,12 @@ def _start_diff(args, viva: Path, record: dict) -> int:
     # Record plus its cwd: `rearm`/`finish` re-capture from a later shell
     # whose cwd this driver does not control.
     (viva / "target.json").write_text(
-        json.dumps(dict(record, cwd=str(cwd)), indent=2) + "\n")
+        json.dumps(dict(record, cwd=str(cwd)), indent=2) + "\n", encoding="utf-8")
     size = _capture(record, viva / "diff.patch", cwd)
     if size == 0:
         print(f"viva-loop: no changes to review — {record.get('label')}")
         return 0
-    round_file = viva / "review-input-r1.json"
+    round_file = schema.round_file_paths(viva, 1)[0]
     # A non-empty patch with no hunks is a real failure: `parse_diff.py`
     # exits 1 on it and this dies rather than completing.
     run_or_die([sys.executable, SCRIPTS / "parse_diff.py", viva / "diff.patch",
@@ -631,10 +627,10 @@ def _start_doc(args, viva: Path) -> int:
     # `has_revision_history`, and running the ledger seed (below) and the
     # prior-pair carry together would be two mechanisms deciding the same
     # thing. `--recheck` alone answers "was this signed off" here.
-    if not args.handoff and not args.recheck and schema.has_revision_history(doc.read_text()):
+    if not args.handoff and not args.recheck and schema.has_revision_history(doc.read_text(encoding="utf-8")):
         n = current_round(viva)
         if n:
-            src_in, src_out = round_files(viva, n)
+            src_in, src_out = schema.round_file_paths(viva, n)
             if src_in.exists() and src_out.exists():
                 prior_in = viva / "prior-review-input.json"
                 prior_out = viva / "prior-review-verdicts.json"
@@ -794,7 +790,7 @@ def cmd_annotate(args) -> int:
     n = current_round(viva)
     if not n:
         die("no round to annotate — run `loop.py start` first")
-    inp, _ = round_files(viva, n)
+    inp, _ = schema.round_file_paths(viva, n)
     # Annotate is PRE-ARM only: the server loads its round once from
     # `/next-round`, so annotating an already-armed round writes a file
     # nobody re-reads (loud failure here beats a silent one at `/complete`).
@@ -819,7 +815,7 @@ def cmd_arm(args) -> int:
     n = current_round(viva)
     if not n:
         die("no round to arm — run `loop.py start` first")
-    inp, out = round_files(viva, n)
+    inp, out = schema.round_file_paths(viva, n)
 
     # Branch on liveness, not the round number — a re-run after a slow start
     # would otherwise launch a second orphaned server.
@@ -856,14 +852,14 @@ def cmd_summarize(args) -> int:
     if not n:
         die("no round to summarize — run `loop.py start --target <pr|ref>` or "
             "`loop.py start --kind worktree` first")
-    inp, _ = round_files(viva, n)
+    inp, _ = schema.round_file_paths(viva, n)
     # Pre-arm, for the reason `annotate` is: the server reads its round once.
     base = server_url(viva)
     if base and probe_round(base) == n:
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Summarize before arming.")
     try:
-        raw = sys.stdin.read() if args.map == "-" else Path(args.map).read_text()
+        raw = sys.stdin.read() if args.map == "-" else Path(args.map).read_text(encoding="utf-8")
         summaries = json.loads(raw)
     except OSError as e:
         die(f"cannot read --map: {e}")
@@ -895,7 +891,7 @@ def cmd_wait(args) -> int:
     n = current_round(viva)
     if not n:
         die("no armed round to wait on")
-    inp, out = round_files(viva, n)
+    inp, out = schema.round_file_paths(viva, n)
     input_data = load_json(inp)
     diff = input_data.get("mode") == "diff"
     if diff:
@@ -925,12 +921,12 @@ def cmd_wait(args) -> int:
 
     verdicts = load_json(out)
 
-    print(json.dumps(verdicts, indent=2))
+    print(json.dumps(verdicts, indent=2, ensure_ascii=False))
     print("=== id -> title ===")
     for s in input_data.get("sections", []):
         print(f"{s.get('id')}\t{s.get('title')}")
     print("=== standing preferences ===")
-    print(json.dumps(standing_preferences(viva)))
+    print(json.dumps(standing_preferences(viva), ensure_ascii=False))
 
     # The classification line the agent branches on, never its own scan (#102).
     # `submitted_early` is checked first: a paused round is paused even when
@@ -957,7 +953,7 @@ def cmd_rearm(args) -> int:
     n = current_round(viva)
     if not n:
         die("no round to re-arm — run `loop.py start` first")
-    inp, out = round_files(viva, n)
+    inp, out = schema.round_file_paths(viva, n)
     if not out.exists():
         die(f"round {n} has no verdicts yet — run `loop.py wait` first")
 
@@ -1006,7 +1002,7 @@ def cmd_rearm(args) -> int:
                "No round was shipped; fix the --response/--decline cids and "
                "re-run.")
 
-    nxt_in, _ = round_files(viva, n + 1)
+    nxt_in, _ = schema.round_file_paths(viva, n + 1)
     cmd = [sys.executable, SCRIPTS / "parse_sections.py", doc,
            "--output", nxt_in, "--round", str(n + 1), "--doc-file", doc,
            "--prior-input", inp, "--prior-verdicts", out,
@@ -1048,7 +1044,7 @@ def _rearm_diff(args, viva: Path, n: int, inp: Path, out: Path,
         print("viva-loop: diff is empty after re-capture — nothing to re-arm; "
               "`loop.py finish` signs it off")
         return 0
-    nxt_in, _ = round_files(viva, n + 1)
+    nxt_in, _ = schema.round_file_paths(viva, n + 1)
     run_or_die([sys.executable, SCRIPTS / "parse_diff.py", viva / "diff.patch",
                 "--output", nxt_in, "--round", str(n + 1),
                 "--doc-file", round_data.get("doc_file") or record.get("label")
@@ -1063,7 +1059,7 @@ def cmd_finish(args) -> int:
     n = current_round(viva)
     if not n:
         die("no round to finish")
-    inp, out = round_files(viva, n)
+    inp, out = schema.round_file_paths(viva, n)
     if not out.exists():
         die(f"round {n} has no verdicts yet — nothing to finish")
 

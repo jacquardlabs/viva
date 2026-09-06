@@ -18,7 +18,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple, TypedDict
+from typing import TypedDict
 
 # `json`/`os`/`pathlib` are used only by `read_json_or_exit`/`atomic_write`
 # below — shared I/O helpers `scripts/*.py` call at the caller's request.
@@ -58,6 +58,13 @@ SKIP_DIRS = frozenset({
     ".git", "node_modules", ".venv", "venv", "dist", "build",
     "__pycache__", ".mypy_cache", ".pytest_cache", "target", ".viva",
 })
+
+# The loopback allowlist every Host/Origin guard checks against — `loop.py`,
+# `docket.py`, and server.py's Host and Origin guards each refuse a request
+# or URL naming anything else, on their own terms (die/return None/403).
+# Shared here so the four agree on the one fact without server.py importing
+# loop.py or docket.py.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 
 # An interview answer projected onto the section it shaped (#211) — advisory,
 # section-scoped, and not in CHECK_KINDS or DOC_SCOPE_KINDS. `loop.py`'s
@@ -180,7 +187,7 @@ def ledger_note(section: dict) -> str:
 
 def verdict_to_ledger_entry(
     rnd: int, section_title: str, section: dict
-) -> Optional[dict]:
+) -> dict | None:
     """The single source of truth for one ledger row.
 
     Returns `{round, section_title, verdict, note}` for a `changes`/`info`
@@ -228,7 +235,7 @@ class ReviewSection(TypedDict, total=False):
     # `title` (branch B parses `title` as `{filepath} hunk N`, #188). Carried
     # round to round only onto a byte-identical section; else drops.
     summary: str
-    annotations: List[Annotation]  # optional — advisory badges
+    annotations: list[Annotation]  # optional — advisory badges
     diff: dict                    # optional — round-to-round change
     # optional — carried-forward threads (`parse_sections._attach_open_notes`'s
     # projection of `.viva/open-notes.json`): `{cid, quote, status, exchanges}`,
@@ -256,7 +263,7 @@ class ReviewInput(_ReviewInputPass, total=False):
     mode: str                       # "review"
     doc_file: str                   # relative path for the UI
     round: int                      # round number
-    approved_ids: List[str]         # ids approved in prior rounds
+    approved_ids: list[str]         # ids approved in prior rounds
     # optional — `--split-on` regex this round was parsed with, so `loop.py
     # rearm` re-splits round N+1 identically. Absent = auto-detected split.
     split_on: str
@@ -264,7 +271,7 @@ class ReviewInput(_ReviewInputPass, total=False):
     # round to round like `split_on`. Passthrough — `server.py` ignores it.
     doc_type: str
     # `pass` — see `_ReviewInputPass` above; the key cannot be spelled here.
-    sections: List[ReviewSection]
+    sections: list[ReviewSection]
 
 
 class SectionVerdict(TypedDict, total=False):
@@ -284,7 +291,7 @@ class SectionVerdict(TypedDict, total=False):
 class ReviewOutput(TypedDict, total=False):
     round: int
     submitted_early: bool
-    sections: List[SectionVerdict]
+    sections: list[SectionVerdict]
 
 
 # ── Boundary validation ───────────────────────────────────────────────────────
@@ -498,7 +505,7 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     return False
 
 
-def round_file_paths(viva_dir: Path, n: int) -> Tuple[Path, Path]:
+def round_file_paths(viva_dir: Path, n: int) -> tuple[Path, Path]:
     """The `(review-input-r{n}.json, review-r{n}.json)` pair for round `n`.
 
     The one place the round-file naming convention is spelled out. Pure
@@ -519,7 +526,7 @@ def round_output_glob() -> str:
     return "review-r*.json"
 
 
-def parse_round_input_stem(stem: str) -> Optional[int]:
+def parse_round_input_stem(stem: str) -> int | None:
     """`"review-input-r7"` -> `7`; anything else -> `None`. The inverse of
     `round_file_paths`' input half, for scanning `viva_dir.glob(...)` results
     back into round numbers."""
@@ -615,7 +622,7 @@ class QAQuestion(TypedDict, total=False):
     id: str           # required
     text: str         # required
     hint: str         # optional — shown below the question text
-    choices: List[str]  # optional — rendered as chip buttons
+    choices: list[str]  # optional — rendered as chip buttons
     # optional — must exactly match an entry in `choices` (value, not index;
     # validate_qa_input). Renders as a badge on that chip, advisory only
     # (PRODUCT.md's "advisory, never gating") — never pre-selected or required.
@@ -629,14 +636,14 @@ class QAQuestion(TypedDict, total=False):
 class QAInput(TypedDict, total=False):
     mode: str                   # "qa"
     context: str                # one-liner shown in the title block
-    questions: List[QAQuestion]
+    questions: list[QAQuestion]
 
 
 class QAAnswer(TypedDict, total=False):
     id: str               # question id
     choice: str           # selected chip value
     note: str             # free-text field value
-    attachments: List[str]  # server-written image paths
+    attachments: list[str]  # server-written image paths
     # optional — present only when that question had a `recommended_choice`;
     # True iff the chosen `choice` matches it. Written server-side at
     # `POST /submit` (#175's accept-rate instrumentation); unvalidated here.
@@ -644,7 +651,7 @@ class QAAnswer(TypedDict, total=False):
 
 
 class QAOutput(TypedDict, total=False):
-    answers: List[QAAnswer]
+    answers: list[QAAnswer]
     submitted_early: bool
 
 
@@ -653,8 +660,8 @@ class DiffInput(TypedDict, total=False):
     mode: str                       # "diff"
     doc_file: str                   # ref description shown in UI
     round: int
-    approved_ids: List[str]
-    sections: List[ReviewSection]   # one entry per hunk
+    approved_ids: list[str]
+    sections: list[ReviewSection]   # one entry per hunk
 
 
 def validate_qa_input(data: dict) -> None:

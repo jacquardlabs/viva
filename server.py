@@ -3074,7 +3074,7 @@ function setProcessingTabTitle(docName) {
 const FAVICON_COLOR = { turn: '2946c4', processing: 'a06a12', done: '0c7f6b' };
 function setTabFavicon(state) {
   const color = FAVICON_COLOR[state] || FAVICON_COLOR.turn;
-  const link = document.getElementById('favicon-link');
+  const link = el('favicon-link');
   if (!link) return;
   link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23" + color + "'/%3E%3C/svg%3E";
 }
@@ -3204,7 +3204,7 @@ function renderLedger() {
   const paint = () => head.setAttribute('aria-expanded',
     el('ledger').classList.contains('is-collapsed') ? 'false' : 'true');
   paint();
-  head.onclick = () => { el('ledger').classList.toggle('is-collapsed'); paint(); };
+  head.addEventListener('click', () => { el('ledger').classList.toggle('is-collapsed'); paint(); });
 }
 
 // The palette's and `l`'s one path to the ledger: open, expand, scroll.
@@ -5201,7 +5201,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
     info:       'Describe the change or question…',
     suggestion: 'Replacement wording — applied verbatim',
   };
-  pop.querySelectorAll('.cmt-chip').forEach(ch => ch.onclick = () => {
+  pop.querySelectorAll('.cmt-chip').forEach(ch => ch.addEventListener('click', () => {
     pop.dataset.type = ch.dataset.type;
     pop.querySelectorAll('.cmt-chip').forEach(c => {
       c.classList.toggle('is-on', c === ch);
@@ -5209,7 +5209,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
     });
     ta.placeholder = PLACEHOLDERS[pop.dataset.type] || PLACEHOLDERS.changes;
     ta.focus();
-  });
+  }));
   // Opening with a type is the same act as picking its chip — driven through
   // the chip so the dataset, the `is-on` mark and the placeholder can never
   // disagree with each other about what the box means.
@@ -5223,7 +5223,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
   // chips.
   ta.focus({ preventScroll: true });
   revealWithinBars(pop);
-  pop.querySelector('.cmt-save').onclick = () => {
+  pop.querySelector('.cmt-save').addEventListener('click', () => {
     const text = ta.value.trim();
     // A suggestion ships on its wording: the same box the other types use for
     // a note carries the replacement the author applies verbatim.
@@ -5246,8 +5246,8 @@ function openCommentPopover(id, { anchor, type } = {}) {
                      replacement: isSuggestion ? text : undefined,
                      images: captureState.images?.length ? captureState.images : undefined });
     closeCommentPopover(id);
-  };
-  pop.querySelector('.cmt-cancel').onclick = () => closeCommentPopover(id);
+  });
+  pop.querySelector('.cmt-cancel').addEventListener('click', () => closeCommentPopover(id));
   // Dictation just fills this box — save is still the only thing that makes
   // a comment. The button turns the mic on and returns focus; a focused note
   // field is what the modal voice rule keys on.
@@ -5255,7 +5255,7 @@ function openCommentPopover(id, { anchor, type } = {}) {
   if (mic) {
     // Built after paintVoiceToggle last ran, so it paints its own live state.
     mic.classList.toggle('is-live', voiceIsOn());
-    mic.onclick = () => startVoice(() => ta.focus());
+    mic.addEventListener('click', () => startVoice(() => ta.focus()));
   }
 }
 
@@ -6396,7 +6396,7 @@ function renderPrefsList() {
 // Mutates the one row's DOM in place, never a list rebuild, so a mute never
 // disturbs scroll position or any other row.
 function markPrefRowMuted(id) {
-  const row = document.getElementById('pref-row-' + id);
+  const row = el('pref-row-' + id);
   if (!row) return;
   const statusEl = row.querySelector('.pref-status');
   if (statusEl) { statusEl.textContent = 'muted'; statusEl.className = 'pref-status pref-status-muted'; }
@@ -6407,7 +6407,7 @@ function markPrefRowMuted(id) {
 }
 
 function mutePreference(id) {
-  const row = document.getElementById('pref-row-' + id);
+  const row = el('pref-row-' + id);
   const btn = row && row.querySelector('.pref-mute-btn');
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -6442,7 +6442,7 @@ function openPrefsPanel(triggerEl, focusPrefId) {
   _prefsTriggerEl = triggerEl || el('prefs-toggle');
   el('prefs-overlay').style.display = '';
   setBackgroundInert(true);
-  const row = focusPrefId && document.getElementById('pref-row-' + focusPrefId);
+  const row = focusPrefId && el('pref-row-' + focusPrefId);
   if (row) { row.scrollIntoView({ block: 'center' }); row.focus(); }
   else      { el('prefs-close').focus(); }
 }
@@ -6787,11 +6787,11 @@ function showVoiceNotice(after) {
     + '(Google, in Chrome). viva itself stays keyless and keeps no recording.'
     + '<button type="button" id="voice-ack">start listening</button>'
     + '<button type="button" id="voice-nack">not now</button></span>';
-  el('voice-ack').onclick = () => {
+  el('voice-ack').addEventListener('click', () => {
     try { localStorage.setItem(VOICE_ACK_KEY, 'ack'); } catch (e) { /* holds for this tab */ }
     beginVoice(after);
-  };
-  el('voice-nack').onclick = () => hideVoiceStrip();
+  });
+  el('voice-nack').addEventListener('click', () => hideVoiceStrip());
   el('voice-ack').focus();
 }
 
@@ -7829,7 +7829,7 @@ class Handler(BaseHTTPRequestHandler):
         names the browser's address-bar domain, which rebinding can't forge.
         Sends the 403 itself and returns False on rejection."""
         host = urlparse("//" + self.headers.get("Host", "")).hostname
-        if host not in ("127.0.0.1", "localhost"):
+        if host not in schema.LOOPBACK_HOSTS:
             self._error(403, "forbidden host")
             return False
         return True
@@ -7931,7 +7931,7 @@ class Handler(BaseHTTPRequestHandler):
             # an ordinary A record whose Origin starts with `http://127.0.0.1`,
             # so a prefix test would admit an attacker page to every write sink.
             o = urlparse(origin)
-            if o.scheme != "http" or o.hostname not in ("127.0.0.1", "localhost"):
+            if o.scheme != "http" or o.hostname not in schema.LOOPBACK_HOSTS:
                 self._error(403, "forbidden origin")
                 return None
         # A cross-origin `fetch` with `Content-Type: text/plain` is a

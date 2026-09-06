@@ -20,13 +20,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from schema import section_key, validate_review_input
 import schema
 
 
@@ -143,7 +140,7 @@ def _carry_forward(
 
     prior_by_key: dict[str, dict] = {}
     for s in prior_input.get("sections", []):
-        k = section_key(s.get("title", ""))
+        k = schema.section_key(s.get("title", ""))
         prior_by_key[k] = s
 
     pre_approved = set(prior_input.get("approved_ids", []))
@@ -156,7 +153,7 @@ def _carry_forward(
 
     approved_ids: list[str] = []
     for s in sections:
-        k = section_key(s["title"])
+        k = schema.section_key(s["title"])
         prior_s = prior_by_key.get(k)
         if (
             prior_s is not None
@@ -179,14 +176,14 @@ def _carry_summaries(sections: list[dict], prior_input: dict | None) -> None:
     if not prior_input:
         return
     prior = {
-        (section_key(s.get("title", "")), _hunk_body(s.get("content", ""))): s["summary"]
+        (schema.section_key(s.get("title", "")), _hunk_body(s.get("content", ""))): s["summary"]
         for s in prior_input.get("sections", [])
         if s.get("summary")
     }
     if not prior:
         return
     for s in sections:
-        key = (section_key(s["title"]), _hunk_body(s["content"]))
+        key = (schema.section_key(s["title"]), _hunk_body(s["content"]))
         if key in prior:
             s["summary"] = prior[key]
 
@@ -236,7 +233,7 @@ def main() -> int:
         "approved_ids": approved_ids,
         "sections": sections,
     }
-    validate_review_input(data)
+    schema.validate_review_input(data)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     schema.atomic_write(args.output, json.dumps(data, indent=2))
     return 0

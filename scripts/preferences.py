@@ -61,6 +61,10 @@ VERSION = 1
 STATUSES = ("candidate", "standing", "muted")
 
 
+def die(msg: str) -> None:
+    sys.exit(f"viva preferences: {msg}")
+
+
 def slug(label: str) -> str:
     """Derive a stable, human-readable id from a label."""
     s = re.sub(r"[^a-z0-9]+", "-", (label or "").strip().lower()).strip("-")
@@ -223,7 +227,7 @@ def main() -> None:
                            label=args.label, guidance=args.guidance,
                            count=args.count, threshold=args.threshold)
         except ValueError as e:
-            sys.exit(f"viva preferences: {e}")
+            die(str(e))
         _write(store_path, store)
         pid = args.pref_id or slug(args.label)
         pref = store["preferences"][pid]
@@ -244,7 +248,7 @@ def main() -> None:
         try:
             store = set_status(store, args.pref_id, args.status)
         except KeyError:
-            sys.exit(f"viva preferences: no preference {args.pref_id!r}")
+            die(f"no preference {args.pref_id!r}")
         _write(store_path, store)
         print(f"viva preferences: {args.pref_id!r} → {args.status}", flush=True)
 
