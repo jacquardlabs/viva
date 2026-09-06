@@ -13,7 +13,6 @@ in this repo. The one live-server check confirms the markup actually ships.
 """
 import json
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path

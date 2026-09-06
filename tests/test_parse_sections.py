@@ -806,7 +806,6 @@ def test_split_on_identity_reuses_section_key_no_new_rule() -> None:
     # through the exact same functions default-parsed sections use.
     content_t1 = "### Task 1\n\ntask one body\n\n"
     content_t2 = "### Task 2\n\ntask two body\n"
-    doc_r1 = content_t1 + content_t2
     prior_input = {
         "mode": "review", "doc_file": "PLAN.md", "round": 1, "approved_ids": [],
         "sections": [

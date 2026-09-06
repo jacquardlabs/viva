@@ -63,7 +63,7 @@ SPLIT = r"^Task \d+"
 os.environ["BROWSER"] = "true"
 
 
-def parse(doc, output, round_num, viva, prior=None):
+def parse(doc, output, round_num, prior=None):
     """Run parse_sections.py exactly as `loop.py start` does; return the JSON."""
     cmd = [sys.executable, str(PARSE), str(doc),
            "--output", str(output), "--round", str(round_num), "--doc-file", "doc.md"]
@@ -105,7 +105,7 @@ def check_round_trip() -> None:
     # ── Round 1: parse the doc into a review-input ───────────────────────────
     r1_in = viva / "review-input-r1.json"
     r1_out = viva / "review-r1.json"
-    data = parse(doc, r1_in, 1, viva)
+    data = parse(doc, r1_in, 1)
     assert data["round"] == 1 and data["mode"] == "review", data
     titles = [s["title"] for s in data["sections"]]
     assert titles == ["Goals", "Scope"], titles
@@ -217,7 +217,7 @@ def check_split_on_session() -> None:
 
     # The discriminator, established first: without the pattern this doc splits
     # on `## Notes`, not on tasks.
-    auto = parse(doc, tmp / "auto.json", 1, viva)
+    auto = parse(doc, tmp / "auto.json", 1)
     assert [s["title"] for s in auto["sections"]] == \
         ["Sprint plan", "Notes", "Notes"], auto["sections"]
 
@@ -827,7 +827,7 @@ def check_arm_hands_off_into_a_live_interview() -> None:
         viva.mkdir()
         doc = td / "d.md"
         doc.write_text("# T\n\n## A\n\naaa\n\n## B\n\nbbb\n")
-        parse(doc, viva / "review-input-r1.json", 1, viva)
+        parse(doc, viva / "review-input-r1.json", 1)
         posts = []
         with stub_input_server({"mode": "qa", "questions": []}, posts) as base:
             (viva / "server.url").write_text(base + "\n")
@@ -1330,7 +1330,7 @@ def check_wait_refuses_a_parsed_but_unarmed_round() -> None:
             {"mode": "review", "round": 2, "doc_file": "d.md",
              "sections": [{"id": "s1", "title": "A", "content": "## A\n"}]}))
         with launch_server(viva / "review-input-r1.json",
-                           viva / "review-r1.json", cwd=td) as base:
+                           viva / "review-r1.json", cwd=td):
             r = loop(viva, td, "wait")
             assert r.returncode == 2, \
                 "a parsed-but-unarmed round must exit 2, not hang: %r" % r

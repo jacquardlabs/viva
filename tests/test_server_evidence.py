@@ -9,7 +9,6 @@ repo root, refused if any path segment is in `schema.SKIP_DIRS`, and capped
 in bytes and line count. Every failure 404s identically.
 """
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path

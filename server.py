@@ -192,7 +192,6 @@ HTML = r"""<!DOCTYPE html>
   --bg:        var(--sunk);
   --bg2:       var(--paper);
   --bg3:       #f0f0ee;
-  --table:     var(--paper);
   --border:    var(--rule);
   --border2:   var(--ink);
   --text:      var(--ink2);
@@ -1326,8 +1325,6 @@ h1.tb-val { margin: 0; }
 }
 .sp-k { color: var(--soft); }
 .sp-v { color: var(--text2); }
-/* The one thing that is open takes the reviewer's ink, exactly as
-   `.spec .spec-open td:last-child` did. */
 .sp-open .sp-v { color: var(--acc); font-weight: 600; }
 /* #106 — a servable `source` earns a tiny button in the state run; the
    fetched lines land in a fixed popover, never inside `.spec-strip` itself,
@@ -1503,10 +1500,6 @@ h1.tb-val { margin: 0; }
 }
 .nt-fact  .nh { color: var(--fact); }
 .nt-check .nh { color: var(--machine); }
-/* The author's party, not the reviewer's: a declined thread is the author
-   answering, and it speaks in the neutral ink. */
-.nt-author .nh { color: var(--soft); }
-.nt-author { border-left: 2px solid var(--soft); }
 .nt-body { color: var(--text2); overflow-wrap: anywhere; }
 .nt-quote {
   display: block;
@@ -1841,10 +1834,6 @@ h1.tb-val { margin: 0; }
   transition: --c 0.12s, color 0.12s, background 0.12s;
 }
 
-/* The per-section action row is gone from every surface. A section's verbs
-   live in its margin (`.nt-acts`, `.nt-btn`) beside the notes they answer —
-   the one place a reviewer is already looking — so `.actions` and
-   `.action-btn` have no host left. */
 
 /* ─── Note textarea ──────────────────────────────────────── */
 .note-field {
@@ -2114,9 +2103,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
   max-width: 60%;
 }
 
-/* The comment list is gone: a comment lives in the margin beside its own
-   anchor now. `.cmt-del` survives as a WIRING HOOK only. The wording a
-   suggestion carries, in a carried thread's exchange — accent-inked,
+/* The wording a suggestion carries, in a carried thread's exchange — accent-inked,
    arrow-led like `.exchange-a`'s reply. */
 .cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
 .cmt-repl::before { content: '→ '; }
@@ -2842,14 +2829,14 @@ pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }
       <div class="titleblock">
         <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="qa-title"></div></div>
         <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
-        <div class="tb-cell tb-flex"><div class="tb-val" id="qa-mode-title">viva <em>interview</em></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val">viva <em>interview</em></div></div>
         <div class="tb-cell"><div class="tb-label">questions</div><div class="tb-val mono" id="qa-count-badge"></div></div>
         <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
         <div class="tb-cell"><button type="button" class="pal-hint" id="qa-pal-open">palette<kbd>&#8984;K</kbd></button></div>
       </div>
     </div>
     <div class="cards" id="qa-cards"></div>
-    <div class="doc-hint" id="qa-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
+    <div class="doc-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
   </div>
 
   <!-- ── Processing / between-rounds state ────────────────── -->
@@ -4170,9 +4157,7 @@ function specHTML(section) {
   // leaves section 1's band as bare verbs when its only flags are doc-scope.
   const conf0 = confidenceAnnot(section);
   if (!s.comments && !s.suggestions && !s.declined && !s.checks && !conf0) return '';
-  // A RUN, not a table: five label/value pairs fit one line at 10.5px mono
-  // vs ~120px for a table. `<caption>` is gone; `.doc-apparatus`'s
-  // `role="group"`/`aria-label` names the band instead.
+  // A RUN, not a table: `.doc-apparatus`'s `role="group"`/`aria-label` names the band.
   const item = (label, value, open, title) =>
     '<span class="sp' + (open ? ' sp-open' : '') + '"' +
     (title ? ' title="' + esc(title) + '"' : '') + '>'
@@ -5472,15 +5457,6 @@ function updateReviewStats() {
   // already carries the blocking count, and restating it here uppercased the
   // same number a second time in the same bar.
   sub.textContent = 'approve — dispatch';
-  // The composite's footer states four things; this one was stating seven, and
-  // at the doc page's width that wrapped the stamp onto a second line. The bar
-  // above already carries `approved N/M` and the item counts, so the footer
-  // keeps only what is about DISPATCHING: what blocks it, whether the round is
-  // converging, and what the last round trip cost. The two cells that stated
-  // `N approved` and `N with feedback` are GONE, not hidden: they were set and
-  // then hidden on every path, and the feedback cell's else-branch hid without
-  // clearing, so `#stats-area` — an `aria-live` region — kept announcing a
-  // stale `3 with feedback` beside a live `8 open` forever.
   const cap = ' <kbd>&#8984;&#9166;</kbd>';
   el('stat-pending').innerHTML = remaining > 0
     ? `blocked &middot; ${remaining} unreviewed`
