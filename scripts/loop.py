@@ -733,7 +733,7 @@ def _snapshot_decisions(viva: Path, round_file: Path) -> None:
         except (OSError, json.JSONDecodeError):
             store = {}
     changed = False
-    for section in data.get("sections", []) or []:
+    for section in data.get("sections", []):
         flags = [a for a in section.get("annotations", []) or []
                  if isinstance(a, dict) and a.get("kind") == schema.DECISION_KIND]
         if not flags:
@@ -761,7 +761,7 @@ def _reapply_decisions(viva: Path, round_file: Path) -> None:
         return
     data = load_json(round_file)
     sidecar = []
-    for section in data.get("sections", []) or []:
+    for section in data.get("sections", []):
         entry = store.get(schema.section_key(section.get("title", "")))
         if not entry:
             continue
@@ -1059,6 +1059,16 @@ def cmd_finish(args) -> int:
         die(f"round {n} has no verdicts yet — nothing to finish")
 
     input_data, verdicts = load_json(inp), load_json(out)
+    # Validated here, not assumed: every other read boundary (parse_sections.py
+    # on write, server.py on read) validates, and finish is the one path that
+    # reads both round files straight off disk with neither in between — a
+    # hand-edited or corrupted file must fail loudly here, not feed a bad
+    # `sections` shape into round_is_complete or the `or []` tails below.
+    try:
+        schema.validate_review_input(input_data)
+        schema.validate_verdicts(verdicts)
+    except ValueError as e:
+        die(f"invalid round {n} files: {e}")
     if input_data.get("mode") == "diff":
         return _finish_diff(args, viva, n, inp, out, input_data, verdicts)
     if not schema.round_is_complete(input_data, verdicts):

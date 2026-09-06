@@ -467,7 +467,7 @@ def _check_flags(input_data: dict) -> list:
     """Every check-producer flag on this round — annotations whose `kind` is
     in `CHECK_KINDS`."""
     return [a
-            for s in input_data.get("sections", []) or []
+            for s in input_data.get("sections", [])
             for a in (s.get("annotations") or [])
             if isinstance(a, dict) and a.get("kind") in CHECK_KINDS]
 
@@ -491,12 +491,12 @@ def _has_unresolved_suggestion(input_data: dict, verdicts: dict) -> bool:
     suggestion still holds a `final` round, since only the reviewer's settle
     resolves it.
     """
-    for s in verdicts.get("sections", []) or []:
+    for s in verdicts.get("sections", []):
         for c in s.get("comments") or []:
             if (isinstance(c, dict) and c.get("type") == SUGGESTION
                     and not c.get("settled")):
                 return True
-    for s in input_data.get("sections", []) or []:
+    for s in input_data.get("sections", []):
         for thread in s.get("open_notes") or []:
             exchanges = (thread or {}).get("exchanges") or []
             last = exchanges[-1] if exchanges else None

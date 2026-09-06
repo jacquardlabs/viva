@@ -44,16 +44,19 @@ def test_missing_file_flagged() -> None:
     assert out[0]["id"] == "s1"
     assert out[0]["severity"] == "error"
     assert "missing.py" in out[0]["message"]
+    print("  ok  test_missing_file_flagged")
 
 
 def test_existing_file_not_flagged() -> None:
     out = run("See `real.py` for details.", files={"real.py": "x = 1\n"})
     assert out == [], f"existing file must not drift, got {out}"
+    print("  ok  test_existing_file_not_flagged")
 
 
 def test_prose_only_section_skipped() -> None:
     out = run("This section is all prose with no code references at all.")
     assert out == [], "prose-only section must emit nothing"
+    print("  ok  test_prose_only_section_skipped")
 
 
 def test_missing_symbol_flagged() -> None:
@@ -62,24 +65,28 @@ def test_missing_symbol_flagged() -> None:
     assert len(out) == 1, f"expected one symbol drift, got {out}"
     assert out[0]["severity"] == "warn"
     assert "vanished_fn" in out[0]["message"]
+    print("  ok  test_missing_symbol_flagged")
 
 
 def test_existing_symbol_not_flagged() -> None:
     out = run("Call `real_fn()` to start.",
               files={"app.py": "def real_fn():\n    return 1\n"})
     assert out == [], f"existing symbol must not drift, got {out}"
+    print("  ok  test_existing_symbol_not_flagged")
 
 
 def test_version_string_not_treated_as_file() -> None:
     # `v1.2.0` looks path-ish but is not a code file reference.
     out = run("We ship `v1.2.0` next week.")
     assert out == [], f"version string must not be flagged as a missing file, got {out}"
+    print("  ok  test_version_string_not_treated_as_file")
 
 
 def test_dotted_method_call_not_flagged() -> None:
     # `data.get()` is too ambiguous to check as a symbol — must be ignored.
     out = run("It calls `data.get()` internally.")
     assert out == [], f"dotted method call must not be flagged, got {out}"
+    print("  ok  test_dotted_method_call_not_flagged")
 
 
 def run_scan(paths: list) -> list:
@@ -106,6 +113,7 @@ def test_scan_finds_a_signed_doc_and_its_references() -> None:
         assert out[0]["signed"] is True
         assert out[0]["last_signoff_date"] == "2026-06-01", out
         assert out[0]["files"] == ["mod.py"], out
+    print("  ok  test_scan_finds_a_signed_doc_and_its_references")
 
 
 def test_scan_skips_an_unsigned_doc() -> None:
@@ -113,6 +121,7 @@ def test_scan_skips_an_unsigned_doc() -> None:
         t = Path(tmp)
         (t / "draft.md").write_text("# Draft\n\nSee `mod.py`.\n", encoding="utf-8")
         assert run_scan([str(t)]) == []
+    print("  ok  test_scan_skips_an_unsigned_doc")
 
 
 def test_scan_excludes_ledger_table_references() -> None:
@@ -133,32 +142,21 @@ def test_scan_excludes_ledger_table_references() -> None:
         assert len(out) == 1, out
         assert out[0]["files"] == ["mod.py"], \
             "the ledger table's own filename must not appear in files[]"
+    print("  ok  test_scan_excludes_ledger_table_references")
 
 
 def main() -> None:
-    tests = [
-        test_missing_file_flagged,
-        test_existing_file_not_flagged,
-        test_prose_only_section_skipped,
-        test_missing_symbol_flagged,
-        test_existing_symbol_not_flagged,
-        test_version_string_not_treated_as_file,
-        test_dotted_method_call_not_flagged,
-        test_scan_finds_a_signed_doc_and_its_references,
-        test_scan_skips_an_unsigned_doc,
-        test_scan_excludes_ledger_table_references,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"  ok  {t.__name__}")
-        except Exception as e:
-            print(f"  FAIL {t.__name__}: {e}")
-            failed += 1
-    if failed:
-        sys.exit(f"\n{failed}/{len(tests)} tests failed")
-    print(f"\nOK ({len(tests)} tests)")
+    test_missing_file_flagged()
+    test_existing_file_not_flagged()
+    test_prose_only_section_skipped()
+    test_missing_symbol_flagged()
+    test_existing_symbol_not_flagged()
+    test_version_string_not_treated_as_file()
+    test_dotted_method_call_not_flagged()
+    test_scan_finds_a_signed_doc_and_its_references()
+    test_scan_skips_an_unsigned_doc()
+    test_scan_excludes_ledger_table_references()
+    print("OK (10 tests)")
 
 
 if __name__ == "__main__":

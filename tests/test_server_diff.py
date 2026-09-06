@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import post_result  # noqa: E402
+from _server_harness import get, post, post_result  # noqa: E402
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -42,19 +42,6 @@ DIFF_INPUT = {
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
-
-def post(base: str, path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        base + path,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
-
-
-def get(base: str, path: str) -> dict:
-    return json.loads(urllib.request.urlopen(base + path, timeout=5).read())
-
 
 def _start_server(tmp: Path, inp: dict, mode: str = "diff") -> tuple:
     """Start server in the given mode, return (proc, base_url, output_path)."""

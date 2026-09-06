@@ -259,7 +259,7 @@ def _load_approved(
     # Truthy check, not `is not None`: a row with no verdict decides nothing and
     # leaves the stamp standing; `pending` is a withdrawal and drops it.
     withdrawn: set[str] = {
-        s.get("id") for s in prior_v.get("sections", []) or []
+        s.get("id") for s in prior_v.get("sections", [])
         if s.get("id") and s.get("verdict") and s.get("verdict") != "approved"
     }
     all_approved = (pre_approved | verdict_approved) - withdrawn

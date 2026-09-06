@@ -49,6 +49,7 @@ def test_merge_adds_annotation_to_section() -> None:
         {"kind": "grounding", "severity": "warn",
          "message": "claim unsupported", "anchor": "line 3"}
     ]
+    print("  ok  test_merge_adds_annotation_to_section")
 
 
 def test_merge_preserves_existing_annotations() -> None:
@@ -62,18 +63,21 @@ def test_merge_preserves_existing_annotations() -> None:
     assert existing in annots, "carried-forward annotation dropped"
     assert {"kind": "grounding", "severity": "warn", "message": "new flag"} in annots
     assert len(annots) == 2
+    print("  ok  test_merge_preserves_existing_annotations")
 
 
 def test_merge_skips_unknown_id() -> None:
     data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
     out = run(data, [{"id": "s9", "kind": "x", "severity": "warn", "message": "orphan"}])
     assert "annotations" not in out["sections"][0], "unknown-id flag must not attach anywhere"
+    print("  ok  test_merge_skips_unknown_id")
 
 
 def test_merge_normalizes_bad_severity() -> None:
     data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
     out = run(data, [{"id": "s1", "kind": "x", "severity": "critical", "message": "m"}])
     assert out["sections"][0]["annotations"][0]["severity"] == "info"
+    print("  ok  test_merge_normalizes_bad_severity")
 
 
 def test_merge_is_idempotent() -> None:
@@ -83,6 +87,7 @@ def test_merge_is_idempotent() -> None:
     once = run(data, [flag])
     twice = run(once, [flag])
     assert len(twice["sections"][0]["annotations"]) == 1, "identical flag duplicated"
+    print("  ok  test_merge_is_idempotent")
 
 
 def test_empty_sidecar_is_byte_identical() -> None:
@@ -98,12 +103,14 @@ def test_empty_sidecar_is_byte_identical() -> None:
                         "--annotations", str(side)], capture_output=True, check=True)
         after = inp.read_text(encoding="utf-8")
     assert after == before, "empty sidecar must leave input byte-identical"
+    print("  ok  test_empty_sidecar_is_byte_identical")
 
 
 def test_missing_message_skipped() -> None:
     data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
     out = run(data, [{"id": "s1", "kind": "x", "severity": "warn"}])
     assert "annotations" not in out["sections"][0], "message-less flag must be skipped"
+    print("  ok  test_missing_message_skipped")
 
 
 def test_confidence_basis_level_preserved() -> None:
@@ -121,6 +128,7 @@ def test_confidence_basis_level_preserved() -> None:
                        "message": "m", "basis": "bogus", "level": "huge"}])
     annot2 = out2["sections"][0]["annotations"][0]
     assert "basis" not in annot2 and "level" not in annot2, annot2
+    print("  ok  test_confidence_basis_level_preserved")
 
 
 def test_confidence_source_preserved_and_updatable() -> None:
@@ -153,6 +161,7 @@ def test_confidence_source_preserved_and_updatable() -> None:
     kept = run(corrected, [no_source])
     assert kept["sections"][0]["annotations"][0]["source"] == \
         "config.py:42 — CACHE_TTL = 300", "a source-less re-run must not erase evidence"
+    print("  ok  test_confidence_source_preserved_and_updatable")
 
 
 def test_check_result_answers_the_flag_in_place() -> None:
@@ -201,6 +210,7 @@ def test_check_result_answers_the_flag_in_place() -> None:
     assert answers[flag["message"]] == "added in round 2", answers
     assert answers[other["message"]] is None, \
         "answering one flag must not answer its sibling: %s" % answers
+    print("  ok  test_check_result_answers_the_flag_in_place")
 
 
 def test_split_on_survives_the_merge() -> None:
@@ -212,6 +222,7 @@ def test_split_on_survives_the_merge() -> None:
     out = run(data, [{"id": "s1", "kind": "preference", "severity": "warn",
                       "message": "cite the source"}])
     assert out["split_on"] == r"^Task \d+", out
+    print("  ok  test_split_on_survives_the_merge")
 
 
 def test_loop_annotate_merges_into_the_derived_round() -> None:
@@ -252,6 +263,7 @@ def test_loop_annotate_merges_into_the_derived_round() -> None:
         ], merged
         assert "annotations" not in json.loads(r1.read_text(encoding="utf-8"))["sections"][0], \
             "only the current round may be annotated"
+    print("  ok  test_loop_annotate_merges_into_the_derived_round")
 
 
 def test_loop_annotate_snapshots_decisions() -> None:
@@ -300,35 +312,24 @@ def test_loop_annotate_snapshots_decisions() -> None:
         assert again.returncode == 0, again.stderr
         store_again = json.loads((viva / "decisions.json").read_text(encoding="utf-8"))
         assert store_again == store, store_again
+    print("  ok  test_loop_annotate_snapshots_decisions")
 
 
 def main() -> None:
-    tests = [
-        test_merge_adds_annotation_to_section,
-        test_merge_preserves_existing_annotations,
-        test_merge_skips_unknown_id,
-        test_merge_normalizes_bad_severity,
-        test_merge_is_idempotent,
-        test_empty_sidecar_is_byte_identical,
-        test_missing_message_skipped,
-        test_confidence_basis_level_preserved,
-        test_confidence_source_preserved_and_updatable,
-        test_check_result_answers_the_flag_in_place,
-        test_split_on_survives_the_merge,
-        test_loop_annotate_merges_into_the_derived_round,
-        test_loop_annotate_snapshots_decisions,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"  ok  {t.__name__}")
-        except Exception as e:
-            print(f"  FAIL {t.__name__}: {e}")
-            failed += 1
-    if failed:
-        sys.exit(f"\n{failed}/{len(tests)} tests failed")
-    print(f"\nOK ({len(tests)} tests)")
+    test_merge_adds_annotation_to_section()
+    test_merge_preserves_existing_annotations()
+    test_merge_skips_unknown_id()
+    test_merge_normalizes_bad_severity()
+    test_merge_is_idempotent()
+    test_empty_sidecar_is_byte_identical()
+    test_missing_message_skipped()
+    test_confidence_basis_level_preserved()
+    test_confidence_source_preserved_and_updatable()
+    test_check_result_answers_the_flag_in_place()
+    test_split_on_survives_the_merge()
+    test_loop_annotate_merges_into_the_derived_round()
+    test_loop_annotate_snapshots_decisions()
+    print("OK (13 tests)")
 
 
 if __name__ == "__main__":

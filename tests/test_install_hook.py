@@ -50,6 +50,7 @@ def test_installs_an_executable_hook() -> None:
         assert MARKER in text
         assert text.startswith("#!/bin/sh\n")
         assert stat.S_IMODE(hook.stat().st_mode) & 0o111, "hook must be executable"
+    print("  ok  test_installs_an_executable_hook")
 
 
 def test_idempotent_on_a_second_run() -> None:
@@ -64,6 +65,7 @@ def test_idempotent_on_a_second_run() -> None:
         assert "already installed" in result.stdout, result.stdout
         assert hook.read_text() == before, "a second run must not duplicate the block"
         assert hook.read_text().count(MARKER) == 1
+    print("  ok  test_idempotent_on_a_second_run")
 
 
 def test_appends_to_an_existing_hook_without_clobbering() -> None:
@@ -83,6 +85,7 @@ def test_appends_to_an_existing_hook_without_clobbering() -> None:
         assert MARKER in text
         assert text.index("existing hook ran") < text.index(MARKER), \
             "the existing hook must run first, unmodified"
+    print("  ok  test_appends_to_an_existing_hook_without_clobbering")
 
 
 def _fake_home_with_plugin_cache(home: Path) -> None:
@@ -115,6 +118,7 @@ def test_no_signed_docs_prints_nothing_and_exits_zero() -> None:
         result = _run_hook_for_real(repo, home)
         assert result.returncode == 0, result.stderr
         assert result.stdout == "", f"expected silence, got: {result.stdout!r}"
+    print("  ok  test_no_signed_docs_prints_nothing_and_exits_zero")
 
 
 def test_drift_on_a_signed_doc_warns_and_still_exits_zero() -> None:
@@ -150,27 +154,16 @@ def test_drift_on_a_signed_doc_warns_and_still_exits_zero() -> None:
         assert "spec.md was signed off 2026-05-01" in result.stdout, result.stdout
         assert "references mod.py" in result.stdout, result.stdout
         assert "loop.py start --doc spec.md --recheck" in result.stdout, result.stdout
+    print("  ok  test_drift_on_a_signed_doc_warns_and_still_exits_zero")
 
 
 def main() -> None:
-    tests = [
-        test_installs_an_executable_hook,
-        test_idempotent_on_a_second_run,
-        test_appends_to_an_existing_hook_without_clobbering,
-        test_no_signed_docs_prints_nothing_and_exits_zero,
-        test_drift_on_a_signed_doc_warns_and_still_exits_zero,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"  ok  {t.__name__}")
-        except Exception as e:
-            print(f"  FAIL {t.__name__}: {e}")
-            failed += 1
-    if failed:
-        sys.exit(f"\n{failed}/{len(tests)} tests failed")
-    print(f"\nOK ({len(tests)} tests)")
+    test_installs_an_executable_hook()
+    test_idempotent_on_a_second_run()
+    test_appends_to_an_existing_hook_without_clobbering()
+    test_no_signed_docs_prints_nothing_and_exits_zero()
+    test_drift_on_a_signed_doc_warns_and_still_exits_zero()
+    print("OK (5 tests)")
 
 
 if __name__ == "__main__":

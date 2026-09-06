@@ -32,7 +32,7 @@ def withdraw(data: dict, kinds: set[str]) -> int:
     withdrawn."""
     flagged = {
         s["id"]
-        for s in data.get("sections", []) or []
+        for s in data.get("sections", [])
         if any(isinstance(a, dict) and a.get("kind") in kinds
                for a in (s.get("annotations") or []))
     }

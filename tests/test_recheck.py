@@ -41,6 +41,7 @@ def test_flagged_section_loses_approval() -> None:
     out, stdout = run(data)
     assert out["approved_ids"] == ["s2"], out
     assert "1 section(s) withdrawn" in stdout, stdout
+    print("  ok  test_flagged_section_loses_approval")
 
 
 def test_unflagged_section_keeps_approval() -> None:
@@ -48,6 +49,7 @@ def test_unflagged_section_keeps_approval() -> None:
     out, stdout = run(data)
     assert out["approved_ids"] == ["s1"], out
     assert "0 section(s) withdrawn" in stdout, stdout
+    print("  ok  test_unflagged_section_keeps_approval")
 
 
 def test_scoped_to_the_named_kind() -> None:
@@ -61,6 +63,7 @@ def test_scoped_to_the_named_kind() -> None:
     out, _ = run(data)
     assert out["approved_ids"] == ["s1"], \
         "a confidence annotation must not withdraw approval"
+    print("  ok  test_scoped_to_the_named_kind")
 
 
 def test_explicit_kind_flag_widens_or_narrows_the_default() -> None:
@@ -79,6 +82,7 @@ def test_explicit_kind_flag_widens_or_narrows_the_default() -> None:
     # Repeated --kind withdraws both.
     out3, _ = run(data, ["--kind", "grounding", "--kind", "drift"])
     assert out3["approved_ids"] == [], out3
+    print("  ok  test_explicit_kind_flag_widens_or_narrows_the_default")
 
 
 def test_idempotent_on_a_re_run() -> None:
@@ -91,6 +95,7 @@ def test_idempotent_on_a_re_run() -> None:
     assert twice == once, twice
     assert "0 section(s) withdrawn" in stdout, \
         "a section already withdrawn must not be counted again"
+    print("  ok  test_idempotent_on_a_re_run")
 
 
 def test_no_approved_ids_key_is_a_no_op() -> None:
@@ -101,28 +106,17 @@ def test_no_approved_ids_key_is_a_no_op() -> None:
     out, stdout = run(data)
     assert "approved_ids" not in out, out
     assert "0 section(s) withdrawn" in stdout, stdout
+    print("  ok  test_no_approved_ids_key_is_a_no_op")
 
 
 def main() -> None:
-    tests = [
-        test_flagged_section_loses_approval,
-        test_unflagged_section_keeps_approval,
-        test_scoped_to_the_named_kind,
-        test_explicit_kind_flag_widens_or_narrows_the_default,
-        test_idempotent_on_a_re_run,
-        test_no_approved_ids_key_is_a_no_op,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"  ok  {t.__name__}")
-        except Exception as e:
-            print(f"  FAIL {t.__name__}: {e}")
-            failed += 1
-    if failed:
-        sys.exit(f"\n{failed}/{len(tests)} tests failed")
-    print(f"\nOK ({len(tests)} tests)")
+    test_flagged_section_loses_approval()
+    test_unflagged_section_keeps_approval()
+    test_scoped_to_the_named_kind()
+    test_explicit_kind_flag_widens_or_narrows_the_default()
+    test_idempotent_on_a_re_run()
+    test_no_approved_ids_key_is_a_no_op()
+    print("OK (6 tests)")
 
 
 if __name__ == "__main__":

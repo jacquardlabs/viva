@@ -32,6 +32,25 @@ QA_INPUT = {
 }
 
 
+def _launch_qa(tmp: Path):
+    """Launch a --mode qa server against QA_INPUT under tmp/.viva; return
+    (proc, base, viva, qa_out) once the server has announced its URL. The 3
+    tests below all launch the identical way and differ only in what they
+    drive through the session afterward."""
+    viva = tmp / ".viva"
+    viva.mkdir()
+    qa_in = viva / "qa-input.json"
+    qa_out = viva / "answers.json"
+    qa_in.write_text(json.dumps(QA_INPUT))
+    proc = subprocess.Popen(
+        [sys.executable, str(SERVER), "--mode", "qa",
+         "--input", str(qa_in), "--output", str(qa_out), "--no-browser"],
+        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    base = wait_for_url(qa_out)
+    return proc, base, viva, qa_out
+
+
 def test_round_handler_hides_qa_view():
     html = server.HTML
     start = html.index("es.addEventListener('round'")
@@ -103,20 +122,8 @@ def test_qa_keydown_branch_guarded_by_review_data():
 
 def test_handoff_same_server_no_second_launch():
     tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    qa_in = viva / "qa-input.json"
-    qa_out = viva / "answers.json"
-    qa_in.write_text(json.dumps(QA_INPUT))
-
-    proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--mode", "qa",
-         "--input", str(qa_in), "--output", str(qa_out), "--no-browser"],
-        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
+    proc, base, viva, qa_out = _launch_qa(tmp)
     try:
-        base = wait_for_url(qa_out)
-
         # Q&A phase: byte-identical to a standalone qa gate up to this point.
         served = get(base, "/input")
         assert served.get("mode") == "qa", served
@@ -181,19 +188,8 @@ def test_standalone_qa_has_no_handoff_line():
     """No-op-when-absent: a qa server that never receives a /next-round
     prints no hand-off line."""
     tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    qa_in = viva / "qa-input.json"
-    qa_out = viva / "answers.json"
-    qa_in.write_text(json.dumps(QA_INPUT))
-
-    proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--mode", "qa",
-         "--input", str(qa_in), "--output", str(qa_out), "--no-browser"],
-        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
+    proc, base, viva, qa_out = _launch_qa(tmp)
     try:
-        base = wait_for_url(qa_out)
         post(base, "/submit", {
             "answers": [{"id": "q1", "choice": "email", "note": ""}],
             "submitted_early": False,
@@ -218,19 +214,8 @@ def test_a_diff_round_is_refused_by_a_qa_server():
     handler never stamps `mode-diff` or injects diff2html, so `/next-round`
     refuses a `mode: "diff"` round rather than serving a broken tab."""
     tmp = Path(tempfile.mkdtemp())
-    viva = tmp / ".viva"
-    viva.mkdir()
-    qa_in = viva / "qa-input.json"
-    qa_out = viva / "answers.json"
-    qa_in.write_text(json.dumps(QA_INPUT))
-
-    proc = subprocess.Popen(
-        [sys.executable, str(SERVER), "--mode", "qa",
-         "--input", str(qa_in), "--output", str(qa_out), "--no-browser"],
-        cwd=str(tmp), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
+    proc, base, viva, qa_out = _launch_qa(tmp)
     try:
-        base = wait_for_url(qa_out)
         diff_round = {
             "mode": "diff", "round": 1, "doc_file": "HEAD~1..HEAD",
             "output": str(viva / "review-r1.json"),
