@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.12.0 (2026-09-06)
+
+### Bug Fixes
+
+- A decision renders as words in the margin, not a glyph-only gutter
+  ([#230](https://github.com/jacquardlabs/viva/pull/230),
+  [`1d9d536`](https://github.com/jacquardlabs/viva/commit/1d9d536cc73555c90fe9df5c511b1cd4486fc651))
+
+### Features
+
+- Carry interview answers into the round and the ledger as decisions
+  ([#230](https://github.com/jacquardlabs/viva/pull/230),
+  [`1d9d536`](https://github.com/jacquardlabs/viva/commit/1d9d536cc73555c90fe9df5c511b1cd4486fc651))
+
+
 ## v2.11.0 (2026-09-06)
 
 ### Features
