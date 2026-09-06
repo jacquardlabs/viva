@@ -45,6 +45,15 @@ PASS_POSTURES = ("normal", "hard")
 # checklist, contradiction, confidence, preference) are not check flags.
 CHECK_KINDS = ("headings-present",)
 
+# Directories no reference should ever resolve into: `drift.py`'s file-
+# reference scan skips them, and `server.py`'s `/evidence` route (#106)
+# refuses to serve a path under one — shared here so the two agree without
+# server.py importing drift.py.
+SKIP_DIRS = frozenset({
+    ".git", "node_modules", ".venv", "venv", "dist", "build",
+    "__pycache__", ".mypy_cache", ".pytest_cache", "target", ".viva",
+})
+
 # The scope a producer's flag is ABOUT — a DIFFERENT AXIS from CHECK_KINDS
 # ("does this gate a checks round"). `headings_present.py`/`checklist.py`
 # report whole-document facts but anchor to `sections[0]["id"]` (the only
