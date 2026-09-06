@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.14.0 (2026-09-06)
+
+### Features
+
+- Git hook warns when a signed doc's cited file drifts
+  ([#232](https://github.com/jacquardlabs/viva/pull/232),
+  [`9884667`](https://github.com/jacquardlabs/viva/commit/9884667a061b26ac280c4f01c6a45bdecc7ec070))
+
+
 ## v2.13.0 (2026-09-06)
 
 ### Documentation
