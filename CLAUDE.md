@@ -151,13 +151,19 @@ import. It holds:
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
+- **`read_json_or_exit(path, prog)`** / **`atomic_write(path, text)`** — the
+  shared read/write boundary every script and `server.py` route their round
+  files through, so a partial write is never observed and a bad file names
+  its caller in the error. `LOOPBACK_HOSTS` sits beside them: the one tuple
+  the four loopback guards (`loop.py`, `docket.py`, `server.py` Host/Origin
+  checks) read, each keeping its own on-rejection behavior.
 
 **Adding a field to the round schema is a coordinated edit.** Update: the
 TypedDict in `schema.py`, `parse_sections.py` (the producer), `server.py`'s load
 and the embedded JS that renders it, `scripts/loop.py` if the driver must carry
 it between rounds, and any store script that carries it forward. A field the
-server only passes through needs no `server.py` change — `load_input` is a bare
-`json.load` and `/next-round` replaces `_input_data` wholesale — but say so
+server only passes through needs no `server.py` change — the startup load is a
+bare `json.load` and `/next-round` replaces `_input_data` wholesale — but say so
 rather than leaving the omission to be re-derived. `split_on`, `doc_type`, and
 `pass` are that case: none renders, and `pass` reaches `server.py` only through
 `round_is_complete()`. All three are also **presence-gated** in
