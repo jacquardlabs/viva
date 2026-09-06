@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.11.0 (2026-09-06)
+
+### Features
+
+- Serve the lines a confidence source cites ([#229](https://github.com/jacquardlabs/viva/pull/229),
+  [`52733ee`](https://github.com/jacquardlabs/viva/commit/52733eed39099595404f4d46b2ce308f37e3647e))
+
+
 ## v2.10.0 (2026-09-06)
 
 ### Features
