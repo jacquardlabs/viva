@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.10.0 (2026-09-06)
+
+### Features
+
+- Source field on confidence annotations ([#228](https://github.com/jacquardlabs/viva/pull/228),
+  [`24f97a3`](https://github.com/jacquardlabs/viva/commit/24f97a3eafb512b78dcfcaf08c31fc8ac12f878c))
+
+
 ## v2.9.1 (2026-09-04)
 
 ### Bug Fixes
