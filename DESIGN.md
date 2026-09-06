@@ -574,9 +574,9 @@ specimen hardcodes the white ground and has no dark rendering at all.
 
 **Flags.** `docFlagSplit` has **three** routes, not two. A flag whose kind is
 in `schema.DOC_SCOPE_KINDS` is about the **document** and goes to neither
-column — it goes to the document slip. Both producers that emit one
-(`headings_present.py`, `checklist.py`) anchor it to `sections[0]["id"]` only
-because `parse_sections.py`'s integrity check makes a card for a section the
+column — it goes to the document slip. The producer that emits one
+(`headings_present.py`) anchors it to `sections[0]["id"]` only because
+`parse_sections.py`'s integrity check makes a card for a section the
 document does not have impossible, so the first card is the only
 document-level handle either has; taken literally that opened every typed
 round-1 review on five amber *"missing expected design-doc section"* lines in
@@ -1134,9 +1134,9 @@ would be invisible in the UI while `round_is_complete` went on enforcing it.
 
 It ships **collapsed**, for the reading-order reason the transmittal already
 states — a cover note is not the round's content — **unless it carries an
-`error`**, in which case it ships expanded. `checklist.py` emits
-`severity: "error"`, and demoting a document-level error to a digit behind a
-disclosure is a claim about severity that nothing in the product made.
+`error`**, in which case it ships expanded. Today's one document-scope
+producer, `headings_present.py`, emits `severity: "warn"`, so the slip opens
+only on a fact the product actually treats as severe enough to interrupt.
 
 It reuses `.transmittal-head` / `.transmittal-title` / `.transmittal-chevron` /
 `.transmittal-rows` rather than a third `.card-head` disclosure: no new CSS, no

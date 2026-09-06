@@ -131,13 +131,6 @@ def _parse_pairs(pairs: list) -> dict:
     return out
 
 
-def _load_json(path: str) -> dict:
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"viva open_notes: cannot read {path}: {e}")
-
-
 def main() -> None:
     p = argparse.ArgumentParser(description="Maintain viva's open-note store")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -156,8 +149,8 @@ def main() -> None:
 
     store_path = Path(args.store)
     store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
-    verdicts = _load_json(args.verdicts)
-    input_data = _load_json(args.input)
+    verdicts = schema.read_json_or_exit(args.verdicts, "viva open_notes")
+    input_data = schema.read_json_or_exit(args.input, "viva open_notes")
     responses = _parse_pairs(args.response)
     declines = _parse_pairs(args.decline)
 
@@ -169,8 +162,7 @@ def main() -> None:
         sys.exit(f"viva open_notes: {e}")
 
     store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(store, indent=2, ensure_ascii=False),
-                          encoding="utf-8")
+    schema.atomic_write(store_path, json.dumps(store, indent=2, ensure_ascii=False))
     open_threads = sum(1 for t in store.values()
                        if t.get("status") == schema.THREAD_OPEN)
     declined = sum(1 for t in store.values()

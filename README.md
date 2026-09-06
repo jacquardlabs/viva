@@ -188,7 +188,7 @@ The type's `checks[]` run as pre-review producers, flagging findings on the card
 
 **Learned preferences.** viva records recurring critiques at sign-off and promotes them to "standing" after 2 distinct sessions. A standing preference auto-flags matching sections before you retype the note. The store is per-clone and gitignored.
 
-**Advisory annotations.** Producers run before each round is armed — `headings_present.py` (the type's expected sections), `checklist.py` (required-section coverage), `drift.py` (broken file paths, missing symbols), plus LLM passes for claim grounding and cross-section contradiction. They decorate the card; they never gate a verdict.
+**Advisory annotations.** Producers run before each round is armed — `headings_present.py` (the type's expected sections), `drift.py` (broken file paths, missing symbols), plus LLM passes for claim grounding and cross-section contradiction. They decorate the card; they never gate a verdict.
 
 **Round-to-round diff.** Rewritten sections carry a collapsible line-level diff against the prior round, so you can see exactly what changed without re-reading the whole thing.
 

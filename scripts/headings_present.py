@@ -9,13 +9,11 @@ missing:
     | python3 annotate.py --input .viva/review-input-r1.json --annotations -
 
 Prints a sidecar annotation list (JSON) to stdout — one `warn` per missing
-heading (not `checklist.py`'s `error`: a type's grammar is expected shape,
-not a hard requirement), all anchored on the first card, since a card for a
-nonexistent section is impossible under the parser's integrity check.
+heading, all anchored on the first card, since a card for a nonexistent
+section is impossible under the parser's integrity check.
 
-Matching is `schema.section_key` identity, not `checklist.py`'s fuzzy `_norm`
-— a type's grammar is a heading list copied from a template, so an exact
-title is the right bar.
+Matching is `schema.section_key` identity — a type's grammar is a heading
+list copied from a template, so an exact title is the right bar.
 
 Headings are collected from every section's title AND from headings inside
 its content, since a `--split-on` round can fold a real heading into the
@@ -24,7 +22,7 @@ previous card's body.
 Two known limits: a doc with nothing missing looks identical to "never ran"
 on disk (no run marker here), and a flag can outlive its fix when the carry
 rule (`parse_sections._carry_annotations`) copies it onto an unchanged first
-card — `checklist.py` shares both exposures.
+card.
 """
 from __future__ import annotations
 
@@ -91,17 +89,8 @@ def main() -> None:
                    help="Type bundle JSON from doc_types.py, or '-' for stdin")
     args = p.parse_args()
 
-    try:
-        data = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        sys.exit(f"headings_present: cannot read {args.input}: {e}")
-
-    try:
-        raw = sys.stdin.read() if args.bundle == "-" \
-            else Path(args.bundle).read_text(encoding="utf-8")
-        bundle = json.loads(raw)
-    except (OSError, ValueError) as e:
-        sys.exit(f"headings_present: cannot read bundle: {e}")
+    data = schema.read_json_or_exit(args.input, "headings_present")
+    bundle = schema.read_json_or_exit(args.bundle, "headings_present")
     if not isinstance(bundle, dict):
         sys.exit("headings_present: bundle must be a JSON object — pipe "
                  "`doc_types.py <name>` into --bundle -")

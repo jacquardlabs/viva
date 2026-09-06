@@ -55,6 +55,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import schema
+
 VERSION = 1
 STATUSES = ("candidate", "standing", "muted")
 
@@ -159,16 +161,12 @@ def select(store: dict, status: str = "standing") -> list:
 def _load(path: Path) -> dict:
     if not path.exists():
         return empty_store()
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"viva preferences: cannot read {path}: {e}")
+    return schema.read_json_or_exit(path, "viva preferences")
 
 
 def _write(path: Path, store: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(store, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    schema.atomic_write(path, json.dumps(store, indent=2, ensure_ascii=False))
 
 
 def _format_text(prefs: list) -> str:

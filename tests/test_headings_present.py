@@ -62,7 +62,7 @@ def test_missing_headings_reported_in_bundle_order() -> None:
 def test_flags_anchor_on_the_first_card() -> None:
     """`parse_sections.py`'s integrity check forbids a card whose content is not
     in the source doc, so a missing section can have no card of its own — the
-    first card is the document-level anchor (checklist.py's constraint)."""
+    first card is the document-level anchor."""
     flags = sidecar({"sections": [
         section("s1", "Design doc", "# Design doc\n\nintro\n"),
         section("s2", "Proposed design"),
@@ -101,9 +101,7 @@ def test_in_body_heading_counts_as_present() -> None:
 
 
 def test_matching_is_identity_not_the_fuzzy_template_match() -> None:
-    """`schema.section_key` — case-folded and edge-trimmed, punctuation intact.
-    Deliberately not `checklist.py._norm`, which strips all punctuation for
-    tolerant template matching (CLAUDE.md keeps the two rules separate)."""
+    """`schema.section_key` — case-folded and edge-trimmed, punctuation intact."""
     bundle = dict(BUNDLE, sections=["Out of scope"])
     assert sidecar({"sections": [section("s1", "  OUT OF SCOPE  ")]}, bundle) == [], \
         "identity is case-folded and edge-trimmed"
@@ -111,7 +109,7 @@ def test_matching_is_identity_not_the_fuzzy_template_match() -> None:
     punct = dict(BUNDLE, sections=["Non-goals"])
     assert sidecar({"sections": [section("s1", "Non goals")]}, punct), \
         "identity keeps internal punctuation — a fuzzy match here would make " \
-        "the grammar unenforceable and duplicate checklist.py's rule"
+        "the grammar unenforceable"
     print("  ok  test_matching_is_identity_not_the_fuzzy_template_match")
 
 

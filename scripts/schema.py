@@ -13,12 +13,20 @@ key, injected by the server at serve time — not part of the on-disk schema
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import sys
+from pathlib import Path
 from typing import List, Optional, Tuple, TypedDict
 
-# `Path` is used only in type annotations (never evaluated, thanks to
-# `from __future__ import annotations`) and deliberately NOT imported —
-# `test_schema_reaches_no_io` bans `pathlib` so nothing here can reach disk.
+# `json`/`os`/`pathlib` are used only by `read_json_or_exit`/`atomic_write`
+# below — shared I/O helpers `scripts/*.py` call at the caller's request.
+# `round_is_complete()` itself must still reach no disk: it is asked by
+# `loop.py finish` and the server's `/complete` handler from separate
+# processes and must judge only the dicts handed to it — pinned by
+# `tests/test_schema.py`'s `test_round_is_complete_reaches_no_io`, which
+# AST-walks that one function's body, not the whole module.
 
 # Bare token for a section/question `id`: no `"`, `<`, `>`, `'`, `&`, or
 # whitespace, since `server.py` interpolates `id` unescaped into HTML
@@ -30,19 +38,16 @@ LEDGER_VERDICTS = ("changes", "info")
 # Every verdict a review output section may carry.
 VERDICTS = ("approved", "changes", "info", "pending")
 
-# ── Passes — depth and posture as round parameters ────────────────────────────
+# ── Passes — depth as a round parameter ───────────────────────────────────────
 # The four depths a round can run at. Optional on `ReviewInput`; absent means
 # today's behavior exactly (PRODUCT.md principle 4). `doc_types.py`'s
 # `default_pass` must name one of these.
 PASS_KINDS = ("architecture", "line", "checks", "final")
-# A setting ON the pass, not a second round field — `hard` licenses the
-# author to argue rather than concede. Absent reads as `normal`.
-PASS_POSTURES = ("normal", "hard")
 
 # Annotation `kind`s a check producer emits — the handle `round_is_complete`
 # reads to find a `checks` round's flags. A new check producer ADDS ITS KIND
 # HERE or a `checks` pass never sees its flags. Advisory producers (drift,
-# checklist, contradiction, confidence, preference) are not check flags.
+# contradiction, confidence, preference) are not check flags.
 CHECK_KINDS = ("headings-present",)
 
 # Directories no reference should ever resolve into: `drift.py`'s file-
@@ -61,13 +66,13 @@ SKIP_DIRS = frozenset({
 DECISION_KIND = "decision"
 
 # The scope a producer's flag is ABOUT — a DIFFERENT AXIS from CHECK_KINDS
-# ("does this gate a checks round"). `headings_present.py`/`checklist.py`
-# report whole-document facts but anchor to `sections[0]["id"]` (the only
-# document-level handle `parse_sections.py`'s integrity check leaves them);
-# registering here renders them once in the document slip instead of five
+# ("does this gate a checks round"). `headings_present.py` reports a
+# whole-document fact but anchors to `sections[0]["id"]` (the only
+# document-level handle `parse_sections.py`'s integrity check leaves it);
+# registering here renders it once in the document slip instead of five
 # times in section 1's margin. Fails open: an unregistered kind is treated
 # as section-scope.
-DOC_SCOPE_KINDS = ("headings-present", "checklist")
+DOC_SCOPE_KINDS = ("headings-present",)
 
 # A reviewer's suggested-edit comment type: the exact `replacement` wording
 # for the anchored span, applied VERBATIM — no rewrite pass.
@@ -130,8 +135,7 @@ def section_key(title: str) -> str:
 
     The ONE normalization matching a section across rounds — approvals,
     carried annotations, diffs, open threads — so a title edit changes
-    identity in exactly one place. Distinct from `checklist.py`'s `_norm`
-    (a fuzzy match, not an identity); do not merge the two.
+    identity in exactly one place.
     """
     return (title or "").strip().lower()
 
@@ -236,10 +240,9 @@ class ReviewSection(TypedDict, total=False):
 
 class ReviewPass(TypedDict, total=False):
     kind: str      # required when a pass is present — one of PASS_KINDS
-    posture: str   # optional — one of PASS_POSTURES; absent reads as `normal`
 
 
-# `ReviewInput.pass` — optional depth/posture; absent is today's behavior
+# `ReviewInput.pass` — optional depth; absent is today's behavior
 # exactly (PRODUCT.md principle 4) and can only make `round_is_complete()`
 # stricter, never looser. Recorded by `parse_sections.py`; carried within a
 # session by `loop.py rearm`, NOT across a resume (a per-round decision,
@@ -347,16 +350,12 @@ def validate_review_input(data: dict) -> None:
         spec = data["pass"]
         if not isinstance(spec, dict):
             raise ValueError(
-                "review-input.pass must be an object {kind, posture} — omit the "
+                "review-input.pass must be an object {kind} — omit the "
                 "key entirely for a round that runs no pass, never null")
         if spec.get("kind") not in PASS_KINDS:
             raise ValueError(
                 "review-input.pass.kind %r is not one of %s"
                 % (spec.get("kind"), "|".join(PASS_KINDS)))
-        if "posture" in spec and spec["posture"] not in PASS_POSTURES:
-            raise ValueError(
-                "review-input.pass.posture %r is not one of %s"
-                % (spec.get("posture"), "|".join(PASS_POSTURES)))
     # Presence-gated: `recheck` (#83) moves the ledger phrasing at `finish`
     # and `loop.py rearm` carries it forward — a malformed value would
     # silently revert a re-certification session to an ordinary one.
@@ -529,6 +528,34 @@ def parse_round_input_stem(stem: str) -> Optional[int]:
         return None
     tail = stem[len(prefix):]
     return int(tail) if tail.isdigit() else None
+
+
+def read_json_or_exit(path, prog: str):
+    """Parse `path` as JSON or exit with a `{prog}: cannot read ...` message.
+
+    `path == "-"` reads stdin instead — the shape every producer's
+    `--input`/`--bundle` flag needs. The one place this try/except was
+    written; every caller had its own copy before.
+    """
+    try:
+        text = sys.stdin.read() if str(path) == "-" else Path(path).read_text(encoding="utf-8")
+        return json.loads(text)
+    except (OSError, ValueError) as e:
+        sys.exit(f"{prog}: cannot read {path}: {e}")
+
+
+def atomic_write(path, text: str) -> None:
+    """Write `text` to `path` without a reader ever observing a partial file.
+
+    A sibling `.tmp` written in full, then `os.replace`d over `path` — an
+    atomic rename on every OS this runs on. A reader polling with
+    `[ -f path ]` then `cat path` must never see a truncated file, and a
+    bare `write_text` cannot promise that.
+    """
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def round_is_complete(input_data: dict, verdicts: dict) -> bool:

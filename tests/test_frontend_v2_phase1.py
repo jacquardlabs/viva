@@ -51,7 +51,7 @@ REVIEW_INPUT_R2 = {
         {"id": "s5", "title": "Rollout", "content": "## Rollout\n\nBehind a flag.",
          "diff": [{"op": "+", "text": "Behind a flag."}]},
         {"id": "s6", "title": "Risks", "content": "## Risks\n\nCache stampede.",
-         "annotations": [{"kind": "checklist", "severity": "warn",
+         "annotations": [{"kind": "drift", "severity": "warn",
                           "message": "no mitigation listed"}]},
         {"id": "s7", "title": "Open questions", "content": "## Open questions\n\nTBD.",
          "annotations": [{"kind": "drift", "severity": "info",

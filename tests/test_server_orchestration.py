@@ -349,10 +349,10 @@ def check_pass_carries_within_a_session_not_across_a_resume() -> None:
         doc.write_text(body)
 
         r = loop(viva, td, "start", "--doc", "d.md",
-                 "--pass", "architecture", "--posture", "hard", "--parse-only")
+                 "--pass", "architecture", "--parse-only")
         assert r.returncode == 0, r.stderr
         r1 = json.loads((viva / "review-input-r1.json").read_text())
-        assert r1["pass"] == {"kind": "architecture", "posture": "hard"}, r1.get("pass")
+        assert r1["pass"] == {"kind": "architecture"}, r1.get("pass")
 
         ids = [s["id"] for s in r1["sections"]]
         approved = json.dumps({"round": 1, "submitted_early": False,
@@ -360,16 +360,15 @@ def check_pass_carries_within_a_session_not_across_a_resume() -> None:
                                             for i in ids]})
         (viva / "review-r1.json").write_text(approved)
 
-        # No override: round 2 runs at round 1's depth and posture.
+        # No override: round 2 runs at round 1's depth.
         r = loop(viva, td, "rearm", "--parse-only")
         assert r.returncode == 0, r.stderr
         r2 = json.loads((viva / "review-input-r2.json").read_text())
-        assert r2["pass"] == {"kind": "architecture", "posture": "hard"}, (
+        assert r2["pass"] == {"kind": "architecture"}, (
             "rearm dropped the pass — round 2 fell back to the base rule: %s"
             % r2.get("pass"))
 
-        # Override: the named kind wins, and it does not inherit the carried
-        # posture — `--pass` names the whole pass.
+        # Override: the named kind wins.
         (viva / "review-r2.json").write_text(approved)
         r = loop(viva, td, "rearm", "--pass", "checks", "--parse-only")
         assert r.returncode == 0, r.stderr

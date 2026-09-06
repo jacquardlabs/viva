@@ -61,7 +61,7 @@ belongs to a different product.
 
 ## What we are NOT building
 
-- **Not a linter or CI gate.** Producers (checklist, drift, grounding) flag;
+- **Not a linter or CI gate.** Producers (headings-present, drift, grounding) flag;
   they never decide a verdict, and a human always chooses whether a flag
   matters. A `checks` pass (principle 1) can hold `/complete` on an unanswered
   flag, but the human still answers it — viva never calls the round done
@@ -124,7 +124,7 @@ opt-in layers that all funnel through the section card:
   settled
 - Round-to-round section diff on rewritten cards
 - Per-section annotations rendered as card badges (advisory)
-- Pre-review producers (opt-in): checklist gating, spec↔code drift,
+- Pre-review producers (opt-in): heading-grammar check, spec↔code drift,
   claim grounding, cross-section contradiction
 - Confidence triage — sourced/inferred · level, with weakest-first sort
 - Learned preferences — recurring critiques learned across sessions

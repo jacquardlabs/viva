@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Shared annotation-merge helper for viva pre-review producers.
 
-Every producer (claim grounding #9, contradiction #10, spec↔code drift #11,
-checklist gating #13) computes its flags and writes them through this one path.
+Every producer (claim grounding #9, contradiction #10, spec↔code drift #11)
+computes its flags and writes them through this one path.
 It merges a sidecar list of annotations into the round's review-input file,
 in place, after parse_sections.py has generated it and before the round is armed.
 
@@ -37,6 +37,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+import schema
 
 SEVERITIES = {"info", "warn", "error"}
 
@@ -134,23 +136,15 @@ def main() -> None:
     args = p.parse_args()
 
     inp = Path(args.input)
-    try:
-        data = json.loads(inp.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"annotate: cannot read {args.input}: {e}")
+    data = schema.read_json_or_exit(inp, "annotate")
 
-    try:
-        raw = sys.stdin.read() if args.annotations == "-" \
-            else Path(args.annotations).read_text(encoding="utf-8")
-        sidecar = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"annotate: cannot read annotations: {e}")
+    sidecar = schema.read_json_or_exit(args.annotations, "annotate")
     if not isinstance(sidecar, list):
         sys.exit("annotate: sidecar must be a JSON list of annotation objects")
 
     merge_annotations(data, sidecar)
 
-    inp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    schema.atomic_write(inp, json.dumps(data, indent=2, ensure_ascii=False))
     added = sum(len(s.get("annotations", [])) for s in data.get("sections", []))
     print(f"annotate: {args.input} now carries {added} annotation(s)", flush=True)
 

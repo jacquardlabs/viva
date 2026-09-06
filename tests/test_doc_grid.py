@@ -735,8 +735,8 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "a doc-scope flag must have a surface in diff mode too, not vanish"
     assert "if (!REVIEW_DATA) return '';" in slip_fn, \
         "the slip still needs a round to read"
-    # The accessible name must not claim every row is a check — a
-    # `checklist` row isn't one, only `headings-present` is.
+    # The accessible name must not claim every row is a check — a doc-scope
+    # row need not be a `checks`-gating one.
     assert 'id="doc-slip" aria-label="Document-level flags"' in page, \
         "the slip's accessible name must not claim every row is a check"
     # The three readers whose denominator is one section skip doc-scope...

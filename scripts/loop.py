@@ -11,7 +11,6 @@ mode off the round file — never typed.
 """
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -557,7 +556,7 @@ def cmd_start(args) -> int:
 
 def _start_diff(args, viva: Path, record: dict) -> int:
     for flag, value in (("--split-on", args.split_on), ("--type", args.doc_type),
-                        ("--pass", args.pass_kind), ("--posture", args.posture)):
+                        ("--pass", args.pass_kind)):
         if value is not None:
             die(f"{flag} is a doc-review flag; {record.get('label')} is "
                 f"reviewed hunk by hunk")
@@ -678,10 +677,6 @@ def _start_doc(args, viva: Path) -> int:
         cmd += ["--doc-type", doc_type]
     if args.pass_kind is not None:
         cmd += ["--pass", args.pass_kind]
-    if args.posture is not None:
-        # Passed even without `--pass`, so the boundary (`parse_sections.py`)
-        # refuses a posture on no pass instead of it being silently dropped.
-        cmd += ["--posture", args.posture]
     if prior_in and prior_out:
         cmd += ["--prior-input", prior_in, "--prior-verdicts", prior_out]
     if args.recheck:
@@ -889,9 +884,7 @@ def cmd_summarize(args) -> int:
         schema.validate_review_input(data)
     except ValueError as e:
         die(f"invalid review-input after the merge: {e}")
-    tmp = inp.with_name(inp.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-    os.replace(str(tmp), str(inp))
+    schema.atomic_write(inp, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     print(f"viva-loop: round {n} summarized · {len(summaries)} of {len(by_id)} "
           f"hunk(s) · {inp}")
     return 0
@@ -993,18 +986,11 @@ def cmd_rearm(args) -> int:
     # one of the three expected to change mid-session.
     if args.pass_kind is not None:
         next_pass = {"kind": args.pass_kind}
-        if args.posture is not None:
-            next_pass["posture"] = args.posture
     else:
         next_pass = dict(prior_pass) if isinstance(prior_pass, dict) else None
         if next_pass is not None and not next_pass.get("kind"):
             die(f"round {n}'s input carries a pass with no kind — fix {inp}, or "
                 f"name this round's pass with --pass")
-        if args.posture is not None:
-            if next_pass is None:
-                die("--posture needs a pass, and round %d runs none — name one "
-                    "with --pass" % n)
-            next_pass["posture"] = args.posture
 
     store = viva / "open-notes.json"
     cmd = [sys.executable, SCRIPTS / "open_notes.py", "update",
@@ -1033,8 +1019,6 @@ def cmd_rearm(args) -> int:
         cmd += ["--doc-type", doc_type]
     if next_pass is not None:
         cmd += ["--pass", next_pass["kind"]]
-        if next_pass.get("posture") is not None:
-            cmd += ["--posture", next_pass["posture"]]
     if recheck:
         cmd += ["--recheck"]
     run_or_die(cmd, "re-parse", f"The running server still holds round {n}.")
@@ -1052,10 +1036,9 @@ def cmd_rearm(args) -> int:
 
 def _rearm_diff(args, viva: Path, n: int, inp: Path, out: Path,
                 round_data: dict) -> int:
-    if args.response or args.decline or args.pass_kind is not None \
-            or args.posture is not None:
+    if args.response or args.decline or args.pass_kind is not None:
         die("a diff round carries no threads and no pass — --response, "
-            "--decline, --pass, and --posture apply to doc review only")
+            "--decline, and --pass apply to doc review only")
     record, cwd = _target_record(viva)
     # The SAME capture as round 1, never a substitute — else a later round of
     # a PR review would silently review the working tree instead.
@@ -1304,10 +1287,6 @@ def main() -> int:
                         "resume does NOT inherit it. Omit for a round with no "
                         "pass, which behaves exactly as it does today."
                         % "|".join(schema.PASS_KINDS))
-    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
-                   help="posture setting on the pass — %s, where hard licenses "
-                        "the author to argue rather than concede. Needs --pass."
-                        % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after parsing so a producer can annotate round 1 "
                         "before it is armed (the opt-in producer seam)")
@@ -1367,9 +1346,6 @@ def main() -> int:
                    help="run round N+1 at this depth instead of the one round N "
                         "recorded — %s. Omit to carry the round's pass forward "
                         "unchanged." % "|".join(schema.PASS_KINDS))
-    p.add_argument("--posture", choices=schema.PASS_POSTURES, metavar="POSTURE",
-                   help="re-posture the pass (%s); alone, it re-postures the "
-                        "carried kind." % "|".join(schema.PASS_POSTURES))
     p.add_argument("--parse-only", action="store_true",
                    help="stop after the re-parse so a producer can annotate it")
     p.add_argument("--arm-anyway", action="store_true",

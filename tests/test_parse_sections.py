@@ -713,20 +713,7 @@ def test_pass_recorded_and_absent_without_the_flag() -> None:
     doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
     data = run(doc, extra_args=["--pass", "checks"])
     assert data["pass"] == {"kind": "checks"}, data.get("pass")
-    posture = run(doc, extra_args=["--pass", "line", "--posture", "hard"])
-    assert posture["pass"] == {"kind": "line", "posture": "hard"}, posture.get("pass")
     assert "pass" not in run(doc), "no flag, no key"
-
-
-def test_posture_without_a_pass_is_refused() -> None:
-    # A posture is a setting ON a pass, never a round field of its own. Dropping
-    # it on write would run the round at a posture the caller asked for and did
-    # not get, so the boundary refuses instead.
-    doc = "# Doc\n\n## Alpha\n\na\n\n## Beta\n\nb\n"
-    result, written = run_expect_fail(doc, ["--posture", "hard"])
-    assert result.returncode != 0, result
-    assert "--posture needs --pass" in result.stderr, result.stderr
-    assert not written, "no round file may be written on a refused parse"
 
 
 def test_unknown_pass_kind_is_refused() -> None:
@@ -1057,7 +1044,6 @@ def main() -> None:
         test_no_split_on_key_when_flag_absent,
         test_doc_type_recorded_and_absent_without_the_flag,
         test_pass_recorded_and_absent_without_the_flag,
-        test_posture_without_a_pass_is_refused,
         test_unknown_pass_kind_is_refused,
         test_split_on_fixture_one_section_per_task,
         test_split_on_fixture_round2_carries_forward_through_section_key,

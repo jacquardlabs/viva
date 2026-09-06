@@ -30,7 +30,7 @@ only by JSON files under `.viva/`:
    siblings as subprocesses** rather than importing them, so part 3's
    one-cross-import rule holds unchanged.
 3. **`scripts/*.py` — stateless CLI filters** (`parse_sections`, `parse_diff`, `annotate`,
-   `context_refs`, `review_target`, `drift`, `checklist`, `doc_types`,
+   `context_refs`, `review_target`, `drift`, `doc_types`,
    `headings_present`, `open_notes`, `preferences`, `revision_history`,
    `recheck`, `docket`). Each
    is stdlib-only, run as `python3 scripts/<name>.py`, and reads/writes JSON.
@@ -102,9 +102,7 @@ import. It holds:
 - **`section_key(title)`** — the ONE section-identity normalization. Approval
   carry-forward, annotation carry-forward, round-to-round diffs, and open-note
   threads all key on it, so a title edit changes identity in exactly one place.
-  Never reimplement it inline. (Note: `checklist.py._norm` is deliberately
-  *different* — it strips all punctuation for tolerant template matching, a
-  fuzzy match, not an identity. Don't fold the two together.)
+  Never reimplement it inline.
 - **`verdict_to_ledger_entry()`** — the single rule for which verdicts become a
   Revision-History row and how the note is derived (join `comments[]`, else the
   section `note`). Both the live `/input` ledger and `revision_history.py` use it.
@@ -117,7 +115,7 @@ import. It holds:
   suggestion derives to the section verdict `changes` and is never a verdict),
   `THREAD_STATUSES` plus `thread_is_unresolved()` (`open` and `declined` are
   both live; only `settled` closes — membership, never `!= settled`, so an
-  unknown status is not silently treated as live), `PASS_KINDS`/`PASS_POSTURES`,
+  unknown status is not silently treated as live), `PASS_KINDS`,
   `CHECK_KINDS`, and `DOC_SCOPE_KINDS`. Add a value here, not at a call site.
 
   `DOC_SCOPE_KINDS` is **a different axis from `CHECK_KINDS`** — that one asks
@@ -166,9 +164,9 @@ rather than leaving the omission to be re-derived. `split_on`, `doc_type`, and
 `validate_review_input` — optional key, but a present *malformed* value is a
 hard failure, since each feeds a `parse_sections.py` flag and a `null` would
 silently revert the next round instead of failing where it was written.
-`split_on`/`doc_type` must be strings; `pass` is checked three ways (an object,
-a `kind` in `PASS_KINDS`, and — if present — a `posture` in `PASS_POSTURES`),
-since it's the one field that moves the completion gate.
+`split_on`/`doc_type` must be strings; `pass` is checked two ways (an object,
+a `kind` in `PASS_KINDS`), since it's the one field that moves the
+completion gate.
 
 A section's **`summary`** is presence-gated the same way but is the opposite
 case: per-section, not per-round, and `server.py` *renders* it under the card

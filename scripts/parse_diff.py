@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from schema import section_key, validate_review_input
+import schema
 
 
 def _parse_args() -> argparse.Namespace:
@@ -190,14 +191,6 @@ def _carry_summaries(sections: list[dict], prior_input: dict | None) -> None:
             s["summary"] = prior[key]
 
 
-def _atomic_write(path: str, text: str) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, p)
-
-
 def main() -> int:
     args = _parse_args()
 
@@ -244,7 +237,8 @@ def main() -> int:
         "sections": sections,
     }
     validate_review_input(data)
-    _atomic_write(args.output, json.dumps(data, indent=2))
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    schema.atomic_write(args.output, json.dumps(data, indent=2))
     return 0
 
 

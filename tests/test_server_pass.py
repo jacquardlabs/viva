@@ -116,7 +116,7 @@ def check_a_malformed_pass_is_refused_at_the_boundary() -> None:
         inp, out = viva / "review-input-r1.json", viva / "review-r1.json"
         inp.write_text(json.dumps(round_input()), encoding="utf-8")
         with launch_server(inp, out, cwd=td) as base:
-            for bad in ({"kind": "polish"}, {"posture": "hard"}, "line", None):
+            for bad in ({"kind": "polish"}, {}, "line", None):
                 payload = dict(round_input(), round=2,
                                output=str(viva / "review-r2.json"))
                 payload["pass"] = bad

@@ -3237,8 +3237,8 @@ function sectionAnswered(s, round) {
 }
 
 // A DOC_SCOPE flag is skipped: it's a fact about the document, not this
-// section, and `checklist` emits severity:"error" — without this, one missing
-// template heading would brand section 1 "flagged & unreviewed".
+// section — without this, one missing type heading would brand section 1
+// "flagged & unreviewed".
 function flagRank(section) {
   const ranks = ((section && section.annotations) || [])
     .filter(a => a && !DOC_SCOPE_KINDS.includes(a.kind))
