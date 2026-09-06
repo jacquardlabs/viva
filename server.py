@@ -4135,8 +4135,9 @@ function specHTML(section) {
   // A RUN, not a table: five label/value pairs fit one line at 10.5px mono
   // vs ~120px for a table. `<caption>` is gone; `.doc-apparatus`'s
   // `role="group"`/`aria-label` names the band instead.
-  const item = (label, value, open) =>
-    '<span class="sp' + (open ? ' sp-open' : '') + '">'
+  const item = (label, value, open, title) =>
+    '<span class="sp' + (open ? ' sp-open' : '') + '"' +
+    (title ? ' title="' + esc(title) + '"' : '') + '>'
     + '<span class="sp-k">' + label + '</span> <span class="sp-v">' + value + '</span></span>';
   // The agent's own confidence is a state item, not a gutter flag — it's
   // what the triage sort orders on. `docFlagSplit` sends it to neither
@@ -4152,7 +4153,7 @@ function specHTML(section) {
         + (s.checksDone === s.checks ? ' &#10003;' : ''), s.checksDone < s.checks) : '')
     + (conf ? item('agent confidence',
         [conf.basis, conf.level].filter(Boolean).map(esc).join(' &middot; ') || esc(conf.message || '—'),
-        conf.level === 'low') : '');
+        conf.level === 'low', conf.source) : '');
 }
 
 /* ─── Segmented rule ─────────────────────────────────────────

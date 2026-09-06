@@ -123,6 +123,38 @@ def test_confidence_basis_level_preserved() -> None:
     assert "basis" not in annot2 and "level" not in annot2, annot2
 
 
+def test_confidence_source_preserved_and_updatable() -> None:
+    # Issue #145: `source` names the evidence behind a confidence claim. It
+    # must survive the merge like `basis`/`level`, but — unlike those — is not
+    # part of a flag's identity: re-emitting the same flag with corrected
+    # evidence updates the source in place instead of appending a twin.
+    data = base_input([{"id": "s1", "title": "Goals", "content": "body"}])
+    flag = {"id": "s1", "kind": "confidence", "severity": "warn",
+            "message": "inferred · low", "basis": "inferred", "level": "low",
+            "source": "no config or doc found naming a TTL"}
+
+    out = run(data, [flag])
+    annot = out["sections"][0]["annotations"][0]
+    assert annot["source"] == "no config or doc found naming a TTL", annot
+
+    # A blank or non-string source is dropped at the boundary.
+    for blank in ("", "   ", 7, None):
+        dropped = run(data, [dict(flag, source=blank)])
+        assert "source" not in dropped["sections"][0]["annotations"][0], blank
+
+    # Re-emitting with corrected evidence updates in place, no twin.
+    corrected = run(out, [dict(flag, source="config.py:42 — CACHE_TTL = 300")])
+    annots = corrected["sections"][0]["annotations"]
+    assert len(annots) == 1, "corrected source must not append a twin: %s" % annots
+    assert annots[0]["source"] == "config.py:42 — CACHE_TTL = 300", annots
+
+    # A source-less re-emission of the same flag must not erase an existing one.
+    no_source = {k: v for k, v in flag.items() if k != "source"}
+    kept = run(corrected, [no_source])
+    assert kept["sections"][0]["annotations"][0]["source"] == \
+        "config.py:42 — CACHE_TTL = 300", "a source-less re-run must not erase evidence"
+
+
 def test_check_result_answers_the_flag_in_place() -> None:
     """A check's `result` merges onto the existing flag rather than appending a
     twin, which is what lets `schema.round_is_complete` close a `checks` round
@@ -232,6 +264,7 @@ def main() -> None:
         test_empty_sidecar_is_byte_identical,
         test_missing_message_skipped,
         test_confidence_basis_level_preserved,
+        test_confidence_source_preserved_and_updatable,
         test_check_result_answers_the_flag_in_place,
         test_split_on_survives_the_merge,
         test_loop_annotate_merges_into_the_derived_round,

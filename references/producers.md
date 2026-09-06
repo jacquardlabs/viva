@@ -72,7 +72,7 @@ python3 "$VIVA_DIR/scripts/drift.py" --input <the round file loop.py printed> \
 
 The merge is additive (carried-forward flags survive), idempotent, and a no-op
 on an empty sidecar. It keeps only `kind`/`severity`/`message`/`anchor`, plus
-confidence's `basis`/`level` and a check's `result`.
+confidence's `basis`/`level`/`source` and a check's `result`.
 
 A **check** producer's flag may carry `result` — what the check found for it. On
 a `checks` round the flag holds the round open until it does, so re-emitting
@@ -150,19 +150,24 @@ When you generate or revise a doc, self-annotate each section with a
 weakest:
 
 ```json
-{ "kind": "confidence", "severity": "warn", "basis": "inferred", "level": "low", "message": "inferred · low" }
+{ "kind": "confidence", "severity": "warn", "basis": "inferred", "level": "low",
+  "message": "inferred · low", "source": "no config or doc found naming a TTL" }
 ```
 
 - `basis` — `sourced` (drawn from the repo, the user's input, or a cited fact)
   or `inferred` (your own guess or extrapolation).
 - `level` — `high | medium | low` confidence in the section's correctness.
+- `source` — the evidence, populated at write time while it's still in hand:
+  for `sourced`, name what you read (`"config.py:42 — CACHE_TTL = 300"`); for
+  `inferred`, name what you searched and didn't find, or the reasoning chain.
+  Optional — a section with none renders exactly as before (issue #145).
 - Mirror the weakness in `severity` (`error`/`warn` for low/inferred, `info` for
   high/sourced) so the badge color tracks it; keep `message` a short label.
 
 Unlike the producers above, confidence is the generating agent's own
 self-annotation, emitted at write time. Route it through `loop.py annotate` like
-any other sidecar: `annotate.py`'s merge preserves `basis`/`level` (issue #40).
-Under the driver this is the only route — editing the round file's
+any other sidecar: `annotate.py`'s merge preserves `basis`/`level`/`source`
+(issues #40, #145). Under the driver this is the only route — editing the round file's
 `annotations` array in place needs a path you are not meant to compute. The
 server reads `basis`/`level` directly — never the message — to offer a
 **weakest-first** sort toggle; document order stays the default. A section with
