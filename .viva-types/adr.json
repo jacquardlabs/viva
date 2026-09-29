@@ -1,0 +1,14 @@
+{
+  "name": "adr",
+  "title": "Architecture decision record",
+  "sections": [
+    "Context",
+    "Options",
+    "Criteria",
+    "Matrix",
+    "Recommendation",
+    "Consequences"
+  ],
+  "checks": ["headings-present"],
+  "default_pass": "architecture"
+}

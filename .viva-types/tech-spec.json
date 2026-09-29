@@ -1,0 +1,15 @@
+{
+  "name": "tech-spec",
+  "title": "Technical spec",
+  "sections": [
+    "Problem & persona",
+    "Interfaces and contracts",
+    "Data and migrations",
+    "Sequencing into issues",
+    "Operations, failure modes, and rollback",
+    "Test strategy",
+    "Out of scope"
+  ],
+  "checks": ["headings-present"],
+  "default_pass": "architecture"
+}
