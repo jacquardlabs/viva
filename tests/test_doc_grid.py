@@ -196,9 +196,8 @@ def test_both_columns_collapse_when_the_document_has_nothing_for_them(page: str)
     # section's rows, so a DOM read would jog columns sideways mid-review.
     assert "const gutter = sections.some(s => docFlagSplit(s).gutter.length);" in page, \
         "the gutter decision must be read off the round"
-    assert ("const margin = sections.some(s => docFlagSplit(s).margin.length "
-            "|| docNotes(s).length)") in page, \
-        "margin flags, carried threads and this round's comments all hold the margin"
+    assert "return split.margin.length || split.decisions.length || docNotes(s).length;" in page, \
+        "margin flags, decisions, carried threads and this round's comments all hold the margin"
     assert "doc.classList.toggle('no-gutter', !gutter);" in page, \
         "the gutter must collapse when nothing in the round carries a flag"
     # The PRINT keeps its margin even when empty — collapsing it would
@@ -699,10 +698,9 @@ def test_the_foot_band_states_and_acts(page: str) -> None:
     assert "item('agent confidence'," in page, \
         "dropping confidence here makes a documented feature invisible with no error"
     # A decision (#211) carries no anchor to jump to, so the generic
-    # jump-based rule would send it to the glyph-only gutter — words in the
-    # margin is the whole point ("the reviewer sees the answer beside the
-    # prose"), so it routes there unconditionally, ahead of that rule.
-    assert "if (a.kind === 'decision') { margin.push(a); return; }" in page, \
+    # jump-based rule would send it to the glyph-only gutter. It routes to its
+    # own bucket ahead of that rule, printed as words in the foot margin.
+    assert "if (a.kind === 'decision') { decisions.push(a); return; }" in page, \
         "a decision must render as words in the margin, not a gutter glyph"
     print("test_the_foot_band_states_and_acts: OK")
 
@@ -716,7 +714,7 @@ def test_document_flags_leave_the_first_section(page: str) -> None:
         "the scope registry must be injected from scripts/schema.py"
     assert "__DOC_SCOPE_KINDS__" not in page, "the placeholder must not ship raw"
     # Routing: a third bucket, at the one routing boundary.
-    assert "const gutter = [], margin = [], doc = [];" in page
+    assert "const gutter = [], margin = [], doc = [], decisions = [];" in page
     assert "if (DOC_SCOPE_KINDS.includes(a.kind)) { doc.push(a); return; }" in page, \
         "a document fact goes to neither column"
     # The slip.
@@ -839,6 +837,26 @@ def test_round2_lands_on_what_changed(page: str) -> None:
     assert "sectionAnswered(s, REVIEW_DATA.round)" in page, \
         "...and so does the landing, from its own round"
     print("test_round2_lands_on_what_changed: OK")
+
+
+def test_unanchored_decisions_fold_into_one_block(page: str) -> None:
+    """Decisions have no row to sit beside, so six stacked at the foot left
+    an 800px margin band beside empty prose. Two or more fold into one
+    `<details>` whose summary is the only height it adds until opened."""
+    assert "return { gutter, margin, doc, decisions };" in page
+    assert "if (decisions.length < 2) return annotStripHTML(decisions);" in page, \
+        "a lone decision still prints open"
+    assert "'<details class=\"decision-fold\"><summary>' + decisions.length" in page, \
+        "several decisions must fold behind one native disclosure"
+    assert "annotStripHTML(split.margin) + decisionFoldHTML(split.decisions)" in page, \
+        "the foot margin must place decisions through the fold"
+    # A fold, never a capped scroll (#186).
+    rule = re.search(r"\.decision-fold\s*\{([^}]*)\}", page)
+    assert rule, ".decision-fold must be styled"
+    assert "max-height" not in rule.group(1) and "overflow" not in rule.group(1)
+    assert "[open]" not in page.split("function decisionFoldHTML", 1)[1].split("}", 1)[0], \
+        "the fold ships closed"
+    print("test_unanchored_decisions_fold_into_one_block: OK")
 
 
 def test_one_decision_prints_once(page: str) -> None:
@@ -994,6 +1012,7 @@ def main() -> None:
             test_a_free_text_question_prints_its_question_once(page)
             test_the_stamp_never_prints_a_count_it_was_not_given(page)
             test_round2_lands_on_what_changed(page)
+            test_unanchored_decisions_fold_into_one_block(page)
             test_one_decision_prints_once(page)
             test_the_voice_composer_stays_where_it_opened(page)
             test_every_choice_has_a_keyboard_path(page)

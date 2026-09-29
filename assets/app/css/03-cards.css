@@ -289,6 +289,17 @@
    slots: info → teal, warn → violet (amber #ffc857), error → orange.
    Advisory only — they decorate a card, they never gate a verdict. */
 .annot-strip { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+/* Several unanchored decisions fold to one line (decisionFoldHTML); the
+   native <details> disclosure .chip-reveal uses, no nested scroll. */
+.decision-fold { margin-bottom: 12px; }
+.decision-fold summary {
+  cursor: pointer;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  color: var(--soft);
+}
+.decision-fold summary:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+.decision-fold[open] summary { margin-bottom: 5px; }
 .annot {
   display: flex;
   align-items: baseline;

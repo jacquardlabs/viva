@@ -418,6 +418,13 @@ on purpose, and `tests/_server_harness.py`'s `assert_catalog_ground` asserts
 the old `max-height: 60vh` rule stays gone. A scrolling margin cell is that
 same shape back, in a different selector.
 
+The ruling covers anchored notes only. A `decision` flag (#211) carries a
+section `id` and no anchor, so it has no sentence to sit beside and lands in
+the foot row's margin; six of them stacked there are height with no adjacency
+to buy. Two or more decisions on a section therefore fold into one native
+`<details>` "N decisions" block (`decisionFoldHTML`) that expands on demand —
+the same collapse, not a scroll. A lone decision still prints open.
+
 The 28px alley rides in `.rg`'s `padding-right` and `.rm`'s `padding-left`,
 never in `column-gap`, because a gap is drawn between zero-width tracks too.
 With the margin collapsed, `.doc.no-margin .row-head` drops to two tracks at
