@@ -101,17 +101,19 @@ def collect_decisions(viva_dir: Path) -> list[dict]:
 
 
 def build_decisions_block(entries: list[dict]) -> str:
-    """Render decision flags grouped by section heading, one bullet per
-    answered question — `message` is the question and answer verbatim,
-    exactly as `loop.py annotate` merged it."""
-    lines = ["### Decisions", ""]
+    """Render one bullet per distinct answered question, naming every section
+    it shaped (#211 emits a flag per section). `message` is the question and
+    answer verbatim, exactly as `loop.py annotate` merged it."""
+    shaped: dict[str, list[str]] = {}
     for e in entries:
-        lines.append(f"**{e.get('title', '')}**")
-        lines.append("")
         for flag in e.get("flags", []):
-            lines.append(f"- {flat(flag.get('message', ''))}")
-        lines.append("")
-    return "\n".join(lines).rstrip()
+            titles = shaped.setdefault(flat(flag.get("message", "")), [])
+            if e.get("title", "") not in titles:
+                titles.append(e.get("title", ""))
+    lines = ["### Decisions", ""]
+    lines += [f"- {msg} — " + ", ".join(f"**{t}**" for t in titles)
+              for msg, titles in shaped.items()]
+    return "\n".join(lines)
 
 
 def round_numbers(viva_dir: Path) -> list[int]:
