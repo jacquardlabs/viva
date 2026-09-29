@@ -465,6 +465,10 @@ def main() -> None:
     # finishing ledger silently reads "Signed off" instead of "Re-certified".
     if args.recheck:
         data["recheck"] = True
+    # Round 1 with a prior pair is `loop.py start`'s resume branch: the ledger
+    # reads `approved_ids` here as "unchanged since the last sign-off".
+    if args.round_num == 1 and prior_in is not None:
+        data["resumed"] = True
     # Validate at the boundary, on write, so a malformed round file never
     # reaches the server or a downstream reader.
     schema.validate_review_input(data)

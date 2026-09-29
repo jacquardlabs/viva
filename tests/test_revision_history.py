@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "revision_history.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+import schema  # noqa: E402
 
 
 def write_round(viva: Path, n: int, sections: list, verdicts: list) -> None:
@@ -259,6 +261,54 @@ def main() -> None:
     # An ordinary session (no `recheck` key) is unaffected — the default stays
     # "Signed off", not conditioned on some other round carrying the flag.
     assert "Signed off via viva review" in doc.read_text()
+
+    # A re-sign (resumed round 1) names what changed since the prior sign-off;
+    # three identical lines around one Decisions block was the bug.
+    viva12 = tmp / ".viva12"
+    viva12.mkdir()
+    doc12 = tmp / "doc12.md"
+    doc12.write_text("# Doc12\n\n## Goals\n\nbody\n")
+    resumed = [{"id": "s1", "title": "Goals", "content": "g"},
+               {"id": "s2", "title": "Error Handling", "content": "e2"},
+               {"id": "s3", "title": "Risks", "content": "r"}]
+    (viva12 / "review-input-r1.json").write_text(json.dumps(
+        {"mode": "review", "doc_file": "doc.md", "round": 1, "resumed": True,
+         "approved_ids": ["s1", "s3"], "sections": resumed}))
+    (viva12 / "review-r1.json").write_text(json.dumps(
+        {"round": 1, "submitted_early": False, "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "approved", "note": ""},
+            {"id": "s3", "verdict": "changes", "note": "name the owner"},
+        ]}))
+    # Round 2 (rearm): Risks rewritten in-session, a section added.
+    write_round(viva12, 2, resumed[:2] + [
+        {"id": "s3", "title": "Risks", "content": "r, owned"},
+        {"id": "s4", "title": "Rollout", "content": "o"}], [
+        {"id": s, "verdict": "approved", "note": ""} for s in ("s1", "s2", "s3", "s4")])
+    run(viva12, doc12)
+    assert ("Signed off via viva review — 2 rounds, 4 sections, 1 with comments; "
+            "re-signed, 3 changed since last sign-off: Error Handling, Risks, "
+            "Rollout. 2026-06-09") in doc12.read_text(), doc12.read_text()
+    assert schema.last_signoff_date(doc12.read_text()) == "2026-06-09"
+
+    # An unchanged re-sign says so rather than repeating the first line.
+    viva13 = tmp / ".viva13"
+    viva13.mkdir()
+    doc13 = tmp / "doc13.md"
+    doc13.write_text("# Doc13\n\n## Goals\n\nbody\n")
+    (viva13 / "review-input-r1.json").write_text(json.dumps(
+        {"mode": "review", "doc_file": "doc.md", "round": 1, "resumed": True,
+         "approved_ids": ["s1", "s2"], "sections": secs}))
+    (viva13 / "review-r1.json").write_text(json.dumps(
+        {"round": 1, "submitted_early": False, "sections": [
+            {"id": "s1", "verdict": "approved", "note": ""},
+            {"id": "s2", "verdict": "approved", "note": ""},
+        ]}))
+    run(viva13, doc13)
+    assert ("Signed off via viva review — 1 round, 2 sections, 0 with comments; "
+            "re-signed, unchanged since last sign-off. 2026-06-09") \
+        in doc13.read_text(), doc13.read_text()
+    assert "re-signed" not in doc2.read_text(), "a first sign-off reads as today"
 
     print("OK")
 

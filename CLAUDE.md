@@ -195,7 +195,9 @@ inheriting a finished session's `final` pass would add an unasked-for
 conjunct. `summary` carries only onto a **byte-identical** section
 (`parse_sections._carry_identical`, shared with the annotation carry, and
 `parse_diff._carry_summaries`) — changed content gets a stale description, so
-it drops and is rewritten.
+it drops and is rewritten. `resumed` is carried by neither: it marks only a
+resume's round 1, where `revision_history.py` reads what changed since the
+prior sign-off.
 
 **Validate at the boundary** — parse write and server read — never at the
 point of use. A field a reader forgets silently drops a feature; the boundary
