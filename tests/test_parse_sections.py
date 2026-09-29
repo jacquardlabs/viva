@@ -1055,12 +1055,64 @@ def test_recheck_round_two_carries_the_normal_way() -> None:
     print("  ok  test_recheck_round_two_carries_the_normal_way")
 
 
+def test_first_resume_after_signoff_carries_every_unchanged_section() -> None:
+    """The `---` revision_history.py emits on first sign-off belongs to the
+    ledger, not the last section — or that section re-presents on resume."""
+    ledger = ROOT / "scripts" / "revision_history.py"
+    doc_text = ("# Spec\n\n## Goals\n\ng\n\n## Design\n\nd\n\n"
+                "## Out of scope\n\no\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        viva = t / ".viva"
+        doc = t / "doc.md"
+        doc.write_text(doc_text, encoding="utf-8")
+        r1_in, r1_v = viva / "review-input-r1.json", viva / "review-r1.json"
+        subprocess.run([sys.executable, str(SCRIPT), str(doc),
+                        "--output", str(r1_in), "--round", "1"], check=True)
+        r1 = json.loads(r1_in.read_text(encoding="utf-8"))
+        r1["sections"][-1]["summary"] = "what is out"
+        r1_in.write_text(json.dumps(r1), encoding="utf-8")
+        r1_v.write_text(json.dumps({"round": 1, "submitted_early": False, "sections": [
+            {"id": s["id"], "verdict": "approved", "note": ""} for s in r1["sections"]]}))
+        subprocess.run([sys.executable, str(ledger), "--viva-dir", str(viva),
+                        "--doc", str(doc), "--date", "2026-09-28"], check=True)
+        signed = doc.read_text(encoding="utf-8")
+        assert "\n---\n\n## Revision History" in signed, signed
+
+        def resume(text: str) -> dict:
+            doc.write_text(text, encoding="utf-8")
+            out = t / "resume.json"
+            subprocess.run([sys.executable, str(SCRIPT), str(doc), "--output", str(out),
+                            "--round", "1", "--prior-input", str(r1_in),
+                            "--prior-verdicts", str(r1_v)], check=True)
+            return json.loads(out.read_text(encoding="utf-8"))
+
+        unchanged = resume(signed)
+        assert unchanged["approved_ids"] == ["s1", "s2", "s3", "s4"], unchanged["approved_ids"]
+        assert unchanged["sections"][-1]["content"] == "## Out of scope\n\no\n"
+        assert unchanged["sections"][-1].get("summary") == "what is out"
+
+        edited = resume(signed.replace("\nd\n", "\nd, revised\n", 1))
+        assert edited["approved_ids"] == ["s1", "s2", "s4"], edited["approved_ids"]
+    print("  ok  test_first_resume_after_signoff_carries_every_unchanged_section")
+
+
+def test_setext_underline_before_ledger_stays_in_its_section() -> None:
+    # `text\n---` with no blank line above is a setext heading, not a separator.
+    doc = "## A\n\na\n\n## B\n\ntext\n---\n\n## Revision History\n\nrow\n"
+    data = run(doc)
+    assert data["sections"][-1]["content"] == "## B\n\ntext\n---\n\n"
+    print("  ok  test_setext_underline_before_ledger_stays_in_its_section")
+
+
 def main() -> None:
     test_basic_h2_split()
     test_no_headings_single_section()
     test_single_heading_single_section()
     test_integrity_check_passes()
     test_revision_history_excluded()
+    test_first_resume_after_signoff_carries_every_unchanged_section()
+    test_setext_underline_before_ledger_stays_in_its_section()
     test_preamble_uses_h1_title()
     test_preamble_empty_omitted()
     test_ids_are_sequential()

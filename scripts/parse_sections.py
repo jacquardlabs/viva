@@ -45,6 +45,9 @@ from pathlib import Path
 
 import schema
 
+# A CommonMark thematic break: `---`, `***`, or `___`, three or more, spaces allowed.
+_THEMATIC_BREAK_RE = re.compile(r"^ {0,3}([-*_])(?: *\1){2,} *$")
+
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Parse markdown into viva review-input JSON")
@@ -162,6 +165,8 @@ def _split_sections(
         (h[2] for h in split_headings if h[1].strip().lower() == "revision history"),
         None,
     )
+    if rev_line is not None:
+        rev_line = _ledger_start(lines, rev_line)
     active = [(lv, t, idx) for lv, t, idx in split_headings
               if t.strip().lower() != "revision history"]
 
@@ -193,6 +198,22 @@ def _split_sections(
         s["id"] = f"s{i + 1}"
 
     return sections, rev_line
+
+
+def _ledger_start(lines: list[str], rev_line: int) -> int:
+    """Pull the cut back over a thematic break (and the blank lines around it)
+    right before `## Revision History`: `revision_history.py`'s first sign-off
+    emits that `---`, and in the last section it breaks the resume carry."""
+    i = rev_line
+    while i > 0 and not lines[i - 1].strip():
+        i -= 1
+    if i == 0 or not _THEMATIC_BREAK_RE.match(lines[i - 1].rstrip("\r\n")):
+        return rev_line
+    j = i - 1
+    while j > 0 and not lines[j - 1].strip():
+        j -= 1
+    # No blank line above it: a setext underline, the paragraph's own.
+    return j if j < i - 1 or j == 0 else rev_line
 
 
 def _integrity_check(text: str, sections: list[dict], rev_line: int | None) -> None:
