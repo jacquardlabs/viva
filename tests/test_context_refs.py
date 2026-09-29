@@ -168,7 +168,41 @@ def test_budget_over_is_flagged_when_explicit_files_exceed_it():
     got = resolve(["PRODUCT.md", "--max-bytes", "10"], cwd=tmp)
     assert got["refs"][0]["path"] == "PRODUCT.md", got
     assert got["budget"]["over"] is True, got["budget"]
+    assert got["dropped"] == [], got["dropped"]
     print("  ok  test_budget_over_is_flagged_when_explicit_files_exceed_it")
+
+
+def test_budget_over_is_flagged_when_named_files_exceed_the_file_cap():
+    """Named files past `--max-files` are kept, not dropped, so `over` is the
+    only signal the file cap was blown — it must not be computed from bytes
+    alone."""
+    tmp = _repo()
+    got = resolve(["docs/a.md", "docs/b.md", "docs/c.md", "--max-files", "2"],
+                  cwd=tmp)
+    assert [r["path"] for r in got["refs"]] == \
+        ["docs/a.md", "docs/b.md", "docs/c.md"], got["refs"]
+    assert got["dropped"] == [], got["dropped"]
+    assert got["budget"]["files"] == 3 and got["budget"]["bytes"] < 120_000, \
+        got["budget"]
+    assert got["budget"]["over"] is True, got["budget"]
+    print("  ok  test_budget_over_is_flagged_when_named_files_exceed_the_file_cap")
+
+
+def test_budget_within_both_caps_is_not_over():
+    tmp = _repo()
+    got = resolve(["docs/a.md", "docs/b.md", "--max-files", "2"], cwd=tmp)
+    assert got["budget"]["over"] is False, got["budget"]
+    print("  ok  test_budget_within_both_caps_is_not_over")
+
+
+def test_skill_reports_budget_over_and_its_blind_spot():
+    """`over` with nothing dropped reaches the human only if SKILL.md step 2
+    tells the agent to report it, uncounted remote refs included."""
+    skill = (ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md").read_text()
+    assert "**Report `budget.over`" in skill, "SKILL.md never instructs on budget.over"
+    assert "issue, PR,\nand URL refs aren't counted" in skill, \
+        "SKILL.md's budget.over notice must say remote refs aren't counted"
+    print("  ok  test_skill_reports_budget_over_and_its_blind_spot")
 
 
 def test_caps_must_be_positive():
@@ -200,9 +234,12 @@ def main() -> None:
     test_byte_cap_drops_are_reported_not_silent()
     test_explicit_file_is_never_dropped_but_still_spends()
     test_budget_over_is_flagged_when_explicit_files_exceed_it()
+    test_budget_over_is_flagged_when_named_files_exceed_the_file_cap()
+    test_budget_within_both_caps_is_not_over()
+    test_skill_reports_budget_over_and_its_blind_spot()
     test_caps_must_be_positive()
     test_binary_file_named_explicitly_is_kept_and_marked()
-    print("OK (13 tests)")
+    print("OK (16 tests)")
 
 
 if __name__ == "__main__":

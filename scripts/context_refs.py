@@ -7,7 +7,8 @@ into one bounded manifest (#170).
 
 Classifies and bounds; never fetches — an issue entry carries `fetch`, the
 `gh` argv (a list, never a shell string) to run. A directory expansion past
-the caps lands in `dropped[]` rather than truncating silently. A ref that
+the caps lands in `dropped[]`; a named file past them is kept and sets
+`budget.over` — neither truncates silently. A ref that
 resolves to nothing is a loud, non-zero exit.
 """
 from __future__ import annotations
@@ -115,7 +116,8 @@ class Budget:
     def report(self) -> dict:
         return {"max_files": self.max_files, "max_bytes": self.max_bytes,
                 "files": self.files, "bytes": self.bytes,
-                "over": self.bytes > self.max_bytes}
+                "over": (self.files > self.max_files
+                         or self.bytes > self.max_bytes)}
 
 
 def issue_entry(ref: str, repo, number: str, target: str) -> dict:
