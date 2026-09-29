@@ -184,7 +184,8 @@ _last_verdicts = None
 # rather than on the round payload's `mode`, which any caller can set.
 _launch_mode: str = "review"
 # The `--input` modes each launch mode boots on (#224) — a table, not
-# equality, since a launch mode may boot on another mode's input.
+# equality, since a launch mode may boot on another mode's input. The
+# first entry is what a mode-less input reads as.
 _BOOT_INPUT_MODES: dict[str, tuple[str, ...]] = {
     "review": ("review",), "qa": ("qa",), "diff": ("diff",)}
 # Serializes the /preferences/mute read-modify-write against a concurrent
@@ -209,6 +210,20 @@ def _push_sse(event: str, data: dict) -> None:
                 dead.append(wfile)
         for wfile in dead:
             _sse_clients.remove(wfile)
+
+
+def _boot_refusal(launch_mode: str, data: dict,
+                  table: dict[str, tuple[str, ...]] = _BOOT_INPUT_MODES) -> str | None:
+    """Why `--mode launch_mode` must not boot on `data`, or None. Absent
+    `mode` reads as the launch's first boot input, not "review" as at
+    /next-round: a mode-less file has only the launch to go by."""
+    accepted = table[launch_mode]
+    incoming = data.get("mode", accepted[0])
+    if incoming in accepted:
+        return None
+    return ("input mode %r does not match the server's launch mode (--mode %s, "
+            "which boots on %s inputs) — the browser's view is fixed at boot"
+            % (incoming, launch_mode, " or ".join(map(repr, accepted))))
 
 
 def parse_args() -> argparse.Namespace:
@@ -999,17 +1014,11 @@ if __name__ == "__main__":
         # Validated, then normalized — in that order, so a malformed `round`
         # still fails loudly here rather than being quietly replaced by 1.
         schema.default_round(_input_data)
-    # Absent `mode` reads as the LAUNCH mode here, not "review" as at
-    # /next-round: a mode-less file has only the launch to go by.
-    accepted = _BOOT_INPUT_MODES[args.mode]
-    incoming = _input_data.get("mode", args.mode)
-    if incoming not in accepted:
-        sys.exit("viva: invalid %s %s: input mode %r does not match the "
-                 "server's launch mode (--mode %s, which boots on %s inputs) "
-                 "— the browser's view is fixed at boot"
+    refusal = _boot_refusal(args.mode, _input_data)
+    if refusal:
+        sys.exit("viva: invalid %s %s: %s"
                  % ("qa-input" if args.mode == "qa" else "review-input",
-                    args.input, incoming, args.mode,
-                    " or ".join(map(repr, accepted))))
+                    args.input, refusal))
     _output_path = args.output
     _output_root = Path(args.output).resolve().parent
     _launch_mode = args.mode

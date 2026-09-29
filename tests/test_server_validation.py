@@ -117,7 +117,8 @@ def _integration() -> None:
         assert f"--mode {launch}" in result.stderr, result.stderr
         assert not (d / "server.url").exists(), "a refused launch must not bind a port"
 
-    # Absent reads as the LAUNCH mode, not "review" as at /next-round.
+    # Absent reads as the launch's first boot input (today, the launch mode
+    # itself), not "review" as at /next-round.
     for launch, data in (("diff", modeless), ("qa", {"questions": qa["questions"]})):
         d = Path(tempfile.mkdtemp())
         (d / "in.json").write_text(json.dumps(data))
@@ -136,8 +137,9 @@ def _boot(mode: str, d: Path) -> subprocess.CompletedProcess:
 
 
 def test_boot_table_covers_every_launch_mode():
-    """#241 adds a launch mode: the argparse choices derive from the table,
-    and every mode boots on its own input."""
+    """The argparse choices derive from the table, and each launch mode boots
+    on known round modes only. Not necessarily its own: #241's `session`
+    boots on `qa` and `diff` inputs."""
     import contextlib
     import io
     import server  # noqa: E402
@@ -146,7 +148,8 @@ def test_boot_table_covers_every_launch_mode():
         for mode, accepted in server._BOOT_INPUT_MODES.items():
             sys.argv = ["server.py", "--mode", mode, "--input", "x", "--output", "y"]
             assert server.parse_args().mode == mode
-            assert mode in accepted, f"--mode {mode} must boot on a {mode!r} input"
+            assert accepted, f"--mode {mode} needs a first boot input for a mode-less file"
+            assert set(accepted) <= {"review", "qa", "diff"}, (mode, accepted)
         sys.argv = ["server.py", "--mode", "nope", "--input", "x", "--output", "y"]
         with contextlib.redirect_stderr(io.StringIO()):
             try:
@@ -157,6 +160,19 @@ def test_boot_table_covers_every_launch_mode():
     finally:
         sys.argv = argv
     print("  ok  test_boot_table_covers_every_launch_mode")
+
+
+def test_absent_mode_reads_as_the_first_boot_input():
+    """A launch mode that doesn't boot on its own input (#241's `session`)
+    must still boot a mode-less file, as its first accepted input mode."""
+    import server  # noqa: E402
+    table = {"session": ("qa", "diff")}
+    assert server._boot_refusal("session", {}, table) is None
+    assert server._boot_refusal("session", {"mode": "diff"}, table) is None
+    refusal = server._boot_refusal("session", {"mode": "review"}, table)
+    assert refusal and "'qa' or 'diff' inputs" in refusal, refusal
+    assert server._boot_refusal("diff", {}) is None
+    print("  ok  test_absent_mode_reads_as_the_first_boot_input")
 
 
 def test_the_round_handler_guards_before_it_routes():
@@ -193,6 +209,7 @@ def main() -> None:
     _integration()
     test_the_round_handler_guards_before_it_routes()
     test_boot_table_covers_every_launch_mode()
+    test_absent_mode_reads_as_the_first_boot_input()
     print("OK")
 
 
