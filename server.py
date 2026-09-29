@@ -183,6 +183,10 @@ _last_verdicts = None
 # The launch `--mode`, fixed at startup. The finish guard keys on this
 # rather than on the round payload's `mode`, which any caller can set.
 _launch_mode: str = "review"
+# The `--input` modes each launch mode boots on (#224) — a table, not
+# equality, since a launch mode may boot on another mode's input.
+_BOOT_INPUT_MODES: dict[str, tuple[str, ...]] = {
+    "review": ("review",), "qa": ("qa",), "diff": ("diff",)}
 # Serializes the /preferences/mute read-modify-write against a concurrent
 # mute (single-reviewer, single-tab in practice, but cheap insurance against
 # two fast double-clicks or two tabs open on the same session — #142).
@@ -209,7 +213,7 @@ def _push_sse(event: str, data: dict) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="viva review server")
-    p.add_argument("--mode",       required=True, choices=["review", "qa", "diff"])
+    p.add_argument("--mode",       required=True, choices=list(_BOOT_INPUT_MODES))
     p.add_argument("--input",      required=True)
     p.add_argument("--output",     required=True)
     p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
@@ -995,6 +999,17 @@ if __name__ == "__main__":
         # Validated, then normalized — in that order, so a malformed `round`
         # still fails loudly here rather than being quietly replaced by 1.
         schema.default_round(_input_data)
+    # Absent `mode` reads as the LAUNCH mode here, not "review" as at
+    # /next-round: a mode-less file has only the launch to go by.
+    accepted = _BOOT_INPUT_MODES[args.mode]
+    incoming = _input_data.get("mode", args.mode)
+    if incoming not in accepted:
+        sys.exit("viva: invalid %s %s: input mode %r does not match the "
+                 "server's launch mode (--mode %s, which boots on %s inputs) "
+                 "— the browser's view is fixed at boot"
+                 % ("qa-input" if args.mode == "qa" else "review-input",
+                    args.input, incoming, args.mode,
+                    " or ".join(map(repr, accepted))))
     _output_path = args.output
     _output_root = Path(args.output).resolve().parent
     _launch_mode = args.mode

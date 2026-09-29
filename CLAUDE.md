@@ -211,7 +211,8 @@ thing that's wrong. `POST /next-round` validates every body (the old
 `if "sections" in new_data` gate let a round nested one level deep through
 with `{"ok":true}`, replaced the served round, and bricked the tab silently),
 and startup validation asks `args.mode`, not the payload — the same rule
-`/complete`'s guard follows. The browser's SSE `round` handler carries a
+`/complete`'s guard follows. Startup then refuses an input whose `mode` the
+launch doesn't boot on, per the `_BOOT_INPUT_MODES` table (#224). The browser's SSE `round` handler carries a
 matching refusal as a strand backstop: the cost of the server being wrong is a
 tab frozen forever, so the handler turns away a payload with no `sections[]`
 before overwriting `REVIEW_DATA`.
