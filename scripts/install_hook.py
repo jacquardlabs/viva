@@ -11,7 +11,7 @@ the commit, and is a no-op in a repo with no signed docs.
 Idempotent: re-running when the hook is already installed changes nothing.
 Appends to an existing `post-commit` rather than overwriting it, so an
 existing hook (pre-commit linting, whatever else) survives. The hook body
-resolves `$VIVA_DIR` at RUN TIME, the same resolve every skill uses — never
+resolves `$VIVA_DIR` at RUN TIME, the same cache search README uses — never
 baked in at install time, which would break silently on the next plugin
 version.
 """
@@ -25,7 +25,7 @@ from pathlib import Path
 MARKER_BEGIN = "# >>> viva drift hook (#143) >>>"
 MARKER_END = "# <<< viva drift hook (#143) <<<"
 
-# Same $VIVA_DIR resolve as every skill's bash block (README, SKILL.md):
+# Same $VIVA_DIR cache search as README's manual resolve:
 # highest cached version wins, by version number, not mtime.
 HOOK_BLOCK = f"""{MARKER_BEGIN}
 # Installed by scripts/install_hook.py — advisory only, never blocks the commit.

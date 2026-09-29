@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Behavioral guard for the $VIVA_DIR resolve pipeline (#101 / #139).
+"""Behavioral guard for the $VIVA_DIR resolve (#101 / #139).
 
-Extracts the pipeline from all three source copies (both SKILL.md files
-plus README.md), asserts they're identical, then runs it via a real
-subprocess against constructed fixture directories. Covers #139's three
-gaps: an unanchored `-path` glob, mtime-based tie-breaking instead of
-version, and an incomplete fail-loud hint — plus resolving to nothing
-(not some unrelated directory) on an empty search root.
+The skills resolve from `${CLAUDE_SKILL_DIR}`, run here after the same
+substitution Claude Code applies, with arguments. README keeps the cache
+search for manual use; it runs against fixture caches covering #139's three
+gaps. No SKILL.md may carry an argument placeholder Claude Code would eat.
 """
 from __future__ import annotations
 
@@ -19,11 +17,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-RESOLVE_SOURCES = [
-    ROOT / ".claude" / "skills" / "viva-review" / "SKILL.md",
-    ROOT / ".claude" / "skills" / "viva-write" / "SKILL.md",
-    ROOT / "README.md",
+SKILLS_DIR = ROOT / ".claude" / "skills"
+SKILL_SOURCES = [
+    SKILLS_DIR / "viva-review" / "SKILL.md",
+    SKILLS_DIR / "viva-write" / "SKILL.md",
 ]
+README = ROOT / "README.md"
+RESOLVE_SOURCES = SKILL_SOURCES + [README]
+
+SKILL_RESOLVE_RE = re.compile(
+    r"^# Claude Code substitutes CLAUDE_SKILL_DIR before this runs.*?\n"
+    r"# and a project-skill checkout alike, so the scripts always match this text\.\n"
+    r'VIVA_DIR=\$\(cd "\$\{CLAUDE_SKILL_DIR\}/\.\./\.\./\.\." 2>/dev/null && pwd\)\n'
+    r'\[ -f "\$VIVA_DIR/scripts/loop\.py" \][^\n]*\n',
+    re.M,
+)
+
+# Claude Code's argument placeholders (skills docs, "string substitutions"): `$N`
+# and `$ARGUMENTS[N]`/`$ARGUMENTS`. Exactly one backslash escapes one.
+PLACEHOLDER_RE = re.compile(r"(\\*)\$(\d|ARGUMENTS\b)")
 
 # Starts at the rationale comment so a "simplified" `ls -t` reopens #139
 # gap 2 as a match failure, not silently.
@@ -53,15 +65,106 @@ def _extract_resolve_block(path: Path) -> str:
     return m.group(0)
 
 
-def test_all_copies_identical():
-    blocks = {path: _extract_resolve_block(path) for path in RESOLVE_SOURCES}
-    canonical = blocks[RESOLVE_SOURCES[0]]
-    for path, block in blocks.items():
-        assert block == canonical, (
-            f"{path} resolve block differs from {RESOLVE_SOURCES[0]} — "
-            "the hand-maintained copies have drifted apart"
+def _extract_skill_resolve(path: Path) -> str:
+    m = SKILL_RESOLVE_RE.search(path.read_text(encoding="utf-8"))
+    assert m, f"{path}: ${{CLAUDE_SKILL_DIR}} resolve not found"
+    return m.group(0)
+
+
+def _unescaped_placeholders(text: str) -> list:
+    return [(text.count("\n", 0, m.start()) + 1, m.group(0))
+            for m in PLACEHOLDER_RE.finditer(text) if len(m.group(1)) != 1]
+
+
+def _substitute(text: str, skill_dir: Path, args: list) -> str:
+    """Claude Code's substitution as the docs state it: indexed args first
+    (an index with no argument stays literal), then `${CLAUDE_SKILL_DIR}`."""
+    def arg(m):
+        if len(m.group(1)) == 1:
+            return m.group(0)
+        tok = m.group(2)
+        if tok == "ARGUMENTS":
+            return m.group(1) + " ".join(args)
+        return m.group(1) + args[int(tok)] if int(tok) < len(args) else m.group(0)
+    return PLACEHOLDER_RE.sub(arg, text).replace("${CLAUDE_SKILL_DIR}", str(skill_dir))
+
+
+def test_no_skill_carries_an_argument_placeholder():
+    """A `$0` in a resolve pipeline became the first argument, so
+    `/viva-write prd` resolved `$VIVA_DIR` to nothing."""
+    skills = sorted(SKILLS_DIR.glob("*/SKILL.md"))
+    assert skills, "no SKILL.md found"
+    for path in skills:
+        hits = _unescaped_placeholders(path.read_text(encoding="utf-8"))
+        assert not hits, (
+            f"{path}: unescaped argument placeholder(s) {hits} — Claude Code "
+            "substitutes these with the invocation's arguments"
         )
-    print("  ok  test_all_copies_identical")
+    # The lint has teeth: the pre-fix awk line trips it, an escaped one doesn't.
+    assert _unescaped_placeholders("v[3]+0, $0}'")
+    assert _unescaped_placeholders("$ARGUMENTS[1] and \\\\$1")
+    assert not _unescaped_placeholders("costs \\$1.00, $VIVA_DIR, $(NF-1)")
+    print("  ok  test_no_skill_carries_an_argument_placeholder")
+
+
+def test_skill_copies_identical():
+    # Everything but the guard, whose `viva:`/`viva-write:` prefix differs by design.
+    blocks = ["\n".join(_extract_skill_resolve(path).split("\n")[:3]) for path in SKILL_SOURCES]
+    assert len(set(blocks)) == 1, f"the skills' resolve blocks drifted apart: {blocks}"
+    print("  ok  test_skill_copies_identical")
+
+
+def _run_skill_resolve(skill_md: Path, skill_dir: Path, args: list):
+    """Substitute the whole file as loaded, then run its resolve bash block."""
+    loaded = _substitute(skill_md.read_text(encoding="utf-8"), skill_dir, args)
+    m = re.search(r"^Resolve the plugin once.*?```bash\n(.*?)```", loaded, re.S | re.M)
+    assert m, f"{skill_md}: resolve bash block not found"
+    block = m.group(1)
+    return subprocess.run(
+        ["bash", "-c", block + 'printf "%s" "$VIVA_DIR"\n'],
+        capture_output=True, text=True, timeout=10,
+    )
+
+
+def test_skill_resolves_the_plugin_that_served_it():
+    """With arguments, and with a newer version cached beside it: the scripts
+    come from the plugin whose SKILL.md was loaded, never a cache search."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = Path(tmp) / "jacquardlabs-marketplace" / "viva"
+        served = cache / "2.14.0"
+        for version in ("2.14.0", "9.0.0"):
+            (cache / version / "scripts").mkdir(parents=True)
+            (cache / version / "scripts" / "loop.py").write_text("")
+        for skill_md, args in zip(SKILL_SOURCES, (["187"], ["prd", "docs/x.md"])):
+            skill_dir = served / ".claude" / "skills" / skill_md.parent.name
+            skill_dir.mkdir(parents=True)
+            result = _run_skill_resolve(skill_md, skill_dir, args)
+            assert result.returncode == 0, f"{skill_md.parent.name} {args}: {result.stdout}{result.stderr}"
+            assert Path(result.stdout).resolve() == served.resolve(), (
+                f"{skill_md.parent.name} {args} resolved {result.stdout!r}, expected {served}"
+            )
+
+    # Dogfooding: the same text, loaded as a project skill from this checkout.
+    for skill_md in SKILL_SOURCES:
+        result = _run_skill_resolve(skill_md, skill_md.parent, ["prd"])
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert Path(result.stdout).resolve() == ROOT.resolve(), result.stdout
+    print("  ok  test_skill_resolves_the_plugin_that_served_it")
+
+
+def test_unsubstituted_skill_dir_fails_loud():
+    """Where `${CLAUDE_SKILL_DIR}` reaches the shell unsubstituted, the guard
+    prints the install hint rather than running some other copy."""
+    for skill_md in SKILL_SOURCES:
+        block = _extract_skill_resolve(skill_md)
+        result = subprocess.run(
+            ["bash", "-c", block], capture_output=True, text=True, timeout=10,
+            env={k: v for k, v in os.environ.items() if k != "CLAUDE_SKILL_DIR"},
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        for step in HINT_STEPS:
+            assert step in result.stdout, result.stdout
+    print("  ok  test_unsubstituted_skill_dir_fails_loud")
 
 
 def test_every_copy_names_both_install_steps():
@@ -86,7 +189,7 @@ def _run_resolve(search_root: Path) -> str:
     """Run the canonical resolve pipeline with its search root swapped to
     a temp directory, and return the resolved $VIVA_DIR (empty string if
     the pipeline produced nothing)."""
-    block = _extract_resolve_block(RESOLVE_SOURCES[0])
+    block = _extract_resolve_block(README)
     script = block.replace("~/.claude/plugins/cache", str(search_root))
     script += '\nprintf "%s" "$VIVA_DIR"\n'
     result = subprocess.run(
@@ -192,14 +295,17 @@ def test_foreign_marketplace_alone_resolves_to_nothing():
 
 
 def main():
-    test_all_copies_identical()
+    test_no_skill_carries_an_argument_placeholder()
+    test_skill_copies_identical()
+    test_skill_resolves_the_plugin_that_served_it()
+    test_unsubstituted_skill_dir_fails_loud()
     test_every_copy_names_both_install_steps()
     test_empty_cache_resolves_to_nothing()
     test_identical_mtimes_pick_highest_version()
     test_version_components_compare_numerically()
     test_glob_is_anchored_to_the_viva_marketplace()
     test_foreign_marketplace_alone_resolves_to_nothing()
-    print("OK (7 tests)")
+    print("OK (10 tests)")
 
 
 if __name__ == "__main__":

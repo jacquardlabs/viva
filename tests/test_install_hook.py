@@ -4,8 +4,8 @@
 Installs a `post-commit` hook; idempotent; appends to an existing hook
 without clobbering it. The last two tests run the INSTALLED hook for real,
 in a scratch repo, with `$HOME` pointed at a fake plugin cache symlinked to
-this checkout — the same `find ~/.claude/plugins/cache` resolve every skill
-uses, exercised end to end rather than assumed.
+this checkout — the `find ~/.claude/plugins/cache` resolve README documents,
+exercised end to end rather than assumed.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def test_appends_to_an_existing_hook_without_clobbering() -> None:
 def _fake_home_with_plugin_cache(home: Path) -> None:
     """A fake `~/.claude/plugins/cache/.../viva/<ver>/` whose `server.py` and
     `scripts/` are the real ones — the `find ~/.claude/plugins/cache` resolve
-    every skill (and the installed hook) uses, pointed at this checkout."""
+    README and the installed hook use, pointed at this checkout."""
     cache = home / ".claude" / "plugins" / "cache" / "jacquardlabs-marketplace" / "viva" / "1.0.0"
     cache.mkdir(parents=True)
     (cache / "server.py").symlink_to(ROOT / "server.py")
