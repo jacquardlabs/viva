@@ -2,8 +2,9 @@
 """viva's review-loop driver — bookkeeping for launch → wait → act → rewrite,
 so SKILL.md carries only judgment work.
 
-Nine subcommands: `interview`, `start`, `annotate`, `summarize`, `arm`, `wait`,
-`rearm`, `finish`, `abandon` (#104, #102, #103, #125, #177, #179). A doc
+Ten subcommands: `interview`, `start`, `annotate`, `summarize`, `arm`, `wait`,
+`rearm`, `finish`, `abandon`, `session` (#104, #102, #103, #125, #177, #179,
+#240). A doc
 (`--doc`) is parsed by `parse_sections.py` and served `--mode review`; a diff
 (`--target`/`--kind`) is captured and parsed by `parse_diff.py`, served
 `--mode diff`. Every subcommand after `start` derives the round and reads the
@@ -18,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -472,6 +474,138 @@ def _diff_seam_or_arm(args, round_no: int, round_file: Path, data: dict) -> int:
     return cmd_arm(args)
 
 
+# ── the session record (#240) ─────────────────────────────────────────────────
+_ORIGIN_RE = re.compile(
+    r"github\.com[:/](?P<repo>[A-Za-z0-9._-]+/[A-Za-z0-9._-]+?)(?:\.git)?/?$")
+_COMMENT_URL_RE = re.compile(
+    r"^https://github\.com/(?P<repo>[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)"
+    r"/(?:issues|pull)/\d+#issuecomment-(?P<id>\d+)$")
+_COMMIT_SOURCE_RE = re.compile(r"^commit:(?P<path>[^@]+)@(?P<rev>[^@-][^@]*)$")
+
+
+def _git(cwd: Path, *argv) -> subprocess.CompletedProcess:
+    return run(["git", "-C", cwd, *argv], capture_output=True, text=True)
+
+
+def _session_path(viva: Path) -> Path | None:
+    """`<git common dir>/viva/session.json` — one per clone, shared by every
+    worktree of it. None outside a git repository."""
+    root = viva.resolve().parent
+    try:
+        proc = _git(root, "rev-parse", "--git-common-dir")
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        return None
+    # Relative in the main worktree, absolute in a linked one.
+    return (root / proc.stdout.strip()).resolve() / "viva" / "session.json"
+
+
+def _load_session(path: Path) -> dict:
+    """Raises OSError/ValueError on a record that won't read or validate."""
+    record = load_json(path)
+    schema.validate_session(record)
+    return record
+
+
+def _read_session(viva: Path) -> tuple[Path | None, dict | None]:
+    path = _session_path(viva)
+    if path is None or not path.exists():
+        return path, None
+    try:
+        return path, _load_session(path)
+    except (OSError, ValueError) as e:
+        die(f"invalid session record {path}: {e}. Delete it to discard the "
+            f"session.")
+    return path, None  # unreachable; die() raises
+
+
+def _write_session(path: Path, record: dict) -> None:
+    schema.validate_session(record)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    schema.atomic_write(path, json.dumps(record, indent=2) + "\n")
+
+
+def _owns(record: dict | None, viva: Path) -> bool:
+    """Is `viva` the `.viva/` whose epoch holds the session's live gate? The
+    record is per clone; a round in another worktree must not move it."""
+    return record is not None and Path(record["viva_dir"]) == viva.resolve()
+
+
+def _gate(record: dict, kind: str) -> str:
+    return next(g["state"] for g in record["gates"] if g["kind"] == kind)
+
+
+def _close_gate(record: dict, kind: str, opens: str | None = None) -> None:
+    for g in record["gates"]:
+        if g["kind"] == kind:
+            g["state"] = "done"
+        elif g["kind"] == opens:
+            g["state"] = "live"
+
+
+def _origin_repo(root: Path) -> str:
+    proc = _git(root, "remote", "get-url", "origin")
+    m = _ORIGIN_RE.search(proc.stdout.strip()) if proc.returncode == 0 else None
+    if not m:
+        die("--session needs a GitHub `origin` remote — a session ends at a "
+            "PR's sign-off")
+    return m.group("repo")
+
+
+def _pr_ref(target: dict, repo: str) -> str | None:
+    """A diff target as the record's `pr` form, `owner/repo#N`; None unless a PR."""
+    if target.get("kind") != "pr":
+        return None
+    return f"{target.get('repo') or repo}#{target.get('number')}"
+
+
+def _spec_source(viva: Path, ref: str, repo: str) -> dict:
+    """Resolve `--spec-source` to the record's `spec`, refusing a source that
+    carries no sign-off: the minutes read the ledger back from it."""
+    m = _COMMIT_SOURCE_RE.match(ref)
+    if m:
+        # Canonical repo-root form: #245 reads the path back from the record.
+        path = re.sub(r"^(\./)+", "", m.group("path"))
+        root = viva.resolve().parent
+        proc = _git(root, "rev-parse", "--verify", m.group("rev") + "^{commit}")
+        if proc.returncode != 0:
+            die(f"{m.group('rev')!r} is not a commit in this clone")
+        sha = proc.stdout.strip()
+        shown = _git(root, "show", f"{sha}:{path}")
+        if shown.returncode != 0:
+            die(f"{path} is not in {sha[:12]} — pass the repo-root path of the "
+                f"signed spec")
+        text, spec = shown.stdout, {"kind": "commit", "path": path, "sha": sha}
+    else:
+        m = _COMMENT_URL_RE.match(ref)
+        if not m:
+            die(f"--spec-source takes `commit:<path>@<sha>` or an issue comment "
+                f"URL, not {ref!r}")
+        if m.group("repo").lower() != repo.lower():
+            die(f"the spec comment is in {m.group('repo')}; this session is "
+                f"{repo}")
+        argv = ["gh", "api", f"repos/{m.group('repo')}/issues/comments/{m.group('id')}"]
+        try:
+            proc = run(argv, capture_output=True, text=True)
+        except FileNotFoundError:
+            die("--spec-source with a comment URL needs `gh` on PATH")
+        if proc.returncode != 0:
+            die(f"{' '.join(argv)} failed: {proc.stderr.strip()}")
+        try:
+            comment = json.loads(proc.stdout)
+            text, updated = comment["body"], comment["updated_at"]
+            if not isinstance(text, str) or not isinstance(updated, str):
+                raise TypeError
+        except (ValueError, KeyError, TypeError):
+            die(f"{' '.join(argv)} returned no comment body")
+        spec = {"kind": "comment", "url": ref, "updated_at": updated}
+    if not schema.has_revision_history(text):
+        die(f"{ref} carries no `## Revision History` — record the source the "
+            f"stamp produced, after the stamp")
+    return spec
+
+
 # ── subcommands ───────────────────────────────────────────────────────────────
 def cmd_interview(args) -> int:
     """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`, block
@@ -481,12 +615,29 @@ def cmd_interview(args) -> int:
     qa_in = Path(args.input)
     if not qa_in.exists():
         die(f"qa-input not found: {qa_in}")
+    if args.session:
+        session_path, record = _read_session(viva)
+        if session_path is None:
+            die("--session needs a git repository — the record lives in its "
+                "common dir")
+        if record:
+            die(f"session {record['id']} is already open in this clone "
+                f"({record['viva_dir']}); one per clone. `loop.py abandon` "
+                f"ends it.")
+        repo = _origin_repo(viva.resolve().parent)
     _preflight_no_live_session(viva)
     viva.mkdir(parents=True, exist_ok=True)
     answers = viva / "answers.json"
     # A stale `answers.json` would satisfy the wait below with no answer.
     _clear_state(viva, include_answers=True)
     base = _launch_server(viva, "qa", qa_in, answers)
+    if args.session:
+        record = {"id": uuid.uuid4().hex, "repo": repo,
+                  "viva_dir": str(viva.resolve()),
+                  "gates": [{"kind": k, "state": "live" if k == "intake" else "waiting"}
+                            for k in schema.SESSION_GATE_KINDS]}
+        _write_session(session_path, record)
+        print(f"viva-loop: session {record['id']} · {repo}", flush=True)
     # Flushed: this process now blocks on human time.
     print(f"viva-loop: interview open · {base}", flush=True)
 
@@ -682,6 +833,11 @@ def _start_doc(args, viva: Path) -> int:
             prior_out.unlink(missing_ok=True)
 
     round_file = round1_input
+    if args.handoff:
+        session_path, record = _read_session(viva)
+        if _owns(record, viva) and _gate(record, "intake") == "live":
+            _close_gate(record, "intake", opens="spec")
+            _write_session(session_path, record)
     if bundle:
         # The type's check set is RUN here, before any branch that could arm
         # — a check the driver doesn't run here never runs.
@@ -1111,6 +1267,7 @@ def cmd_finish(args) -> int:
         die(f"doc not found: {doc}. Re-run from the directory the review was "
             f"started in, or pass --doc <path>.")
 
+    session_path, record = _read_session(viva)
     base = server_url(viva)
     if not base:
         die(f"no live server to complete (no {viva}/server.url). The verdicts "
@@ -1140,6 +1297,12 @@ def cmd_finish(args) -> int:
          f"`loop.py abandon`.")
     print(f"viva-loop: signed off — {n} round(s), "
           f"{len(input_data.get('sections', []))} section(s)")
+    if _owns(record, viva) and _gate(record, "spec") == "live":
+        _close_gate(record, "spec")
+        _write_session(session_path, record)
+        print(f"viva-loop: session {record['id']} · spec gate closed — after "
+              f"the stamp, `loop.py session --spec-source <commit:path@sha | "
+              f"comment URL>`")
     # Only a signed-off session learns; the clustering asked for is judgment work.
     print(f"viva-loop: record this session's recurring critiques → "
           f"{REFERENCES / 'preferences.md'}")
@@ -1156,6 +1319,10 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
         die("--doc is a doc-review override; a diff session records its target "
             "in target.json")
     record, cwd = _target_record(viva)
+    session_path, session = _read_session(viva)
+    # `pr` is set only at the join (#242); an unjoined session ends at no diff.
+    closes = (session is not None and "pr" in session
+              and session["pr"] == _pr_ref(record, session["repo"]))
     base = server_url(viva)
     if not base:
         die(f"no live server to complete (no {viva}/server.url). The verdicts "
@@ -1173,6 +1340,7 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
         print("viva-loop: diff fully resolved — nothing to commit")
         print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
               f"{revised} revised")
+        _end_session(session_path, session, closes)
         return 0
 
     if not schema.round_is_complete(input_data, verdicts):
@@ -1212,14 +1380,31 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
          "The server may need `loop.py abandon`.")
     print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
           f"{revised} revised")
+    _end_session(session_path, session, closes)
     return 0
+
+
+def _end_session(path: Path | None, record: dict | None, closes: bool) -> None:
+    """The diff gate's sign-off ends the session; its record goes with it."""
+    if closes:
+        path.unlink(missing_ok=True)
+        print(f"viva-loop: session {record['id']} signed off — record removed")
 
 
 def cmd_abandon(args) -> int:
     viva = Path(args.viva_dir)
+    session_path, record = _session_path(viva), None
+    if session_path is not None and session_path.exists():
+        try:
+            record = _load_session(session_path)
+        except (OSError, ValueError) as e:
+            session_path.unlink()
+            warn(f"removed an invalid session record {session_path}: {e}")
     base = server_url(viva)
     if not base:
-        die(f"no live session to abandon (no {viva}/server.url)")
+        if record is None:
+            die(f"no live session to abandon (no {viva}/server.url)")
+        return _abandon_stale_session(viva, session_path, record)
 
     # Over HTTP, not by signal: `start` detaches the server, so this process
     # holds no child handle.
@@ -1238,6 +1423,39 @@ def cmd_abandon(args) -> int:
     n = current_round(viva)
     where = f" at round {n}" if n else ""
     print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
+    if _owns(record, viva):
+        session_path.unlink(missing_ok=True)
+        print(f"viva-loop: session {record['id']} ended — record removed")
+    return 0
+
+
+def _abandon_stale_session(viva: Path, path: Path, record: dict) -> int:
+    """No server here, but a session record: end it, unless another
+    worktree's server is still serving it."""
+    owner = Path(record["viva_dir"])
+    if not _owns(record, viva):
+        live = server_url(owner)
+        if live and probe_input(live, timeout=_PREFLIGHT_TIMEOUT) is not None:
+            die(f"session {record['id']} is live at {live} — abandon it from "
+                f"there: `loop.py --viva-dir {owner} abandon`")
+    path.unlink(missing_ok=True)
+    print(f"viva-loop: session {record['id']} ended — record removed; no gate "
+          f"was signed off by this.")
+    return 0
+
+
+def cmd_session(args) -> int:
+    viva = Path(args.viva_dir)
+    path, record = _read_session(viva)
+    if record is None:
+        die("no session in this clone — `loop.py interview --session` opens one")
+    if _gate(record, "spec") != "done":
+        die(f"session {record['id']}'s spec gate is {_gate(record, 'spec')} — "
+            f"`loop.py finish` and stamp it before recording its source")
+    record["spec"] = _spec_source(viva, args.spec_source, record["repo"])
+    _write_session(path, record)
+    print(f"viva-loop: session {record['id']} · spec source recorded "
+          f"({record['spec']['kind']})")
     return 0
 
 
@@ -1253,6 +1471,11 @@ def main() -> int:
                    help="the QAInput JSON the caller wrote (references/qa.md). "
                         "Answers land in .viva/answers.json and on stdout; "
                         "the server stays up for `start --handoff`.")
+    p.add_argument("--session", action="store_true",
+                   help="open a lifecycle session (#239): write its record to "
+                        "the git common dir, shared by every worktree, where it "
+                        "survives the state clear until the diff gate signs off "
+                        "or `abandon` ends it")
     p.set_defaults(func=cmd_interview)
 
     p = sub.add_parser("start", help="clear state, parse round 1, arm it — a "
@@ -1361,6 +1584,15 @@ def main() -> int:
     p = sub.add_parser("abandon", help="end an unfinished session — the one "
                                        "exit that is not a sign-off")
     p.set_defaults(func=cmd_abandon)
+
+    p = sub.add_parser("session", help="record the signed spec's source on the "
+                                       "session, after the stamp")
+    p.add_argument("--spec-source", required=True, metavar="REF",
+                   help="what the stamp produced: `commit:<path>@<sha>` (path "
+                        "from the repo root) or an issue comment URL. Refused "
+                        "before the spec gate closes, or on a source with no "
+                        "`## Revision History`.")
+    p.set_defaults(func=cmd_session)
 
     args = ap.parse_args()
     return args.func(args)
