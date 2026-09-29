@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.16.1 (2026-09-29)
+
+### Performance Improvements
+
+- Load the diff2html bundles only when a page turns diff
+  ([#256](https://github.com/jacquardlabs/viva/pull/256),
+  [`974d9dc`](https://github.com/jacquardlabs/viva/commit/974d9dcc4981ce90e5366c5a3d44856a9f6dd408))
+
+
 ## v2.16.0 (2026-09-29)
 
 ### Features
