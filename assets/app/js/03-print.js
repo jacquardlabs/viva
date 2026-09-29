@@ -955,10 +955,8 @@ function retryOnceScriptsLoad(scriptIds, selector) {
   });
 }
 retryOnceScriptsLoad(['marked-script', 'dompurify-script'], '.section-content.md-raw');
-retryOnceScriptsLoad(['diff2html-script', 'diff2html-ui-script'], '.section-content.d2h-pending');
-// The third d2h dependency — the mode-injected stylesheet — gets its retry
-// listener attached at dispatch time, when the <link> actually exists (see
-// the diff branch); attaching here would silently no-op on a null element.
+// The three d2h assets get their retry at injection (loadDiff2html), when the
+// elements exist; attaching here would silently no-op on a null element.
 
 function skipReviewCard(id) {
   setCardExpanded(el('rcard-' + id), false);

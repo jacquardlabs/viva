@@ -107,20 +107,14 @@ def test_page_ships_diff_mode_sort_toggle_guard(page: str) -> None:
 
 
 def test_page_ships_mode_diff_layout(page: str) -> None:
-    """Wiring check: diff dispatch stamps mode-diff on <body>, injects the
-    diff2html stylesheet, and ships the mode-scoped layout overrides."""
+    """Wiring check: diff dispatch stamps mode-diff on <body>, loads the
+    diff2html assets, and ships the mode-scoped layout overrides."""
     m = re.search(r"mode === 'diff'\) \{(.*?)\} else", page, re.S)
     assert m, "page missing: diff dispatch branch"
     branch = m.group(1)
     assert "document.body.classList.add('mode-diff')" in branch, \
         "diff branch does not stamp mode-diff on body"
-    for needle in (
-        "d2hCss.id = 'diff2html-css'",
-        # Local, version-stamped route — never jsdelivr (#144).
-        "d2hCss.href = '/vendor/diff2html-3.4.56.min.css'",
-        "retryOnceScriptsLoad(['diff2html-css']",
-    ):
-        assert needle in branch, f"diff branch missing stylesheet injection/retry: {needle}"
+    assert "loadDiff2html();" in branch, "diff branch does not load the diff2html assets"
     m = re.search(r"\.mode-diff \.shell,\s*\.mode-diff \.bottom-inner \{[^}]*\}", page)
     assert m and "min(95vw, 1600px)" in m.group(0), \
         "page missing: mode-diff wide shell/bottom-bar rule"
@@ -131,14 +125,30 @@ def test_page_ships_mode_diff_layout(page: str) -> None:
 
 
 def test_page_ships_diff2html_renderer(page: str) -> None:
-    """Wiring check: the page loads diff2html@3 scripts and ships
-    renderDiffHunk with sanitize-BEFORE-DOM, a CSS-readiness gate, and
-    aria-hidden line numbers. The hand-rolled renderer stays gone."""
-    for tag in (
-        'id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"',
-        'id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"',
+    """Wiring check: loadDiff2html injects diff2html@3's stylesheet and both
+    bundles, and the page ships renderDiffHunk with sanitize-BEFORE-DOM, a
+    CSS-readiness gate, and aria-hidden line numbers. The hand-rolled
+    renderer stays gone."""
+    m = re.search(r"function loadDiff2html\(.*?\n\}", page, re.S)
+    assert m, "page missing: function loadDiff2html"
+    loader = m.group(0)
+    for needle in (
+        # Idempotent, so a later diff round (#241) can call it again.
+        "if (el('diff2html-css')) return;",
+        "d2hCss.id = 'diff2html-css'",
+        # Local, version-stamped routes — never jsdelivr (#144).
+        "d2hCss.href = '/vendor/diff2html-3.4.56.min.css'",
+        "d2hJs.id = 'diff2html-script'",
+        "d2hJs.src = '/vendor/diff2html-3.4.56.min.js'",
+        "d2hUi.id = 'diff2html-ui-script'",
+        "d2hUi.src = '/vendor/diff2html-ui-slim-3.4.56.min.js'",
+        "retryOnceScriptsLoad(['diff2html-css', 'diff2html-script', 'diff2html-ui-script'],\n"
+        "    '.section-content.d2h-pending')",
     ):
-        assert tag in page, f"page missing script tag: {tag}"
+        assert needle in loader, f"loadDiff2html missing: {needle}"
+    # The retry must attach after the elements exist, or el() finds nothing.
+    assert loader.index("document.head.append(") < loader.index("retryOnceScriptsLoad("), \
+        "loadDiff2html attaches its retry before the assets are in the DOM"
     m = re.search(r"function renderDiffHunk\(.*?\n\}", page, re.S)
     assert m, "page missing: function renderDiffHunk"
     body = m.group(0)
@@ -184,7 +194,6 @@ def test_page_ships_d2h_guards(page: str) -> None:
         "user-select: none",
         "position: relative; border-radius: 6px;",
         "function retryOnceScriptsLoad",
-        "retryOnceScriptsLoad(['diff2html-script', 'diff2html-ui-script'], '.section-content.d2h-pending')",
         "retryOnceScriptsLoad(['marked-script', 'dompurify-script'], '.section-content.md-raw')",
     ):
         assert needle in page, f"page missing: {needle}"

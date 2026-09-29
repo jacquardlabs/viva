@@ -453,6 +453,28 @@ function setDocTitleBlock(data, modeWord, docFallback) {
   el('doc-title').innerHTML     = 'viva <em>' + modeWord + '</em>';
 }
 
+// diff2html's stylesheet and two bundles, injected only once a page turns
+// diff (#198), so review and qa never fetch them. Idempotent: a later diff
+// round may call it again. Versions pinned per assets/vendor/README.md.
+function loadDiff2html() {
+  if (el('diff2html-css')) return;
+  const d2hCss = document.createElement('link');
+  d2hCss.id = 'diff2html-css';
+  d2hCss.rel = 'stylesheet';
+  d2hCss.href = '/vendor/diff2html-3.4.56.min.css';
+  const d2hJs = document.createElement('script');
+  d2hJs.id = 'diff2html-script';
+  d2hJs.src = '/vendor/diff2html-3.4.56.min.js';
+  const d2hUi = document.createElement('script');
+  d2hUi.id = 'diff2html-ui-script';
+  d2hUi.src = '/vendor/diff2html-ui-slim-3.4.56.min.js';
+  document.head.append(d2hCss, d2hJs, d2hUi);
+  // renderDiffHunk gates on all three, so load order is moot: each arrival
+  // re-renders a d2h-pending card, and the last one upgrades it.
+  retryOnceScriptsLoad(['diff2html-css', 'diff2html-script', 'diff2html-ui-script'],
+    '.section-content.d2h-pending');
+}
+
 // Shared boot tail for the two review-card modes (review and diff) — the
 // title block, round badge, view reveal, card build, and SSE hookup are
 // identical apart from the mode word and the doc-path fallback.
@@ -493,16 +515,7 @@ Promise.all([
     } else if (data.mode === 'diff') {
       REVIEW_DATA = data;
       document.body.classList.add('mode-diff');
-      // diff2html's stylesheet is mode-specific, so it's injected here rather
-      // than a render-blocking <link> in <head>. renderDiffHunk gates on
-      // link.sheet; the retry here upgrades a fenced-view card once the CSS
-      // arrives (version pinned per assets/vendor/README.md).
-      const d2hCss = document.createElement('link');
-      d2hCss.id = 'diff2html-css';
-      d2hCss.rel = 'stylesheet';
-      d2hCss.href = '/vendor/diff2html-3.4.56.min.css';
-      document.head.appendChild(d2hCss);
-      retryOnceScriptsLoad(['diff2html-css'], '.section-content.d2h-pending');
+      loadDiff2html();
       bootReviewMode(data, 'diff', 'diff');
     } else {
       // `choices` is OPTIONAL on the wire (references/qa.md) — normalized once

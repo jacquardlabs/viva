@@ -1356,8 +1356,9 @@ scripts, styles and both faces alike; see
 Two bundles: the core (`diff2html.min.js`, the `Diff2Html.html` string API)
 and the slim UI wrapper (`diff2html-ui-slim.min.js`, syntax highlighting
 only, fed the page's own hljs — the full UI bundle embeds a second hljs
-copy and is deliberately not used). The stylesheet is mode-specific and
-injected by the diff dispatch branch, so review/QA sessions never fetch it.
+copy and is deliberately not used). Both bundles and the stylesheet are
+mode-specific: `loadDiff2html` injects all three from the diff dispatch
+branch, so review/QA sessions never fetch them (#198).
 
 The `renderDiffHunk` adapter strips the section's ` ```diff ` fence,
 synthesizes the `---/+++` preamble from the section title's filepath at
