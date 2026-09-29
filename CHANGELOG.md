@@ -2,6 +2,67 @@
 
 <!-- version list -->
 
+## v2.14.1 (2026-09-29)
+
+### Bug Fixes
+
+- Resolve $VIVA_DIR from ${CLAUDE_SKILL_DIR} so skill arguments can't corrupt it
+  ([#247](https://github.com/jacquardlabs/viva/pull/247),
+  [`440c261`](https://github.com/jacquardlabs/viva/commit/440c2614667a5feb7aaa0995a1af75150ef68a00))
+
+### Chores
+
+- Trial prd, tech-spec, and adr as repo-level doc types
+  ([#238](https://github.com/jacquardlabs/viva/pull/238),
+  [`082df19`](https://github.com/jacquardlabs/viva/commit/082df19c8387a902e7b6d405f10e1cce6510728f))
+
+### Documentation
+
+- Point the frontend's docs and comments at assets/app/
+  ([#246](https://github.com/jacquardlabs/viva/pull/246),
+  [`962fe2e`](https://github.com/jacquardlabs/viva/commit/962fe2e2fc5c49472945b22be3ae4a4c257b5fd8))
+
+### Refactoring
+
+- Compose HTML from assets/app/ ([#246](https://github.com/jacquardlabs/viva/pull/246),
+  [`962fe2e`](https://github.com/jacquardlabs/viva/commit/962fe2e2fc5c49472945b22be3ae4a4c257b5fd8))
+
+- Consolidate scripts/ idioms and fix two escaping bugs
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Dedupe server.py's JS/CSS and inline loop.py's one-caller helper
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Dedupe tests/ launch/runner boilerplate; validate before dropping or-[] tails
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Delete checklist.py, pass.posture, and narrow schema.py's I/O pin
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Delete dead comments, ids, imports, and a superseded test
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Drop unused import, document new schema.py helpers in CLAUDE.md
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Finish G-09/G-18 — encode load_json reads, delegate server.py's atomic write
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+- Shipped_source reads HTML; drop _TEMPLATE ([#246](https://github.com/jacquardlabs/viva/pull/246),
+  [`962fe2e`](https://github.com/jacquardlabs/viva/commit/962fe2e2fc5c49472945b22be3ae4a4c257b5fd8))
+
+- Séance cleanup — resolve 27 of 30 register ghosts
+  ([#233](https://github.com/jacquardlabs/viva/pull/233),
+  [`eaae198`](https://github.com/jacquardlabs/viva/commit/eaae19834f30ae7ad00de7c7b1edf6ad41d2ae3b))
+
+
 ## v2.14.0 (2026-09-06)
 
 ### Features
