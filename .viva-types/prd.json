@@ -1,0 +1,14 @@
+{
+  "name": "prd",
+  "title": "Product requirements (PRD)",
+  "sections": [
+    "Problem & persona",
+    "User journey",
+    "Success signal",
+    "Scope and out of scope",
+    "Alternatives considered",
+    "Open questions"
+  ],
+  "checks": ["headings-present"],
+  "default_pass": "architecture"
+}
