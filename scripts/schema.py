@@ -29,8 +29,8 @@ from typing import TypedDict
 # AST-walks that one function's body, not the whole module.
 
 # Bare token for a section/question `id`: no `"`, `<`, `>`, `'`, `&`, or
-# whitespace, since `server.py` interpolates `id` unescaped into HTML
-# attributes (`buildReviewCard`/`buildQACard`).
+# whitespace, since the frontend interpolates `id` unescaped into HTML
+# attributes (`buildReviewCard`/`buildQACard` under assets/app/js/).
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 # Verdicts that earn a Revision-History ledger row. `approved`/`pending` do not.

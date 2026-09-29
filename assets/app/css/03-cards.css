@@ -1,0 +1,603 @@
+/* ─── Cards ──────────────────────────────────────────────── */
+.cards { display: flex; flex-direction: column; gap: 6px; }
+
+/* ─── diff-mode file grouping: static divider above each run of hunks
+   belonging to the same file. Landmark, not a heading — same quiet
+   typographic register as .diff-toggle. ─── */
+.file-group-header {
+  color: var(--text3);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 2px 0;
+}
+
+/* ─── Confidence triage sort (issue #12) ─────────────────── */
+.sort-bar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.sort-toggle {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 4px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: none;
+}
+.sort-toggle:hover { color: var(--ink); border-color: var(--ink); }
+.sort-toggle.is-active { color: var(--violet); border-color: var(--violet); background: var(--violet-bg); }
+
+/* ─── Bottom-bar toggles (prefs #142, theme, voice) ───────────
+   One face for all three: prefs lives inside #stats-area beside the
+   (aria-live) verdict counters — a static label, never an interpolated
+   count, so it never competes with the counters for that region's
+   announcement. Theme and voice each state their mode in words rather than
+   a glyph — a glyph makes the reader guess which state it names. */
+.prefs-toggle, .theme-toggle, .voice-toggle {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--soft);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+}
+.prefs-toggle:hover, .theme-toggle:hover, .voice-toggle:hover { color: var(--ink); border-color: var(--ink); }
+/* Cobalt only while listening — an idle control isn't doing anything yet. */
+.voice-toggle.is-live { color: var(--acc); border-color: var(--acc); }
+
+/* Session controls — prefs, voice, theme — as ONE unit so they wrap together;
+   an auto margin on a single item would wrap that item alone. */
+.bar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The transcript: every utterance prints here with the reading it got,
+   INCLUDING ones that matched no verb, so nothing is silently swallowed. */
+.mode-doc .voice-strip, .mode-qa .voice-strip { max-width: 1054px; }
+.voice-strip {
+  max-width: 1240px;
+  margin: 0 auto 8px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.voice-strip .vs-state { color: var(--acc); font-weight: 600; text-transform: uppercase; }
+.voice-strip .vs-heard { color: var(--text); }
+.voice-strip .vs-read  { color: var(--text3); }
+/* Interim results are the recognizer still deciding — shown so the reviewer
+   can see it is hearing them, dimmed so it never reads as the record. */
+.voice-strip .vs-interim { color: var(--text3); font-style: italic; }
+.voice-notice { color: var(--text2); }
+.voice-notice button {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--acc);
+  background: none;
+  border: 1px solid var(--acc);
+  border-radius: 0;
+  padding: 3px 9px;
+  margin-left: 8px;
+}
+
+/* A section is a run of the print, not a box on it: separated by a hairline
+   above and the heading's own weight, not a border/panel. */
+.card {
+  position: relative;
+  border: none;
+  border-top: 1px solid var(--rule);
+  background: none;
+  transition: opacity 0.35s;
+  animation: fadeUp 0.4s ease both;
+}
+.card:first-child { border-top: none; }
+
+/* The active card is marked by its edge and elevation below, not corner glyphs. */
+
+/* #paper is the page's content wrapper that every layout rule and test hangs
+   off — no frame, no edge border, no corner marks. */
+#paper { position: relative; max-width: 1240px; margin: 0 auto; background: var(--paper); }
+
+/* Entrance stagger is set inline per card as `animation-delay: 0.04 + i*0.04s`
+   in buildReviewCard/buildQACard — it scales to any doc length and, being an
+   inline style, overrides any :nth-child rule, so none are defined here. */
+
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.card.is-approved { opacity: 0.72; }
+.card.is-approved:hover { opacity: 1; transition: opacity 0.2s; }
+
+/* Carried card (round >= 2 prior approval): dimmed head-only line, a touch
+   brighter than is-approved so reveal/withdraw affordances stay discoverable. */
+.card.is-carried { opacity: 0.72; }
+.card.is-carried:hover, .card.is-carried:focus-within { opacity: 1; transition: opacity 0.2s; }
+.carried-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  min-height: 48px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.carried-head:hover { background: var(--bg3); }
+.carried-head .card-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.carried-marker {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.carried-show, .carried-withdraw {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--soft);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+.carried-show { text-decoration: underline dotted; text-underline-offset: 3px; }
+.carried-show:hover { color: var(--accent); }
+.carried-withdraw:hover { color: var(--orange); }
+.carried-stamp {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: 2px;
+  padding: 2px 7px;
+  transform: rotate(-2deg);
+  flex-shrink: 0;
+}
+.carried-body { padding: 0 14px 14px; }
+
+/* The live section is marked where the reader's eye already is — at the
+   heading — not by outlining the whole run. */
+.card.is-active { box-shadow: none; }
+.card.is-active .card-head { border-left: 2px solid var(--ink); margin-left: -2px; }
+
+/* ─── Card head ──────────────────────────────────────────── */
+.card-head {
+  /* Native <button> reset — the header is a real button (a11y) but must look
+     like the surrounding card chrome, not a default button. */
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s;
+  min-height: 0;
+  padding: 14px 14px 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+/* No fill on hover — a filled band would rebuild the panel the flattening
+   just removed. The title takes the accent instead. */
+.card-head:hover { background: none; color: var(--acc); }
+
+/* dot */
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.25s, box-shadow 0.25s;
+}
+.dot-idle     { background: var(--faint); }
+.dot-active   { background: var(--acc); box-shadow: none; }
+/* Flat dots — printed, not lit. */
+.dot-approved { background: var(--machine); box-shadow: none; }
+.dot-changes  { background: var(--acc);     box-shadow: none; }
+.dot-info     { background: var(--fact);    box-shadow: none; }
+/* Revision triangle — drafting's "this region changed at this rev" flag, keyed
+   to the titleblock REV and the revision log. */
+.rev-tri { font-family: 'Fragment Mono', monospace; font-size: 11px; font-weight: 600; color: var(--orange); letter-spacing: 0.04em; margin-left: 10px; flex-shrink: 0; align-self: center; }
+/* Cumulative revision count (#141) — a second run inside .rev-tri, not a
+   separate badge; var(--text3) not the triangle's orange. Decorative, no focus target. */
+.rev-tri .rev-mult { font-size: 9px; color: var(--text3); letter-spacing: 0.1em; }
+
+/* Flex column so the title + inline-note <span>s stack as they did when divs
+   (the header is now a <button>, whose content must be phrasing-level spans). */
+.card-title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* Scoped override of `.section-summary` for the COLLAPSED list view (#188):
+   always one line, ellipsized rather than growing the row. Relies on
+   `.card-title-wrap`'s `min-width: 0` for the truncation to take effect. */
+.card-title-wrap .section-summary {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text3);
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-inline {
+  font-size: 11px;
+  color: var(--text3);
+  font-style: italic;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* verdict badge */
+.vbadge {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vbadge-approved { background: var(--teal-bg);   color: var(--teal);   }
+.vbadge-changes  { background: var(--orange-bg);  color: var(--orange); }
+.vbadge-info     { background: var(--violet-bg);  color: var(--violet); }
+
+/* annotation strip — advisory pre-review flags. Reuses the verdict color
+   slots: info → teal, warn → violet (amber #ffc857), error → orange.
+   Advisory only — they decorate a card, they never gate a verdict. */
+.annot-strip { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.annot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 6px 9px;
+  border-radius: 5px;
+  border-left: 2px solid var(--border2);
+}
+.annot-kind {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.annot-msg { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+/* deep-link to a conflicting section (contradiction producer): rendered when an
+   annotation's anchor matches a section id. */
+.annot-jump {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--violet);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.annot-jump:hover { filter: brightness(1.2); }
+.annot-info  { background: var(--teal-bg);   border-color: var(--teal);   }
+.annot-warn  { background: var(--violet-bg);  border-color: var(--violet); }
+/* An error flag is still the machine's news — the facts ink at every
+   severity, the glyph carrying the difference; cobalt is the reviewer's. */
+.annot-error { background: var(--violet-bg);  border-color: var(--violet); }
+.annot-info  .annot-kind { color: var(--teal);   }
+.annot-warn  .annot-kind { color: var(--violet); }
+.annot-error .annot-kind { color: var(--violet); font-weight: 700; }
+
+/* round-to-round diff — added/removed lines vs the prior round on a rewritten
+   card. Reuses the verdict slots: added → teal, removed → orange. Presentational
+   only; it never alters a verdict. Shown by default, collapsible. */
+.diff-block { margin-bottom: 12px; border: 1px solid var(--border2); border-radius: 6px; overflow: hidden; }
+.diff-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+.diff-toggle:hover { color: var(--teal); }
+.diff-block.collapsed .diff-toggle { border-bottom: none; }
+.diff-block.collapsed .diff-body { display: none; }
+.diff-body {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+/* Prose sections diff as whole paragraphs (one line each) so lines wrap
+   instead of scrolling horizontally. Word-level marks (.dw, markWordDiff)
+   show what moved inside a paired rewrite. */
+.diff-line { display: flex; padding: 0 9px; }
+.diff-gutter { flex-shrink: 0; width: 1.1em; opacity: 0.6; user-select: none; }
+.diff-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; }
+.diff-add { background: var(--teal-bg);   color: var(--teal);   }
+.diff-del { background: var(--orange-bg); color: var(--orange); }
+.diff-add .dw { background: color-mix(in srgb, var(--teal) 30%, transparent);   border-radius: 2px; }
+.diff-del .dw { background: color-mix(in srgb, var(--orange) 30%, transparent); border-radius: 2px; }
+.diff-ctx { color: var(--text2); }
+.diff-hunk { color: var(--violet); padding: 1px 9px; opacity: 0.7; white-space: pre; }
+
+/* ─── diff2html output (diff mode) ─────────────────────────
+   Rendering delegated to diff2html (renderDiffHunk); these rules bend its
+   chrome without forking its stylesheet. Theming rides d2h's own CSS custom
+   properties, mapped to viva tokens. ins/del/change tints stay d2h's own
+   green/red on purpose — a different semantic axis than viva's verdict palette. */
+.section-content .d2h-wrapper {
+  --d2h-bg-color: var(--bg);
+  --d2h-dark-bg-color: var(--bg);
+  --d2h-border-color: var(--border);
+  --d2h-dark-border-color: var(--border);
+  --d2h-file-header-bg-color: var(--bg2);
+  --d2h-dark-file-header-bg-color: var(--bg2);
+  --d2h-file-header-border-color: var(--border2);
+  --d2h-dark-file-header-border-color: var(--border2);
+  --d2h-line-border-color: var(--border);
+  --d2h-dark-line-border-color: var(--border);
+  --d2h-dim-color: var(--text3);
+  --d2h-dark-dim-color: var(--text3);
+}
+/* DESIGN.md: two font families, no exceptions — d2h's own Menlo/Consolas
+   stack (on the diff table) and Source Sans (on the file header) yield to
+   Fragment Mono. */
+.section-content .d2h-diff-table,
+.section-content .d2h-file-header { font-family: 'Fragment Mono', monospace; }
+/* The card title and file-group header already name the file; d2h's
+   name + always-"CHANGED" tag would be a misleading third. Keep its
+   per-hunk +N/−M line stats, which nothing else shows. */
+.section-content .d2h-file-name,
+.section-content .d2h-tag { display: none; }
+/* Guards: td reset undoes the generic table rule chopping diff rows into
+   cells; line numbers are unselectable so a drag can't capture them into
+   comment.anchor.text; wrapper is position:relative so d2h's absolute line
+   numbers don't escape the accordion's overflow:hidden clip. */
+.section-content .d2h-wrapper td { border-bottom: none; padding: 0; }
+.section-content .d2h-code-linenumber { user-select: none; }
+.section-content .d2h-file-wrapper { position: relative; border-radius: 6px; }
+
+/* ─── Card body (smooth height animation) ────────────────── */
+.card-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.card.is-active .card-body-wrap {
+  grid-template-rows: 1fr;
+}
+.card-body-inner {
+  overflow: hidden;
+}
+
+/* The body continues the page under the head, not a panel opening beneath it:
+   no fill, no second rule, and the left edge lines up with the title above. */
+.card-body {
+  padding: 4px 14px 22px;
+  border-top: none;
+  background: none;
+}
+
+/* The agent's one-line description of a section, under its title. This is the
+   doc-print size, sitting in the open prose column under the `<h2>`; the
+   accordion head overrides it above (`.card-title-wrap .section-summary`). */
+.section-summary {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--soft);
+  margin-bottom: 12px;
+}
+
+/* The document itself — a quiet page surface inside the card chrome */
+/* `max-width` is a MEASURE, not a container width — a line stops at ~72
+   characters because that is where reading breaks down. Wide content (code,
+   tables) escapes it via .section-content > pre below. No nested scroll: the
+   section prints in full; the page is the only scroll. */
+.section-content {
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.62;
+  color: var(--text);
+  padding: 6px 2px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  margin-bottom: 14px;
+  overflow-wrap: break-word;
+  max-width: 72ch;
+}
+
+/* Code and tables don't take the prose measure — they take the room and
+   scroll sideways in their own container. This only lifts the CHILD's cap;
+   `.section-content` itself must also be unbound (`.doc .section-content` in
+   review mode, `.mode-diff .section-content` in diff mode). */
+.section-content > pre,
+.section-content > table,
+.section-content > .table-wrap {
+  max-width: none;
+  width: 100%;
+  overflow-x: auto;
+}
+.section-content::-webkit-scrollbar { width: 10px; }
+.section-content::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 5px;
+  border: 3px solid var(--bg2);
+}
+.section-content::-webkit-scrollbar-track { background: transparent; }
+
+/* offline fallback: raw verbatim source */
+.section-content.md-raw {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.section-content p { margin: 0 0 12px; }
+.section-content > *:last-child { margin-bottom: 0; }
+.section-content strong { font-weight: 500; color: var(--text); }
+.section-content em { color: var(--text2); }
+
+/* In-document headings: title-block lettering for majors, mono overline for minors */
+/* Sentence case, not uppercase — headings set in the body's own face, one
+   step up in weight. */
+.section-content h1, .section-content h2 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  margin: 18px 0 8px;
+}
+
+/* The section's own title is already printed by the card head above, so the
+   leading heading in the rendered markdown is a duplicate. Hide it and let
+   the head carry it. */
+.section-content > h1:first-child,
+.section-content > h2:first-child,
+.section-content > h3:first-child { display: none; }
+.section-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 16px 0 6px;
+}
+.section-content h4, .section-content h5, .section-content h6 {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin: 16px 0 6px;
+}
+.section-content h1:first-child, .section-content h2:first-child,
+.section-content h3:first-child, .section-content h4:first-child { margin-top: 2px; }
+
+/* Code and diagrams: cyan linework on the print */
+/* The code well: solid border, no fill, so the syntax theme keeps the ink. */
+.section-content pre {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  color: var(--ink2);
+}
+.section-content code {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  padding: 1px 5px;
+  color: var(--ink2);
+}
+.section-content pre code { background: none; border: none; padding: 0; color: inherit; }
+
+/* Editorial tables: hairline rows, mono overline headers, no grid boxes */
+.section-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 2px 0 14px;
+  font-size: 12px;
+}
+.section-content th {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  text-align: left;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border2);
+}
+.section-content td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+}
+.section-content tr:last-child td { border-bottom: none; }
+
+.section-content ul, .section-content ol { margin: 0 0 12px; padding-left: 20px; }
+.section-content li { margin: 3px 0; }
+.section-content li::marker { color: var(--text3); }
+
+.section-content blockquote {
+  border-left: 2px solid var(--accent);
+  margin: 0 0 12px;
+  padding: 2px 14px;
+  color: var(--text2);
+  font-style: italic;
+}
+.section-content a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-dim);
+}
+.section-content a:hover { border-bottom-color: var(--accent); }
+.section-content hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.section-content img { max-width: 100%; }
+

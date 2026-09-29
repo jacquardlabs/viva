@@ -29,6 +29,14 @@ ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server.py"
 
 
+def shipped_source() -> str:
+    """server.py plus the composed `HTML`: the whole frontend as shipped,
+    comments included, for tests that must also see server.py's own text."""
+    sys.path.insert(0, str(ROOT))
+    import server  # deferred: most harness users never need it
+    return SERVER.read_text(encoding="utf-8") + server.HTML
+
+
 def assert_catalog_ground(text: str) -> None:
     """Shared catalog-ground needle checks — the single owner of the ground
     contract, so a chrome change edits one place. CSS-rule checks are

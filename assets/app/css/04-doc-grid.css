@@ -1,0 +1,608 @@
+/* ─── The document grid — doc + margin (issue #186) ───────────
+   Rows of `check gutter | prose | margin`, in document order; commentary
+   sits beside the passage it annotates. `.doc` is the grammar (review, diff,
+   Q&A alike); `.print` is continuous print, review-only. Gutter/margin are
+   variables that collapse to 0 per-document (never per-row/section, which
+   would jog the prose sideways as you read); the 28px alley lives in each
+   side cell's own padding so a collapsed column costs exactly zero. */
+.doc {
+  /* A glyph rail, not a text column: 70px of 9px mono can't hold a real flag
+     legibly, so this just signals LOCALITY — a colored glyph, not the text. */
+  --gutter-w: 34px;                    /* 14px glyph + the 20px alley */
+  /* Capped at 300px (+28px alley), not left to absorb spare width — else the
+     margin runs near 50:50 with the prose instead of the intended ~61:39. */
+  --margin-w: minmax(253px, 328px);
+}
+/* .cards's gap is the space between entries in continuous print; the
+   accordion keeps its own hairline-and-6px separation instead. */
+.doc.print { gap: 22px; }
+.doc.no-gutter { --gutter-w: 0px; }
+.doc.no-margin { --margin-w: 0px; }
+/* The prose track takes whatever the gutter/margin don't; the page holds the
+   measure, so no `ch` value appears in the template — `ch` resolves against
+   the row's own font-size, which varied a `72ch` track's width by ~99px
+   across rows before `.doc-section` fixed one size for the print. */
+.doc .row {
+  display: grid;
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr) var(--margin-w);
+  align-items: start;
+}
+/* Break-out rule at row scale: code (not tables — a table reflows to the
+   measure) borrows the margin's room ONLY on a row with no margin cell, and
+   only in print — the accordion's wide row IS the hunk, so re-laying it out
+   under the cursor when a comment lands would be wrong there. */
+.doc.print .row.wide:not(:has(> .rm)):has(> .rp > pre, > .rp > .d2h-wrapper) .rp { grid-column: 2 / 4; }
+/* Explicit column placement, so a row that omits an empty side cell still
+   prints its prose in the middle track instead of sliding left. */
+.doc .rg { grid-column: 1; padding-right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 2px; }
+.doc .rp { grid-column: 2; min-width: 0; }
+.doc .rm { grid-column: 3; padding-left: 28px; min-width: 0; }
+/* One type size for the whole print, so `ch` means the same thing in every
+   row — the heading and the machine's own faces set their own size on top. */
+.doc-section { font-size: 13.5px; }
+/* The head row has no margin cell in any state, so no collapsed-margin
+   exemption is needed. The foot band keeps a two-track twin because an
+   unanchored section-scope flag can fall back to it (`marginFlagHTML`).
+   `1fr`, not `72ch` (issue #5): `ch` resolves against the row's own
+   font-size and would come out narrower than the prose rows above it. */
+.doc.no-margin .row-foot { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+.doc.no-margin .row-foot .rm { grid-column: 2; padding-left: 0; }
+/* Below the composite's own breakpoint the third column has no room to be a
+   margin; notes fall under the passage they annotate and the gutter narrows
+   to a glyph rail. No separate term needed for `.row-foot` or the wide-row
+   selector — both are already a `.doc .row` and covered by it. */
+@media (max-width: 920px) {
+  .doc .row { grid-template-columns: 30px minmax(0, 1fr); }
+  .doc .rg { padding-right: 8px; }
+  .doc .rm { grid-column: 2; padding-left: 0; }
+  /* The bar's row breaks here and nowhere wider — under 920px `.stats` can no
+     longer shrink enough, so the dispatch controls take their own line. */
+  .bottom-inner { flex-wrap: wrap; row-gap: 8px; }
+  /* Every control the grid reflows for a narrow screen is a touch target. */
+  .nt-btn, .theme-toggle, .voice-toggle, .prefs-toggle, .sort-toggle,
+  .btn-skip, .btn-submit, .pal-row, .cmt-chip, .cmt-save, .cmt-cancel,
+  .attach-btn, .mic-btn, .settle-btn, .thread-reply-btn, .choice-chip { min-height: 44px; }
+}
+
+/* ─── The foot band ───────────────────────────────────────────
+   The section's DISPOSITION: what is open on it, and what you do about it.
+   Horizontal, at the reading measure, under the prose. A sibling of
+   `.section-content`, never a child — `docRows`, `rowForAnchor`,
+   `docNotesOrdered`, and `markAndPin` all depend on that. */
+.doc .row-foot { margin-top: 18px; }
+/* `.doc .row + .row`'s 10px does not reach here — the foot row's previous
+   sibling is `.section-content`, not a row. */
+
+/* Measure as max-width, not a grid track: `ch` resolves against font-size, so
+   no `ch` in a TEMPLATE (issue #5). Without this, diff mode's wide shell
+   would put `approve` 1200px from the state readout. */
+.doc .row-foot .rp { max-width: 72ch; }
+
+.doc-apparatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+}
+/* The verbs LEAD and the state TRAILS, visually — `approve` sits on the same
+   left edge the reader has been reading down, in the same place whether or not
+   the section has a spec to state, so the one control that is always there
+   never moves. In the DOM the state comes first, because "2 comments open"
+   before "approve" is the order a screen reader should hear it. The reordered
+   element carries no focusable content, so focus order is untouched and the
+   `order` pair costs nothing. */
+.spec-strip { order: 2; margin-left: auto; }
+.doc-acts   { order: 1; }
+/* An all-zero spec renders nothing (specHTML's early return) — then the band
+   is one line of verbs, and an empty flex item with an auto margin has no
+   business eating the free space. */
+.spec-strip:empty { display: none; }
+
+/* State as a run, not a table — one line at 10.5px mono. Separation is
+   `gap`, never generated content: a `::before` mark is announced by some
+   screen readers, and the `.sp-k`/`.sp-v` ink pairing already separates a
+   label from its value. */
+.spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.sp-k { color: var(--soft); }
+.sp-v { color: var(--text2); }
+.sp-open .sp-v { color: var(--acc); font-weight: 600; }
+/* #106 — a servable `source` earns a tiny button in the state run; the
+   fetched lines land in a fixed popover, never inside `.spec-strip` itself,
+   so the one-line state run never grows to fit a file excerpt. */
+.ev-btn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--soft);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1.6;
+}
+.ev-btn:hover { border-color: var(--ink); color: var(--ink); }
+.ev-panel {
+  position: fixed;
+  z-index: 500;
+  max-width: 480px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--text2);
+  font-size: 10.5px;
+  padding: 6px 8px;
+}
+.ev-panel-h { color: var(--soft); margin-bottom: 4px; }
+.ev-panel-body {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+/* At narrow widths the state run leads the left edge instead of right-aligning.
+   This sits AFTER `.spec-strip { margin-left: auto }` deliberately — the two
+   rules tie on specificity, so source order is the whole mechanism. */
+@media (max-width: 920px) {
+  .spec-strip { margin-left: 0; }
+}
+
+.doc-section { position: relative; }
+/* Continuous print: nothing collapses, so a settled section dims in place.
+   Its prose stays on the page and stays readable — that is the whole point
+   of printing the document rather than one section of it. */
+.doc-section.is-approved .rp { opacity: 0.72; }
+.doc-section.is-approved .doc-head { color: var(--soft); }
+.doc-section.is-approved:hover .rp { opacity: 1; transition: opacity 0.2s; }
+/* The prose dims on approval; the band with `↺ withdraw approval` does not —
+   affordances stay discoverable. 0.72 is the floor where --ink2 still clears
+   4.5:1. Specificity ties the hover rule above, so position is the mechanism. */
+.doc-section.is-approved .row-foot .rp { opacity: 1; }
+/* Nor does the heading: it is already in --soft, and dimming that a second
+   time (the head row is a `.rp` too) put it at 2.9:1. The reader navigates
+   by headings, settled or not. */
+.doc-section.is-approved .row-head .rp { opacity: 1; }
+
+/* The section heading carries its catalog number, the way a parts catalog
+   numbers its entries — `9 · One human, N threads`. */
+.doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+  scroll-margin-top: 16px;
+}
+.doc-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+/* The live section is marked where the reader's eye already is — at the
+   heading — the same rule the accordion's active card used. */
+.doc-section.is-active .doc-head { border-left: 2px solid var(--ink); margin-left: -10px; padding-left: 8px; }
+/* The segmented rule's slot is reserved whether or not a rule is drawn, so
+   approving a section (which draws the settled hairline) moves nothing. */
+.doc .row-head [id^="rseg-"] { min-height: 5px; margin-bottom: 8px; }
+.doc .row-head [id^="rseg-"] .rule-s { padding-bottom: 4px; margin-bottom: 0; }
+.doc .row-head [id^="rseg-"] .seg { margin-bottom: 0; }
+/* The keycap on `approve` is live only on the live section — `a` acts on
+   rState.active — so it prints only there. Hidden, not removed: the button
+   keeps its width, so activation moves nothing either. */
+.doc-section:not(.is-active) .doc-acts kbd { visibility: hidden; }
+/* A control that refuses (approve with comments open) says so in the disabled
+   grammar rather than sitting there enabled and silent. */
+.nt-btn[aria-disabled="true"] { border-color: var(--rule); color: var(--soft); background: none; cursor: not-allowed; }
+.nt-btn[aria-disabled="true"]:hover { border-color: var(--rule); color: var(--soft); background: none; }
+
+/* ─── Segmented rule ──────────────────────────────────────────
+   State × party under an open heading, honest counts: judgment → facts →
+   settled, a FIXED order that is the colorblind-safe second encoding. Raw
+   counts ride in the aria-label. Drawn only where something is open. */
+.seg { display: flex; height: 4px; margin: 0 0 10px; }
+.seg i { display: block; height: 4px; min-width: 2px; }
+.seg-judgment { background: var(--acc); }
+.seg-fact     { background: var(--fact); }
+.seg-settled  { background: var(--settled); }
+.rule-s { border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 10px; }
+
+/* ─── Check gutter ────────────────────────────────────────────
+   Producer flags print beside the paragraph they concern, right-aligned
+   against the prose column, in the machine's own face. A flag needing an
+   interactive jump doesn't fit in 70px and routes to the margin instead. */
+/* The rail: one glyph per flag, at a size you can actually see, colored by
+   whose news it is. Decorative to a screen reader — the readable line is in
+   the margin (.mflag) and reading both would be the same flag twice. */
+.lflag {
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: default;
+}
+.lflag-info  { color: var(--machine); }
+.lflag-warn  { color: var(--fact); }
+.lflag-error { color: var(--fact); font-weight: 700; }
+
+/* The words, in the margin of the same row — the machine's line, not a note
+   in the conversation, so no border and no actions: a producer flag is
+   advisory. Inked by severity, led by the same glyph as the rail. */
+.mflag {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--soft);
+  overflow-wrap: anywhere;
+}
+.mflag .g { flex-shrink: 0; }
+.mflag-info  .g { color: var(--machine); }
+.mflag-warn  .g { color: var(--fact); }
+.mflag-error .g { color: var(--acc); }
+.mflag-warn, .mflag-error { color: var(--text2); }
+.mflag .r { display: block; color: var(--machine); }
+
+/* ─── Margin notes ────────────────────────────────────────────
+   One note per thread or comment, numbered, sitting beside its own anchor.
+   The number is the same on both ends: the pin in the text and the note in
+   the margin. */
+.nt {
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 7px 9px 8px;
+}
+.nt.is-settled { opacity: 0.55; }
+.nh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-bottom: 4px;
+}
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--soft);
+}
+.nt-fact  .nh { color: var(--fact); }
+.nt-check .nh { color: var(--machine); }
+.nt-body { color: var(--text2); overflow-wrap: anywhere; }
+.nt-quote {
+  display: block;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.nt-acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.nt-btn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.nt-btn:hover { background: var(--bg3); }
+.nt-btn.is-pri { background: var(--ink); color: var(--paper); }
+.nt-btn.is-pri:hover { opacity: 0.85; }
+.nt-btn.is-quiet { border-color: var(--rule); color: var(--soft); }
+.nt-btn.is-quiet:hover { border-color: var(--ink); color: var(--ink); background: none; }
+
+/* Keycaps sit on the control they name rather than being hover-revealed —
+   the palette is a directory of this same layer, never a second one. */
+.doc kbd, .pal kbd, .pal-hint kbd, .recap-panel kbd, .prefs-panel kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 5px;
+  color: var(--soft);
+  background: var(--sunk);
+}
+.nt-btn.is-pri kbd { border-color: var(--soft); background: none; color: var(--paper); }
+.choice-chip kbd { flex-shrink: 0; }
+.choice-chip.selected kbd { border-color: var(--accent); color: var(--accent); }
+
+/* ─── Pins ────────────────────────────────────────────────────
+   The mark in the text that matches the note in the margin. The anchored
+   span wears catalog yellow and nothing else does — per the ink discipline,
+   `--touch` is the reviewer's touch ON THE TEXT — so the pin, not the
+   highlight, is what carries whose note it is. */
+.doc mark[class^="cmt-hl-"] {
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+}
+.pin {
+  display: inline-block;
+  min-width: 14px;
+  height: 14px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  vertical-align: 3px;
+  margin-left: 2px;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+/* ─── A suggestion, shown applied ────────────────────────────
+   Replaced wording struck through in faint ink, the replacement on catalog
+   yellow, so the reviewer reads the sentence as it would stand. `del` is
+   still the document; `ins` is the proposal and is excluded from every text
+   walk, so it can never be counted as prose or commented on. */
+.sug-del { color: var(--faint); text-decoration: line-through; }
+.sug-ins {
+  text-decoration: none;
+  background: var(--touch);
+  border-bottom: 1.5px solid var(--touch-edge);
+  color: inherit;
+  margin-left: 5px;
+}
+.nt-applied {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--soft);
+  font-style: italic;
+}
+
+.pin-you    { background: var(--acc); color: var(--paper); }
+.pin-author { border: 1.5px solid var(--soft); color: var(--soft); background: none; }
+.pin-fact   { background: var(--fact); color: var(--paper); }
+/* A pin on a diff line: prose WRAPS but a code line SCROLLS, so a pin
+   appended at its anchor's offset could scroll off-screen. Pairing with the
+   LINE instead keeps the pin sticky at its head under horizontal scroll. */
+.pin-line {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  margin: 0 5px 0 0;
+  vertical-align: 1px;
+}
+
+/* ─── Suggestion fence ────────────────────────────────────────
+   The one place red and green are correct: the fence and the diff are the
+   same object, and diff semantics already own those two colors. Squared off
+   — the recognizable part is the −/+ grammar, not the radius. */
+.fence {
+  margin-top: 6px;
+  border: 1px solid var(--rule);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.fence-h {
+  background: var(--sunk);
+  border-bottom: 1px solid var(--rule);
+  padding: 3px 8px;
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--soft);
+}
+.fence-ln { display: grid; grid-template-columns: 16px minmax(0, 1fr); }
+.fence-g { text-align: center; user-select: none; }
+.fence-tx { padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fence-del { background: rgba(209,36,47,0.12); }
+.fence-add { background: rgba(26,127,55,0.12); }
+.fence-del .fence-g { color: #d1242f; }
+.fence-add .fence-g { color: #1a7f37; }
+
+/* The round-to-round diff, collapsed, in the head row's prose cell. Ships
+   collapsed since "what changed since last round" isn't what the reader
+   opened the document for, and expands at the reading measure, not full
+   width, so it wraps rather than pushing the text aside. */
+.doc .diff-block { border-radius: 0; border-color: var(--rule); margin: 4px 0 0; }
+.doc .diff-toggle { border-bottom-color: var(--rule); }
+
+/* ─── Command palette (⌘K) ────────────────────────────────────
+   A directory of the keyboard layer, not a second interaction model: every
+   verb it lists is one the page also shows as a keycap or a control. It
+   takes the floor's materials — square, 1px ink border, selection on
+   catalog yellow rather than a tint of the accent. */
+.pal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--scrim);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+.pal {
+  width: min(460px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+  font-size: 13px;
+  overflow: hidden;
+}
+.pal-input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: var(--ink);
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12.5px;
+  padding: 9px 12px;
+}
+.pal-input:focus { outline: none; box-shadow: inset 0 -2px 0 var(--acc); }
+.pal-input::placeholder { color: var(--soft); }
+.pal-list { max-height: 46vh; overflow-y: auto; }
+.pal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.pal-row.is-on { background: var(--touch); }
+.pal-row .k {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--soft);
+  flex-shrink: 0;
+}
+.pal-empty { padding: 10px 12px; font-size: 12px; color: var(--soft); }
+
+/* The section container is the row host, not the measure: the 72ch cap moved
+   to the grid's middle track, and the padding that framed a card body would
+   only push the rows off the alley they share with every other row. */
+.doc .section-content { max-width: none; padding: 0; margin-bottom: 0; }
+/* The break-out rule, at row scale. The `wide` row already gives the middle
+   track the room; this is what lets the block use it. */
+.doc .rp > pre, .doc .rp > .table-wrap {
+  max-width: none;
+  width: 100%;
+  overflow-x: auto;
+}
+/* A table is as wide as its columns need, up to the measure: a three-column
+   table stretched to 100% stranded its last column 300px right of its text. */
+.doc .rp > table, .doc .rp > .table-wrap > table { width: auto; max-width: 100%; }
+.doc .rp > *:last-child { margin-bottom: 0; }
+.doc .row + .row { margin-top: 10px; }
+
+/* A carried thread keeps every affordance it had in the accordion — settle,
+   reply, the type chips — and takes the margin's note dress. One builder,
+   two surfaces (openThreadItemHTML); this is the restyle, not a fork. */
+.doc .open-thread {
+  margin-bottom: 12px;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--acc);
+  border-radius: 0;
+  background: var(--paper);
+}
+.doc .open-thread.is-declined { border-left-color: var(--soft); }
+.doc .open-thread-head { flex-wrap: wrap; gap: 5px; padding: 6px 9px 5px; border-bottom: none; }
+.doc .open-thread-label { color: var(--acc); }
+.doc .open-thread.is-declined .open-thread-label { color: var(--soft); }
+.doc .open-thread-quote { max-width: 100%; white-space: normal; }
+.doc .open-thread-body { padding: 0 9px; }
+.doc .exchange { padding: 5px 0; }
+/* One verb per note, with its keycap; the reply box is what a verb reveals,
+   not something every thread carries open. */
+.open-thread .nt-acts { padding: 2px 9px 9px; margin-top: 0; }
+.thread-reply { padding: 0 9px 9px; margin-top: 0; }
+.settle-btn.is-on { --c: var(--machine); border-color: var(--machine); color: var(--machine); }
+.nt-btn.is-pri.is-on { background: var(--machine); border-color: var(--machine); }
+.open-thread.is-settled .nt-acts .thread-reply-btn { display: none; }
+/* The note number, shared by the margin's two note builders and by the pin
+   that answers it. Empty in the accordion — only the margin numbers notes. */
+.nh-num, .nh .nh-num {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-weight: 700;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.nh-num:empty { display: none; }
+.open-thread-head .pn,
+.nh .pn {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+.doc .comment-popover { border-radius: 0; margin-top: 0; margin-bottom: 12px; }
+.doc .annot { border-radius: 0; margin-bottom: 12px; flex-direction: column; gap: 3px; }
+/* The whole-document invitation, printed once ABOVE the print, sharing a row
+   with the sort toggle. Label ink (--soft), never the settled ink: this is
+   live instruction. */
+.doc-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.doc-tools .sort-bar { margin: 0 0 0 auto; }
+.doc-hint {
+  margin: 0;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--soft);
+}
+
+/* The document's own balance, same grammar as a section's rule but heavier
+   (6px vs 4px) and its settled segment is INK rather than gray — at document
+   scale "done" is the page's closed mass, not one section's remainder. */
+.foot-seg { position: absolute; top: 0; left: 0; right: 0; display: flex; height: 6px; }
+.foot-seg i { display: block; height: 6px; }
+.foot-seg .seg-settled { background: var(--ink); }
+
+/* The way in to the keyboard layer, stated in the bar rather than buried in
+   the legend at the foot of the page — a palette nobody knows about is a
+   palette nobody uses. */
+.pal-hint {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--soft);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.pal-hint:hover { color: var(--ink); }
+.stat-conv b { color: var(--ink); font-weight: 600; }
+.stat-lat { color: var(--soft); }
+.stat-pending kbd, .stats kbd {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 0;
+  padding: 0 4px;
+  margin-left: 4px;
+  color: var(--soft);
+  background: var(--sunk);
+}
+

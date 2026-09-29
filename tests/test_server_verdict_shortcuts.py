@@ -144,8 +144,8 @@ def test_a_typed_comment_carries_the_verdict_and_removing_it_takes_it_back():
 
 def test_legend_states_what_the_keys_now_do():
     # A stale keycap hint is the same class of bug: screen says one thing, code another.
-    from _server_harness import SERVER  # noqa: E402
-    text = SERVER.read_text(encoding="utf-8")
+    from _server_harness import shipped_source  # noqa: E402
+    text = shipped_source()
     assert ("<dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) "
             "&middot; confirm answer (Q&amp;A)</dd>") in text, \
         "the 'c' legend row must say it opens a comment"

@@ -11,7 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _server_harness import (  # noqa: E402
-    assert_catalog_ground, assert_grid_gone, assert_ink_discipline, get, get_text, launch_server, post)
+    assert_catalog_ground, assert_grid_gone, assert_ink_discipline, get, get_text, launch_server, post,
+    shipped_source)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -667,7 +668,7 @@ def test_design_md_matches_shipped_surface() -> None:
     literals server.py also carries, the four phase-1 surfaces each have
     their strings documented, and retired constructs leave no residue."""
     design = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
-    html = (ROOT / "server.py").read_text(encoding="utf-8")
+    html = shipped_source()
 
     # Catalog ground — each documented value must also be shipped verbatim.
     for literal in ("#ffffff", "#ffec8f", "#2946c4", "#0c7f6b", "#a06a12",

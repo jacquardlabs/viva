@@ -12,10 +12,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, launch_server, post  # noqa: E402
-
-ROOT = Path(__file__).resolve().parent.parent
-SERVER = ROOT / "server.py"
+from _server_harness import get, launch_server, post, shipped_source  # noqa: E402
 
 
 def test_input_carries_repo():
@@ -84,7 +81,7 @@ def test_favicon_route_does_not_404():
 
 
 def test_html_declares_inline_favicon_link():
-    text = SERVER.read_text(encoding="utf-8")
+    text = shipped_source()
     assert "rel=\"icon\"" in text and "data:image/svg+xml" in text, (
         "the HTML <head> must declare an inline data: URI favicon"
     )
@@ -97,7 +94,7 @@ def test_html_declares_inline_favicon_link():
 def test_processing_handler_retitles_the_tab():
     """Regression: the 'processing' SSE handler never called setTabTitle, so
     the tab kept its stale "your turn" title while the agent was working."""
-    text = SERVER.read_text(encoding="utf-8")
+    text = shipped_source()
     start = text.index("es.addEventListener('processing'")
     end = text.index("es.addEventListener('round'")
     assert start < end, "could not locate the 'processing' handler ahead of the 'round' handler"
@@ -114,7 +111,7 @@ def test_processing_handler_retitles_the_tab():
 
 
 def test_round_and_complete_handlers_also_update_favicon():
-    text = SERVER.read_text(encoding="utf-8")
+    text = shipped_source()
     assert "function setTabFavicon(state)" in text, "missing the setTabFavicon helper"
     # All three turn-state transitions must be reachable from the helper.
     for state in ("turn", "processing", "done"):

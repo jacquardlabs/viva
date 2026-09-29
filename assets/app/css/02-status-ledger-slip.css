@@ -1,0 +1,235 @@
+/* ─── Status bar — the catalog header ────────────────────
+   Filename, round, progress read left to right in one weight, closed by the
+   same 2px ink rule as the bottom bar. Label sits BEFORE its value (inline
+   runs), so the bar costs one line, not stacked boxes. */
+.titleblock {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  background: none;
+  padding-bottom: 8px;
+  margin-bottom: 18px;
+}
+.tb-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+/* The filename takes the room; the last cell (progress) is pushed to the far
+   end, where a catalog puts its count. */
+.tb-flex { flex: 0 1 auto; }
+.tb-wide { flex: 0 1 auto; }
+.tb-cell:last-child { margin-left: auto; }
+.tb-label {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--soft);
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+h1.tb-val { margin: 0; }
+.tb-val {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-val em { font-style: normal; color: var(--soft); font-weight: 400; }
+.tb-val.mono {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink);
+  padding-top: 0;
+}
+
+/* ─── Revision ledger ────────────────────────────────────── */
+.ledger {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease both;
+}
+.ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.ledger-head:hover { background: var(--bg3); }
+.ledger-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.ledger-chevron { font-size: 10px; color: var(--text3); transition: transform 0.2s; }
+.ledger.is-collapsed .ledger-chevron { transform: rotate(-90deg); }
+.ledger-body-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.ledger.is-collapsed .ledger-body-wrap { grid-template-rows: 0fr; }
+.ledger-body-inner { overflow: hidden; }
+.ledger-rows { padding: 0 14px 10px; }
+.ledger-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.ledger-round {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.ledger-section {
+  color: var(--text);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ledger-verdict {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.ledger-verdict.v-changes { color: var(--orange); }
+.ledger-verdict.v-info    { color: var(--violet); }
+/* The note is verbatim reviewer prose of arbitrary length — it takes its own
+   full-width line under the round/section/verdict head instead of competing
+   with the title for leftover row space (the one-word-per-line squeeze). */
+.ledger-note { color: var(--text2); font-style: italic; flex: 1 1 100%; min-width: 0; overflow-wrap: break-word; }
+.ledger.ledger-static .ledger-head { cursor: default; }
+.ledger.ledger-static .ledger-head:hover { background: none; }
+.complete-inner .ledger { width: 100%; max-width: 560px; text-align: left; margin-top: 1.5rem; }
+
+/* ─── Transmittal slip (round >= 2, review mode only) ────────
+   One jump-link row per section, attributing what changed this revision.
+   Reuses verdict color slots: revised/flag-error → orange, flag-warn →
+   violet, approved → teal. */
+.transmittal {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease both;
+}
+/* A disclosure button, dressed as the label it already was — the slip ships
+   collapsed so the print is what a reader meets first. */
+.transmittal-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.transmittal-head:hover .transmittal-title { color: var(--acc); }
+.transmittal-chevron { font-size: 10px; color: var(--text3); transition: transform 0.2s; }
+.transmittal-head[aria-expanded="false"] .transmittal-chevron { transform: rotate(-90deg); }
+.transmittal-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.transmittal-rows { padding: 4px 14px 10px; }
+.transmittal-row {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.transmittal-row:first-child { border-top: none; }
+.transmittal-row:hover { background: var(--bg3); }
+.transmittal-row:hover .tr-title { color: var(--accent); }
+.tr-marker { flex-shrink: 0; font-size: 11px; }
+.tr-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.tr-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tr-revised-note .tr-marker, .tr-revised-note .tr-label,
+.tr-revised .tr-marker,      .tr-revised .tr-label,
+.tr-flag-error .tr-marker,   .tr-flag-error .tr-label { color: var(--orange); }
+.tr-flag-warn .tr-marker,    .tr-flag-warn .tr-label  { color: var(--violet); }
+.tr-approved .tr-marker,     .tr-approved .tr-label   { color: var(--teal); }
+/* An answer that changed no text is information, not a revision — so it takes
+   the facts/info party's ink, the same slot `.tr-flag-warn` uses. */
+.tr-answered .tr-marker,     .tr-answered .tr-label   { color: var(--violet); }
+
+.progress-track {
+  flex: 1;
+  height: 2px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: visible;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+}
+
+.progress-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  white-space: nowrap;
+  letter-spacing: 0.06em;
+}
+

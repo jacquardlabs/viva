@@ -1613,9 +1613,10 @@ the page discloses that once before it first listens.
 viva's user-facing surface, so a cross-surface consistency check has a fixed
 list to audit against rather than deriving one from source each time:
 
-- **Web** — the single-page app `server.py` serves (the embedded `HTML`
-  constant): accordion, print/doc, diff, Q&A, and the recap/complete views —
-  one file, several rendering modes within it.
+- **Web** — the single-page app `server.py` serves, composed from
+  `assets/app/` into `HTML` at import (CLAUDE.md, part 4): accordion,
+  print/doc, diff, Q&A, and the recap/complete views — one document, several
+  rendering modes within it.
 - **Report** — the markdown appended to the reviewed doc at sign-off
   (`scripts/revision_history.py`'s Revision History block and Open notes
   section).

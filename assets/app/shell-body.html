@@ -1,0 +1,240 @@
+</style>
+</head>
+<body>
+
+<a class="skip-link" id="skip-link-a" href="#main-content">Skip to review</a>
+
+<div id="paper">
+
+
+<main class="shell" id="main-content" tabindex="-1">
+
+  <!-- ── Review mode ──────────────────────────────────────── -->
+  <div id="review-view" style="display:none">
+    <div class="header">
+      <div class="titleblock">
+        <div class="tb-cell tb-flex tb-wide"><h1 class="tb-val mono" id="doc-path"></h1></div>
+        <div class="tb-cell"><div class="tb-label">round</div><div class="tb-val mono" id="round-badge"></div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val" id="doc-title"></div></div>
+        <!-- Review-mode cells (#186): the composite bar states the document's
+             whole condition on one line. Ship hidden; initReview reveals them
+             and updateReviewStats keeps them current. -->
+        <div class="tb-cell" id="tb-checks" style="display:none"><div class="tb-label">checks</div><div class="tb-val mono" id="r-checks">0/0</div></div>
+        <div class="tb-cell" id="tb-items" style="display:none"><div class="tb-val mono" id="r-items"></div></div>
+        <div class="tb-cell"><div class="tb-label">approved</div><div class="tb-val mono" id="r-progress-label">0 / 0</div></div>
+        <div class="tb-cell" id="tb-palette" style="display:none"><button type="button" class="pal-hint" id="pal-open">palette<kbd>&#8984;K</kbd></button></div>
+      </div>
+      <div class="progress-track" id="r-progress-track">
+        <div class="progress-fill" id="r-progress" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="ledger" id="ledger" style="display:none">
+      <button type="button" class="ledger-head" id="ledger-head" aria-expanded="true" aria-controls="ledger-body">
+        <span class="ledger-title">Revisions &middot; <span id="ledger-count">0</span></span>
+        <span class="ledger-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="ledger-body-wrap" id="ledger-body">
+        <div class="ledger-body-inner">
+          <div class="ledger-rows" id="ledger-rows"></div>
+        </div>
+      </div>
+    </div>
+    <nav class="transmittal" id="transmittal" aria-label="What changed this round" style="display:none"></nav>
+    <!-- "flags", not "checks": rows are every DOC_SCOPE_KINDS flag, and only
+         `headings-present` is also a CHECK_KIND. The visible head says
+         "Document · N flags" — naming it checks here would contradict that. -->
+    <nav class="transmittal doc-slip" id="doc-slip" aria-label="Document-level flags" style="display:none"></nav>
+    <div class="doc-tools" id="doc-tools">
+      <div class="doc-hint" id="doc-hint" style="display:none">Select any passage to comment on it &middot; <kbd>&#8984;K</kbd> for every command</div>
+      <div class="sort-bar" id="sort-bar" style="display:none">
+        <button type="button" class="sort-toggle" id="sort-toggle" title="Reorder the sections by where the agent flagged itself least confident"><span aria-hidden="true">&#8645;</span> sort weakest first</button>
+      </div>
+    </div>
+    <div class="cards" id="review-cards"></div>
+  </div>
+
+  <!-- ── Q&A mode ─────────────────────────────────────────────
+       The /viva-write interview step; carries the same composite bar as
+       review. No progress track — the footer's segmented rule is the
+       progress, in state rather than percent. -->
+  <div id="qa-view" style="display:none">
+    <div class="header">
+      <div class="titleblock">
+        <div class="tb-cell tb-flex tb-wide"><div class="tb-val mono" id="qa-title"></div></div>
+        <div class="tb-cell"><div class="tb-label">phase</div><div class="tb-val mono">Q&amp;A</div></div>
+        <div class="tb-cell tb-flex"><div class="tb-val">viva <em>interview</em></div></div>
+        <div class="tb-cell"><div class="tb-label">questions</div><div class="tb-val mono" id="qa-count-badge"></div></div>
+        <div class="tb-cell"><div class="tb-label">answered</div><div class="tb-val mono" id="qa-progress-label">0 / 0</div></div>
+        <div class="tb-cell"><button type="button" class="pal-hint" id="qa-pal-open">palette<kbd>&#8984;K</kbd></button></div>
+      </div>
+    </div>
+    <div class="cards" id="qa-cards"></div>
+    <div class="doc-hint">Pick a choice with <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>c</kbd> to confirm &middot; <kbd>&#8984;K</kbd> for the command palette</div>
+  </div>
+
+  <!-- ── Processing / between-rounds state ────────────────── -->
+  <div id="processing-view" style="display:none">
+    <div class="processing-inner">
+      <div class="processing-dot" aria-hidden="true"></div>
+      <div class="processing-text" id="processing-heading">Claude is revising…</div>
+      <div class="processing-requests" id="processing-requests" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Complete state ───────────────────────────────────── -->
+  <div id="complete-view" style="display:none">
+    <div class="complete-inner">
+      <div class="approve-stamp" id="approve-stamp">
+        <div class="stamp-rule">
+          <div class="stamp-word">APPROVED</div>
+          <div class="stamp-meta" id="stamp-meta">viva</div>
+          <div class="stamp-sub" id="stamp-sub"></div>
+        </div>
+      </div>
+      <div class="complete-headline" id="complete-headline"></div>
+      <div class="complete-detail" id="complete-detail"></div>
+      <div class="ledger ledger-static" id="complete-ledger" style="display:none">
+        <div class="ledger-head">
+          <span class="ledger-title">Revisions &middot; <span id="complete-ledger-count">0</span></span>
+        </div>
+        <div class="ledger-rows" id="complete-ledger-rows"></div>
+      </div>
+      <div class="complete-hint">You can close this tab.</div>
+    </div>
+  </div>
+
+  <details class="kbd-legend">
+    <summary>keyboard shortcuts &amp; what the counts mean</summary>
+    <dl class="kbd-list">
+      <dt><kbd>a</kbd></dt><dd>approve section (refused while it has open comments)</dd>
+      <dt><kbd>c</kbd></dt><dd>comment &mdash; request changes (review) &middot; confirm answer (Q&amp;A)</dd>
+      <dt><kbd>i</kbd></dt><dd>comment &mdash; need info</dd>
+      <dt><kbd>Tab</kbd></dt><dd>advance to next card (when focused in one); else moves focus normally &middot; <kbd>Shift</kbd>+<kbd>Tab</kbd> always moves focus back</dd>
+      <dt><kbd>r</kbd> <kbd>s</kbd> <kbd>y</kbd> <kbd>n</kbd></dt><dd>on the note that has focus: reply, settle, accept, change anyway</dd>
+      <dt><kbd>j</kbd></dt><dd>jump to the next open thread</dd>
+      <dt><kbd>l</kbd></dt><dd>open the revision ledger</dd>
+      <dt><kbd>Esc</kbd></dt><dd>close the composer (a draft keeps; an empty box cancels), the palette, or the recap</dd>
+      <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt><dd>pick a choice (Q&amp;A)</dd>
+      <dt><kbd>o</kbd></dt><dd>recap overlay (review)</dd>
+      <dt><kbd>v</kbd></dt><dd>voice &mdash; the oral examination; Escape stops listening from anywhere</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>K</kbd></dt><dd>command palette &mdash; every verb on this page, by name</dd>
+      <dt><kbd>t</kbd></dt><dd>cycle theme &mdash; system, light, dark</dd>
+      <dt><kbd>&#8984;/Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>approve &mdash; dispatch the round</dd>
+    </dl>
+    <!-- Every aggregate the bar and footer print, defined once, in the
+         reader's reach — a reviewer who cannot reproduce the arithmetic
+         stops trusting the numbers. `title` on the two cells is a mouse
+         convenience; this list is what states them. -->
+    <dl class="kbd-list term-list">
+      <dt>item</dt><dd>one thing with a state: a carried thread, a comment you made, an unanswered check, or a section's own sign-off. A producer flag is advisory and is not an item.</dd>
+      <dt>open</dt><dd>items still waiting on someone &mdash; judgment (changes, suggestions, declines) plus facts (questions, unanswered checks). Everything else is settled.</dd>
+      <dt>convergence</dt><dd>open items when this round was armed &rarr; open items now. Falling means you are closing more than you open.</dd>
+      <dt>approved</dt><dd>sections carrying an approved verdict, out of all sections. A section with feedback is reviewed but not approved.</dd>
+      <dt>checks</dt><dd>producer checks that carry an answer, out of all of them. A document-level check is counted here and nowhere else.</dd>
+    </dl>
+  </details>
+
+</main>
+
+</div><!-- /#paper -->
+
+<!-- Bottom bar. `position: fixed` is the containing block .foot-seg hangs
+     off. Ships empty and hidden — updateReviewStats fills it in review
+     mode only, since a diff or Q&A round has no document balance. -->
+<div class="bottom-bar" id="bottom-bar-el">
+  <div class="foot-seg" id="foot-seg" style="display:none"></div>
+  <!-- The voice transcript. Its own aria-live region rather than a cell
+       inside #stats-area's: the counters announce a count, this a sentence,
+       and one region cannot pace both. Ships hidden until voice is on. -->
+  <div class="voice-strip" id="voice-strip" aria-live="polite" style="display:none"></div>
+  <div class="sr-only" id="sr-status" role="status" aria-live="polite"></div>
+  <div class="bottom-inner">
+    <div class="stats" id="stats-area">
+      <!-- The live region is the COUNTERS, not the whole bar: the three
+           toggles beside them rewrite their own labels, and inside the region
+           every repaint re-read them on top of the button's own name change. -->
+      <span class="stat-run" id="stat-run" aria-live="polite">
+      <span class="stat-pending"  id="stat-pending"></span>
+      <!-- Review-mode footer (#186). `convergence`: is the reviewer closing
+           more than they open. `round trip`: the last same-origin request
+           this page made, a measurement not a claim. -->
+      <span class="stat-conv" id="stat-conv" style="display:none"></span>
+      <span class="stat-lat"  id="stat-lat"  style="display:none"></span>
+      </span>
+      <div class="bar-controls">
+        <button type="button" class="prefs-toggle" id="prefs-toggle" style="display:none">learned prefs</button>
+        <!-- Ships hidden and stays hidden where the browser has no recognizer:
+             a control that cannot work is worse than no control. `initVoice`
+             reveals it. -->
+        <button type="button" class="voice-toggle" id="voice-toggle" style="display:none">voice: off</button>
+        <button type="button" class="theme-toggle" id="theme-toggle"
+                title="Cycle theme: follow system, light, dark">theme: system</button>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button type="button" class="btn-skip" id="btn-skip">skip rest &amp; submit</button>
+      <button type="button" class="btn-submit disabled" id="btn-submit" aria-disabled="true">approve &mdash; dispatch</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recap overlay — the submit gate for review/diff modes. Ships hidden;
+     openRecap() rebuilds the index grid from live verdict state each open.
+     Q&A never opens it: the done → path submits directly. -->
+<div class="recap-overlay" id="recap-overlay" role="dialog" aria-modal="true" aria-labelledby="recap-title" style="display:none">
+  <div class="recap-panel">
+    <div class="recap-head">
+      <span class="recap-title" id="recap-title">Recap &middot; REV <span id="recap-round"></span></span>
+      <button type="button" class="recap-close" id="recap-close" aria-label="Close recap"><kbd>esc</kbd></button>
+    </div>
+    <div class="recap-grid" id="recap-grid"></div>
+    <div class="recap-actions">
+      <span class="recap-blocked" id="recap-blocked"></span>
+      <button type="button" class="btn-skip" id="recap-skip" style="display:none">skip rest &amp; submit</button>
+      <button type="button" class="btn-submit ready" id="recap-confirm">confirm &amp; submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preferences panel (#142) — view/mute learned preferences without
+     leaving the tab. Ships hidden, empty; renderPrefsList() fills it from
+     the preferences fetched once at boot. Reachable in every mode. -->
+<div class="prefs-overlay" id="prefs-overlay" role="dialog" aria-modal="true" aria-labelledby="prefs-title" style="display:none">
+  <div class="prefs-panel">
+    <div class="prefs-head">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span class="prefs-title" id="prefs-title">Learned Preferences</span>
+        <button type="button" class="prefs-close" id="prefs-close" aria-label="Close preferences"><kbd>esc</kbd></button>
+      </div>
+      <div class="prefs-help"><strong>standing:</strong> recurred 2+ sessions, applied at rewrite &mdash; still yours to approve &bull; <strong>candidate:</strong> new, waiting to recur &bull; <strong>muted:</strong> won't be applied or flagged</div>
+    </div>
+    <div class="prefs-status" id="prefs-status" aria-live="polite"></div>
+    <div class="prefs-list" id="prefs-list"></div>
+  </div>
+</div>
+
+<!-- Dead-session overlay (#174) — the SSE connection dropping signals the
+     server behind this tab is gone (see es.onerror). Ships hidden;
+     showDeadSession() reveals it, only es.onopen takes it down again.
+     `alertdialog`, not `dialog`: no close control, nothing to choose. -->
+<div class="dead-overlay" id="dead-overlay" role="alertdialog" aria-modal="true"
+     aria-labelledby="dead-title" aria-describedby="dead-body" style="display:none">
+  <div class="dead-panel" id="dead-panel" tabindex="-1">
+    <h2 class="dead-title" id="dead-title">Session ended</h2>
+    <p class="dead-body" id="dead-body">This tab lost its review server. Nothing submitted from here can reach it &mdash; resume from the terminal.</p>
+    <p class="dead-resume" id="dead-resume" style="display:none">resume: <code id="dead-cmd"></code></p>
+  </div>
+</div>
+
+<!-- Command palette (⌘K, #186) — a directory of verbs the page already
+     carries as controls and keycaps, never a second interaction model.
+     Ships hidden and empty; openPalette() fills the list from live state. -->
+<div class="pal-overlay" id="pal-overlay" style="display:none">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette">
+    <input type="text" class="pal-input" id="pal-input" placeholder="&gt; type a command" autocomplete="off"
+           aria-label="Command" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+    <div class="pal-list" id="pal-list" role="listbox" aria-label="Commands"></div>
+  </div>
+</div>
+
+<script>

@@ -161,7 +161,7 @@ def build_block(entries: list[dict], rounds_total: int,
         lines += ["", "| Round | Section | Verdict | Note |",
                   "|-------|---------|---------|------|"]
         lines += [
-            # Curly-quoted, matching server.py's ledgerRowsHTML rendering.
+            # Curly-quoted, matching ledgerRowsHTML in assets/app/js/01-core.js.
             f"| {e['round']} | {esc_cell(e['section_title'])} | {e['verdict']} "
             f"| {('“' + esc_cell(e['note']) + '”') if esc_cell(e['note']) else '—'} |"
             for e in entries

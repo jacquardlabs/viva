@@ -1,0 +1,211 @@
+/* ─── Faces ──────────────────────────────────────────────────
+   Fragment Mono, vendored (assets/vendor/README.md), served from this
+   server's own /vendor route — same-origin, no `crossorigin`. Host not
+   named here on purpose: `test_typography.py` forbids the string outright.
+
+   latin + latin-ext only; no cyrillic-ext subset, so it falls back to system
+   mono. unicode-range values kept verbatim from the source so subsetting
+   behaves the same. */
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fragment Mono'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('/vendor/fragment-mono-v6-latin-ext-italic.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ─── Tokens ─────────────────────────────────────────────── */
+/* Catalog page: white ground, compact type. Light is the primary theme; dark
+   is the override below.
+
+   INK DISCIPLINE — four parties, one hue each, never shared:
+     --touch   yellow  reviewer's touch ON THE TEXT only (never label/border)
+     --acc     cobalt  reviewer's party: comments, suggestions, controls
+     --machine teal    machine's party: passed checks, approved
+     --fact    amber   machine-flagged open facts
+   Red/green appear only in the suggestion fence (diff semantics), not tokens. */
+:root {
+  --paper:     #ffffff;   /* the page */
+  --sunk:      #f8f8f7;   /* recessed wells: code, inputs, table heads */
+  --ink:       #1d1f21;   /* rules, headings, the dispatch stamp */
+  --ink2:      #2c2e30;   /* body copy */
+  --soft:      #6b6e71;   /* labels, secondary */
+  --faint:     #b0b1ae;   /* settled, disabled */
+  --rule:      #d9dad8;   /* hairline */
+  --touch:     #ffec8f;
+  --acc:       #2946c4;
+  --acc-dim:   rgba(41,70,196,0.08);
+  --machine:   #0c7f6b;
+  --fact:      #a06a12;
+  /* Not a fifth party ink — a filled neutral meaning only "done". */
+  --settled:   #e3e4e2;
+  /* Edge under an anchored span: transparent on white (the yellow fill is
+     already the mark); a real edge on charcoal, where the wash alone reads
+     too faint. */
+  --touch-edge: transparent;
+
+  /* Component aliases so existing rules don't need rewriting; the four
+     party inks above are the source of truth for anything new. */
+  --bg:        var(--sunk);
+  --bg2:       var(--paper);
+  --bg3:       #f0f0ee;
+  --border:    var(--rule);
+  --border2:   var(--ink);
+  --text:      var(--ink2);
+  --text2:     var(--soft);
+  --text3:     var(--faint);
+  --accent:    var(--acc);
+  --accent-dim:var(--acc-dim);
+  --scrim:     rgba(29,31,33,0.28);
+  --teal:      var(--machine);
+  --teal-bg:   rgba(12,127,107,0.07);
+  --orange:    var(--acc);          /* `changes` is reviewer judgment */
+  --orange-bg: var(--acc-dim);
+  --violet:    var(--fact);         /* `info` is an open fact */
+  --violet-bg: rgba(160,106,18,0.08);
+}
+
+/* ─── Dark ───────────────────────────────────────────────── */
+/* Same ink discipline, inverted ground, each ink lifted for charcoal contrast.
+   Written twice deliberately — under `prefers-color-scheme` for OS dark and
+   under `[data-theme="dark"]` for an explicit toggle choice — and kept in
+   sync by `test_theme_toggle.py`, which fails if a value drifts between them. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:   #16181a;
+    --sunk:    #1c1e21;
+    --ink:     #e6e7e8;
+    --ink2:    #d5d7d8;
+    --soft:    #9a9ea1;
+    --faint:   #5f6265;
+    --rule:    #2f3235;
+    --touch:   rgba(255,236,143,0.22);
+    --acc:     #8fa6f5;
+    --acc-dim: rgba(143,166,245,0.12);
+    --machine: #4fc2a5;
+    --fact:    #d19a3f;
+    --settled: #3a3e41;
+    --touch-edge: #ffec8f;
+
+    --bg3:     #232629;
+    --scrim:   rgba(10,11,12,0.72);
+    --teal-bg: rgba(79,194,165,0.10);
+    --violet-bg: rgba(209,154,63,0.12);
+  }
+}
+
+/* Same values as the media block above — kept in sync by test_theme_toggle.py.
+   `[data-theme]` beats the media query's bare `:root` on specificity, which
+   lets the toggle override the OS rather than merely agree with it. */
+:root[data-theme="dark"] {
+  --paper:   #16181a;
+  --sunk:    #1c1e21;
+  --ink:     #e6e7e8;
+  --ink2:    #d5d7d8;
+  --soft:    #9a9ea1;
+  --faint:   #5f6265;
+  --rule:    #2f3235;
+  --touch:   rgba(255,236,143,0.22);
+  --acc:     #8fa6f5;
+  --acc-dim: rgba(143,166,245,0.12);
+  --machine: #4fc2a5;
+  --fact:    #d19a3f;
+  --settled: #3a3e41;
+  --touch-edge: #ffec8f;
+
+  --bg3:     #232629;
+  --scrim:   rgba(10,11,12,0.72);
+  --teal-bg: rgba(79,194,165,0.10);
+  --violet-bg: rgba(209,154,63,0.12);
+}
+
+/* `color-scheme` follows the choice so the browser's own chrome — form
+   controls, scrollbars, the canvas behind an unpainted area — matches the
+   page instead of flashing the opposite ground. */
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+
+/* ─── Reset ──────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+button { font-family:inherit; cursor:pointer; }
+textarea { font-family:inherit; }
+
+/* ─── Base ───────────────────────────────────────────────── */
+html { scroll-behavior: smooth; scroll-padding-top: 72px; scroll-padding-bottom: 130px; }
+
+body {
+  /* Compact grotesque for human prose, mono for the machine. No display
+     face — density and rules carry the character, not a headline font. */
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--text);
+  min-height: 100vh;
+  font-variant-numeric: tabular-nums;
+  /* Byte-verbatim: Fragment Mono ligates `>=`/`->` to single glyphs, which a
+     byte-for-byte diff surface can't allow. `none` disables all four
+     categories; declared once here, inherited, rather than per-surface. */
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Shell ──────────────────────────────────────────────── */
+/* The shell is fluid; PROSE holds the measure (.section-content carries the
+   cap), so spare window width goes to the margin conversation, never to
+   wider text. */
+.shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 32px clamp(16px, 3vw, 44px) 140px;
+}
+
+/* ─── Diff-first layout (mode-diff) ──────────────────────────
+   Diffs want width and one scroll context, not the prose column.
+   body.mode-diff widens sheet/shell/bottom-bar and removes the nested
+   section scroll, keeping page scroll as the only vertical scroll — widening
+   the container rather than escaping it, so the accordion animation still works. */
+/* ─── Doc-mode page width ─────────────────────────────────────
+   Capped so the `gutter | prose | margin` layout holds prose at ~88 chars
+   and margin at 300, with no leftover dead band. Widen this to widen the
+   TEXT — the margin is capped, so prose is what grows. */
+.mode-doc .shell, .mode-doc .bottom-inner,
+.mode-qa  .shell, .mode-qa  .bottom-inner { max-width: 1054px; }
+
+.mode-diff .shell, .mode-diff .bottom-inner { max-width: min(95vw, 1600px); }
+.mode-diff #paper { max-width: min(95vw, 1600px); }
+/* Drops the prose measure — a diff-mode section holds no prose, only hunks.
+   Capped at 72ch, a rendered diff clipped mid-word with the card mostly
+   empty; the break-out rule alone couldn't fix it since the container itself
+   was the constraint. */
+.mode-diff .section-content { max-height: none; overflow-y: visible; max-width: none; }
+
+/* ─── Header ─────────────────────────────────────────────── */
+.header {
+  margin-bottom: 36px;
+}
+/* Sticky so file/round/pass/approved-count stay visible on a long document.
+   Opaque on the paper ground so prose passes beneath it, under overlays
+   (z-index 200). */
+.mode-doc .header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  padding-top: 12px;
+  margin-top: -12px;
+}
+
