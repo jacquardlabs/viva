@@ -250,7 +250,7 @@ Everything under `.viva/` is disposable and reset at the start of each session �
 <details>
 <summary><b>Server CLI</b> — driving the pieces by hand</summary>
 
-Resolve `$VIVA_DIR` from the installed plugin cache first — the same resolve every skill uses internally:
+Resolve `$VIVA_DIR` from the installed plugin cache first. The skills resolve from their own `${CLAUDE_SKILL_DIR}` instead; by hand, search the cache:
 
 ```bash
 # Highest version wins, not newest mtime: two cached versions can carry the same
