@@ -59,9 +59,10 @@ python3 "$VIVA_DIR/scripts/doc_types.py" <type>        # one bundle
 python3 "$VIVA_DIR/scripts/doc_types.py" --list        # the menu, when none was named
 ```
 
-The bundle is `{name, title, sections, checks, default_pass}`. `sections` is the
-heading grammar you fill, `checks` names the producers that run before the
-reviewer sees round 1, `default_pass` is the depth round 1 runs at. An unknown
+The bundle is `{name, title, sections, checks, default_pass, stamp?}`. `sections`
+is the heading grammar you fill, `checks` names the producers that run before the
+reviewer sees round 1, `default_pass` is the depth round 1 runs at, `stamp` is
+what step 7 does with the signed-off doc. An unknown
 name is refused here, loudly — never fall back to an untyped session.
 
 **2. Resolve the attachments**
@@ -260,16 +261,19 @@ python3 "$VIVA_DIR/scripts/loop.py" finish --doc <doc>
 `finish` refuses any non-approved section, settles the round's threads, appends
 the verbatim `## Revision History` ledger, and ends the session. Give the
 sign-off report — type, sections, rounds, what was revised — and take the
-stamp the type calls for:
+stamp the bundle declares. Its `target` runs when its ref resolves, its
+`fallback` when none does:
 
-| Type | Stamp |
-|------|-------|
-| `pr-description` | `gh pr view --json number` on the current branch names the PR; `gh pr edit <n> --body-file <doc>` if it resolves, `gh pr create --body-file <doc>` if it does not |
-| `handoff` | if intake attached an issue ref for the receiving team, `gh issue comment <n> --body-file <doc>` posts the handoff there; otherwise `git add <doc> && git commit -m "docs: <title>"` |
-| everything else | `git add <doc> && git commit -m "docs: <title>"` |
+| Value | Ref | Command |
+|-------|-----|---------|
+| `pr-body` | `gh pr view --json number` on the current branch | `gh pr edit <n> --body-file <doc>` |
+| `issue-body` | the issue ref intake attached | `gh issue edit <n> --body-file <doc>` |
+| `issue-comment` | the issue ref intake attached (a spec's parent PRD, a handoff's receiving team) | `gh issue comment <n> --body-file <doc>` |
+| `pr-create` | — | `gh pr create --body-file <doc>` |
+| `issue-create` | — | `gh issue create --title "<title>" --body-file <doc>` |
+| `commit`, or no `stamp` in the bundle | — | `git add <doc> && git commit -m "docs: <title>"` |
 
-Ask before running it — a stamp is outward-facing (#165 guard 2). Bundles
-carry no `stamp` field today, so this table is the mapping.
+Ask before running it — a stamp is outward-facing (#165 guard 2).
 
 Cluster this session's `changes`/`info` notes into distinct recurring
 critiques and record them — `finish` prints the path to `preferences.md`. A

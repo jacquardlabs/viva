@@ -341,7 +341,8 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   flags render in section 1's margin instead. Registered, they render once,
   in the document slip above the print.
 - **Doc-type bundles.** A type is section grammar + check set + default pass,
-  one JSON file per name: shipped defaults in `types/`, a repo's overrides in
+  plus an optional `stamp` (a closed-set `target` and its no-ref `fallback`,
+  validated in `doc_types.py`; absent means commit), one JSON file per name: shipped defaults in `types/`, a repo's overrides in
   `.viva-types/`, the repo's copy winning **wholesale** on a name collision so
   it can drop a shipped check as well as add one. Both directories are
   committed config, deliberately outside `.viva/`, which is cleared every

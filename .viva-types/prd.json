@@ -10,5 +10,6 @@
     "Open questions"
   ],
   "checks": ["headings-present"],
-  "default_pass": "architecture"
+  "default_pass": "architecture",
+  "stamp": {"target": "issue-body", "fallback": "issue-create"}
 }

@@ -318,6 +318,55 @@ def test_bundles_live_outside_the_cleared_state_dir() -> None:
     print("  ok  test_bundles_live_outside_the_cleared_state_dir")
 
 
+# Literal oracle, same reason as `PASS_KINDS`: the stamp each type declares.
+EXPECTED_STAMPS = {
+    "pr-description": {"target": "pr-body", "fallback": "pr-create"},
+    "handoff": {"target": "issue-comment", "fallback": "commit"},
+    "prd": {"target": "issue-body", "fallback": "issue-create"},
+    "tech-spec": {"target": "issue-comment", "fallback": "issue-create"},
+}
+
+
+def test_stamp_resolves_per_type_with_its_fallback() -> None:
+    """Each stamped type resolves its target and no-ref fallback; `prd` and
+    `tech-spec` are this repo's `.viva-types/`, so resolve them from there."""
+    for name, stamp in EXPECTED_STAMPS.items():
+        bundle = resolve_ok(name, ROOT / ".viva-types")
+        assert bundle.get("stamp") == stamp, (name, bundle.get("stamp"))
+    unstamped = {p.stem for p in SHIPPED.glob("*.json")} - set(EXPECTED_STAMPS)
+    assert unstamped, "some shipped type must exercise the commit default"
+    for name in sorted(unstamped):
+        assert "stamp" not in resolve_ok(name), f"{name} grew a stamp"
+    print("  ok  test_stamp_resolves_per_type_with_its_fallback")
+
+
+def test_invalid_stamps_are_refused() -> None:
+    base = {"name": "x", "title": "X", "sections": [], "checks": [],
+            "default_pass": "architecture"}
+    cases = {
+        "null": None,
+        "a bare string": "commit",
+        "unknown target": {"target": "slack-post", "fallback": "commit"},
+        "unknown fallback": {"target": "issue-body", "fallback": "email"},
+        "tracker target without a fallback": {"target": "issue-comment"},
+        "a fallback on commit": {"target": "commit", "fallback": "commit"},
+        "an unknown key": {"target": "commit", "via": "gh"},
+    }
+    for label, stamp in cases.items():
+        with tempfile.TemporaryDirectory() as td:
+            types_dir = Path(td) / ".viva-types"
+            write_bundle(types_dir, "x", dict(base, stamp=stamp))
+            r = resolve("x", types_dir)
+        assert r.returncode != 0, f"{label}: must be refused"
+        assert r.stdout.strip() == "", f"{label}: printed a bundle anyway"
+        assert "stamp" in r.stderr, (label, r.stderr)
+    with tempfile.TemporaryDirectory() as td:
+        types_dir = Path(td) / ".viva-types"
+        write_bundle(types_dir, "x", dict(base, stamp={"target": "commit"}))
+        assert resolve_ok("x", types_dir)["stamp"] == {"target": "commit"}
+    print("  ok  test_invalid_stamps_are_refused")
+
+
 def main() -> None:
     test_shipped_set_resolves_and_validates()
     test_shipped_grammars_exclude_revision_history()
@@ -337,7 +386,9 @@ def main() -> None:
     test_list_is_the_merged_namespace_with_titles()
     test_list_refuses_rather_than_offering_a_broken_bundle()
     test_bundles_live_outside_the_cleared_state_dir()
-    print("OK (18 tests)")
+    test_stamp_resolves_per_type_with_its_fallback()
+    test_invalid_stamps_are_refused()
+    print("OK (20 tests)")
 
 
 if __name__ == "__main__":

@@ -131,7 +131,8 @@ opt-in layers that all funnel through the section card:
 - Brainstorming Q&A — batch design questions before the spec is written
 - Diff review: hunk-by-hunk review of agent-written code before commit, on a PR
   number, a git ref, or the working tree
-- Doc-type bundles — section grammar, check set, and default pass depth per type
+- Doc-type bundles — section grammar, check set, default pass depth, and
+  optional stamp per type
 - Doc-first intake (/viva-write): a type plus attached context (repo paths,
   issue refs, files, URLs) starts the flow; the interview covers only what the
   attachments could not answer, and the draft reaches editorial rounds in the
@@ -152,9 +153,6 @@ opt-in layers that all funnel through the section card:
 - **README trails one deeper layer.** It now covers both commands, intake, doc
   types, verdicts, pass depth, and the producer contract, but confidence
   triage is still documented only in `references/` and `CLAUDE.md`.
-- **Stamps are prose, not bundle data.** A type bundle carries no `stamp` field,
-  so `/viva-write`'s per-type consequence (commit vs. `gh pr edit`) lives in the
-  skill's table rather than in the type it belongs to.
 
 ## Feature tracker
 
