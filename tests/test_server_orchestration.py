@@ -76,10 +76,11 @@ def parse(doc, output, round_num, prior=None):
 
 def loop(viva, cwd, *argv):
     """Run a `loop.py` subcommand against `viva`, from `cwd` (the doc's dir —
-    `doc_file` is recorded relative, as the agent passes it)."""
+    `doc_file` is recorded relative, as the agent passes it). stdin is closed:
+    `summarize --map -` reads it, and an inherited open stdin hangs the suite."""
     return subprocess.run(
         [sys.executable, str(LOOP), "--viva-dir", str(viva)] + list(argv),
-        capture_output=True, text=True, cwd=str(cwd))
+        capture_output=True, text=True, cwd=str(cwd), stdin=subprocess.DEVNULL)
 
 
 def assert_printed_references_exist(stdout: str) -> None:
@@ -437,7 +438,7 @@ def check_no_subcommand_takes_a_round() -> None:
     """
     sandbox = Path(tempfile.mkdtemp()) / ".viva"
     top = subprocess.run([sys.executable, str(LOOP), "--help"],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, stdin=subprocess.DEVNULL)
     assert top.returncode == 0, top.stderr
     listed = re.search(r"\{([a-z,]+)\}", top.stdout)
     assert listed, "could not read the subcommand list from --help:\n" + top.stdout
@@ -447,7 +448,7 @@ def check_no_subcommand_takes_a_round() -> None:
 
     for name in names:
         h = subprocess.run([sys.executable, str(LOOP), name, "--help"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert h.returncode == 0, h.stderr
         assert "--round" not in h.stdout, \
             "`%s` exposes a round argument — the round is derived, never passed" % name
@@ -456,7 +457,8 @@ def check_no_subcommand_takes_a_round() -> None:
         argv = [sys.executable, str(LOOP), "--viva-dir", str(sandbox), name]
         for flag in required:
             argv += [flag, "/nonexistent/for-parse-only"]
-        r = subprocess.run(argv + ["--round", "2"], capture_output=True, text=True)
+        r = subprocess.run(argv + ["--round", "2"], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
         assert r.returncode != 0 and "unrecognized arguments" in r.stderr, \
             "`%s --round 2` must be rejected — got %d %r" % (name, r.returncode, r.stderr)
 
@@ -514,6 +516,28 @@ def check_server_cross_imports_only_schema_and_preferences() -> None:
     assert imported == {"schema", "preferences"}, \
         "server.py may cross-import only schema and preferences — found %r" \
         % sorted(imported)
+
+
+def _names(node: ast.AST) -> set:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def check_no_loop_subprocess_inherits_stdin() -> None:
+    """Every `loop.py` run under `tests/` closes or feeds stdin: `summarize
+    --map -` reads it before validating, so an inherited open stdin hangs."""
+    offenders = []
+    for path in sorted((ROOT / "tests").glob("*.py")):
+        tree = ast.parse(path.read_text())
+        # Names bound to an argv built from LOOP count as LOOP.
+        loop_names = {"LOOP"} | {t.id for a in ast.walk(tree) if isinstance(a, ast.Assign)
+                                 and "LOOP" in _names(a.value)
+                                 for t in a.targets if isinstance(t, ast.Name)}
+        offenders += ["%s:%d" % (path.name, call.lineno) for call in ast.walk(tree)
+                      if isinstance(call, ast.Call) and call.args
+                      and isinstance(call.func, ast.Attribute) and call.func.attr == "run"
+                      and _names(call.args[0]) & loop_names
+                      and not {k.arg for k in call.keywords} & {"stdin", "input"}]
+    assert not offenders, "loop.py run with an inherited stdin: %s" % offenders
 
 
 def _numbered_step(text: str, keyword: str) -> str:
@@ -1438,6 +1462,7 @@ def main() -> None:
     check_loop_cross_imports_only_schema()
     check_every_script_cross_imports_only_schema()
     check_server_cross_imports_only_schema_and_preferences()
+    check_no_loop_subprocess_inherits_stdin()
     check_skill_carries_no_bookkeeping_bash()
     check_no_skill_carries_its_own_loop()
     check_rewrite_step_applies_standing_preferences()
