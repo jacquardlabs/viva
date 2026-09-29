@@ -248,7 +248,9 @@ python3 "$VIVA_DIR/scripts/loop.py" finish --doc <doc_file>
 `## Revision History` to the doc — a summary line, a verbatim table of every
 `changes`/`info` note and every suggestion's wording, and an **Open notes**
 subsection carrying each thread's full exchange when any were tracked. On a
-re-reviewed doc the new block is appended under the existing heading. It
+re-reviewed doc the new block is appended under the existing heading, and a
+resumed session's summary line names the sections changed since the prior
+sign-off (or says none did). It
 **refuses** on any non-approved section and prints the pending count: nothing
 is auto-accepted.
 

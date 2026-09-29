@@ -613,6 +613,21 @@ def test_recheck_is_presence_gated_and_boolean_only():
     print("  ok  test_recheck_is_presence_gated_and_boolean_only")
 
 
+def test_resumed_is_presence_gated_and_boolean_only():
+    """`resumed` re-phrases the ledger line at `finish` — a malformed value
+    must fail where it was written, not re-sign a first sign-off."""
+    base = {"sections": [{"id": "s1", "title": "T", "content": "c"}]}
+    schema.validate_review_input(dict(base, resumed=True))
+    schema.validate_review_input(dict(base, resumed=False))
+    for bad in ("true", 1, None, [], {}):
+        try:
+            schema.validate_review_input(dict(base, resumed=bad))
+            raise AssertionError(f"resumed={bad!r} should have been rejected")
+        except ValueError:
+            pass
+    print("  ok  test_resumed_is_presence_gated_and_boolean_only")
+
+
 def test_round_is_presence_gated_and_absence_normalizes():
     """`round` is optional and stays optional — a present malformed value is a
     hard failure, but an absent one is NORMALIZED rather than rejected,
@@ -676,8 +691,9 @@ def main():
     test_has_revision_history_is_anchored()
     test_last_signoff_date_on_one_several_and_zero_blocks()
     test_recheck_is_presence_gated_and_boolean_only()
+    test_resumed_is_presence_gated_and_boolean_only()
     test_round_is_presence_gated_and_absence_normalizes()
-    print("OK (28 tests)")
+    print("OK (29 tests)")
 
 
 if __name__ == "__main__":

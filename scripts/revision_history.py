@@ -114,15 +114,19 @@ def build_decisions_block(entries: list[dict]) -> str:
     return "\n".join(lines).rstrip()
 
 
+def round_numbers(viva_dir: Path) -> list[int]:
+    return sorted(
+        n for p in viva_dir.glob(schema.round_input_glob())
+        if (n := schema.parse_round_input_stem(p.stem)) is not None
+    )
+
+
 def collect(viva_dir: Path) -> tuple[list[dict], int, int, bool]:
     """Return (entries, rounds_total, sections_total, is_recheck) from round
     file pairs. `is_recheck` reads the HIGHEST round's own `recheck` flag
     (#83) — a recheck's round 1 seeds it and `loop.py rearm` carries it
     forward, so the finishing round always carries the true answer."""
-    rounds = sorted(
-        n for p in viva_dir.glob(schema.round_input_glob())
-        if (n := schema.parse_round_input_stem(p.stem)) is not None
-    )
+    rounds = round_numbers(viva_dir)
     entries: list[dict] = []
     sections_total = 0
     is_recheck = False
@@ -143,19 +147,50 @@ def collect(viva_dir: Path) -> tuple[list[dict], int, int, bool]:
     return entries, len(rounds), sections_total, is_recheck
 
 
+def collect_changed(viva_dir: Path) -> list[str] | None:
+    """Titles whose content differs from the prior sign-off, in doc order, or
+    None when round 1 isn't a resume. Unchanged = carried approved into round
+    1 (byte-identical to the prior sign-off) and still identical at finish."""
+    rounds = round_numbers(viva_dir)
+    if not rounds:
+        return None
+    first = json.loads(schema.round_file_paths(viva_dir, rounds[0])[0]
+                       .read_text(encoding="utf-8"))
+    if not first.get("resumed"):
+        return None
+    carried = set(first.get("approved_ids", []))
+    unchanged = {
+        (schema.section_key(s["title"]), s.get("content", ""))
+        for s in first.get("sections", []) if s.get("id") in carried
+    }
+    final = json.loads(schema.round_file_paths(viva_dir, rounds[-1])[0]
+                       .read_text(encoding="utf-8"))
+    return [
+        s["title"] for s in final.get("sections", [])
+        if (schema.section_key(s["title"]), s.get("content", "")) not in unchanged
+    ]
+
+
 def build_block(entries: list[dict], rounds_total: int,
-                sections_total: int, day: str, is_recheck: bool = False) -> str:
+                sections_total: int, day: str, is_recheck: bool = False,
+                changed: list[str] | None = None) -> str:
     # `with comments`, not `revised` (#178) — an `info` question earns a
     # ledger row too, with no edit behind it.
     commented = len({e["section_title"] for e in entries})
     # A recheck (#83) re-certifies, it doesn't re-sign — the two verbs read
     # differently in a ledger scanned for "when was this last touched".
     verb = "Re-certified" if is_recheck else "Signed off"
+    # A re-sign says so (`resumed` round 1), or three sessions read identically.
+    resign = ""
+    if changed is not None and not is_recheck:
+        resign = (f"; re-signed, {len(changed)} changed since last sign-off: "
+                  f"{', '.join(flat(t) for t in changed)}" if changed
+                  else "; re-signed, unchanged since last sign-off")
     lines = [
         f"{verb} via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
         f"section{'s' if sections_total != 1 else ''}, "
-        f"{commented} with comments. {day}"
+        f"{commented} with comments{resign}. {day}"
     ]
     if entries:
         lines += ["", "| Round | Section | Verdict | Note |",
@@ -173,7 +208,8 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     entries, rounds_total, sections_total, is_recheck = collect(viva_dir)
     if rounds_total == 0:
         die(f"no review round files found in {viva_dir}")
-    block = build_block(entries, rounds_total, sections_total, day, is_recheck)
+    block = build_block(entries, rounds_total, sections_total, day, is_recheck,
+                        collect_changed(viva_dir))
     decisions = collect_decisions(viva_dir)
     if decisions:
         block = block + "\n\n" + build_decisions_block(decisions)

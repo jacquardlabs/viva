@@ -185,6 +185,7 @@ def test_approved_matching_same_content() -> None:
     approved_section = next(s for s in data["sections"]
                             if s["id"] == data["approved_ids"][0])
     assert approved_section["title"] == "Alpha"
+    assert "resumed" not in data, "round 2+ is a rearm, never a resume"
     print("  ok  test_approved_matching_same_content")
 
 
@@ -997,6 +998,20 @@ SIGNED_DOC = (
 )
 
 
+def test_resumed_marks_round_one_with_a_prior_pair_only() -> None:
+    """Round 1 with a prior pair is the resume branch; the ledger names what
+    changed since the prior sign-off off this flag."""
+    doc = "## Alpha\n\nalpha\n"
+    prior_in = {"mode": "review", "doc_file": "doc.md", "round": 3,
+                "approved_ids": [],
+                "sections": [{"id": "s1", "title": "Alpha", "content": doc}]}
+    prior_v = {"round": 3, "submitted_early": False,
+               "sections": [{"id": "s1", "verdict": "approved", "note": ""}]}
+    assert run(doc, prior_input=prior_in, prior_verdicts=prior_v)["resumed"] is True
+    assert "resumed" not in run(doc), "a first sign-off carries no key"
+    print("  ok  test_resumed_marks_round_one_with_a_prior_pair_only")
+
+
 def test_recheck_seeds_every_section_approved() -> None:
     data = run(SIGNED_DOC, extra_args=["--recheck"])
     assert data["recheck"] is True, data
@@ -1153,11 +1168,12 @@ def main() -> None:
     test_coarser_heading_before_first_split_stays_in_preamble()
     test_coarser_trailing_revision_history_excluded_not_absorbed()
     test_coarser_heading_approval_not_carried_when_boundary_moves()
+    test_resumed_marks_round_one_with_a_prior_pair_only()
     test_recheck_seeds_every_section_approved()
     test_recheck_refuses_an_unsigned_doc()
     test_no_recheck_key_when_flag_absent()
     test_recheck_round_two_carries_the_normal_way()
-    print("OK (49 tests)")
+    print("OK (50 tests)")
 
 
 if __name__ == "__main__":

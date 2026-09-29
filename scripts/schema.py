@@ -270,6 +270,9 @@ class ReviewInput(_ReviewInputPass, total=False):
     # optional — resolved doc-type name (`scripts/doc_types.py`), carried
     # round to round like `split_on`. Passthrough — `server.py` ignores it.
     doc_type: str
+    # optional — round 1 of a resume against a prior sign-off; round-1 only,
+    # never carried. `revision_history.py` names what changed since then.
+    resumed: bool
     # `pass` — see `_ReviewInputPass` above; the key cannot be spelled here.
     sections: list[ReviewSection]
 
@@ -368,6 +371,9 @@ def validate_review_input(data: dict) -> None:
     # silently revert a re-certification session to an ordinary one.
     if "recheck" in data and not isinstance(data["recheck"], bool):
         raise ValueError("review-input.recheck must be a boolean")
+    # Same rule for `resumed`: it moves the ledger phrasing at `finish` too.
+    if "resumed" in data and not isinstance(data["resumed"], bool):
+        raise ValueError("review-input.resumed must be a boolean")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review-input.sections[{i}] must be an object")
