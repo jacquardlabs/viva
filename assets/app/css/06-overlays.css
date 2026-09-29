@@ -1,0 +1,476 @@
+/* ─── Bottom bar ─────────────────────────────────────────── */
+.bottom-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 12px 20px;
+  /* Opaque, not frosted: a catalog footer states the count, it does not
+     blur the page behind it. The 2px ink rule is the same one that closes
+     the header — the page is bracketed top and bottom. */
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+}
+
+.bottom-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  /* NOWRAP, and the counters give way instead. A flex container breaks its
+     line BEFORE it shrinks anything, so `wrap` here meant the row never even
+     attempted the shrink that would have let it fit: at doc mode's own 1054px
+     cap, 613px of counters against a 450px stamp is 1063, and the stamp
+     dropped to a line of its own over nine pixels. `.stats` is `0 1 auto` with
+     `min-width: 0` and wraps internally, so it absorbs the squeeze down to its
+     own widest child — measured no overflow at 1054, 900, 760, 640 and 520px
+     of container, with the stamp keeping its full 450px at every one. */
+  flex-wrap: nowrap;
+}
+
+/* The counters take the room the dispatch controls do not, and give way
+   INTERNALLY rather than pushing them onto a line of their own. `.btn-group`
+   is `flex: 0 0 auto`, so without `min-width: 0` here the counters claim their
+   full content width and the two blocks overflow the row: measured at doc
+   mode's own 1054px cap, 613px of counters against 450px of buttons is 1063 —
+   over by nine pixels, and the stamp wrapped under the stats. Shrinking lets
+   `.bar-controls` (the `margin-left: auto` cluster) take the second line
+   instead, which is the wrap it was grouped to make graceful. */
+.stats {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  /* Shrink, never grow. `1 1 auto` made the counters claim the whole row and
+     push the stamp onto a second line just as surely as no shrink at all. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.stat-run { display: flex; gap: 14px; flex-wrap: wrap; min-width: 0; align-items: center; }
+.stat-pending  { color: var(--soft); }
+
+/* The two dispatch controls are one unit and do not shrink: default
+   `flex-shrink: 1` let `skip rest & submit` wrap onto three lines at a
+   780px viewport. `.stats` above absorbs the width instead. `display: flex`
+   stays in the stylesheet — the SSE `round` handler falls back to it. */
+.btn-group { display: flex; gap: 8px; flex: 0 0 auto; }
+
+.btn-skip {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 9px 16px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--soft);
+  /* The label is three words; a button narrower than its text broke
+     `skip rest & submit` onto three lines before `.btn-group` stopped
+     shrinking. Both halves are needed. */
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.btn-skip:hover { border-color: var(--ink); color: var(--ink); }
+
+.btn-submit {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 20px;
+  /* A transparent 1px border, not `none`: the ready and not-ready states share
+     one box, so the outline state below cannot grow the control by 2px. */
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn-submit.ready {
+  background: var(--acc);
+  color: var(--paper);
+}
+.btn-submit.ready:hover {
+  background: var(--ink);
+  transform: none;
+}
+/* The not-ready dispatch takes `.btn-skip`'s quiet outline grammar rather
+   than a filled shape in disabled tokens, which made the one control that
+   cannot act the highest-contrast block on the page. Carries `aria-disabled`
+   from updateReviewStats/updateQAStats; the DOM `disabled` attr stays
+   reserved for in-flight. */
+.btn-submit.disabled {
+  background: transparent;
+  color: var(--soft);
+  border-color: var(--rule);
+  cursor: not-allowed;
+}
+
+/* ─── Recap overlay (submit gate — review/diff modes) ──────
+   Pre-flight index over every section: id, title, verdict dot + label,
+   active-note count. btn-submit's ready click opens this instead of
+   submitting; only #recap-confirm calls submitReview(false). */
+.recap-overlay, .prefs-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+/* The palette's materials, since the palette is what a catalog overlay looks
+   like here: paper rather than the recessed panel `--bg` gave it, a square 1px
+   ink border, and the same lift off the scrim. */
+.recap-panel, .prefs-panel {
+  width: min(640px, 92vw); max-height: 82vh;
+  display: flex; flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+}
+.recap-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.recap-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+/* A dialog closes on Escape, so the control says so rather than drawing a
+   glyph the reader has to learn. Same keycap the palette and the margin verbs
+   wear — one keyboard layer, printed wherever it applies. */
+/* 9px of keycap is not a click target. The padding goes on the BUTTON, not
+   on the cap, so the cap keeps the size every other keycap on the page has
+   while the hit area clears 24px. */
+.recap-close, .prefs-close {
+  border: none; background: none; cursor: pointer;
+  padding: 6px 8px; line-height: 1;
+  display: flex; align-items: center;
+}
+.recap-close:hover kbd, .prefs-close:hover kbd { border-color: var(--ink); color: var(--ink); }
+.recap-grid { overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px; }
+.recap-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 52px;
+  gap: 10px; align-items: center;
+  width: 100%;
+  padding: 6px 0; margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit; font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.recap-row:first-child { border-top: none; }
+/* Catalog yellow marks what the pointer is on, the way `.pal-row.is-on`
+   does — the ground's one selection ink, rather than a second gray band. */
+.recap-row:hover { background: var(--touch); }
+.recap-id {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--soft);
+}
+.recap-row-title { color: var(--text); font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recap-verdict {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rv-approved { color: var(--teal); }
+.rv-changes  { color: var(--orange); }
+.rv-info     { color: var(--violet); }
+.rv-pending  { color: var(--soft); }
+.recap-notes {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  color: var(--soft);
+  text-align: right;
+}
+/* Three children, not one: the blocked state on the left, the two controls
+   on the right — a recap opened with sections pending needs a control that
+   can act. */
+.recap-actions {
+  display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+  flex-wrap: wrap;   /* three children now, in a row built for one */
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+/* Why the confirm is quiet, said in place. `.recap-title`'s label grammar, so
+   it reads as a state label rather than as a new ink. */
+.recap-blocked {
+  margin-right: auto;   /* the label holds the left edge; the controls stay right */
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+
+/* ─── Preferences panel — view/mute learned preferences (#142) ────
+   A second modal, built on the recap overlay's shape (role="dialog", inert
+   background, focus trap); at most one of the two is ever open at a time —
+   its overlay/panel shell is the shared .recap-overlay/.recap-panel rule
+   above. */
+.prefs-head {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.prefs-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.prefs-help {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text3);
+}
+.prefs-help strong { color: var(--text2); font-weight: 600; }
+/* The panel's *only* aria-live region — one line, updated on mute.
+   #prefs-list deliberately carries none: a live-labeled list would announce
+   every row's text on open, not just the one status change after a mute. */
+.prefs-status {
+  min-height: 1em;
+  padding: 6px 14px 0;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+}
+.prefs-list { overflow-y: auto; overscroll-behavior: contain; padding: 8px 14px 14px; }
+.prefs-empty { color: var(--text3); font-size: 12px; padding: 8px 0; margin: 0; }
+.pref-row { padding: 10px 0; border-top: 1px solid var(--border); }
+.pref-row:first-child { border-top: none; }
+/* Programmatic badge-jump target (tabindex="-1", never a mouse focus) — a
+   visible ring confirms which row the jump landed on, same accent outline
+   every other focus target in the page uses. */
+.pref-row:focus { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+.pref-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pref-status {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 0;
+}
+.pref-status-standing  { color: var(--teal);  background: var(--teal-bg); }
+.pref-status-candidate { color: var(--text2); background: var(--bg3); }
+.pref-status-muted     { color: var(--text3); background: var(--bg3); }
+.pref-label { color: var(--text); font-weight: 500; }
+.pref-guidance { color: var(--text2); font-size: 12px; margin-top: 4px; }
+.pref-meta {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: 4px;
+  overflow-wrap: break-word;
+}
+/* A verb in a list of items is a verb in the margin's grammar — `.nt-btn`,
+   squared and bordered, rather than a bare word that reads as a label. */
+.pref-mute-btn {
+  margin-left: auto;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--soft);
+  cursor: pointer;
+}
+.pref-mute-btn:hover { border-color: var(--ink); color: var(--ink); }
+.pref-mute-btn:disabled { opacity: 0.5; cursor: default; border-color: var(--rule); color: var(--soft); }
+.pref-muted-note { margin-top: 6px; font-size: 11px; color: var(--text3); }
+.pref-muted-note code { font-family: 'Fragment Mono', monospace; font-size: 10px; color: var(--text2); }
+
+/* ─── Dead-session overlay (#174) ──────────────────────────
+   Same materials as the two dialogs above, but no close control and no
+   Escape: dismissing it hands the reviewer back a tab whose submits go
+   nowhere. Orange, the connection-lost banner's weight. z-index clears the
+   palette's 1200 (the skip link's 2000 stays inside the inert set). */
+.dead-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+.dead-panel {
+  width: min(520px, 92vw);
+  padding: 22px 24px;
+  background: var(--paper);
+  border: 1px solid var(--orange);
+  border-radius: 0;
+  box-shadow: 0 18px 50px var(--scrim);
+}
+.dead-title {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin: 0 0 10px;
+}
+.dead-body { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text); }
+.dead-resume { margin: 14px 0 0; font-size: 12px; color: var(--text2); }
+/* `user-select: all` — the whole command in one click, since retyping it is
+   the only way back into this review. */
+.dead-resume code {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg3);
+  padding: 2px 6px;
+  user-select: all;
+}
+
+/* ─── Processing / Complete states ──────────────────────── */
+/* Between-rounds card — the round is in the agent's hands. A pulsing dot
+   (alive, not busy) over the reviewer's own just-submitted changes/info
+   requests, echoed verbatim. Zero rows fall back to the minimal line;
+   type colors reuse the verdict slots (changes → orange, info → violet). */
+@keyframes viva-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+/* The interlude is the same PAGE, waiting — not a splash screen with the
+   document taken away. It keeps the page's left edge and measure, and the
+   reviewer's just-submitted requests print in the margin's own note grammar. */
+.processing-inner {
+  padding: 3.5rem 0 8rem;
+  color: var(--text2);
+}
+.processing-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--acc);
+  animation: viva-pulse 1.6s ease-in-out infinite;
+  margin-bottom: 14px;
+}
+.processing-text {
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+}
+/* The echoed requests take the PAGE's measure. `#processing-view` keeps the
+   page's left edge and its measure rather than centering — a bare 460px cap
+   honored only the first half of that. */
+.processing-requests { max-width: 72ch; }
+
+.complete-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rem 2rem;
+  text-align: center;
+}
+/* Approval stamp — the drafting world's gesture for "signed off". Double-ruled,
+   teal ink, slammed onto the sheet at a slight angle as the review completes. */
+.approve-stamp { transform: rotate(-5deg); margin-bottom: 2rem; animation: stamp-down 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.stamp-rule {
+  border: 2px solid var(--teal);
+  color: var(--teal);
+  padding: 14px 30px 12px;
+  position: relative;
+  /* The machine's own token, not the neon mint this was drawn in before the
+     catalog palette landed — the only hardcoded rgba left on this view. */
+  background: var(--teal-bg);
+}
+.stamp-rule::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--teal); opacity: 0.55; }
+.stamp-word { font-family: 'Fragment Mono', monospace; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.16em; }
+.stamp-meta { font-family: 'Fragment Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; opacity: 0.85; margin-top: 6px; text-transform: uppercase; }
+.stamp-sub  { font-family: 'Fragment Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; opacity: 0.6; margin-top: 2px; }
+@keyframes stamp-down {
+  0%   { opacity: 0; transform: rotate(-5deg) scale(2.1); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: rotate(-5deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .approve-stamp, .card, .ledger, .transmittal, .doc-section, .processing-dot { animation: none; }
+  .card-body-wrap, .progress-fill, .btn-skip, .btn-submit, .ledger-chevron, .transmittal-chevron { transition: none; }
+}
+.complete-headline {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.complete-detail {
+  font-size: 0.95rem;
+  color: var(--text2);
+  margin-bottom: 0.25rem;
+}
+.complete-hint {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text3);
+  margin-top: 1.75rem;
+}
+/* ─── Syntax highlighting ──────────────────────────────────────────
+   A theme for highlight.js written inside the ink discipline rather than a
+   stock preset, which would spend the reviewer's own colors on syntax:
+     - NO catalog yellow — that means the reviewer touched the text.
+     - NO red or green — those belong to the suggestion fence alone.
+     - Comments recede; keywords carry ink weight; the two hues that do
+       appear (teal, amber) are the machine's own. Close to monochrome on
+       purpose: the code is a specification, not a rainbow. */
+.hljs                { color: var(--ink2); }
+.hljs-comment,
+.hljs-quote          { color: var(--faint); font-style: italic; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in       { color: var(--ink); font-weight: 600; }
+.hljs-string,
+.hljs-regexp,
+.hljs-addition:not(.hljs-diff) { color: var(--machine); }
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet         { color: var(--fact); }
+.hljs-title,
+.hljs-name,
+.hljs-section,
+.hljs-title.function_ { color: var(--ink); font-weight: 600; }
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params         { color: var(--ink2); }
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-meta           { color: var(--soft); }
+.hljs-emphasis       { font-style: italic; }
+.hljs-strong         { font-weight: 700; }
+.hljs-link           { text-decoration: underline; }
+
+/* Inside a rendered git diff, hljs's addition/deletion classes mark whole
+   lines. This is the one place red and green are correct — the fence and the
+   diff are the same object, and every reviewer already reads them. */
+.d2h-wrapper .hljs-addition,
+pre .hljs-addition { background: rgba(26,127,55,0.12);  color: inherit; }
+.d2h-wrapper .hljs-deletion,
+pre .hljs-deletion { background: rgba(209,36,47,0.12);  color: inherit; }

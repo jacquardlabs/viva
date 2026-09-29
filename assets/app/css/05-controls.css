@@ -1,0 +1,462 @@
+/* ─── Blueprint geometry: drafting sheets have square corners ── */
+.card, .note-field, .vbadge, .btn-skip, .btn-submit,
+.section-content, .choice-chip,
+.transmittal-row, .recap-row,
+.progress-track, .progress-fill { border-radius: 0; }
+
+/* ─── Control edges ───────────────────────────────────────────
+   Selectable controls (verdict actions, Q&A chips + buttons): full 1px
+   borders, square. State rules reassign --c — the property feeds a border
+   instead of a gradient stack; registering it via @property keeps the
+   recolor animatable (it snaps without @property support). */
+@property --c { syntax: '<color>'; inherits: true; initial-value: transparent; }
+.choice-chip, .attach-btn, .mic-btn, .cmt-chip, .cmt-save, .cmt-cancel {
+  --c: var(--rule);
+  border: 1px solid var(--c);
+  background: var(--paper);
+  transition: --c 0.12s, color 0.12s, background 0.12s;
+}
+
+
+/* ─── Note textarea ──────────────────────────────────────── */
+.note-field {
+  width: 100%;
+  font-size: 13px;
+  padding: 9px 12px;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text);
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.55;
+  transition: border-color 0.15s;
+  margin-top: 2px;
+  display: block;
+}
+.note-field:focus { outline: none; border-color: var(--acc); }
+.note-field::placeholder { color: var(--soft); }
+.note-field[aria-invalid="true"] { border-color: var(--fact); }
+.thumb-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  border: none;
+  background: var(--bg3);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+/* Error surfaces — tokenized so they participate in light mode like everything
+   else (were the only components with hardcoded hex). */
+.error-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  padding: 0.6rem 1rem;
+  background: var(--orange-bg);
+  color: var(--orange);
+  border-bottom: 1px solid var(--orange);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 0.82rem;
+  z-index: 1000;
+  text-align: center;
+}
+/* Soft-timeout variant (#119) — same structural rules as .error-banner, but
+   --violet/--violet-bg ("Info / question" per DESIGN.md) instead of
+   --orange, since "no event yet, connection still open" is a lighter-weight
+   signal than "the connection actually dropped". */
+.error-banner.banner-info {
+  background: var(--violet-bg);
+  color: var(--violet);
+  border-bottom: 1px solid var(--violet);
+}
+.load-error {
+  padding: 2rem;
+  color: var(--orange);
+}
+.attach-btn {
+  margin-top: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.attach-btn:hover { --c: var(--text3); color: var(--text); }
+/* The composer's second secondary control — same `--c` edge grammar as
+   attach. Cobalt while live: a control currently doing something is the one
+   place the accent belongs. */
+.mic-btn {
+  margin-top: 6px;
+  margin-left: 6px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 10px;
+}
+.mic-btn:hover { --c: var(--text3); color: var(--text); }
+.mic-btn.is-live { --c: var(--accent); color: var(--accent); }
+/* neutral active highlight for a drop zone — teal stays reserved for approve */
+.card.is-drop-target { box-shadow: 0 0 0 2px var(--accent); }
+
+/* ─── Multi-comment review ───
+   The add-a-note row went with the action row: `+ note` is a margin verb now,
+   and the invitation to select a passage is printed once for the whole
+   document (`.doc-hint`) rather than once per section. */
+mark.cmt-hl-changes { background: var(--orange-bg); border-bottom: 2px solid var(--orange); color: inherit; }
+mark.cmt-hl-info    { background: var(--violet-bg); border-bottom: 2px solid var(--violet); color: inherit; }
+/* A suggested span is the reviewer's own ink over the author's — the accent
+   slot, the same one `.cmt-pop-quote` uses for the span being acted on. Not a
+   verdict color: the three verdict inks stay approved/changes/info. */
+mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid var(--accent); color: inherit; }
+.comment-popover { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg2); padding: 8px; margin-top: 6px; }
+.cmt-pop-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+/* The span being commented on — a focal accent callout so it reads clearly as
+   the thing being acted on, not muted context. Uses the app's accent slot. */
+.cmt-pop-quote {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--accent-dim);
+  border-left: 2px solid var(--accent);
+  padding: 5px 9px;
+  margin: 2px 0 9px;
+  overflow-wrap: anywhere;
+}
+.cmt-chip {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 5px 8px;
+  /* A chip that does not fit moves to the next row whole; it never breaks
+     `request changes` into two lines inside a 300px composer. */
+  white-space: nowrap;
+}
+.cmt-pop-row { flex-wrap: wrap; }
+.cmt-chip:hover { --c: var(--text3); color: var(--text); }
+.cmt-chip-changes.is-on { --c: var(--orange); color: var(--orange); }
+.cmt-chip-info.is-on    { --c: var(--violet); color: var(--violet); }
+.cmt-chip-suggestion.is-on { --c: var(--accent); color: var(--accent); }
+/* The replacement field only exists while the suggestion chip is on; it reuses
+   `.note-field` for shape (square corners, per DESIGN.md's grouped rule). */
+/* Popover save / cancel — save is the reviewer's own act and takes the
+   reviewer's cobalt (teal is the machine's party); cancel stays muted. */
+.cmt-save, .cmt-cancel {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 6px 14px;
+  color: var(--text2);
+}
+.cmt-save { --c: var(--acc); color: var(--acc); }
+.cmt-save:hover   { color: var(--text); }
+.cmt-cancel:hover { --c: var(--text3); color: var(--text); }
+/* a section the reviewer is selecting text in, to make the anchor target obvious */
+.section-content::selection,
+.section-content *::selection { background: var(--violet-bg); }
+
+/* ─── Open notes (issue #16) — a note that carries across rounds ─── */
+.open-thread {
+  margin-bottom: 12px;
+  border: 1px solid var(--border2);
+  border-left: 2px solid var(--violet);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.open-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.open-thread-label {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+.settle-btn {
+  margin-left: auto;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 3px 9px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: none;
+}
+.settle-btn:hover { color: var(--teal); border-color: var(--teal); }
+.open-thread.is-settled { opacity: 0.55; }
+.open-thread.is-settled .settle-btn { color: var(--teal); border-color: var(--teal); }
+/* A thread the author declined: unresolved like an open one, so it keeps every
+   affordance — only the label and the rule change, so the reviewer can see at a
+   glance which threads are waiting on their accept-or-insist. */
+.open-thread.is-declined { border-left-color: var(--orange); }
+.open-thread.is-declined .open-thread-label { color: var(--orange); }
+/* Reply box at the foot of an open thread — continue the back-and-forth, or
+   switch the chip to "request changes" to turn the discussion into an edit. */
+.thread-reply { margin-top: 7px; }
+.thread-reply-chips { display: flex; gap: 8px; margin-bottom: 5px; }
+.thread-reply-field {
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+  min-height: 34px;
+  line-height: 1.5;
+  display: block;
+}
+.thread-reply-field:focus { outline: none; border-color: var(--acc); }
+.thread-reply-field::placeholder { color: var(--soft); }
+.open-thread.is-settled .thread-reply { display: none; }
+.exchange { padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
+.exchange + .exchange { border-top: 1px solid var(--border); }
+.exchange-q { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.exchange-round {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px; font-weight: 600; color: var(--text3); flex-shrink: 0;
+}
+.exchange-verdict {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 9px; font-weight: 600; text-transform: uppercase; flex-shrink: 0;
+}
+.exchange-verdict.v-changes { color: var(--orange); }
+.exchange-verdict.v-info    { color: var(--violet); }
+.exchange-verdict.v-suggestion { color: var(--accent); }
+.exchange-note { color: var(--text2); min-width: 0; overflow-wrap: break-word; }
+.exchange-a {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 1px solid var(--border2);
+  color: var(--text3);
+}
+.exchange-a::before { content: '↳ '; }
+/* The author's decline — their grounds for not complying with that turn. Sits
+   between the request and the response: it answers the reviewer's turn without
+   resolving it. */
+.exchange-d {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 1px solid var(--orange);
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+.exchange-d::before { content: '⊘ '; }
+.open-thread-quote {
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+/* The wording a suggestion carries, in a carried thread's exchange — accent-inked,
+   arrow-led like `.exchange-a`'s reply. */
+.cmt-repl { display: block; margin-top: 3px; color: var(--accent); overflow-wrap: anywhere; }
+.cmt-repl::before { content: '→ '; }
+
+/* ─── Q&A choices (chip style) ────────────────────────────
+   The choices ARE the question's body — no `Choices` label needed. One per
+   line (wrapped, they'd read as a grid with the picking digit landing
+   differently on every row) and bounded to 328px (`--margin-w`'s max) so the
+   keycap doesn't strand far from its label at full measure. */
+.choices { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 4px; max-width: 328px; }
+
+.choice-chip {
+  font-size: 12px;
+  font-weight: 400;
+  padding: 6px 12px;
+  color: var(--text2);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* The label takes the row; the badge and the keycap ride its right edge. */
+.chip-label { flex: 1; min-width: 0; }
+.choice-chip:hover    { --c: var(--text3);  color: var(--text);   }
+.choice-chip.selected { --c: var(--accent); color: var(--accent); }
+
+/* Recommended-choice badge (#114) — advisory only, never pre-selected or
+   focus-defaulted. Reuses the .vbadge-approved/.annot-info teal token. */
+.chip-badge {
+  display: inline-block;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 0;
+  background: var(--teal-bg);
+  color: var(--teal);
+  vertical-align: middle;
+}
+
+/* Grounds-classed recommendation badges (#175), extending .chip-badge's
+   shape: `-sourced` keeps the shared teal; `-taste` reuses the accent token
+   and decorates the choices, not a chip. `inferred` gets no color here. */
+.chip-badge-sourced { background: var(--teal-bg); color: var(--teal); }
+.chip-badge-taste   { display: block; width: fit-content; margin-bottom: 6px;
+                       background: var(--orange-bg); color: var(--orange); }
+
+/* An inferred recommendation answers only on request (#175) — a
+   best-practice opinion with no local provenance earns a click, not a
+   glance. Reuses the native <details>/<summary> disclosure .kbd-legend uses. */
+.chip-reveal {
+  margin-top: 4px;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  color: var(--soft);
+}
+.chip-reveal summary { cursor: pointer; }
+.chip-reveal summary:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.chip-reveal-body { margin-top: 2px; }
+
+/* Q&A confirm/skip are margin verbs in the `.nt-btn` grammar. The compose
+   block puts the reviewer's context inside the same bordered note the
+   margin gives other commentary — a 300px margin is not a card body. */
+.nt-compose .note-field {
+  min-height: 58px;
+  margin-top: 3px;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.nt-compose .attach-btn { margin-top: 6px; }
+.nt-compose .thumb-strip { margin-top: 6px; }
+/* The disclosure head IS the question — printed once, wrapping, numbered
+   like a catalog entry. No line clamp: a free-text question is printed
+   nowhere else, so ellipsizing it would leave it readable nowhere. */
+#qa-cards .card-title { white-space: normal; }
+
+/* A free-text question has nothing to put in the prose column — same
+   wasted-space failure `.doc.no-margin` exists to answer. A constant,
+   since whether a question has choices cannot change mid-session. */
+#qa-cards .row-head.is-choiceless { grid-template-columns: var(--gutter-w) minmax(0, 1fr); }
+#qa-cards .row-head.is-choiceless .rm { grid-column: 2; padding-left: 0; max-width: 420px; }
+
+/* ─── Skip link (first Tab stop; hidden until focused) ───── */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 2000;
+  padding: 8px 12px;
+  background: var(--bg2);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-family: 'Fragment Mono', monospace;
+  font-size: 12px;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-link:focus { top: 8px; outline: 1.5px solid var(--accent); outline-offset: 2px; }
+#main-content:focus { outline: none; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+/* ─── Keyboard focus (quality floor) ─────────────────────── */
+.card-head:focus-visible,
+.choice-chip:focus-visible,
+.attach-btn:focus-visible, .cmt-chip:focus-visible,
+.cmt-save:focus-visible, .cmt-cancel:focus-visible,
+.settle-btn:focus-visible, .diff-toggle:focus-visible,
+.carried-show:focus-visible, .carried-withdraw:focus-visible,
+.nt-btn:focus-visible, .pin:focus-visible, .pal-row:focus-visible,
+.thread-reply-btn:focus-visible,
+.transmittal-row:focus-visible, .transmittal-head:focus-visible,
+.recap-row:focus-visible, .recap-close:focus-visible,
+.annot-jump:focus-visible,
+.prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
+.theme-toggle:focus-visible, .pal-hint:focus-visible,
+.voice-toggle:focus-visible, .mic-btn:focus-visible, .voice-notice button:focus-visible,
+.btn-skip:focus-visible, .btn-submit:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── Keyboard shortcut legend ───────────────────────────── */
+.kbd-legend {
+  margin: 4px 2px 0;
+  font-family: 'Fragment Mono', monospace;
+  font-size: 11px;
+  color: var(--soft);
+}
+.kbd-legend summary {
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 4px 0;
+  user-select: none;
+}
+.kbd-legend summary:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.kbd-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  align-items: center;
+}
+.kbd-list dt { margin: 0; }
+/* The second list in the same disclosure: the aggregates, defined. Its terms
+   are words, not keycaps, so they get no `.kbd-list kbd` chrome — only the
+   rule that separates the two lists. */
+.term-list { margin-top: 12px; }
+.term-list dt { color: var(--text2); }
+.kbd-list dd { margin: 0; color: var(--text2); }
+.kbd-list kbd {
+  font-family: 'Fragment Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+

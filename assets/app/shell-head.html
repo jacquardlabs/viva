@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viva</title>
+<link rel="icon" id="favicon-link" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232946c4'/%3E%3C/svg%3E">
+<script defer id="marked-script" src="/vendor/marked-12.0.2.min.js"></script>
+<script defer id="dompurify-script" src="/vendor/purify-3.4.13.min.js"></script>
+<script defer src="/vendor/highlight-11.11.1.min.js"></script>
+<script defer id="diff2html-script" src="/vendor/diff2html-3.4.56.min.js"></script>
+<script defer id="diff2html-ui-script" src="/vendor/diff2html-ui-slim-3.4.56.min.js"></script>
+<script>
+/* Theme, applied before first paint, synchronously in <head> — reading the
+   stored choice after body render would flash the OS theme first. Wrapped in
+   try: localStorage throws in a private-mode iframe. */
+(function () {
+  try {
+    var t = localStorage.getItem('viva-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { /* no storage — follow the system, which is the default */ }
+})();
+</script>
+<style>

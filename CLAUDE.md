@@ -41,17 +41,24 @@ only by JSON files under `.viva/`:
    reports a status line per session (`--format text|json`). Run by a human
    or agent in a terminal, deliberately never wired into `server.py` (its
    own docstring explains why).
-4. **`server.py` — the SPA host** (the embedded HTML/CSS/JS constant `HTML` is
-   the overwhelming majority of it; the Python HTTP handler around it is
-   small). The bulk being a frontend is intentional — one file, no build
-   step, no npm. Don't "fix" the line count by splitting the constant out.
+4. **`server.py` — the SPA host.** The frontend lives in `assets/app/` —
+   `shell-*.html`, `css/*.css`, `js/*.js` — and `server.py` concatenates it into
+   the string `HTML` at import, in `_APP_PARTS` order (#203). That keeps what
+   the old one-file rule protected: no build step, no npm, one inlined
+   document, and a Python string tests can needle. The order is load-bearing —
+   the cascade and the JS's cross-file function hoisting follow it — so a new
+   part goes in the list, never in a `<script src>` or ES module.
+   `test_server_app_compose.py` pins the composed template's sha256; a
+   deliberate frontend change re-pins it. Tests that must see comments read
+   `_server_harness.shipped_source()`, not `server.py` alone.
    `server.py` carries one documented exception to part 3's one-cross-import
    rule: it imports `preferences.py` directly for its pure
    `empty_store`/`select`/`set_status` helpers, rather than shelling out as
    `loop.py` does — read/derive-only, so it doesn't reopen the
    independent-testability guarantee. `tests/test_server_orchestration.py`'s
    `check_server_cross_imports_only_schema_and_preferences` pins the
-   exception to exactly those two modules. It has two reads outside `.viva/`.
+   exception to exactly those two modules. Besides `assets/app/` at import, it
+   has two reads outside `.viva/`.
    One is `assets/vendor/`: ten pinned third-party browser assets (#79, #144)
    — six JS/CSS bundles plus four Fragment Mono woff2 subsets — served at
    `/vendor/<file>` from an exact-match route table resolved off `__file__`,

@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import server  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _server_harness import shipped_source  # noqa: E402
 
 HTML = server.HTML
 
@@ -62,8 +64,8 @@ def test_every_face_is_served_from_this_server() -> None:
 
 
 def test_only_two_families_ship() -> None:
-    """Read the FILE, not just `HTML`, so a stray comment fails too."""
-    source = (ROOT / "server.py").read_text(encoding="utf-8")
+    """Read the FILES, not just `HTML`, so a stray comment fails too."""
+    source = shipped_source()
     assert "Bricolage" not in source, \
         ("DESIGN.md: \"Two families only. No exceptions.\" — Bricolage Grotesque "
          "was a third, and `'Bricolage Grotesque', sans-serif` fell back past "
