@@ -2,6 +2,38 @@
 
 <!-- version list -->
 
+## v2.15.0 (2026-09-29)
+
+### Bug Fixes
+
+- First resume after sign-off carries the last section's approval
+  ([#251](https://github.com/jacquardlabs/viva/pull/251),
+  [`5823023`](https://github.com/jacquardlabs/viva/commit/58230235ce92ce14e3c6758c545ba651ac185c54))
+
+- List each answered question once in the Decisions ledger
+  ([#253](https://github.com/jacquardlabs/viva/pull/253),
+  [`19401fb`](https://github.com/jacquardlabs/viva/commit/19401fb7f52ff8d3a4779e65b6733fab32e19991))
+
+- Name the sections changed since the last sign-off on a re-sign
+  ([#252](https://github.com/jacquardlabs/viva/pull/252),
+  [`d3731d8`](https://github.com/jacquardlabs/viva/commit/d3731d860d05e4e7fe181399a2839d92eb02ce51))
+
+- **tests**: Close stdin on every loop.py subprocess so the suite never hangs
+  ([#254](https://github.com/jacquardlabs/viva/pull/254),
+  [`65f54b0`](https://github.com/jacquardlabs/viva/commit/65f54b016cfb2fafe10023ef5cf15c10321d36b4))
+
+### Documentation
+
+- Describe the one-bullet-per-question Decisions ledger in producers.md
+  ([#253](https://github.com/jacquardlabs/viva/pull/253),
+  [`19401fb`](https://github.com/jacquardlabs/viva/commit/19401fb7f52ff8d3a4779e65b6733fab32e19991))
+
+### Features
+
+- Declare a doc type's stamp in its bundle ([#250](https://github.com/jacquardlabs/viva/pull/250),
+  [`5a38a66`](https://github.com/jacquardlabs/viva/commit/5a38a662df569f33218d72b54c60e263df4e74bf))
+
+
 ## v2.14.2 (2026-09-29)
 
 ### Bug Fixes
