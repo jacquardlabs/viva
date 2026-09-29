@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.14.2 (2026-09-29)
+
+### Bug Fixes
+
+- Fold a section's unanchored decision flags into one margin block
+  ([#249](https://github.com/jacquardlabs/viva/pull/249),
+  [`16973c3`](https://github.com/jacquardlabs/viva/commit/16973c3276a435395fcab24ccf82f64ddd6d00f6))
+
+- Report budget.over for named attachments past either cap
+  ([#248](https://github.com/jacquardlabs/viva/pull/248),
+  [`257a277`](https://github.com/jacquardlabs/viva/commit/257a2779ce6cf6ee6147743f162bfab8e757d57a))
+
+
 ## v2.14.1 (2026-09-29)
 
 ### Bug Fixes
