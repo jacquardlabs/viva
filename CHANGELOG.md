@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.16.0 (2026-09-29)
+
+### Features
+
+- Session identity — a session record in the git common dir survives the clear until sign-off
+  ([#255](https://github.com/jacquardlabs/viva/pull/255),
+  [`bef4005`](https://github.com/jacquardlabs/viva/commit/bef4005fb994cb13b643e37ecba10af20d216ed7))
+
+
 ## v2.15.0 (2026-09-29)
 
 ### Bug Fixes
