@@ -30,7 +30,7 @@ function isContinuousPrint() { return !!(REVIEW_DATA && REVIEW_DATA.mode === 're
    isn't a glance, so it routes to the margin via annotStripHTML instead. */
 function docFlagSplit(section) {
   const titles = reviewSectionTitles();
-  const gutter = [], margin = [], doc = [];
+  const gutter = [], margin = [], doc = [], decisions = [];
   (section.annotations || []).forEach(a => {
     if (!a) return;
     // A document fact, not a flag on this passage. Producers anchor these to
@@ -41,16 +41,25 @@ function docFlagSplit(section) {
     // section (drives the triage sort; rendered in the spec table) — not a
     // passage flag, so it's skipped here rather than holding the gutter open.
     if (a.kind === 'confidence') return;
-    // A decision (#211) carries no anchor to jump to — it's the answer
-    // behind the section, not a passage flag — but "the reviewer sees the
-    // answer beside the prose" means words, not a glyph. Margin unconditionally.
-    if (a.kind === 'decision') { margin.push(a); return; }
+    // A decision (#211) carries no anchor — the answer behind the section,
+    // not a passage flag — so it's words in the foot margin, not a glyph, and
+    // its own bucket so several fold into one block (decisionFoldHTML).
+    if (a.kind === 'decision') { decisions.push(a); return; }
     const anchorId = a.anchor != null ? String(a.anchor) : '';
     const m = a.kind === 'preference' ? PREF_ID_RE.exec(a.message || '') : null;
     const jumps = (anchorId && titles.has(anchorId)) || !!(m && PREFS_BY_ID.get(m[1]));
     (jumps ? margin : gutter).push(a);
   });
-  return { gutter, margin, doc };
+  return { gutter, margin, doc, decisions };
+}
+
+/* A section's decisions have no row to sit beside, so several stacked at the
+   foot would push an empty band into the prose column. Two or more fold into
+   one "N decisions" disclosure; a lone decision still reads open. */
+function decisionFoldHTML(decisions) {
+  if (decisions.length < 2) return annotStripHTML(decisions);
+  return '<details class="decision-fold"><summary>' + decisions.length
+       + ' decisions</summary>' + annotStripHTML(decisions) + '</details>';
 }
 
 const FLAG_GLYPH = { info: '&#10003;', warn: '&#9651;', error: '&#10007;' };
@@ -564,13 +573,14 @@ function placeDocFlags(id) {
     }
     host.innerHTML = flags.map(marginFlagHTML).join('');
   });
-  if (split.margin.length) {
+  if (split.margin.length || split.decisions.length) {
     const host = docNoteHost(id, null);
     // Idempotent: _ensureRendered can run twice on the md-raw path (eager
     // loop, then activateReviewCard) without clearing _pendingMarkdown, so
     // without this guard the strip would stack twice.
-    if (host && !host.querySelector(':scope > .annot-strip')) {
-      host.insertAdjacentHTML('afterbegin', annotStripHTML(split.margin));
+    if (host && !host.querySelector(':scope > .annot-strip, :scope > .decision-fold')) {
+      host.insertAdjacentHTML('afterbegin',
+        annotStripHTML(split.margin) + decisionFoldHTML(split.decisions));
       host.querySelectorAll('.annot-jump').forEach(btn => {
         btn.addEventListener('click', e => {
           e.stopPropagation();
@@ -828,7 +838,10 @@ function updateDocColumns() {
   // `split.gutter` is deliberately NOT counted: a gutter flag with no
   // resolved row still lands in the foot band's margin, which is what the
   // `.doc.no-margin .row-foot` CSS twin covers instead of widening this check.
-  const margin = sections.some(s => docFlagSplit(s).margin.length || docNotes(s).length)
+  const margin = sections.some(s => {
+    const split = docFlagSplit(s);
+    return split.margin.length || split.decisions.length || docNotes(s).length;
+  })
     || !!doc.querySelector('.rm .comment-popover.is-open');
   doc.classList.toggle('no-gutter', !gutter);
   // The print never collapses its margin — an empty margin is still the
