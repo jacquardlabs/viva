@@ -12,5 +12,6 @@
     "Receiving-team owner"
   ],
   "checks": ["headings-present"],
-  "default_pass": "checks"
+  "default_pass": "checks",
+  "stamp": {"target": "issue-comment", "fallback": "commit"}
 }

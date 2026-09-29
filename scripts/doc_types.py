@@ -11,6 +11,10 @@ one name to one bundle and prints it as JSON:
    "sections": ["Problem & persona", ...],
    "checks": ["headings-present"], "default_pass": "architecture"}
 
+An optional `stamp` names what `/viva-write` does with the signed-off doc:
+`{"target": <STAMP_TARGETS>, "fallback": <STAMP_FALLBACKS>}`. A tracker
+target needs a `fallback` for when no ref resolves; `commit` takes none.
+
 `--list` prints the merged namespace instead — every resolvable name with its
 title, for an intake menu when the caller named no type.
 
@@ -27,7 +31,8 @@ Bundles never live under `.viva/` — that directory is cleared every
 Every failure is loud and exits non-zero. Refused: an unknown name, a name that
 is not a bare lowercase token, unreadable or malformed JSON, a missing/mistyped
 required key, a `default_pass` outside `architecture|line|checks|final`, and a
-bundle whose `name` disagrees with its filename.
+bundle whose `name` disagrees with its filename, and a present `stamp` that
+is not an object of known `target`/`fallback` values.
 
 Imports one sibling, `schema` (CLAUDE.md), for `PASS_KINDS`.
 """
@@ -50,6 +55,10 @@ REPO_TYPES_DIR = ".viva-types"
 
 # A bare lowercase token — the filename IS the identity.
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+# Closed sets for a bundle's `stamp`; the skill maps each value to its command.
+STAMP_TARGETS = ("commit", "pr-body", "issue-body", "issue-comment")
+STAMP_FALLBACKS = ("commit", "pr-create", "issue-create")
 
 
 def known(types_dir: Path, shipped_dir: Path = SHIPPED_DIR) -> list:
@@ -99,6 +108,30 @@ def validate_bundle(bundle: object, name: str, where: str) -> None:
         raise ValueError(
             f"{where}: default_pass {bundle['default_pass']!r} is not one of "
             f"{'|'.join(schema.PASS_KINDS)}")
+    if "stamp" in bundle:
+        validate_stamp(bundle["stamp"], where)
+
+
+def validate_stamp(stamp: object, where: str) -> None:
+    """Raise `ValueError` unless `stamp` is a known target plus, for a tracker
+    target, the fallback taken when no PR or issue ref resolves."""
+    if not isinstance(stamp, dict) or set(stamp) - {"target", "fallback"}:
+        raise ValueError(
+            f"{where}: stamp must be an object with 'target' and, for a "
+            f"tracker target, 'fallback'")
+    target = stamp.get("target")
+    if target not in STAMP_TARGETS:
+        raise ValueError(f"{where}: stamp target {target!r} is not one of "
+                         f"{'|'.join(STAMP_TARGETS)}")
+    if target == "commit":
+        if "fallback" in stamp:
+            raise ValueError(f"{where}: a 'commit' stamp resolves no ref, so "
+                             f"it takes no fallback")
+    elif stamp.get("fallback") not in STAMP_FALLBACKS:
+        raise ValueError(
+            f"{where}: stamp target {target!r} needs a fallback for when no "
+            f"ref resolves, one of {'|'.join(STAMP_FALLBACKS)} — got "
+            f"{stamp.get('fallback')!r}")
 
 
 def load_bundle(path: Path, name: str) -> dict:

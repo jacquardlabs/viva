@@ -3,5 +3,6 @@
   "title": "PR description",
   "sections": ["Summary", "Test plan"],
   "checks": ["headings-present"],
-  "default_pass": "line"
+  "default_pass": "line",
+  "stamp": {"target": "pr-body", "fallback": "pr-create"}
 }

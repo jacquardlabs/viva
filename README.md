@@ -136,7 +136,7 @@ The other end of the lifecycle. Instead of composing a document and then finding
   4. draft      fill the type's section grammar from attachments + answers
   5. hand off   the same tab reflows from Q&A cards to review cards — no relaunch
   6. rounds     editorial review until every section is approved
-  7. stamp      commit, or push the body to the PR — per type
+  7. stamp      commit, or post to the PR or issue — the bundle's stamp
 ```
 
 Every argument is optional. With no type, question one is *what's the deliverable*; with no path, the interview asks where the draft should land.
@@ -171,7 +171,7 @@ Nothing is fetched by the manifest itself: an issue entry carries the exact `gh`
 
 ## Document types
 
-A type bundle is **section grammar + check set + default pass depth**, one JSON file per name. Six ship (`design-doc`, `plan`, `readme`, `pr-description`, `progress-note`, `handoff`); a repo adds or overrides one by committing `.viva-types/<name>.json`, which wins wholesale on a name collision so it can drop a shipped check as well as add one.
+A type bundle is **section grammar + check set + default pass depth**, plus an optional **stamp** — where the signed-off doc goes (`commit`, `pr-body`, `issue-body`, `issue-comment`, with a fallback when no PR or issue resolves); a bundle without one commits. One JSON file per name. Six ship (`design-doc`, `plan`, `readme`, `pr-description`, `progress-note`, `handoff`); a repo adds or overrides one by committing `.viva-types/<name>.json`, which wins wholesale on a name collision so it can drop a shipped check as well as add one.
 
 Invoking `/viva-write` with no type asks *what's the deliverable* and offers the
 merged menu — the shipped bundles plus whatever your repo committed. (The
