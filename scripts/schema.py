@@ -3,8 +3,9 @@
 
 The one module `scripts/*.py` and `server.py` import: section identity
 (`section_key`), the ledger rule (`verdict_to_ledger_entry`), round-shape
-`TypedDict`s, the completion rule (`round_is_complete`), and boundary
-validation (`validate_review_input`/`validate_verdicts`). stdlib-only —
+`TypedDict`s, the completion rule (`round_is_complete`), the session record
+(`SessionRecord`), and boundary validation (`validate_review_input`/
+`validate_verdicts`/`validate_session`). stdlib-only —
 every other script stays standalone and imports nothing but this.
 
 `GET /input` (#58) serves the review-input merged with a live `ledger: [...]`
@@ -726,3 +727,78 @@ def validate_qa_input(data: dict) -> None:
                     "recommended_choice — taste means no recommendation is "
                     "offered"
                 )
+
+
+# ── Session record — one lifecycle session across gates (#239, #240) ─────────
+# `$(git rev-parse --git-common-dir)/viva/session.json`: per clone, outside
+# every `.viva/`, so `_clear_state` never touches it. Gates run in this order.
+SESSION_GATE_KINDS = ("intake", "spec", "diff")
+SESSION_GATE_STATES = ("done", "live", "waiting")
+SPEC_SOURCE_KINDS = ("commit", "comment")
+
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+_PR_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[1-9][0-9]*$")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+class SessionGate(TypedDict):
+    kind: str   # one of SESSION_GATE_KINDS
+    state: str  # one of SESSION_GATE_STATES
+
+
+class SessionRecord(TypedDict, total=False):
+    id: str             # required — uuid4 hex
+    repo: str           # required — `owner/name`, from the `origin` remote
+    viva_dir: str       # required — absolute `.viva/` that owns the live gate
+    gates: list[SessionGate]  # required — SESSION_GATE_KINDS, in order
+    # optional, presence-gated — `{kind: commit, path, sha}` or
+    # `{kind: comment, url, updated_at}`; set by `loop.py session --spec-source`
+    spec: dict
+    pr: str             # optional, presence-gated — `owner/repo#N`, set at the join
+
+
+def validate_session(data: dict) -> None:
+    """Raise `ValueError` if `data` is not a structurally valid session record.
+
+    Gates must name SESSION_GATE_KINDS in order, their states reading
+    done… then at most one live… then waiting — a record can't have a later
+    gate further along than an earlier one."""
+    if not isinstance(data, dict):
+        raise ValueError("session must be a JSON object")
+    if not isinstance(data.get("id"), str) or not _SESSION_ID_RE.match(data["id"]):
+        raise ValueError("session.id must be 32 lowercase hex characters")
+    if not isinstance(data.get("repo"), str) or not _REPO_RE.match(data["repo"]):
+        raise ValueError("session.repo must be `owner/name`")
+    viva_dir = data.get("viva_dir")
+    if not isinstance(viva_dir, str) or not Path(viva_dir).is_absolute():
+        raise ValueError("session.viva_dir must be an absolute path")
+    gates = data.get("gates")
+    if not isinstance(gates, list) or not all(isinstance(g, dict) for g in gates):
+        raise ValueError("session.gates must be a list of objects")
+    if [g.get("kind") for g in gates] != list(SESSION_GATE_KINDS):
+        raise ValueError(f"session.gates must name {SESSION_GATE_KINDS!r} in order")
+    states = [g.get("state") for g in gates]
+    if any(s not in SESSION_GATE_STATES for s in states):
+        raise ValueError(f"session.gates[].state must be one of {SESSION_GATE_STATES!r}")
+    rank = [SESSION_GATE_STATES.index(s) for s in states]
+    if rank != sorted(rank) or states.count("live") > 1:
+        raise ValueError(f"session.gates states out of order: {states!r}")
+    if "spec" in data:
+        _validate_spec_source(data["spec"])
+    if "pr" in data and (not isinstance(data["pr"], str) or not _PR_RE.match(data["pr"])):
+        raise ValueError("session.pr must be `owner/repo#N`")
+
+
+def _validate_spec_source(spec: object) -> None:
+    if not isinstance(spec, dict) or spec.get("kind") not in SPEC_SOURCE_KINDS:
+        raise ValueError(f"session.spec.kind must be one of {SPEC_SOURCE_KINDS!r}")
+    if spec["kind"] == "commit":
+        if not isinstance(spec.get("path"), str) or not spec["path"]:
+            raise ValueError("session.spec.path must be a non-empty string")
+        if not isinstance(spec.get("sha"), str) or not _SHA_RE.match(spec["sha"]):
+            raise ValueError("session.spec.sha must be a full 40-hex commit sha")
+    else:
+        for field in ("url", "updated_at"):
+            if not isinstance(spec.get(field), str) or not spec[field]:
+                raise ValueError(f"session.spec.{field} must be a non-empty string")

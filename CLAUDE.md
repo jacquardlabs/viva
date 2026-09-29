@@ -158,6 +158,8 @@ import. It holds:
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
+  `validate_session` is the session record's, called by `loop.py` on
+  every read and write.
 - **`read_json_or_exit(path, prog)`** / **`atomic_write(path, text)`** — the
   shared read/write boundary every script and `server.py` route their round
   files through, so a partial write is never observed and a bad file names
@@ -380,6 +382,10 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   `.viva/prior-review-input.json` / `.viva/prior-review-verdicts.json` just
   long enough to survive the clear and feed the new session's
   `--prior-input`/`--prior-verdicts`, then discards them in a `finally`.
+  The lifecycle session record (#240) is the one state outside `.viva/`:
+  `<git common dir>/viva/session.json`, per clone and shared by every
+  worktree, so the clear never reaches it. `loop.py interview --session`
+  writes it; diff `finish` on the session's PR and `abandon` delete it.
 
 ## Tests
 

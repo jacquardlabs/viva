@@ -444,7 +444,7 @@ def check_no_subcommand_takes_a_round() -> None:
     assert listed, "could not read the subcommand list from --help:\n" + top.stdout
     names = listed.group(1).split(",")
     assert set(names) >= {"interview", "start", "annotate", "summarize", "arm",
-                          "wait", "rearm", "finish", "abandon"}, names
+                          "wait", "rearm", "finish", "abandon", "session"}, names
 
     for name in names:
         h = subprocess.run([sys.executable, str(LOOP), name, "--help"],
@@ -452,7 +452,8 @@ def check_no_subcommand_takes_a_round() -> None:
         assert h.returncode == 0, h.stderr
         assert "--round" not in h.stdout, \
             "`%s` exposes a round argument — the round is derived, never passed" % name
-        required = [flag for flag in ("--doc", "--sidecar", "--input", "--map")
+        required = [flag for flag in ("--doc", "--sidecar", "--input", "--map",
+                                      "--spec-source")
                     if flag in h.stdout]
         argv = [sys.executable, str(LOOP), "--viva-dir", str(sandbox), name]
         for flag in required:
