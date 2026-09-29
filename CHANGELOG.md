@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.16.2 (2026-09-29)
+
+### Bug Fixes
+
+- Read a mode-less --input as the launch's first boot input, not the launch mode
+  ([#257](https://github.com/jacquardlabs/viva/pull/257),
+  [`2820583`](https://github.com/jacquardlabs/viva/commit/282058354bd6dcca219a2b8a64f6c66cbada7957))
+
+- Refuse at startup an --input whose mode the launch mode does not boot on
+  ([#257](https://github.com/jacquardlabs/viva/pull/257),
+  [`2820583`](https://github.com/jacquardlabs/viva/commit/282058354bd6dcca219a2b8a64f6c66cbada7957))
+
+
 ## v2.16.1 (2026-09-29)
 
 ### Performance Improvements
