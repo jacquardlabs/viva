@@ -30,12 +30,11 @@ SERVER = ROOT / "server.py"
 
 
 def shipped_source() -> str:
-    """server.py, then every `assets/app/` part in composition order: the whole
-    frontend as shipped, comments included and before injection, for tests
-    that must see more than the composed `HTML`."""
+    """server.py plus the composed `HTML`: the whole frontend as shipped,
+    comments included, for tests that must also see server.py's own text."""
     sys.path.insert(0, str(ROOT))
-    import server  # noqa: E402 — deferred: most harness users never need it
-    return SERVER.read_text(encoding="utf-8") + server._TEMPLATE
+    import server  # deferred: most harness users never need it
+    return SERVER.read_text(encoding="utf-8") + server.HTML
 
 
 def assert_catalog_ground(text: str) -> None:

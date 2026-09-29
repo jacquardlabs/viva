@@ -126,8 +126,8 @@ _APP_PARTS = (
     "js/08-boot.js",
     "shell-tail.html",
 )
-_TEMPLATE = "".join((_APP_DIR / part).read_text(encoding="utf-8") for part in _APP_PARTS)
-HTML = _TEMPLATE.replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
+HTML = "".join((_APP_DIR / part).read_text(encoding="utf-8")
+               for part in _APP_PARTS).replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
     # The check-flag registry, injected rather than restated in JS. `CHECK_KINDS`
     # is what makes a producer's flags gate a `checks` round, and it fails open —
     # an unregistered kind is simply invisible. A hand-kept second copy in the
