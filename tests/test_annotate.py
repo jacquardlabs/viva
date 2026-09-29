@@ -241,7 +241,7 @@ def test_loop_annotate_merges_into_the_derived_round() -> None:
         empty = subprocess.run(
             [sys.executable, str(LOOP), "--viva-dir", str(viva),
              "annotate", "--sidecar", str(side)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert empty.returncode != 0, "no round on disk must refuse, not no-op"
 
         r1 = viva / "review-input-r1.json"
@@ -254,7 +254,7 @@ def test_loop_annotate_merges_into_the_derived_round() -> None:
         result = subprocess.run(
             [sys.executable, str(LOOP), "--viva-dir", str(viva),
              "annotate", "--sidecar", str(side)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"loop annotate failed:\n{result.stderr}"
         merged = json.loads(r2.read_text(encoding="utf-8"))
         assert merged["sections"][0]["annotations"] == [
@@ -290,7 +290,7 @@ def test_loop_annotate_snapshots_decisions() -> None:
         result = subprocess.run(
             [sys.executable, str(LOOP), "--viva-dir", str(viva),
              "annotate", "--sidecar", str(side)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"loop annotate failed:\n{result.stderr}"
 
         store = json.loads((viva / "decisions.json").read_text(encoding="utf-8"))
@@ -308,7 +308,7 @@ def test_loop_annotate_snapshots_decisions() -> None:
         again = subprocess.run(
             [sys.executable, str(LOOP), "--viva-dir", str(viva),
              "annotate", "--sidecar", str(side)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert again.returncode == 0, again.stderr
         store_again = json.loads((viva / "decisions.json").read_text(encoding="utf-8"))
         assert store_again == store, store_again
