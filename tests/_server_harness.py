@@ -35,8 +35,7 @@ def shipped_source() -> str:
     that must see more than the composed `HTML`."""
     sys.path.insert(0, str(ROOT))
     import server  # noqa: E402 — deferred: most harness users never need it
-    parts = [server._APP_DIR / p for p in server._APP_PARTS]
-    return "".join(p.read_text(encoding="utf-8") for p in [SERVER, *parts])
+    return SERVER.read_text(encoding="utf-8") + server._TEMPLATE
 
 
 def assert_catalog_ground(text: str) -> None:

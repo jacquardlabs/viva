@@ -34,7 +34,7 @@ instead of shipping as an unreadable 300KB minified diff.
 Four things a bump must not break.
 
 **No hljs stylesheet.** Only highlight.js's *engine* is vendored. viva
-hand-writes its own `.hljs` theme in `server.py` — a stock theme would spend
+hand-writes its own `.hljs` theme in `assets/app/css/06-overlays.css` — a stock theme would spend
 catalog yellow on syntax, which belongs to the reviewer's touch
 (`tests/_server_harness.py`, `assert_ink_discipline`).
 
@@ -51,8 +51,8 @@ adding them fails the suite on arrival. Cyrillic falls back to the system mono,
 which is the correct degrade — do not re-add them.
 
 **The faces are declared in `<style>`, not in a `<link>`.** They are
-`@font-face { src: url('/vendor/…') }` rules inside the `HTML` constant's own
-stylesheet. There is no remote font host left in the page at all, and
+`@font-face { src: url('/vendor/…') }` rules in
+`assets/app/css/01-foundation.css`. There is no remote font host left in the page at all, and
 `tests/test_typography.py` forbids one by name — a reinstated Google Fonts
 `<link>` is a test failure, not a quiet extra request. Bricolage Grotesque is
 deliberately absent: it was an undocumented third family (DESIGN.md, "Two
@@ -69,8 +69,8 @@ grotesque stack.
    `src` from that response.
 2. Name the file `<name>-<version>.min.<ext>` (`<name>-<version>-<subset>.woff2`
    for a face) and re-download the package's license file beside it.
-3. Update `_VENDOR_ASSETS` in `server.py`, the URLs in the `HTML` constant, and
-   this table. For a font the URL lives in an `@font-face`'s `src: url(...)`
+3. Update `_VENDOR_ASSETS` in `server.py`, the URLs in `assets/app/` (`grep -rn
+   /vendor/ assets/app`), and this table. For a font the URL lives in an `@font-face`'s `src: url(...)`
    rather than a `<script src>`/`href` — a fourth spelling of the same place,
    and the one a bump forgets.
 4. Record the new file's SHA-256 in this table's last column

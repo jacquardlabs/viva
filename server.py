@@ -30,7 +30,8 @@ import preferences  # noqa: E402
 
 # Absolute path to preferences.py, resolved from this file's own on-disk
 # location, never $VIVA_DIR (SKILL.md never exports it). Escaped for
-# embedding in the JS single-quoted string literal below.
+# embedding in the JS single-quoted string literal in
+# `assets/app/js/06-submit-prefs-theme.js`.
 _PREFS_SCRIPT_PATH = str(Path(__file__).resolve().parent / "scripts" / "preferences.py")
 _PREFS_SCRIPT_PATH_JS = _PREFS_SCRIPT_PATH.replace("\\", "\\\\").replace("'", "\\'")
 # Store path is set once at startup from _viva_dir; a placeholder is replaced
@@ -125,8 +126,8 @@ _APP_PARTS = (
     "js/08-boot.js",
     "shell-tail.html",
 )
-HTML = "".join((_APP_DIR / part).read_text(encoding="utf-8")
-               for part in _APP_PARTS).replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
+_TEMPLATE = "".join((_APP_DIR / part).read_text(encoding="utf-8") for part in _APP_PARTS)
+HTML = _TEMPLATE.replace("__PREFS_SCRIPT_PATH__", _PREFS_SCRIPT_PATH_JS).replace(
     # The check-flag registry, injected rather than restated in JS. `CHECK_KINDS`
     # is what makes a producer's flags gate a `checks` round, and it fails open —
     # an unregistered kind is simply invisible. A hand-kept second copy in the
