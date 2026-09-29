@@ -206,6 +206,8 @@ def main() -> None:
         "error handling": {"title": "Error Handling", "flags": [
             {"kind": "decision", "severity": "info",
              "message": "Retry budget? → 3 attempts"},
+            {"kind": "decision", "severity": "info",
+             "message": "Which channel? → email"},
         ]},
     }))
     (viva9 / "open-notes.json").write_text(json.dumps({
@@ -220,6 +222,10 @@ def main() -> None:
     assert "**Error Handling**" in text9 and "Retry budget? → 3 attempts" in text9, text9
     assert text9.index("### Decisions") < text9.index("### Open notes"), \
         "Decisions must render before Open notes"
+    # An answer that shaped two sections prints once, naming both.
+    assert text9.count("Which channel? → email") == 1, text9
+    assert "- Which channel? → email — **Error Handling**, **Goals**" in text9, text9
+    assert "- Retry budget? → 3 attempts — **Error Handling**" in text9, text9
 
     # No decisions.json → no Decisions section (principle 4, no-op when absent).
     assert "### Decisions" not in doc.read_text()
