@@ -191,4 +191,5 @@ the id a later round happens to re-assign. `loop.py rearm` re-merges from
 that store before arming, so a decision survives a rewrite that the parser's
 normal byte-identical carry would otherwise drop it from. At sign-off,
 `revision_history.py` folds the store into a `### Decisions` block in the
-ledger, grouped by section heading (issue #211).
+ledger: one bullet per distinct answered question, naming every section it
+shaped (issue #211).
