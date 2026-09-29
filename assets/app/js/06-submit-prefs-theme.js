@@ -29,7 +29,12 @@ function sendSubmit(result) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(result)
   })
-    .then(r => { if (!r.ok) throw new Error('server returned ' + r.status); })
+    .then(r => {
+      // 409: the server serves a different round than this tab holds (#199).
+      // Nothing was written; retrying from this tab would be refused again.
+      if (r.status === 409) return r.json().then(b => showRoundStale(b.current || {}));
+      if (!r.ok) throw new Error('server returned ' + r.status);
+    })
     .catch(err => {
       alert('Submit failed: ' + (err.message || 'network error'));
       el('btn-skip').disabled   = false;
@@ -42,7 +47,10 @@ function submitReview(early) {
   el('btn-submit').disabled = true;
   snapshotBetweenRounds();  // before the POST — 'processing' renders from it
   const result = {
+    // The round's identity (#199): a session's spec round N and diff round 1
+    // share one server, and `mode` is what tells them apart.
     round: REVIEW_DATA.round,
+    mode: REVIEW_DATA.mode,
     submitted_early: early,
     sections: REVIEW_DATA.sections.map(s => {
       const v = rState.verdicts[s.id] || {};

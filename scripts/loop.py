@@ -223,6 +223,11 @@ def _preflight_no_live_session(viva: Path) -> None:
             die(f"an interview is already open at {base} — `loop.py start "
                 f"--handoff` hands a round to that tab; `loop.py abandon` "
                 f"ends it.")
+        session = payload.get("session")
+        if isinstance(session, dict) and not any(
+                g.get("state") == "live" for g in session.get("gates") or []):
+            die(f"session {session.get('id')} is waiting at {base} for its "
+                f"implementing PR's diff gate — `loop.py abandon` ends it.")
         die(f"a session is already open at {base} — that tab is the live "
             f"review. Finish it there, or `loop.py abandon`, before "
             f"starting another.")
@@ -258,7 +263,8 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
         shutil.rmtree(viva / "attachments", ignore_errors=True)
 
 
-def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
+def _launch_server(viva: Path, mode: str, inp: Path, out: Path,
+                   session_id: str | None = None) -> str:
     """Launch `server.py` detached; return its base URL once `server.url`
     appears. Streams go to `.viva/server.log`, not inherited stdout — an
     inherited pipe would hang a caller until the grandchild exits."""
@@ -266,7 +272,8 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
     with log.open("wb") as logfh:
         proc = subprocess.Popen(
             [str(sys.executable), str(SERVER), "--mode", mode,
-             "--input", str(inp), "--output", str(out)],
+             "--input", str(inp), "--output", str(out),
+             *(["--session-id", session_id] if session_id else [])],
             stdout=logfh, stderr=logfh,
         )
     for _ in range(_POLL_TRIES):
@@ -608,9 +615,9 @@ def _spec_source(viva: Path, ref: str, repo: str) -> dict:
 
 # ── subcommands ───────────────────────────────────────────────────────────────
 def cmd_interview(args) -> int:
-    """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`, block
-    for answers, print them. Never `/complete` — `start --handoff` + `arm`
-    ends the interview instead."""
+    """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`
+    (`--mode session` with `--session`), block for answers, print them. Never
+    `/complete` — `start --handoff` + `arm` ends the interview instead."""
     viva = Path(args.viva_dir)
     qa_in = Path(args.input)
     if not qa_in.exists():
@@ -630,9 +637,12 @@ def cmd_interview(args) -> int:
     answers = viva / "answers.json"
     # A stale `answers.json` would satisfy the wait below with no answer.
     _clear_state(viva, include_answers=True)
-    base = _launch_server(viva, "qa", qa_in, answers)
+    # Minted before the launch: a `--mode session` server serves its id.
+    session_id = uuid.uuid4().hex if args.session else None
+    base = _launch_server(viva, "session" if args.session else "qa", qa_in,
+                          answers, session_id)
     if args.session:
-        record = {"id": uuid.uuid4().hex, "repo": repo,
+        record = {"id": session_id, "repo": repo,
                   "viva_dir": str(viva.resolve()),
                   "gates": [{"kind": k, "state": "live" if k == "intake" else "waiting"}
                             for k in schema.SESSION_GATE_KINDS]}
@@ -1300,9 +1310,9 @@ def cmd_finish(args) -> int:
     if _owns(record, viva) and _gate(record, "spec") == "live":
         _close_gate(record, "spec")
         _write_session(session_path, record)
-        print(f"viva-loop: session {record['id']} · spec gate closed — after "
-              f"the stamp, `loop.py session --spec-source <commit:path@sha | "
-              f"comment URL>`")
+        print(f"viva-loop: session {record['id']} · spec gate closed — the "
+              f"server stays up for the diff gate · after the stamp, `loop.py "
+              f"session --spec-source <commit:path@sha | comment URL>`")
     # Only a signed-off session learns; the clustering asked for is judgment work.
     print(f"viva-loop: record this session's recurring critiques → "
           f"{REFERENCES / 'preferences.md'}")

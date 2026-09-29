@@ -146,7 +146,8 @@ def test_boot_table_covers_every_launch_mode():
     argv = sys.argv
     try:
         for mode, accepted in server._BOOT_INPUT_MODES.items():
-            sys.argv = ["server.py", "--mode", mode, "--input", "x", "--output", "y"]
+            sys.argv = ["server.py", "--mode", mode, "--input", "x", "--output", "y",
+                        *(["--session-id", "0" * 32] if mode == "session" else [])]
             assert server.parse_args().mode == mode
             assert accepted, f"--mode {mode} needs a first boot input for a mode-less file"
             assert set(accepted) <= {"review", "qa", "diff"}, (mode, accepted)

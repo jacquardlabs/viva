@@ -212,7 +212,9 @@ thing that's wrong. `POST /next-round` validates every body (the old
 with `{"ok":true}`, replaced the served round, and bricked the tab silently),
 and startup validation asks `args.mode`, not the payload — the same rule
 `/complete`'s guard follows. Startup then refuses an input whose `mode` the
-launch doesn't boot on, per the `_BOOT_INPUT_MODES` table (#224). The browser's SSE `round` handler carries a
+launch doesn't boot on, per the `_BOOT_INPUT_MODES` table (#224); `session`
+boots on two, so its validator keys on the one the input boots as, then the
+table still refuses anything else. The browser's SSE `round` handler carries a
 matching refusal as a strand backstop: the cost of the server being wrong is a
 tab frozen forever, so the handler turns away a payload with no `sections[]`
 before overwriting `REVIEW_DATA`.
@@ -220,7 +222,13 @@ before overwriting `REVIEW_DATA`.
 `GET /input` serves the review-input merged with a live `ledger: [...]` key,
 injected at serve time and not part of the on-disk schema. A `repo` key
 (`_viva_dir.parent.name`) is injected into `GET /input` and the `round` SSE
-event the same way, serve-time only, for the browser tab's title (#172).
+event the same way, serve-time only, for the browser tab's title (#172). A
+`--mode session` server (#241) adds `session: {id, gates}` the same way, and
+only it does — the timeline keys on the key's presence.
+
+`POST /submit` refuses (`409`, with the served round in `current`) a round
+it isn't serving (#199): shape, `round`, and `mode`, which in a session is
+what tells spec round N from diff round 1.
 
 ## Two skills, split by intent
 
@@ -387,6 +395,13 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   `<git common dir>/viva/session.json`, per clone and shared by every
   worktree, so the clear never reaches it. `loop.py interview --session`
   writes it; diff `finish` on the session's PR and `abandon` delete it.
+  **One `.viva/` epoch per gate, one process across them** (#241): the
+  session server outlives the spec's `finish`, so `server.url` and the spec's
+  round files stay until the diff gate's join (#242) clears them with
+  `keep_server_url`, as `--handoff` does, and arms diff round 1 into the
+  record's `viva_dir` — the server's `_output_root` is fixed at launch.
+  Round numbers restart per gate; the server resets its ledger when the
+  diff gate opens.
 
 ## Tests
 

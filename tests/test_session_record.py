@@ -96,6 +96,8 @@ def open_session(main: Path):
     out, err = proc.communicate(timeout=15)
     assert proc.returncode == 0, err
     assert f"session {read(main)['id']} · o/r" in out, out
+    # `interview --session` launches `--mode session` on the record's id (#241).
+    assert get(base, "/input")["session"]["id"] == read(main)["id"]
     return base
 
 
@@ -108,8 +110,10 @@ def wait_gone(viva: Path) -> None:
 
 
 def approve_all(base: str, round_no: int) -> None:
-    ids = [s["id"] for s in get(base, "/input")["sections"]]
-    post(base, "/submit", {"round": round_no, "submitted_early": False,
+    served = get(base, "/input")
+    ids = [s["id"] for s in served["sections"]]
+    post(base, "/submit", {"round": round_no, "mode": served["mode"],
+                           "submitted_early": False,
                            "sections": [{"id": i, "verdict": "approved"} for i in ids]})
 
 
@@ -181,8 +185,15 @@ def test_record_spans_worktrees_and_ends_at_the_sessions_diff() -> None:
         r = loop(main, "finish")
         assert r.returncode == 0, r.stderr
         assert "spec gate closed" in r.stdout and "--spec-source" in r.stdout, r.stdout
-        wait_gone(main / ".viva")
         assert gates(main) == {"intake": "done", "spec": "done", "diff": "waiting"}
+        # The session server idles for the diff gate; a `start` here would
+        # orphan it, so it refuses and names the waiting session.
+        assert get(base, "/input")["session"]["gates"][1]["state"] == "done"
+        r = loop(main, "start", "--kind", "worktree")
+        assert r.returncode != 0 and "waiting at" in r.stderr, r.stderr
+        # The server dies between gates (spec: Operations); the record stays.
+        post(base, "/abandon", {})
+        wait_gone(main / ".viva")
         assert "spec" not in read(main), "no spec source before `session --spec-source`"
 
         # A source must carry the sign-off the minutes read back.

@@ -62,6 +62,46 @@ function clearRoundRefused() {
   if (b) b.remove();
 }
 
+// A session payload's live gate kind, or null — standalone payloads have none.
+function liveGate(d) {
+  const g = d && d.session && d.session.gates.find(x => x.state === 'live');
+  return g ? g.kind : null;
+}
+
+// A round's identity as /submit judges it (#199): mode, round, live gate.
+function roundKey(d) {
+  return d ? [d.mode || (d.questions ? 'qa' : 'review'), d.round || 0, liveGate(d)].join('/') : '';
+}
+
+/* The server serves a round this tab does not hold (#199) — a `round` event
+   missed during a drop, or a submit refused 409. The server already refused
+   the write; this names what the tab is behind and retires the submit bar. */
+function showRoundStale(current) {
+  clearProcessingTimer();
+  // A 409 answers the recap's confirm, and no `processing` event will close
+  // it — the same modals showDeadSession closes, for the same reason.
+  closeRecap();
+  closePrefsPanel();
+  closePalette();
+  const b = el('round-stale-banner') || document.createElement('div');
+  b.id = 'round-stale-banner';
+  b.className = 'error-banner';
+  const where = current.round ? 'REV ' + String(current.round).padStart(2, '0') : 'the interview';
+  const gate = liveGate(current);
+  b.textContent = 'This tab is behind — the server is on ' + where
+    + (gate ? ' of the ' + gate + ' gate' : '') + '. Reload to catch up.';
+  document.body.prepend(b);
+  el('btn-skip').disabled   = true;
+  el('btn-submit').disabled = true;
+}
+
+// After a reconnect: a `round` pushed while the stream was down never arrives.
+function recheckRound() {
+  fetch('/input').then(r => r.json()).then(served => {
+    if (roundKey(served) !== roundKey(REVIEW_DATA || QA_DATA)) showRoundStale(served);
+  }).catch(() => {});
+}
+
 /* ─── Dead session (#174) ───────────────────────────────────
    A banner alone let a reviewer keep working into a socket that's gone.
    Three layers block it: `inert` takes pointer/Tab from the background, the
@@ -168,7 +208,13 @@ function connectSSE() {
       return;
     }
     clearRoundRefused();
+    const stale = el('round-stale-banner');
+    if (stale) stale.remove();        // the tab holds the served round again
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
+    // Stamped per round, not only at boot: a session's diff gate lands in the
+    // tab its spec rounds used (#241). loadDiff2html is idempotent.
+    document.body.classList.toggle('mode-diff', modeWord === 'diff');
+    if (modeWord === 'diff') loadDiff2html();
     closeRecap();        // a stale grid must never sit over a fresh round's cards
     closePrefsPanel();   // ditto — a fresh round's cards must never sit behind it
     REVIEW_DATA       = data;
@@ -201,6 +247,10 @@ function connectSSE() {
     // in the stylesheet today, so a stale class wouldn't clamp the diff page —
     // but that's source order doing the work, not a rule to rely on.
     document.body.classList.remove('mode-qa');
+    // A session's spec sign-off left the stamp up and the bar hidden; its
+    // diff gate's first round arrives on the same stream.
+    el('complete-view').style.display   = 'none';
+    document.querySelector('.bottom-bar').style.display = '';
     el('review-view').style.display     = '';
     // The whole bar restoration in one place. #foot-seg and #stat-pending need
     // no explicit restore: initReview() → updateReviewStats → reviewFootSeg →
@@ -211,8 +261,12 @@ function connectSSE() {
   });
 
   es.addEventListener('complete', e => {
-    es.close(); // prevent onerror when server shuts down 2s later
     const data = JSON.parse(e.data);
+    // A session's spec sign-off keeps the server up for its diff gate (#241);
+    // anything else shuts down 2s later, so close to prevent onerror.
+    const gateAhead = !!(data.session && data.session.gates.some(g => g.state !== 'done'));
+    if (!gateAhead) es.close();
+    if (gateAhead && REVIEW_DATA) REVIEW_DATA.session = data.session;
     closePrefsPanel();  // no full-screen backdrop survives into complete-view
     stopVoice('the review is signed off');  // nothing left to command
     el('processing-view').style.display = 'none';
@@ -246,9 +300,15 @@ function connectSSE() {
     el('complete-detail').textContent   = data.resolved === 'empty'
       ? `diff fully resolved · ${rev != null ? rev : 0} hunk${rev !== 1 ? 's' : ''} revised`
       : (rev != null ? `${rev} section${rev !== 1 ? 's' : ''} revised` : '');
+    if (gateAhead) {
+      el('complete-detail').textContent += (el('complete-detail').textContent ? ' · ' : '')
+        + 'Waiting for the implementing PR. Safe to close this tab; /viva-review <PR> reopens the session.';
+    }
     const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
+    // Hidden when empty, not just left alone: a session's diff gate reuses
+    // the view its spec gate filled.
+    el('complete-ledger').style.display = entries.length ? '' : 'none';
     if (entries.length) {
-      el('complete-ledger').style.display = '';
       el('complete-ledger-count').textContent = entries.length;
       el('complete-ledger-rows').innerHTML = ledgerRowsHTML(entries);
     }
@@ -267,7 +327,7 @@ function connectSSE() {
   // EventSource retries on its own and onerror fires every attempt, so
   // "dropped" and "gone" look identical — a successful reconnect is the only
   // thing that tells them apart: the server outlived the drop.
-  es.onopen = () => { hideDeadSession(); };
+  es.onopen = () => { const dropped = deadSessionIsOpen(); hideDeadSession(); if (dropped) recheckRound(); };
 }
 
 /* ─── Command palette wiring ────────────────────────────── */
