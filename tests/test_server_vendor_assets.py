@@ -28,6 +28,25 @@ REVIEW_INPUT = {
     "approved_ids": [],
     "sections": [{"id": "s1", "title": "Overview", "content": "Body."}],
 }
+QA_INPUT = {
+    "mode": "qa",
+    "title": "Intake",
+    "questions": [{"id": "q1", "text": "Channel?", "choices": ["email", "sms"]}],
+}
+DIFF_INPUT = {
+    "mode": "diff",
+    "doc_file": "HEAD~1..HEAD",
+    "round": 1,
+    "approved_ids": [],
+    "sections": [{"id": "s1", "title": "src/foo.py hunk 1",
+                  "content": "```diff\n@@ -1,1 +1,2 @@\n p\n+q\n```"}],
+}
+# diff2html's three assets, fetched only once a page turns diff (#198).
+D2H_URLS = (
+    "/vendor/diff2html-3.4.56.min.css",
+    "/vendor/diff2html-3.4.56.min.js",
+    "/vendor/diff2html-ui-slim-3.4.56.min.js",
+)
 
 
 def _fetch(base: str, path: str):
@@ -66,7 +85,8 @@ def test_every_vendor_url_in_the_page_has_a_route() -> None:
     """A version bump edits three places (file, route table, page URL); miss
     the third and the browser 404s silently into the md-raw fallback."""
     urls = set(re.findall(r'(?:src|href)=[\'"](/vendor/[^\'"]+)[\'"]', server.HTML))
-    # The mode-diff stylesheet is assigned in JS, not written as an attribute.
+    # The diff2html assets are assigned in JS (loadDiff2html), not written
+    # as attributes.
     urls |= set(re.findall(r"= '(/vendor/[^']+)'", server.HTML))
     # The four faces are declared in `@font-face`, a third spelling invisible
     # to both patterns above.
@@ -166,6 +186,42 @@ def test_vendor_routes_are_exact_match_only(base: str) -> None:
     print("  ok  test_vendor_routes_are_exact_match_only")
 
 
+def _boot_dispatch(page: str) -> "dict[str, str]":
+    """The /input boot dispatch's three branches, by mode."""
+    m = re.search(r"if \(data\.mode === 'review'\) \{(.*?)\} else if "
+                  r"\(data\.mode === 'diff'\) \{(.*?)\} else \{(.*?)\n    \}\n", page, re.S)
+    assert m, "page missing: the /input boot dispatch (review / diff / qa)"
+    return dict(zip(("review", "diff", "qa"), m.groups()))
+
+
+def test_diff2html_loads_only_from_the_diff_branch() -> None:
+    """No JS runner in CI, so "zero requests" is pinned at the source: the
+    three URLs live only in `loadDiff2html`, and only the diff branch calls it."""
+    m = re.search(r"function loadDiff2html\(.*?\n\}", server.HTML, re.S)
+    assert m, "page missing: function loadDiff2html"
+    outside = server.HTML.replace(m.group(0), "")
+    for url in D2H_URLS:
+        assert url in m.group(0), f"loadDiff2html does not load {url}"
+        assert url not in outside, f"{url} is referenced outside loadDiff2html"
+    branches = _boot_dispatch(server.HTML)
+    assert "loadDiff2html()" in branches["diff"], "the diff branch never loads diff2html"
+    for mode in ("review", "qa"):
+        assert "loadDiff2html" not in branches[mode], \
+            f"the {mode} branch loads diff2html it can never use"
+    print("  ok  test_diff2html_loads_only_from_the_diff_branch")
+
+
+def test_no_mode_ships_a_diff2html_tag(base: str, mode: str) -> None:
+    """Per mode, on the wire: no static `<script>`/`<link>` names a diff2html
+    asset, so review and qa fetch none until the loader runs."""
+    page = get_text(base, "/")
+    tags = re.findall(r"<(?:script|link)\b[^>]*>", page)
+    static = [t for t in tags if any(u in t for u in D2H_URLS)]
+    assert not static, f"{mode} page ships a static diff2html tag: {static}"
+    assert "/vendor/marked-12.0.2.min.js" in page, f"{mode} page lost its own scripts"
+    print(f"  ok  test_no_mode_ships_a_diff2html_tag[{mode}]")
+
+
 def test_live_page_matches_the_constant(base: str) -> None:
     """Belt and braces on invariant 1: the bytes actually on the wire, from a
     booted server, carry no CDN host either."""
@@ -182,6 +238,7 @@ def main() -> None:
     test_every_route_has_a_file_and_a_license()
     test_every_asset_matches_its_recorded_sha256()
     test_no_hljs_stylesheet_is_vendored()
+    test_diff2html_loads_only_from_the_diff_branch()
 
     tmp = Path(tempfile.mkdtemp())
     viva = tmp / ".viva"
@@ -192,8 +249,14 @@ def main() -> None:
         test_routes_serve_the_files_from_a_foreign_cwd(base)
         test_vendor_routes_are_exact_match_only(base)
         test_live_page_matches_the_constant(base)
+        test_no_mode_ships_a_diff2html_tag(base, "review")
+    for mode, payload in (("qa", QA_INPUT), ("diff", DIFF_INPUT)):
+        (viva / f"{mode}.json").write_text(json.dumps(payload))
+        with launch_server(viva / f"{mode}.json", viva / f"{mode}-out.json",
+                           mode=mode, cwd=tmp) as base:
+            test_no_mode_ships_a_diff2html_tag(base, mode)
 
-    print("OK (8 tests)")
+    print("OK (12 tests)")
 
 
 if __name__ == "__main__":
