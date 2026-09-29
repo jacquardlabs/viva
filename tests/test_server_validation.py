@@ -4,17 +4,19 @@
 /submit: an invalid verdict is rejected 400 before it can corrupt the ledger
 or output. /next-round: validation runs on EVERY body (previously gated on a
 `sections` key, which let a nested round through and bricked the tab silently)
-and a refused body must leave the served round untouched.
+and a refused body must leave the served round untouched. Startup: an --input
+whose `mode` the launch mode does not boot on exits 1 (#224).
 """
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from _server_harness import get, launch_server, post_status  # noqa: E402
+from _server_harness import SERVER, get, launch_server, post_status  # noqa: E402
 
 
 def _integration() -> None:
@@ -101,7 +103,76 @@ def _integration() -> None:
         assert get(base, "/input")["round"] == 1, \
             "a roundless input file must boot and serve round 1"
 
+    # ── `mode` at startup: the input must agree with --mode (#224) ─────────
+    qa = {"mode": "qa", "questions": [{"id": "q1", "text": "Why?"}]}
+    for launch, data, kind in (("diff", r1, "review-input"),
+                               ("review", dict(r1, mode="diff"), "review-input"),
+                               ("qa", dict(qa, mode="review"), "qa-input")):
+        d = Path(tempfile.mkdtemp())
+        (d / "in.json").write_text(json.dumps(data))
+        result = _boot(launch, d)
+        assert result.returncode == 1, (launch, result.returncode, result.stderr)
+        assert f"viva: invalid {kind}" in result.stderr, result.stderr
+        assert f"input mode {data['mode']!r} does not match" in result.stderr, result.stderr
+        assert f"--mode {launch}" in result.stderr, result.stderr
+        assert not (d / "server.url").exists(), "a refused launch must not bind a port"
+
+    # Absent reads as the launch's first boot input (today, the launch mode
+    # itself), not "review" as at /next-round.
+    for launch, data in (("diff", modeless), ("qa", {"questions": qa["questions"]})):
+        d = Path(tempfile.mkdtemp())
+        (d / "in.json").write_text(json.dumps(data))
+        with launch_server(d / "in.json", d / "out.json", mode=launch, cwd=d) as base:
+            assert "mode" not in get(base, "/input"), "served as written"
+
     print("  ok  test_next_round_refuses_what_it_cannot_serve")
+
+
+def _boot(mode: str, d: Path) -> subprocess.CompletedProcess:
+    """Launch server.py on `d/in.json` and wait for it to exit."""
+    return subprocess.run(
+        [sys.executable, str(SERVER), "--mode", mode, "--input", str(d / "in.json"),
+         "--output", str(d / "out.json"), "--no-browser"],
+        capture_output=True, text=True, timeout=10)
+
+
+def test_boot_table_covers_every_launch_mode():
+    """The argparse choices derive from the table, and each launch mode boots
+    on known round modes only. Not necessarily its own: #241's `session`
+    boots on `qa` and `diff` inputs."""
+    import contextlib
+    import io
+    import server  # noqa: E402
+    argv = sys.argv
+    try:
+        for mode, accepted in server._BOOT_INPUT_MODES.items():
+            sys.argv = ["server.py", "--mode", mode, "--input", "x", "--output", "y"]
+            assert server.parse_args().mode == mode
+            assert accepted, f"--mode {mode} needs a first boot input for a mode-less file"
+            assert set(accepted) <= {"review", "qa", "diff"}, (mode, accepted)
+        sys.argv = ["server.py", "--mode", "nope", "--input", "x", "--output", "y"]
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                server.parse_args()
+                raise AssertionError("a mode outside the table must be a usage error")
+            except SystemExit as e:
+                assert e.code == 2
+    finally:
+        sys.argv = argv
+    print("  ok  test_boot_table_covers_every_launch_mode")
+
+
+def test_absent_mode_reads_as_the_first_boot_input():
+    """A launch mode that doesn't boot on its own input (#241's `session`)
+    must still boot a mode-less file, as its first accepted input mode."""
+    import server  # noqa: E402
+    table = {"session": ("qa", "diff")}
+    assert server._boot_refusal("session", {}, table) is None
+    assert server._boot_refusal("session", {"mode": "diff"}, table) is None
+    refusal = server._boot_refusal("session", {"mode": "review"}, table)
+    assert refusal and "'qa' or 'diff' inputs" in refusal, refusal
+    assert server._boot_refusal("diff", {}) is None
+    print("  ok  test_absent_mode_reads_as_the_first_boot_input")
 
 
 def test_the_round_handler_guards_before_it_routes():
@@ -137,6 +208,8 @@ def test_the_round_handler_guards_before_it_routes():
 def main() -> None:
     _integration()
     test_the_round_handler_guards_before_it_routes()
+    test_boot_table_covers_every_launch_mode()
+    test_absent_mode_reads_as_the_first_boot_input()
     print("OK")
 
 

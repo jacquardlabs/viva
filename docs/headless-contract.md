@@ -1,6 +1,6 @@
 # viva headless invocation contract
 
-**Contract version: 12**
+**Contract version: 13**
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller — not for the human running
@@ -41,6 +41,7 @@ Changelog:
 
 | version | date | change |
 |---|---|---|
+| 13 | 2026-09-29 | Server startup now refuses an `--input` whose present `mode` disagrees with the launch `--mode` (#224), closing v9's launch-time carve-out: `--mode diff --input <a file saying "mode": "review">` — or `--mode review` on a `"diff"` file, or `--mode qa` on anything but `"qa"` — now exits `1` with `viva: invalid {review-input,qa-input} {path}: input mode 'X' does not match the server's launch mode (--mode Y, which boots on 'Y' inputs) …` (§6) where it previously booted and rendered the view the JSON named behind a launch that claimed otherwise. **An absent `mode` reads as the launch mode's first boot input** (today the launch mode itself), unlike `/next-round`'s `"review"` default, so a mode-less file still boots under any `--mode`. Checked after the mode-keyed validator, before a port is bound, so a refused launch writes no `server.url`. Every in-repo producer (`parse_sections.py`, `parse_diff.py`, `references/qa.md`'s `qa-input.json`) writes the field its launch expects, so no shipped flow changes. |
 | 12 | 2026-09-05 | `ReviewPass.posture` is removed — `pass` is now `{kind}` only, `kind` still one of `architecture`/`line`/`checks`/`final` (§3). No reader ever existed for it (`server.py` rendered nothing from it, and no `.claude/skills/` prose routed on it), but `validate_review_input` used to `400` a `pass` object carrying an unknown `posture`; that same payload now succeeds, since the key is simply ignored as an unrecognized extra field. **That is the bump**: an existing endpoint's success condition changed for a caller that was relying on the `400` (§1's "changing when an existing endpoint succeeds"). `parse_sections.py --posture` and `loop.py start/rearm --posture` are also removed — a caller invoking either flag now gets an argparse `error: unrecognized arguments` where it previously succeeded. |
 | 11 | 2026-09-04 | Three hardening changes from a standing security review, together: (1) `POST /next-round`'s `output` must now resolve inside `_output_root` — the directory the process's own `--output` named at launch (§4). A caller that previously pointed a later round's `output` at a directory other than the one the server was launched to write into now gets `400 "'output' must resolve inside <dir>"` where it previously succeeded and silently redirected every subsequent `/submit` write to that other directory. Checked immediately after the missing-`output` refusal, before the mode check and shape validation (v9, v10 below) (§5). (2) Every GET request now requires a loopback `Host` header (`127.0.0.1` or `localhost`, exact match) — a request through any other hostname, including an `/etc/hosts` alias, now gets `403 "forbidden host"` where it previously succeeded. (3) `ReviewInput.sections[].id` and `qa-input.questions[].id` must now match `^[A-Za-z0-9_.-]{1,64}$` — both at `POST /next-round`/`POST /submit`'s `validate_review_input`/`validate_verdicts` and at server startup's `validate_qa_input`, so a file or payload carrying an id outside that shape now gets a `400` or exits `1` where it previously succeeded. No caller in this repo (`loop.py`, `viva-write`, `viva-review`'s hunk re-arm, `parse_sections.py`, `parse_diff.py`) ever names an `output` outside its launch directory, connects by a non-loopback hostname, or mints an id outside `s{N}`/`q{N}`, so none of the three is expected to break an existing invocation — only a hypothetical one that relied on the prior lack of a check. Also (not a bump on its own, listed here for completeness): every response now carries a fixed `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer` (§5) — a reviewed document's remote image reference (`![](http://...)`) is now blocked by the CSP's `img-src`, which is the intended effect, not a caller-facing regression. |
 | 10 | 2026-09-04 | Two changes to when an existing endpoint succeeds. **`POST /next-round`'s legacy `?output=` query param is removed** (#103): `output` travels in the JSON body only, and a caller still sending the query form gets `400 "missing 'output' in body"` where it previously got `{"ok":true}` — its last sender was `/viva-review`'s hunk re-arm curl, which `loop.py rearm` replaced. **`POST /complete`'s diff exemption is narrowed** (#177): a `--mode diff` server is now gated exactly as a review server — `400` with no verdicts submitted, `409` with any hunk not approved — unless the body carries `resolved: "empty"`, the caller's assertion that the diff was re-captured and came back empty (every hunk applied or reverted at the reviewer's request, so there is nothing left to approve). `resolved` is the first inspected key of the `/complete` body: a present value other than `"empty"` is `400`, and a present `resolved` on a server not launched `--mode diff` is `400` (a doc cannot go empty). The no-verdicts `400` now runs before the signal, so a diff can be resolved empty only after the human has seen a round. `loop.py finish` derives the assertion from a fresh capture, never from memory; the server honors the driver's word because it cannot run the capture itself, and the exemption keys on the launch `--mode` because the body is caller-supplied. Also: the JS `complete` handler reads `resolved` to caption the stamp. |
@@ -62,25 +63,27 @@ python3 server.py --mode {review,qa,diff} --input PATH --output PATH [--no-brows
 
 | Flag | Required | Meaning |
 |---|---|---|
-| `--mode` | yes | One of `review`, `qa`, `diff` — exhaustive, enforced by argparse `choices=`. Gates four things: which startup validator runs (§3), the printed stdout label (`viva · {mode} mode · {url}`), whether `POST /complete` honors `resolved: "empty"` (§5, v10), and which round `mode` `POST /next-round` accepts (§5, v9). |
+| `--mode` | yes | One of `review`, `qa`, `diff` — exhaustive, enforced by argparse `choices=`. Gates five things: which startup validator runs (§3), which input `mode` it boots on (below, v13), the printed stdout label (`viva · {mode} mode · {url}`), whether `POST /complete` honors `resolved: "empty"` (§5, v10), and which round `mode` `POST /next-round` accepts (§5, v9). |
 | `--input` | yes | Any path. Read once, at startup, via `json.load`. Never re-read after boot — a later round's data arrives over HTTP (§5), not by re-reading this path. |
 | `--output` | yes | Any path. Where round verdicts / Q&A answers get written, and the directory `server.url` (§4) is derived from. Does not need to already exist — its parent directories are created on demand (see §4). |
 | `--no-browser` | no | Skips the `webbrowser.open()` call. Nothing else changes: `server.url` is still written, the server still binds and serves. This is the flag a headless caller passes on every invocation, since nothing else suppresses the browser launch. |
 
 **The CLI `--mode` and the JSON `mode` field share a name but differ.**
-`--mode` controls only the four things above; which view the *browser*
+`--mode` controls only the five things above; which view the *browser*
 renders (review cards, Q&A cards, diff view) is decided separately, at
 request time, by the `mode` field inside the JSON `GET /input` serves
 (`data.mode === 'review' | 'diff'`, else Q&A).
 
-The two are held in agreement at one boundary, `POST /next-round` (§5, v9): a
-`--mode diff` server accepts only `"diff"` rounds, every other launch mode
-accepts only `"review"` (absent reads as `"review"`) — launching `--mode qa`
-and later pushing a `"mode": "review"` round is the **defined** qa→review
-hand-off (§7); every other disagreement is refused `400`. The launch boundary
-does not check this — `--mode diff --input <a file saying "review">` still
-boots and renders the view the JSON names — so a caller that writes the
-`--input` file must keep the two in sync itself.
+The two are held in agreement at both boundaries. **At launch** (v13), each
+`--mode` boots only on the input modes `server.py`'s `_BOOT_INPUT_MODES` table
+lists for it — today its own: `review` on `"review"`, `qa` on `"qa"`, `diff`
+on `"diff"` — and an absent `mode` reads as the first input mode listed for
+the launch (today the launch mode itself). Any other `--input` exits `1`
+before a port is bound (§6). **At `POST /next-round`**
+(§5, v9), a `--mode diff` server accepts only `"diff"` rounds, every other
+launch mode accepts only `"review"` (absent reads as `"review"`) — launching
+`--mode qa` and later pushing a `"mode": "review"` round is the **defined**
+qa→review hand-off (§7); every other disagreement is refused `400`.
 
 ## 3. `.viva/` round-file naming and shapes
 
@@ -124,7 +127,7 @@ review or diff round):
 
 | Field | Required | Notes |
 |---|---|---|
-| `mode` | conventionally set | `"review"` or `"diff"` — this is the JSON `mode` field from §2, not the CLI flag. Not schema-validated, but **load-bearing at `POST /next-round`** (§5, v9), which refuses a value that disagrees with the launch mode; absent reads as `"review"`. `/complete`'s `resolved: "empty"` signal keys on the server's launch `--mode`, not this field. `loop.py` reads this field off the round file to pick the `--mode` it launches with and which loop `rearm`/`finish` run, so a producer must keep it accurate. |
+| `mode` | conventionally set | `"review"` or `"diff"` — this is the JSON `mode` field from §2, not the CLI flag. Not schema-validated, but **load-bearing at both server boundaries**: startup exits `1` on a value the launch `--mode` does not boot on, absent reading as the launch's first boot input (§2, v13); `POST /next-round` (§5, v9) refuses a value that disagrees with the launch mode, absent reading as `"review"`. `/complete`'s `resolved: "empty"` signal keys on the server's launch `--mode`, not this field. `loop.py` reads this field off the round file to pick the `--mode` it launches with and which loop `rearm`/`finish` run, so a producer must keep it accurate. |
 | `doc_file` | no | Relative path shown in the UI. |
 | `round` | no | Round number. **Absent** is legal and is normalized to `1` at the server's read boundaries (`schema.default_round`) — every consumer, `GET /input` and the `round` SSE event included, sees an integer. A **present** value must be an integer `>= 1`; `null`, a numeric string, `0` and `true` are hard `validate_review_input` failures, because the browser prints this value into the tab title and does round arithmetic with it. |
 | `approved_ids` | no | Section ids approved in prior rounds. |
@@ -161,7 +164,7 @@ The full output file (`ReviewOutput`) also carries `round` and
 
 | Field | Required | Notes |
 |---|---|---|
-| `mode` | conventionally set | `"qa"`. |
+| `mode` | conventionally set | `"qa"`. Any other present value exits `1` at a `--mode qa` launch (§2, v13); absent is legal. |
 | `context` | no | One-liner shown in the title block. |
 | `questions` | **yes** | List of `QAQuestion`. |
 
@@ -272,14 +275,16 @@ Process exit codes:
 |---|---|---|
 | `0` | `viva · done` on stdout, nothing distinctive on stderr | Graceful shutdown — `SIGINT`, `SIGTERM` (both handled, so a parent's `proc.terminate()` exits `0` here rather than dying at `-15`), `POST /abandon`, or the 2-second timer after `POST /complete` fires. |
 | `2` | argparse's own usage block | A CLI usage error — a missing required flag, or `--mode` given a value outside `{review,qa,diff}`. |
-| `1` | **one line**, `viva: invalid {review-input,qa-input} {path}: {message}` | One of the two deliberate `sys.exit(...)` calls: `validate_review_input`/`validate_qa_input` rejected `--input`'s contents at startup. A caller can pattern-match on the `viva: ` prefix to distinguish this from the next row. |
+| `1` | **one line**, `viva: invalid {review-input,qa-input} {path}: {message}` | One of the three deliberate `sys.exit(...)` calls: `validate_review_input`/`validate_qa_input` rejected `--input`'s contents at startup, or (v13) the input's `mode` is not one the launch `--mode` boots on — `{message}` then reads `input mode 'X' does not match the server's launch mode (--mode Y, which boots on 'Y' inputs) …` (§2). A caller can pattern-match on the `viva: ` prefix to distinguish this from the next row. |
 | `1` | **multi-line Python traceback**, no `viva: ` prefix | Every other startup failure: `--input` path doesn't exist or isn't readable, `--input`'s contents aren't valid JSON, or `--output`'s directory can't be created/written to because of a permission failure (its *absence* alone is not a failure — see §4). Nothing in `server.py` catches these; they are uncaught Python exceptions. |
 
 **Startup validation keys on the launch `--mode`, never on the payload's
 shape.** `--mode qa` runs `validate_qa_input`; `--mode review` and
 `--mode diff` both run `validate_review_input`. A shape/mode mismatch — a
 Q&A file handed to `--mode review`, or the reverse — exits `1` at launch with
-the `viva: ` prefix rather than booting a blank view.
+the `viva: ` prefix rather than booting a blank view. A shape-valid file whose
+`mode` the launch does not boot on (a `"review"` file under `--mode diff`)
+exits the same way (v13, §2).
 
 **The server itself has no request or session timeout.** It blocks on
 `server.handle_request()` (a 0.5-second internal socket timeout only
