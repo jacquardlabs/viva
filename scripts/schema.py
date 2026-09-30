@@ -790,6 +790,15 @@ def validate_session(data: dict) -> None:
         raise ValueError("session.pr must be `owner/repo#N`")
 
 
+def session_is_waiting(session: object) -> bool:
+    """Is a served `session` key idling between gates — no gate live? The one
+    rule `loop.py` and `docket.py` apply to a session server's `/input`."""
+    gates = session.get("gates") if isinstance(session, dict) else None
+    return (isinstance(gates, list) and bool(gates)
+            and not any(isinstance(g, dict) and g.get("state") == "live"
+                        for g in gates))
+
+
 def _validate_spec_source(spec: object) -> None:
     if not isinstance(spec, dict) or spec.get("kind") not in SPEC_SOURCE_KINDS:
         raise ValueError(f"session.spec.kind must be one of {SPEC_SOURCE_KINDS!r}")

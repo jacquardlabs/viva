@@ -401,7 +401,9 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   `keep_server_url`, as `--handoff` does, and arms diff round 1 into the
   record's `viva_dir` — the server's `_output_root` is fixed at launch.
   Round numbers restart per gate; the server resets its ledger when the
-  diff gate opens.
+  diff gate opens. Between gates, `finish` and `rearm` refuse
+  (`schema.session_is_waiting`), `abandon --keep-session` stops the server
+  but keeps the record, and `docket.py` reports the process as `waiting`.
 
 ## Tests
 

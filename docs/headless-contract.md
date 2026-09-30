@@ -400,6 +400,9 @@ Between gates, `GET /input` still serves the signed-off spec round, with a
 `session` key that has no live gate. A tab that boots or reconnects there, or
 has a submit refused because the gate closed, shows the sign-off stamp and
 waits on its stream for the diff round. It does not open the spec round again.
+The driver refuses `finish` and `rearm` against a server in this state, and
+`loop.py abandon --keep-session` stops it without ending the session: the
+record survives for the diff gate's relaunch. Plain `abandon` ends both.
 
 ### hunk review (`/viva-review` branch B, #179)
 

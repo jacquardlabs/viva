@@ -36,6 +36,9 @@ STATE:
                     `review-input-rN.json` — an intake interview, not a round.
   done              Best-effort: `review-rN.json` exists and
                     `schema.round_is_complete()` is satisfied.
+  waiting           `done`, but a `--mode session` server still answers with
+                    no gate live — its spec is signed off and it idles for
+                    the implementing PR's diff gate.
 
 AGE is the mtime of whichever round/qa file is newest — there is no
 timestamp field, so mtime is the only signal. Human string in `--format
@@ -212,6 +215,11 @@ def classify(viva: Path) -> dict[str, object]:
                     state = "done"
             except Exception:
                 pass  # best-effort — never let this crash the row
+        # A session server outlives its spec's sign-off, idling for the PR.
+        base = server_url(viva) if state == "done" else None
+        if base is not None and schema.session_is_waiting(
+                (probe_input(base) or {}).get("session")):
+            state = "waiting"
     else:
         # Round N parsed but unanswered — whose turn depends on what the
         # live server (if any) is actually serving.

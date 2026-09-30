@@ -177,6 +177,29 @@ def test_done_when_verdicts_complete():
         assert info["state"] == "done"
 
 
+def test_waiting_when_a_session_server_idles_between_gates():
+    """A session server outlives its spec's sign-off (#241): a done round with
+    that server still answering is `waiting`, not `done`."""
+    def gates(spec: str) -> list:
+        return [{"kind": "intake", "state": "done"}, {"kind": "spec", "state": spec},
+                {"kind": "diff", "state": "waiting"}]
+    for spec, expected in (("done", "waiting"), ("live", "done")):
+        with tempfile.TemporaryDirectory() as tmp:
+            viva = Path(tmp) / ".viva"
+            _write(viva / "review-input-r1.json",
+                   {"doc_file": "spec.md", "sections": [{"id": "s1", "title": "A"}]})
+            _write(viva / "review-r1.json",
+                   {"sections": [{"id": "s1", "verdict": "approved"}]})
+            mock = _MockServer(payload={"round": 1,
+                                        "session": {"id": "x", "gates": gates(spec)}})
+            try:
+                (viva / "server.url").write_text(mock.url)
+                info = docket.classify(viva)
+                assert info["state"] == expected, (spec, info)
+            finally:
+                mock.stop()
+
+
 def test_qa_when_no_review_round_but_qa_input_exists():
     with tempfile.TemporaryDirectory() as tmp:
         viva = Path(tmp) / ".viva"
@@ -378,6 +401,7 @@ def main():
     test_malformed_non_dict_qa_input_does_not_crash()
     test_agent_working_when_verdicts_submitted_and_incomplete()
     test_done_when_verdicts_complete()
+    test_waiting_when_a_session_server_idles_between_gates()
     test_qa_when_no_review_round_but_qa_input_exists()
     test_qa_when_only_answers_present()
     test_empty_when_neither_round_nor_qa()
@@ -391,7 +415,7 @@ def main():
     test_cli_text_output_no_crash_and_reports_none_found()
     test_cli_survives_one_malformed_repo_among_many()
     test_cli_text_output_renders_table()
-    print("OK (23 tests)")
+    print("OK (24 tests)")
 
 
 if __name__ == "__main__":

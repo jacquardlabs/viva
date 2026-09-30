@@ -210,6 +210,26 @@ def _is_interview(payload: dict) -> bool:
     return "questions" in payload
 
 
+def _die_waiting(base: str, session: dict, why: str) -> None:
+    """A session server idling between gates blocks this worktree; name both
+    exits, since plain `abandon` also ends the session."""
+    die(f"session {session.get('id')} is waiting at {base} for its "
+        f"implementing PR's diff gate{why}. `loop.py abandon --keep-session` "
+        f"stops the server and keeps the session for its PR; plain `loop.py "
+        f"abandon` ends the session.")
+
+
+def _refuse_between_gates(viva: Path, verb: str) -> None:
+    """Refuse `verb` against a session server between gates — it outlives the
+    spec's sign-off, so a retried `finish` would append a second ledger."""
+    base = server_url(viva)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    if payload is not None and schema.session_is_waiting(payload.get("session")):
+        _die_waiting(base, payload["session"],
+                     f" — its spec is already signed off, so there is nothing "
+                     f"to {verb}")
+
+
 def _preflight_no_live_session(viva: Path) -> None:
     """Refuse to clear over a session that may still be live. Two cases wear
     one file with opposite recoveries, so ask the server rather than guessing
@@ -223,11 +243,8 @@ def _preflight_no_live_session(viva: Path) -> None:
             die(f"an interview is already open at {base} — `loop.py start "
                 f"--handoff` hands a round to that tab; `loop.py abandon` "
                 f"ends it.")
-        session = payload.get("session")
-        if isinstance(session, dict) and not any(
-                g.get("state") == "live" for g in session.get("gates") or []):
-            die(f"session {session.get('id')} is waiting at {base} for its "
-                f"implementing PR's diff gate — `loop.py abandon` ends it.")
+        if schema.session_is_waiting(payload.get("session")):
+            _die_waiting(base, payload["session"], "")
         die(f"a session is already open at {base} — that tab is the live "
             f"review. Finish it there, or `loop.py abandon`, before "
             f"starting another.")
@@ -1117,6 +1134,7 @@ def cmd_rearm(args) -> int:
     inp, out = schema.round_file_paths(viva, n)
     if not out.exists():
         die(f"round {n} has no verdicts yet — run `loop.py wait` first")
+    _refuse_between_gates(viva, "re-arm")
 
     # Doc, split pattern, and type travel in the round file the parser wrote,
     # so the agent names none of them again — round N+1 splits the way round
@@ -1283,6 +1301,7 @@ def cmd_finish(args) -> int:
         die(f"no live server to complete (no {viva}/server.url). The verdicts "
             f"are on disk; append the ledger by hand with `python3 "
             f"{SCRIPTS / 'revision_history.py'} --viva-dir {viva} --doc {doc}`.")
+    _refuse_between_gates(viva, "finish")
 
     # Everything fallible runs BEFORE the irreversible POST: `/complete`
     # starts the server's shutdown timer, so a failure after it is stuck.
@@ -1403,6 +1422,8 @@ def _end_session(path: Path | None, record: dict | None, closes: bool) -> None:
 
 def cmd_abandon(args) -> int:
     viva = Path(args.viva_dir)
+    if args.keep_session:
+        return _stop_waiting_server(viva)
     session_path, record = _session_path(viva), None
     if session_path is not None and session_path.exists():
         try:
@@ -1416,6 +1437,17 @@ def cmd_abandon(args) -> int:
             die(f"no live session to abandon (no {viva}/server.url)")
         return _abandon_stale_session(viva, session_path, record)
 
+    _stop_server(viva, base)
+    n = current_round(viva)
+    where = f" at round {n}" if n else ""
+    print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
+    if _owns(record, viva):
+        session_path.unlink(missing_ok=True)
+        print(f"viva-loop: session {record['id']} ended — record removed")
+    return 0
+
+
+def _stop_server(viva: Path, base: str) -> None:
     # Over HTTP, not by signal: `start` detaches the server, so this process
     # holds no child handle.
     post(base, "/abandon", {}, "abandoning the session",
@@ -1430,12 +1462,21 @@ def cmd_abandon(args) -> int:
         die(f"server acknowledged /abandon but {viva}/server.url is still "
             f"there — the process may be wedged; stop it before the next start.")
 
-    n = current_round(viva)
-    where = f" at round {n}" if n else ""
-    print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
-    if _owns(record, viva):
-        session_path.unlink(missing_ok=True)
-        print(f"viva-loop: session {record['id']} ended — record removed")
+
+def _stop_waiting_server(viva: Path) -> int:
+    """`abandon --keep-session`: stop a session server idling between gates,
+    record untouched, for its PR's join to relaunch. Refused with a gate live,
+    where the kept record would claim a gate nothing serves."""
+    base = server_url(viva)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    session = (payload or {}).get("session")
+    if not schema.session_is_waiting(session):
+        die("--keep-session stops only a session server waiting between gates "
+            "for its implementing PR, and none is answering here. Plain "
+            "`loop.py abandon` ends an unfinished session.")
+    _stop_server(viva, base)
+    print(f"viva-loop: server stopped — session {session.get('id')} kept for "
+          f"its implementing PR; `/viva-review <PR>` reopens it.")
     return 0
 
 
@@ -1593,6 +1634,10 @@ def main() -> int:
 
     p = sub.add_parser("abandon", help="end an unfinished session — the one "
                                        "exit that is not a sign-off")
+    p.add_argument("--keep-session", action="store_true",
+                   help="stop a session server waiting between gates but keep "
+                        "the session record for its implementing PR, freeing "
+                        "this worktree for another review")
     p.set_defaults(func=cmd_abandon)
 
     p = sub.add_parser("session", help="record the signed spec's source on the "
