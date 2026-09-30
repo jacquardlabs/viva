@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v2.18.0 (2026-09-30)
+
+### Bug Fixes
+
+- A cross-worktree join prints --viva-dir before the subcommand, and a dead session server's
+  preflight names the session ([#262](https://github.com/jacquardlabs/viva/pull/262),
+  [`d636ad6`](https://github.com/jacquardlabs/viva/commit/d636ad6ef179bd3457fec1245cc713f1ee1ae302))
+
+- A PR's join is marked on disk, staged before it clears, and ended only by its own server
+  ([#262](https://github.com/jacquardlabs/viva/pull/262),
+  [`d636ad6`](https://github.com/jacquardlabs/viva/commit/d636ad6ef179bd3457fec1245cc713f1ee1ae302))
+
+### Features
+
+- Loop.py start --join-session arms a PR's diff into its waiting or relaunched session
+  ([#262](https://github.com/jacquardlabs/viva/pull/262),
+  [`d636ad6`](https://github.com/jacquardlabs/viva/commit/d636ad6ef179bd3457fec1245cc713f1ee1ae302))
+
+- Loop.py start --join-session joins a PR's diff to its waiting or relaunched session
+  ([#262](https://github.com/jacquardlabs/viva/pull/262),
+  [`d636ad6`](https://github.com/jacquardlabs/viva/commit/d636ad6ef179bd3457fec1245cc713f1ee1ae302))
+
+
 ## v2.17.0 (2026-09-30)
 
 ### Bug Fixes
