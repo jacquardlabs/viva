@@ -800,6 +800,17 @@ def session_is_waiting(session: object) -> bool:
     return "live" not in states and "waiting" in states
 
 
+def serves_round(payload: object, round_data: dict, n: int) -> bool:
+    """Is a served `/input` payload round `n` of `round_data`, off a live gate?
+    Identity is (mode, round): a waiting session server still serves the spec's
+    last round, which a diff round 1 shares by number. `loop.py` and `docket.py` ask it."""
+    if not isinstance(payload, dict) or payload.get("round") != n:
+        return False
+    if session_is_waiting(payload.get("session")):
+        return False
+    return (payload.get("mode") or "review") == (round_data.get("mode") or "review")
+
+
 def _validate_spec_source(spec: object) -> None:
     if not isinstance(spec, dict) or spec.get("kind") not in SPEC_SOURCE_KINDS:
         raise ValueError(f"session.spec.kind must be one of {SPEC_SOURCE_KINDS!r}")

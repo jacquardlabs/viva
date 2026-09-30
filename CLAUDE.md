@@ -297,14 +297,14 @@ become the next `/viva-review`'s tab. It requires a live server serving
 `questions`, keeps `server.url` and `attachments/`, never touches
 `answers.json`, and skips the resume branch (a fresh draft's ledger heading is
 a false positive). `arm` gates its POST branch on `probe_input` (liveness),
-not `probe_round` — a qa payload carries no `round` key.
+not `holds_round` — a qa payload carries no `round` key.
 
 **Two orderings this flow depends on, both enforced rather than documented:**
 
 - **Producers run before the hand-off, never after.** The server loads its
   round once and replaces it only from `/next-round`, so `loop.py annotate`
   refuses a round the server already holds; it *passes* before the hand-off
-  because the live qa server's `probe_round` returns `None`.
+  because the live qa server serves no `round`.
   `tests/test_viva_write_flow.py` asserts both sides of it. The bundle's own
   `checks[]` don't depend on the agent remembering the order: `start --type`
   runs them itself, between parse and any arming branch, by the mechanical
@@ -404,6 +404,8 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   diff gate opens. Between gates, `finish` and `rearm` refuse
   (`schema.session_is_waiting`), `abandon --keep-session` stops the server
   but keeps the record, and `docket.py` reports the process as `waiting`.
+  A served round is armed only by `schema.serves_round` — `(mode, round)` off
+  a live gate — which every armed-ness check in `loop.py` and `docket.py` asks.
 
 ## Tests
 

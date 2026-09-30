@@ -27,8 +27,9 @@ STATE:
                     where no `server.url` exists and nothing was submitted.
   agent-working     `review-rN.json` exists for round N — the agent's turn.
   parsed-not-armed  Round N is parsed but the live server is serving something
-                    else (a stale earlier round, or a `/viva-write` qa payload
-                    with no `round` key). Nothing populates `review-rN.json`
+                    else (a stale earlier round, a `/viva-write` qa payload
+                    with no `round` key, or a waiting session's spec round
+                    beside a diff round of the same number). Nothing populates `review-rN.json`
                     until `loop.py arm` runs.
   dead              `server.url` exists but nothing answers within the probe
                     timeout.
@@ -231,8 +232,9 @@ def classify(viva: Path) -> dict[str, object]:
             payload = probe_input(base)
             if payload is None:
                 state = "dead"
-            elif payload.get("round") != n:
-                # Stale round, or a live qa payload with no `round` key.
+            elif not schema.serves_round(payload, input_data, n):
+                # Stale round, a live qa payload with no `round` key, or a
+                # waiting session's spec round sharing a diff round's number.
                 state = "parsed-not-armed"
             else:
                 state = "your-turn"

@@ -166,6 +166,21 @@ def test_session_is_waiting() -> None:
     print("  ok  test_session_is_waiting")
 
 
+def test_serves_round() -> None:
+    """Armed-ness is (mode, round) off a live gate — never the number alone."""
+    between = {"gates": [{"kind": "intake", "state": "done"}, {"kind": "spec", "state": "done"},
+                         {"kind": "diff", "state": "waiting"}]}
+    diff, spec = {"mode": "diff", "round": 1}, {"round": 1}
+    assert schema.serves_round({"round": 1}, spec, 1), "a mode-less round is review"
+    assert schema.serves_round(diff, diff, 1)
+    assert not schema.serves_round({"round": 2}, spec, 1), "a stale round"
+    assert not schema.serves_round({"mode": "review", "round": 1}, diff, 1), "mode differs"
+    assert not schema.serves_round(dict(diff, session=between), diff, 1), "a waiting gate"
+    for junk in (None, {}, [], {"questions": []}):
+        assert not schema.serves_round(junk, spec, 1), junk
+    print("  ok  test_serves_round")
+
+
 # ── the lifecycle, across two worktrees ──────────────────────────────────────
 def test_record_spans_worktrees_and_ends_at_the_sessions_diff() -> None:
     with tempfile.TemporaryDirectory() as td:
@@ -341,6 +356,7 @@ def test_interview_session_needs_a_github_origin() -> None:
 def main() -> None:
     test_validate_session()
     test_session_is_waiting()
+    test_serves_round()
     test_record_spans_worktrees_and_ends_at_the_sessions_diff()
     test_abandon_ends_the_session()
     test_interview_session_needs_a_github_origin()

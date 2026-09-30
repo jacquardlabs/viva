@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server.py"
 LOOP = ROOT / "scripts" / "loop.py"
+DOCKET = ROOT / "scripts" / "docket.py"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _server_harness import (  # noqa: E402
     get, launch_server, poll_for, post, post_result, shipped_source)
@@ -134,12 +135,21 @@ def test_the_gate_table() -> None:
 
 def _loop(viva: Path, *argv, stdin: str = "") -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(LOOP), "--viva-dir", str(viva), *argv],
-                          cwd=str(viva.parent), input=stdin, capture_output=True, text=True)
+                          cwd=str(viva.parent), input=stdin, capture_output=True, text=True,
+                          timeout=30)
+
+
+def _docket(root: str) -> str:
+    r = subprocess.run([sys.executable, str(DOCKET), "--format", "json", "--root", root],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)[0]["state"]
 
 
 def test_a_waiting_server_does_not_hold_the_diff_round() -> None:
-    """Spec round 1 signed off; the server still serves it. Diff round 1 on
-    disk shares its number, and `annotate`/`summarize` must see it unarmed."""
+    """Spec round 1 signed off; the server still serves it. Diff round 1 on disk
+    shares its number: `annotate`/`summarize` pass, `wait` exits 2, and docket
+    says parsed-not-armed, until `arm`."""
     flag = json.dumps([{"id": "s1", "kind": "confidence", "severity": "info",
                         "message": "m", "basis": "sourced"}])
     with tempfile.TemporaryDirectory() as td:
@@ -156,6 +166,10 @@ def test_a_waiting_server_does_not_hold_the_diff_round() -> None:
             for p in viva.glob("review-r*.json"):
                 p.unlink()
             (viva / "review-input-r1.json").write_text(json.dumps(DIFF))
+            assert _docket(td) == "parsed-not-armed"
+            r = _loop(viva, "wait")
+            assert r.returncode == 2 and "parsed but not armed" in r.stderr \
+                and "review round 1" in r.stderr, r.stderr
             r = _loop(viva, "annotate", "--sidecar", "-", stdin=flag)
             assert r.returncode == 0, r.stderr
             r = _loop(viva, "summarize", "--map", "-", stdin='{"s1": "one line"}')
@@ -164,6 +178,7 @@ def test_a_waiting_server_does_not_hold_the_diff_round() -> None:
             r = _loop(viva, "arm")
             assert r.returncode == 0, r.stderr
             assert gates(base)["diff"] == "live"
+            assert _docket(td) == "your-turn"
             r = _loop(viva, "annotate", "--sidecar", "-", stdin=flag)
             assert r.returncode != 0 and "already armed" in r.stderr, r.stderr
     print("  ok  test_a_waiting_server_does_not_hold_the_diff_round")

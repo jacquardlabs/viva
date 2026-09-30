@@ -405,7 +405,8 @@ The driver refuses `finish` and `rearm` against a server in this state, and
 record survives for the diff gate's relaunch. Plain `abandon` ends both.
 A served round counts as armed only by `(mode, round)` off a live gate, so
 `annotate` and `summarize` accept a diff round 1 that shares the signed-off
-spec round's number.
+spec round's number, `wait` exits 2 on it as parsed but not armed, and
+`docket.py` reports it `parsed-not-armed`.
 
 ### hunk review (`/viva-review` branch B, #179)
 

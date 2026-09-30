@@ -771,7 +771,7 @@ def check_start_refuses_over_a_live_session() -> None:
     """`start` clears the round files and `server.url`; without a pre-flight guard
     that orphans a live session's running server (#174). Both refusal branches are
     checked — a live server names its URL, a dead one gets delete-the-file advice —
-    using a **qa** payload (no `round` key) so a `probe_round`-based guard couldn't
+    using a **qa** payload (no `round` key) so a round-based guard couldn't
     misread a live interview server as dead."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -843,7 +843,7 @@ def check_start_handoff_refuses_without_an_interview() -> None:
 
 def check_arm_hands_off_into_a_live_interview() -> None:
     """`arm` gates its POST branch on liveness (`probe_input`), not the round the
-    server reports (`probe_round`) — a qa payload carries no `round` key. The stub
+    server reports (`holds_round`) — a qa payload carries no `round` key. The stub
     answers `/input` as an interview would and records what `arm` POSTs to `/next-round`."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)

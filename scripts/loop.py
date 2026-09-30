@@ -139,7 +139,7 @@ def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:
     """The payload the server at `base` is serving, or None if nothing answers.
     File existence proves neither liveness nor armed-ness (a killed process
     skips the `finally` that unlinks `server.url`). This is the liveness
-    question, deliberately distinct from `probe_round`: a live qa server
+    question, deliberately distinct from `holds_round`: a live qa server
     answers `/input` with no `round` key, so only this one may be read as dead."""
     try:
         with urllib.request.urlopen(base + "/input", timeout=timeout) as resp:
@@ -150,23 +150,9 @@ def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:
     return payload if isinstance(payload, dict) else {}
 
 
-def probe_round(base: str) -> int | None:
-    """The round actually being served, or None if not answering — or
-    answering with no round (a qa payload)."""
-    payload = probe_input(base)
-    return payload.get("round") if payload is not None else None
-
-
 def holds_round(base: str, inp: Path, n: int) -> bool:
-    """Is the server at `base` serving round `n` of THIS round file? A session
-    server between gates still serves the spec's last round, which a diff
-    round 1 can share by number, so identity is (mode, round), off a live gate."""
-    payload = probe_input(base)
-    if payload is None or payload.get("round") != n:
-        return False
-    if schema.session_is_waiting(payload.get("session")):
-        return False
-    return (payload.get("mode") or "review") == (load_json(inp).get("mode") or "review")
+    """Is the server at `base` serving round `n` of THIS round file?"""
+    return schema.serves_round(probe_input(base), load_json(inp), n)
 
 
 def standing_preferences(viva: Path) -> list:
@@ -1009,7 +995,7 @@ def cmd_arm(args) -> int:
 
     # Branch on liveness, not the round number — a re-run after a slow start
     # would otherwise launch a second orphaned server.
-    # Liveness is `probe_input`, never `probe_round`: a live qa server has no
+    # Liveness is `probe_input`, never `holds_round`: a live qa server has no
     # `round` key, and reading that as dead broke handing a round to an open
     # `/viva-write` interview (#179).
     base = server_url(viva)
@@ -1096,16 +1082,18 @@ def cmd_wait(args) -> int:
         if not base:
             die(f"server is gone ({viva}/server.url disappeared) and round {n} "
                 f"never returned verdicts. {relaunch}", 2)
-        served = probe_round(base)
-        if served is None:
+        payload = probe_input(base)
+        if payload is None:
             die(f"server at {base} is not answering and round {n} never "
                 f"returned verdicts. Delete {viva}/server.url, then relaunch. "
                 f"{relaunch}", 2)
-        if served != n:
-            # Parsed but never armed: `rearm --parse-only` wrote round n while
-            # the server still serves `served`, so no verdicts will ever land.
+        if not schema.serves_round(payload, input_data, n):
+            # Parsed but never armed (`rearm --parse-only`, or a diff round
+            # beside a waiting session's spec round): no verdicts will land.
+            served = f"{payload.get('mode') or 'review'} round {payload['round']}" \
+                if "round" in payload else "no round"
             die(f"round {n} is parsed but not armed — the server is still "
-                f"serving round {served}. Run `loop.py arm` (after "
+                f"serving {served}. Run `loop.py arm` (after "
                 f"`loop.py annotate` if a producer is pending).", 2)
         time.sleep(_WAIT_INTERVAL)
 
