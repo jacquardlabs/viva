@@ -390,6 +390,47 @@ def test_cli_text_output_renders_table():
         assert "spec.md" in proc.stdout
 
 
+def test_stale_session_record_with_no_server():
+    """#258: a session record naming a `.viva/` that no server answers from
+    is its own row, found from a linked worktree by reading `.git` alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp).resolve()
+        main, wt = tmp / "main", tmp / "wt"
+        main.mkdir()
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["init", "-q"], cwd=str(main), check=True)
+        subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", "i"],
+                       cwd=str(main), check=True)
+        subprocess.run(git + ["worktree", "add", "-q", str(wt)], cwd=str(main), check=True)
+        for tree in (main, wt):
+            (tree / ".viva").mkdir()
+        record = {"id": "a" * 32, "repo": "o/r", "viva_dir": str(wt / ".viva"),
+                  "spec": {"kind": "commit", "path": "spec.md", "sha": "b" * 40},
+                  "gates": [{"kind": "intake", "state": "done"},
+                            {"kind": "spec", "state": "done"},
+                            {"kind": "diff", "state": "waiting"}]}
+        _write(main / ".git" / "viva" / "session.json", record)
+
+        info = docket.classify(wt / ".viva")
+        assert info["state"] == "stale-session", info
+        assert "a" * 32 in info["context"] and "spec.md" in info["context"], info
+        assert docket.classify(main / ".viva")["state"] == "empty", "not its gate"
+
+        # A server answering here is the live session, not a stale one.
+        mock = _MockServer(payload={"round": 1})
+        try:
+            (wt / ".viva" / "server.url").write_text(mock.url)
+            assert docket.classify(wt / ".viva")["state"] != "stale-session"
+        finally:
+            mock.stop()
+        (wt / ".viva" / "server.url").unlink()
+
+        rows = docket.build_docket([str(tmp / "*")])
+        assert [r["state"] for r in rows if r["path"] == str(wt)] == ["stale-session"], rows
+        _write(main / ".git" / "viva" / "session.json", dict(record, id="bad"))
+        assert docket.classify(wt / ".viva")["state"] == "empty", "an invalid record is none"
+
+
 def main():
     test_current_round_highest_and_zero()
     test_round_files_names()
@@ -415,7 +456,8 @@ def main():
     test_cli_text_output_no_crash_and_reports_none_found()
     test_cli_survives_one_malformed_repo_among_many()
     test_cli_text_output_renders_table()
-    print("OK (24 tests)")
+    test_stale_session_record_with_no_server()
+    print("OK (25 tests)")
 
 
 if __name__ == "__main__":

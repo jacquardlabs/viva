@@ -207,7 +207,7 @@ def test_the_driver_knows_the_diff_parser_and_mode():
     assert "parse_diff.py" in loop, "loop.py must parse a diff round"
     assert '_launch_server(viva, "review"' not in loop, \
         "arm must not hardcode the launch mode"
-    assert "_launch_server(viva, mode, inp, out)" in loop, \
+    assert "_launch_server(viva, mode, inp, out," in loop, \
         "arm launches with the mode the round file carries"
     # Prose may still name the parser (B3's `info` exception rests on what
     # `parse_diff.py` lacks); no bash block may run it or launch the mode.

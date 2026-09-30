@@ -293,6 +293,33 @@ python3 "$VIVA_DIR/scripts/loop.py" start --target 187          # a PR, or a ref
 python3 "$VIVA_DIR/scripts/loop.py" start --kind worktree       # the working tree
 ```
 
+**A PR may be the diff gate of a lifecycle session** — one `/viva-write`
+opened with its spec, waiting in this clone for the implementing PR. For a
+`pr` target, ask the driver first:
+
+```bash
+python3 "$VIVA_DIR/scripts/loop.py" session
+```
+
+It names the session, then prints one line to route on:
+
+| `session` prints | Start with |
+|------------------|------------|
+| `waiting` | Ask the human whether this PR implements the spec it names. Yes → `start --target <pr> --join-session`. No → the plain `start`, and say you are not joining that session. |
+| `joined`, naming this PR | `start --target <pr> --join-session` — its server died mid-review; the join relaunches it. |
+| `unsourced` | The plain `start`, saying the session cannot be joined until its signed spec is recorded (`loop.py session --spec-source`, `/viva-write` step 7). |
+| `none`, `open`, or `joined` to another PR | The plain `start`; for an `open` or `joined` session, say you are not joining it. |
+
+Never add `--join-session` on your own reading: the human confirms which PR
+implements the spec, since the join hands this PR the session's spec and
+intake. A working tree or a ref never joins. The join arms into the session's
+live tab, or relaunches it with its history restored; when it prints
+`--viva-dir <path>`, the gate runs in another worktree's `.viva/`, so pass
+that flag to every later `loop.py` command in this review. A joined `finish`
+ends the session. A plain `start` in the worktree where the session's server
+waits is refused; `loop.py abandon --keep-session` frees the worktree and
+keeps the session for its PR.
+
 `start` clears stale state, records the target, runs its capture, parses the
 hunks, launches the server, and prints the hunk count and `$BASE`. Pass the
 target `review_target.py` classified, with the same `--kind` if you overrode

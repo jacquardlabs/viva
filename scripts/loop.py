@@ -212,9 +212,10 @@ def _die_waiting(base: str, session: dict, why: str) -> None:
     """A session server idling between gates blocks this worktree; name both
     exits, since plain `abandon` also ends the session."""
     die(f"session {session.get('id')} is waiting at {base} for its "
-        f"implementing PR's diff gate{why}. `loop.py abandon --keep-session` "
-        f"stops the server and keeps the session for its PR; plain `loop.py "
-        f"abandon` ends the session.")
+        f"implementing PR's diff gate{why}. `loop.py start --target <PR> "
+        f"--join-session` arms that PR's diff into it; `loop.py abandon "
+        f"--keep-session` stops the server and keeps the session for its PR; "
+        f"plain `loop.py abandon` ends the session.")
 
 
 def _refuse_between_gates(viva: Path, verb: str) -> None:
@@ -478,7 +479,8 @@ def _relaunch_hint(viva: Path) -> str:
         return f"`loop.py start --target {record.get('ref')} --kind ref`"
     if kind == "pr":
         repo = f" (repo {record['repo']})" if record.get("repo") else ""
-        return f"`loop.py start --target {record.get('number')} --kind pr`{repo}"
+        join = " --join-session" if _joined(viva) else ""
+        return f"`loop.py start --target {record.get('number')} --kind pr{join}`{repo}"
     return "`loop.py start --target <target>`"
 
 
@@ -580,6 +582,102 @@ def _pr_ref(target: dict, repo: str) -> str | None:
     if target.get("kind") != "pr":
         return None
     return f"{target.get('repo') or repo}#{target.get('number')}"
+
+
+def _session_state(record: dict | None) -> str:
+    """What a PR review may do with this clone's session: `none`, `open`
+    (intake or spec live), `unsourced`, `waiting` (joinable), or `joined`."""
+    if record is None:
+        return "none"
+    if _gate(record, "diff") == "live":
+        return "joined"
+    if _gate(record, "spec") != "done":
+        return "open"
+    return "waiting" if "spec" in record else "unsourced"
+
+
+def _session_summary(record: dict) -> str:
+    """One line naming the session: its id, spec source, and PR if joined."""
+    spec = record.get("spec")
+    if spec is None:
+        source = "no spec source recorded"
+    elif spec["kind"] == "commit":
+        source = f"spec {spec['path']}@{spec['sha'][:12]}"
+    else:
+        source = f"spec {spec['url']}"
+    gates = ", ".join(f"{g['kind']} {g['state']}" for g in record["gates"])
+    pr = f" · {record['pr']}" if record.get("pr") else ""
+    return f"session {record['id']} · {record['repo']} · {gates} · {source}{pr}"
+
+
+def _joined(viva: Path) -> dict | None:
+    """The session record whose diff gate is THIS `.viva/`'s PR round, or
+    None. Read off disk, so `arm` after a summaries seam relaunches it too."""
+    path = _session_path(viva)
+    if path is None or not path.exists():
+        return None
+    try:
+        record, target = _load_session(path), load_json(viva / "target.json")
+    except (OSError, ValueError):
+        return None
+    if not (_owns(record, viva) and _gate(record, "diff") == "live"):
+        return None
+    return record if record.get("pr") == _pr_ref(target, record["repo"]) else None
+
+
+def _join_target(viva: Path, target: dict) -> tuple[Path, dict, Path, dict]:
+    """Refuse a join that could land on the wrong session or PR (#242), then
+    pick the `.viva/` the diff gate runs in: a waiting server's own (its
+    output root is fixed at launch), else this one, where it relaunches.
+    Returns (that dir, the pinned target, the record's path, the record)."""
+    if target.get("kind") != "pr":
+        die(f"--join-session joins a PR; {target.get('label')} is a "
+            f"{target.get('kind')} diff, which never joins a session")
+    path, record = _read_session(viva)
+    if record is None:
+        die("--join-session: no session in this clone — `loop.py interview "
+            "--session` opens one")
+    state = _session_state(record)
+    if state == "open":
+        die(f"{_session_summary(record)} — its spec is not signed off, so no "
+            f"PR can join it yet")
+    if state == "unsourced":
+        die(f"{_session_summary(record)} — record the signed spec first: "
+            f"after the stamp, `loop.py session --spec-source <commit:path@sha "
+            f"| comment URL>`")
+    repo = target.get("repo") or record["repo"]
+    if repo.lower() != record["repo"].lower():
+        die(f"{target.get('label')} is in {repo}, but session {record['id']} "
+            f"is {record['repo']} — a PR joins only its own repo's session")
+    number = target["number"]
+    pr = f"{record['repo']}#{number}"
+    if record.get("pr") and record["pr"] != pr:
+        die(f"{_session_summary(record)} — it is joined to {record['pr']}, "
+            f"not {pr}; one PR per session")
+    # Pinned to the session's repo: a bare number otherwise resolves against
+    # whatever `gh` defaults to, which in a fork is the upstream.
+    target = dict(target, repo=record["repo"], label=f"PR #{number} ({record['repo']})",
+                  capture=["gh", "pr", "diff", str(number), "--repo", record["repo"]])
+
+    owner = Path(record["viva_dir"])
+    base = server_url(owner)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    served = (payload or {}).get("session")
+    if isinstance(served, dict) and served.get("id") == record["id"]:
+        if not schema.session_is_waiting(served):
+            die(f"{_session_summary(record)} — its diff gate is already live "
+                f"at {base}; that tab is the review")
+        # The spec's round files go; the server, its url, and the intake's
+        # attachments stay, as at `--handoff`.
+        _clear_state(owner, keep_server_url=True, include_attachments=False)
+        return owner, target, path, record
+    if owner == viva.resolve() and base and payload is None:
+        # The session's own server died without cleanup; the probe just said
+        # nothing is home, so the relaunch clears its url itself.
+        (viva / "server.url").unlink(missing_ok=True)
+    _preflight_no_live_session(viva)
+    _clear_state(viva)
+    return viva.resolve(), target, path, record
 
 
 def _spec_source(viva: Path, ref: str, repo: str) -> dict:
@@ -711,10 +809,16 @@ def cmd_start(args) -> int:
         die("--recheck re-opens a doc already signed off; --handoff hands a "
             "fresh draft to an interview still in progress — the two describe "
             "opposite states of the same doc")
+    if args.join_session and not diff_form:
+        die("--join-session joins a PR's diff to a session — pass "
+            "--target <pr>, not a doc")
     if diff_form:
         record = _classify(args.target, args.kind)
         if record.get("kind") != "doc":
             return _start_diff(args, viva, record)
+        if args.join_session:
+            die(f"--join-session joins a PR's diff to a session; {record['doc']} "
+                f"is a doc")
         # A `--target` naming a markdown file is the doc form spelled the
         # other way — filesystem first, then shape (review_target.py).
         args.doc = record["doc"]
@@ -727,10 +831,25 @@ def _start_diff(args, viva: Path, record: dict) -> int:
         if value is not None:
             die(f"{flag} is a doc-review flag; {record.get('label')} is "
                 f"reviewed hunk by hunk")
-    _preflight_no_live_session(viva)
+    session = None
+    if args.join_session:
+        joined_viva, record, session_path, session = _join_target(viva, record)
+        if joined_viva != viva.resolve():
+            print(f"viva-loop: this diff gate runs in {joined_viva} — pass "
+                  f"`--viva-dir {joined_viva}` to every later loop.py command")
+        viva = args.viva_dir = joined_viva
+    else:
+        _preflight_no_live_session(viva)
+        _, waiting = _read_session(viva)
+        if waiting is not None:
+            hint = ("; if this PR implements its spec, re-run with --join-session"
+                    if record.get("kind") == "pr" and _session_state(waiting) == "waiting"
+                    else "")
+            print(f"viva-loop: {_session_summary(waiting)} — this review does "
+                  f"not join it{hint}")
+        # No resume branch and no preference seam: neither has hunk semantics.
+        _clear_state(viva)
     viva.mkdir(parents=True, exist_ok=True)
-    # No resume branch and no preference seam: neither has hunk semantics.
-    _clear_state(viva)
     cwd = Path.cwd().resolve()
     # Record plus its cwd: `rearm`/`finish` re-capture from a later shell
     # whose cwd this driver does not control.
@@ -750,6 +869,13 @@ def _start_diff(args, viva: Path, record: dict) -> int:
     data = load_json(round_file)
     print(f"viva-loop: {len(data.get('sections', []))} hunk(s) · "
           f"{record.get('label')}")
+    if session is not None:
+        # Written before the arm: `arm` reads it to relaunch `--mode session`,
+        # and a failed arm is retried by the same join.
+        _close_gate(session, "spec", opens="diff")
+        session.update(pr=_pr_ref(record, session["repo"]), viva_dir=str(viva))
+        _write_session(session_path, session)
+        print(f"viva-loop: {_session_summary(session)} — diff gate joined")
     return _diff_seam_or_arm(args, 1, round_file, data)
 
 
@@ -1015,7 +1141,12 @@ def cmd_arm(args) -> int:
     mode = load_json(inp).get("mode") or "review"
     if mode not in ("review", "diff"):
         die(f"round {n}'s input carries mode {mode!r} — expected review or diff")
-    base = _launch_server(viva, mode, inp, out)
+    # A session's PR diff relaunches the session, not a standalone diff server:
+    # booted on a diff, it opens with intake and spec done (#242).
+    session = _joined(viva) if mode == "diff" else None
+    if session:
+        mode = "session"
+    base = _launch_server(viva, mode, inp, out, session["id"] if session else None)
     print(f"viva-loop: round {n} armed · {base}")
     return 0
 
@@ -1349,9 +1480,9 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
             "in target.json")
     record, cwd = _target_record(viva)
     session_path, session = _read_session(viva)
-    # `pr` is set only at the join (#242); an unjoined session ends at no diff.
-    closes = (session is not None and "pr" in session
-              and session["pr"] == _pr_ref(record, session["repo"]))
+    # Only the joined gate's own `.viva/` ends the session — a standalone
+    # review of the same PR elsewhere does not.
+    closes = _joined(viva) is not None
     base = server_url(viva)
     if not base:
         die(f"no live server to complete (no {viva}/server.url). The verdicts "
@@ -1498,6 +1629,12 @@ def _abandon_stale_session(viva: Path, path: Path, record: dict) -> int:
 def cmd_session(args) -> int:
     viva = Path(args.viva_dir)
     path, record = _read_session(viva)
+    if args.spec_source is None:
+        # Read-only: the classification line a PR review routes its join on.
+        if record is not None:
+            print(f"viva-loop: {_session_summary(record)}")
+        print(f"=== session: {_session_state(record)} ===")
+        return 0
     if record is None:
         die("no session in this clone — `loop.py interview --session` opens one")
     if _gate(record, "spec") != "done":
@@ -1582,6 +1719,14 @@ def main() -> int:
                         "approval per flag before the round arms. Refuses on "
                         "an unsigned doc, and skips the plain resume branch "
                         "(one mechanism decides 'was this signed off').")
+    p.add_argument("--join-session", action="store_true",
+                   help="arm this PR's diff as the diff gate of the clone's "
+                        "waiting session (#242): into its live server, or a "
+                        "relaunched `--mode session` one. Refused for a PR in "
+                        "another repo, a session already joined to another "
+                        "PR, one with no recorded spec source, and any "
+                        "non-PR target. Never inferred: without it a PR "
+                        "review leaves the session alone.")
     p.set_defaults(func=cmd_start)
 
     p = sub.add_parser("annotate", help="merge a producer sidecar into the "
@@ -1640,13 +1785,16 @@ def main() -> int:
                         "this worktree for another review")
     p.set_defaults(func=cmd_abandon)
 
-    p = sub.add_parser("session", help="record the signed spec's source on the "
-                                       "session, after the stamp")
-    p.add_argument("--spec-source", required=True, metavar="REF",
+    p = sub.add_parser("session", help="print the clone's session and its "
+                                       "state; with --spec-source, record the "
+                                       "signed spec's source after the stamp")
+    p.add_argument("--spec-source", default=None, metavar="REF",
                    help="what the stamp produced: `commit:<path>@<sha>` (path "
                         "from the repo root) or an issue comment URL. Refused "
                         "before the spec gate closes, or on a source with no "
-                        "`## Revision History`.")
+                        "`## Revision History`. Omitted: print the session and "
+                        "one line, `=== session: none|open|unsourced|waiting|"
+                        "joined ===`.")
     p.set_defaults(func=cmd_session)
 
     args = ap.parse_args()

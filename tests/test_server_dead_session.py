@@ -134,6 +134,9 @@ def test_resume_command_is_named_only_when_the_payload_names_a_target():
         "the resume command must be gated on a review-mode payload with a doc"
     assert "el('dead-cmd').textContent = doc ? '/viva-review ' + doc : '';" in fn, \
         "the resume command must be built from the payload, never templated"
+    # A session past its spec gate reopens through its PR's join (#242).
+    assert "!['intake', 'spec'].includes(liveGate(REVIEW_DATA))" in fn
+    assert "const doc = joins ? '<PR>' :" in fn
     # The skill it names must exist.
     assert (ROOT / ".claude" / "skills" / "viva-review" / "SKILL.md").is_file()
     # Both branches are written every time it's raised — no stale target
