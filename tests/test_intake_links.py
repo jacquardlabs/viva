@@ -17,7 +17,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import revision_history  # noqa: E402
 import schema  # noqa: E402
 import server  # noqa: E402
 from _server_harness import (get, launch_server, poll_for, post,  # noqa: E402
@@ -78,7 +77,7 @@ def intake(base: str) -> dict:
 
 def test_the_block_reads_back_what_the_ledger_writes() -> None:
     assert schema.decision_links(STORE) == LINKS
-    block = revision_history.build_decisions_block(LINKS)
+    block = schema.decisions_block(LINKS)
     doc = ("# Doc\n\n### Decisions\n\n- In the body → never read — **Nope**\n\n"
            "---\n\n## Revision History\n\nSigned off. 2026-09-01\n\n### Decisions\n\n"
            "- Old → stale — **Problem**\n\nSigned off. 2026-09-02\n\n" + block

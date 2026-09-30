@@ -205,7 +205,9 @@ def test_record_spans_worktrees_and_ends_at_the_sessions_diff() -> None:
         # The session's own PR, joined (#242): the stand-in `gh` serves its diff.
         (main / "f.txt").write_text("a\nBB\nc\n")
         (td / "pr.patch").write_text(git(main, "diff") + "\n")
-        gh.write_text(f"#!/bin/sh\ncat '{td / 'pr.patch'}'\n")
+        # `api` still serves the comment: the finish reads it for the minutes (#245).
+        gh.write_text(f"#!/bin/sh\ncase \"$1\" in api) cat '{td / 'comment.json'}' ;; "
+                      f"*) cat '{td / 'pr.patch'}' ;; esac\n")
         r = loop(main, "start", "--target", "7", "--join-session", env=env)
         assert r.returncode == 0, r.stderr
         assert read(main)["pr"] == "o/r#7", read(main)

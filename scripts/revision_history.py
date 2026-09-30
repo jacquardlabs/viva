@@ -98,15 +98,6 @@ def collect_decisions(viva_dir: Path) -> list[dict]:
     return schema.decision_links(store) if isinstance(store, dict) else []
 
 
-def build_decisions_block(links: list[dict]) -> str:
-    """One bullet per distinct answered question, naming every section it
-    shaped; `schema.parse_decisions_block` reads it back."""
-    lines = [schema.DECISIONS_HEADING, ""]
-    lines += [f"- {link['message']} — " + ", ".join(f"**{t}**" for t in link["sections"])
-              for link in links]
-    return "\n".join(lines)
-
-
 def round_numbers(viva_dir: Path) -> list[int]:
     return sorted(
         n for p in viva_dir.glob(schema.round_input_glob())
@@ -164,9 +155,16 @@ def collect_changed(viva_dir: Path) -> list[str] | None:
     ]
 
 
+def round_unit(viva_dir: Path) -> str:
+    """What a card is in these rounds: a diff session's are hunks (#245)."""
+    last = schema.round_file_paths(viva_dir, round_numbers(viva_dir)[-1])[0]
+    return "hunk" if json.loads(last.read_text(encoding="utf-8")).get("mode") == "diff" \
+        else "section"
+
+
 def build_block(entries: list[dict], rounds_total: int,
                 sections_total: int, day: str, is_recheck: bool = False,
-                changed: list[str] | None = None) -> str:
+                changed: list[str] | None = None, unit: str = "section") -> str:
     # `with comments`, not `revised` (#178) — an `info` question earns a
     # ledger row too, with no edit behind it.
     commented = len({e["section_title"] for e in entries})
@@ -182,7 +180,7 @@ def build_block(entries: list[dict], rounds_total: int,
     lines = [
         f"{verb} via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
-        f"section{'s' if sections_total != 1 else ''}, "
+        f"{unit}{'s' if sections_total != 1 else ''}, "
         f"{commented} with comments{resign}. {day}"
     ]
     if entries:
@@ -202,10 +200,10 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     if rounds_total == 0:
         die(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day, is_recheck,
-                        collect_changed(viva_dir))
+                        collect_changed(viva_dir), round_unit(viva_dir))
     decisions = collect_decisions(viva_dir)
     if decisions:
-        block = block + "\n\n" + build_decisions_block(decisions)
+        block = block + "\n\n" + schema.decisions_block(decisions)
     threads = collect_threads(viva_dir)
     if threads:
         block = block + "\n\n" + build_threads_block(threads)

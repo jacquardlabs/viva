@@ -157,9 +157,10 @@ import. It holds:
   `revision_history.py`'s append-vs-create branch ask the same question, and a
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
-- **`decision_links()` / `parse_decisions_block()`** — the ledger's
-  `### Decisions` grammar both ways: `revision_history.py` renders the one,
-  `loop.py` reads a signed spec back with the other (#244).
+- **`decision_links()` / `decisions_block()` / `parse_decisions_block()`** —
+  the ledger's `### Decisions` grammar both ways: `revision_history.py`
+  renders it, `loop.py` reads a signed spec back (#244) and re-renders it
+  deduped into the session minutes (#245).
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
   `validate_session` is the session record's, called by `loop.py` on
   every read and write.
@@ -377,7 +378,7 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   without documenting why here. The state clear lives in `scripts/loop.py`'s
   `_clear_state`, not in prose — it removes the round files, `server.url`,
   `open-notes.json`, `target.json`, `diff.patch`, `decisions.json`,
-  `spec-decisions.json`, and `attachments/`. `decisions.json` (#211) is this
+  `spec-decisions.json`, `minutes.md`, and `attachments/`. `decisions.json` (#211) is this
   session's snapshot of interview-answer annotations; the durable copy is the
   ledger's `### Decisions` block written at `finish`, so it resets like everything
   else here rather than surviving alongside `preferences.json`.
@@ -399,7 +400,9 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   worktree, so the clear never reaches it. `loop.py interview --session`
   writes it; diff `finish` in the joined `.viva/` (its `target.json` carries
   `session: <id>`, written only by the join) and `abandon` of the session's
-  own server (probed by id) delete it.
+  own server (probed by id) delete it. That `finish` first writes
+  `.viva/minutes.md` (#245) before `/complete`, so a spec source that no
+  longer reads refuses the finish with the record intact.
   **One `.viva/` epoch per gate, one process across them** (#241): the
   session server outlives the spec's `finish`, so `server.url` and the spec's
   round files stay until `start --target <pr> --join-session` (#242) has

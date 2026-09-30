@@ -455,7 +455,7 @@ def has_revision_history(doc_text: str) -> bool:
 # The literal line shape `revision_history.py`'s `build_block` writes —
 # "Signed off" or "Re-certified" (#83), never a bare date search: a doc can
 # quote a date anywhere in its own prose.
-_SIGNOFF_LINE_RE = re.compile(
+SIGNOFF_LINE_RE = re.compile(
     r"(?m)^(?:Signed off|Re-certified) via viva review — .*?(\d{4}-\d{2}-\d{2})\s*$"
 )
 
@@ -466,7 +466,7 @@ def last_signoff_date(doc_text: str) -> str | None:
     under the one `## Revision History` heading each session, so this is the
     most RECENT sign-off, not the first — the one a recheck (#83) or the
     drift hook (#143) needs."""
-    matches = list(_SIGNOFF_LINE_RE.finditer(doc_text))
+    matches = list(SIGNOFF_LINE_RE.finditer(doc_text))
     return matches[-1].group(1) if matches else None
 
 
@@ -485,7 +485,7 @@ _BOLD_LINE_RE = re.compile(r"^\*\*(.+)\*\*$")
 def decision_links(store: dict) -> list[dict]:
     """`.viva/decisions.json` as one `{message, sections}` per distinct answer,
     naming every section it shaped in title order — the rows the `### Decisions`
-    block renders and `parse_decisions_block` reads back."""
+    block renders (`decisions_block`) and `parse_decisions_block` reads back."""
     entries = sorted((e for e in store.values()
                       if isinstance(e, dict) and isinstance(e.get("flags"), list)),
                      key=lambda e: str(e.get("title") or "").strip().lower())
@@ -500,37 +500,51 @@ def decision_links(store: dict) -> list[dict]:
     return [{"message": m, "sections": t} for m, t in shaped.items()]
 
 
-def parse_decisions_block(doc_text: str) -> list[dict]:
-    """The LAST `### Decisions` block under `## Revision History`, as
-    `decision_links` rows. It ends at the first line that is neither a bullet
-    nor a lone `**Title**`; a #253 block has no title lines, so there a bold
-    line ends it too — a note appended after the ledger stays out."""
-    lines = [line.strip() for line in doc_text.splitlines()]
-    ledger = next((i for i, line in enumerate(lines)
-                   if REVISION_HISTORY_RE.match(line)), None)
-    starts = [i for i, line in enumerate(lines)
-              if line == DECISIONS_HEADING and ledger is not None and i > ledger]
-    if not starts:
-        return []
+def decisions_block(links: list[dict]) -> str:
+    """Render `decision_links` rows: one bullet per distinct answered question,
+    naming every section it shaped. `parse_decisions_block` reads it back."""
+    lines = [DECISIONS_HEADING, ""]
+    lines += [f"- {link['message']} — " + ", ".join(f"**{t}**" for t in link["sections"])
+              for link in links]
+    return "\n".join(lines)
+
+
+def decisions_block_at(lines: list[str], start: int) -> tuple[list[dict], int]:
+    """The `### Decisions` block headed at `lines[start]` as `decision_links`
+    rows, and the index of the first line past it. It ends at the first line
+    that is neither a bullet nor a lone `**Title**`; a #253 block has no title
+    lines, so there a bold line ends it too — a note appended after it stays out."""
     shaped: dict[str, list[str]] = {}
     title = None
     rows = None  # the layout, decided by the first bullet
-    for line in lines[starts[-1] + 1:]:
+    end = start + 1
+    while end < len(lines):
+        line = lines[end].strip()
         bold = _BOLD_LINE_RE.match(line)
-        if bold and rows:
+        if (bold and rows) or (line and not bold and not line.startswith("- ")):
             break
+        end += 1
         if not line or bold:
             title = bold.group(1) if bold else title
             continue
-        if not line.startswith("- "):
-            break
         row = _DECISION_ROW_RE.match(line)
         rows = bool(row) if rows is None else rows
         message, titles = ((row.group("message"), _BOLD_RE.findall(row.group("titles")))
                            if row else (line[2:], [title] if title else []))
         got = shaped.setdefault(message, [])
         got.extend(t for t in titles if t not in got)
-    return [{"message": m, "sections": t} for m, t in shaped.items()]
+    return [{"message": m, "sections": t} for m, t in shaped.items()], end
+
+
+def parse_decisions_block(doc_text: str) -> list[dict]:
+    """The LAST `### Decisions` block under `## Revision History`, as
+    `decision_links` rows."""
+    lines = [line.strip() for line in doc_text.splitlines()]
+    ledger = next((i for i, line in enumerate(lines)
+                   if REVISION_HISTORY_RE.match(line)), None)
+    starts = [i for i, line in enumerate(lines)
+              if line == DECISIONS_HEADING and ledger is not None and i > ledger]
+    return decisions_block_at(lines, starts[-1])[0] if starts else []
 
 
 def _check_flags(input_data: dict) -> list:

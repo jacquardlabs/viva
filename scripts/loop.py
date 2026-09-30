@@ -16,6 +16,7 @@ import argparse
 import functools
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -289,8 +290,9 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
     # `decisions.json` is this session's snapshot (#211) — the durable copy is
     # the ledger's `### Decisions` block, written at `finish`, so it resets
     # like everything else here.
+    # A stale `minutes.md` would be offered as the next session's PR comment.
     names = ["open-notes.json", "target.json", "diff.patch", "decisions.json",
-             schema.SPEC_DECISIONS_FILE]
+             schema.SPEC_DECISIONS_FILE, MINUTES_FILE]
     if not keep_server_url:
         names.append("server.url")
     if include_answers:
@@ -529,6 +531,8 @@ _COMMENT_URL_RE = re.compile(
     r"^https://github\.com/(?P<repo>[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)"
     r"/(?:issues|pull)/\d+#issuecomment-(?P<id>\d+)$")
 _COMMIT_SOURCE_RE = re.compile(r"^commit:(?P<path>[^@]+)@(?P<rev>[^@-][^@]*)$")
+# Written at the joined diff gate's finish (#245), offered as the PR comment.
+MINUTES_FILE = "minutes.md"
 
 
 def _git(cwd: Path, *argv) -> subprocess.CompletedProcess:
@@ -805,6 +809,75 @@ def _kept_spec_decisions(owner: Path) -> dict | None:
     except (OSError, ValueError):
         return None
     return kept if isinstance(kept, dict) else None
+
+
+def _spec_ledger(text: str) -> str:
+    """The signed spec's `## Revision History`, to the next `## ` heading, for
+    the minutes (pre-mortem 5): a repeated sign-off line drops, and every
+    `### Decisions` block folds into the first, one bullet per answer."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines)
+                 if schema.REVISION_HISTORY_RE.match(line.strip()))
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    out: list = []
+    shaped: dict = {}
+    seen: set = set()
+    folded = None
+    i = start
+    while i < end:
+        line = lines[i]
+        if line.strip() == schema.DECISIONS_HEADING:
+            rows, i = schema.decisions_block_at(lines, i)
+            for row in rows:
+                got = shaped.setdefault(row["message"], [])
+                got.extend(t for t in row["sections"] if t not in got)
+            if folded is None:
+                folded = len(out)
+                out.append("")
+            continue
+        i += 1
+        if schema.SIGNOFF_LINE_RE.match(line):
+            if line in seen:
+                continue
+            seen.add(line)
+        out.append(line)
+    if folded is not None:
+        out[folded] = schema.decisions_block(
+            [{"message": m, "sections": t} for m, t in shaped.items()]) + "\n"
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
+
+
+def _write_minutes(viva: Path, session: dict) -> Path:
+    """`.viva/minutes.md`: the signed spec's ledger read back from its recorded
+    source, then the diff gate's rows appended by `revision_history.py`. Runs
+    before `/complete`, so a source that no longer reads leaves the session live."""
+    spec = session["spec"]
+    label = (f"`{spec['path']}` at `{spec['sha'][:12]}`" if spec["kind"] == "commit"
+             else spec["url"])
+    fetched = dict(spec)
+    text, why = _fetch_spec(viva.resolve().parent, fetched)
+    if text is not None and not schema.has_revision_history(text):
+        text, why = None, "it carries no `## Revision History`"
+    if text is None:
+        die(f"refusing to finish: the minutes read the signed spec back from "
+            f"{label}, which did not read — {why}. The session is still live: "
+            f"`loop.py session --spec-source <commit:path@sha | comment URL>` "
+            f"re-points it, then re-run `loop.py finish`.")
+    head = [f"**viva session minutes** · {session['pr']} · spec {label}", ""]
+    if fetched.get("updated_at") != spec.get("updated_at"):
+        # Pre-mortem 6: read as it stands now, and say so above the sign-off.
+        head += [f"> The spec comment was edited after sign-off "
+                 f"({spec['updated_at']} → {fetched['updated_at']}); its ledger "
+                 f"below is the comment as it reads now.", ""]
+    minutes = viva / MINUTES_FILE
+    schema.atomic_write(minutes, "\n".join(head) + "\n" + _spec_ledger(text)
+                        + f"\n## Diff review · {session['pr']}\n")
+    # The spec's heading is already in the file, so the diff gate's block appends.
+    run_or_die([sys.executable, SCRIPTS / "revision_history.py",
+                "--viva-dir", viva, "--doc", minutes],
+               "minutes", "The session is still live; fix and re-run `loop.py finish`.")
+    return minutes
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -1633,12 +1706,13 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
 
     size = _capture(record, viva / "diff.patch", cwd)
     if size == 0:
+        minutes = _write_minutes(viva, session) if closes else None
         post(base, "/complete", dict(summary, resolved="empty"),
              "completing the session", "The server may need `loop.py abandon`.")
         print("viva-loop: diff fully resolved — nothing to commit")
         print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
               f"{revised} revised")
-        _end_session(session_path, session, closes)
+        _end_session(session_path, session, minutes)
         return 0
 
     if not schema.round_is_complete(input_data, verdicts):
@@ -1674,19 +1748,28 @@ def _finish_diff(args, viva: Path, n: int, inp: Path, out: Path,
         die(f"the diff changed since round {n} was reviewed — `loop.py rearm` "
             f"to re-present it. Nothing is auto-accepted.")
 
+    minutes = _write_minutes(viva, session) if closes else None
     post(base, "/complete", summary, "completing the session",
          "The server may need `loop.py abandon`.")
     print(f"viva-loop: signed off — {n} round(s), {len(sections)} hunk(s), "
           f"{revised} revised")
-    _end_session(session_path, session, closes)
+    _end_session(session_path, session, minutes)
     return 0
 
 
-def _end_session(path: Path | None, record: dict | None, closes: bool) -> None:
-    """The diff gate's sign-off ends the session; its record goes with it."""
-    if closes:
-        path.unlink(missing_ok=True)
-        print(f"viva-loop: session {record['id']} signed off — record removed")
+def _end_session(path: Path | None, record: dict | None,
+                 minutes: Path | None) -> None:
+    """The joined diff gate's sign-off ends the session, its minutes already
+    on disk; posting them is the human's call (PRODUCT.md principle 6)."""
+    if minutes is None:
+        return
+    path.unlink(missing_ok=True)
+    print(f"viva-loop: session {record['id']} signed off — record removed")
+    repo, number = record["pr"].rsplit("#", 1)
+    body = minutes.resolve()
+    print(f"viva-loop: minutes → {body} — show the human the whole body, post "
+          f"only on an explicit yes, and on a failure give them this command:")
+    print(f"gh pr comment {number} --repo {repo} --body-file {shlex.quote(str(body))}")
 
 
 def cmd_abandon(args) -> int:
