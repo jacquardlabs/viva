@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.20.0 (2026-09-30)
+
+### Features
+
+- Intake answers link to the spec sections they shaped
+  ([#267](https://github.com/jacquardlabs/viva/pull/267),
+  [`326031d`](https://github.com/jacquardlabs/viva/commit/326031d5c68c466ed3dd6c6a2725908a439748ef))
+
+
 ## v2.19.0 (2026-09-30)
 
 ### Features
