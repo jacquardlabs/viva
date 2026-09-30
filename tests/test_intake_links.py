@@ -91,6 +91,10 @@ def test_the_block_reads_back_what_the_ledger_writes() -> None:
          "sections": ["Data and migrations", "Interfaces and contracts"]},
         {"message": "Does a standalone review ever show a timeline? → No",
          "sections": ["Interfaces and contracts"]}]
+    appended = ("# Doc\n\n## Revision History\n\nSigned off.\n\n### Decisions\n\n"
+                "- Budget? → 3 days — **B**\n\n**Amended 2026-10-01**\n\n- one more thing\n")
+    assert schema.parse_decisions_block(appended) == [
+        {"message": "Budget? → 3 days", "sections": ["B"]}], "a later note is not a decision"
     print("  ok  test_the_block_reads_back_what_the_ledger_writes")
 
 
@@ -258,6 +262,41 @@ def test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links() -> None
     print("  ok  test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links")
 
 
+def join_comment_source(updated_at: str) -> tuple:
+    """Sign, re-point the record at a comment source signed at `T1`, and join
+    against a comment now served with `updated_at` and a narrower block."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main = repo(td)
+        env = stub_gh(td)
+        (td / "bin" / "gh").write_text(
+            f"#!/bin/sh\ncase \"$1\" in api) cat '{td / 'comment.json'}' ;; "
+            f"*) cat '{td / 'pr.patch'}' ;; esac\n")
+        base = sign_spec(main)
+        edited = (main / "spec.md").read_text().replace(
+            "- Scope? → x — **Design**, **Problem**", "- Scope? → x — **Problem**")
+        (td / "comment.json").write_text(json.dumps({"body": edited, "updated_at": updated_at}))
+        record = read(main)
+        record["spec"] = {"kind": "comment", "updated_at": "T1",
+                          "url": "https://github.com/o/r/issues/9#issuecomment-1"}
+        record_path(main).write_text(json.dumps(record))
+        pr_patch(main, td, "a\nB\nc\n")
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        links = intake(base)
+        loop(main, "abandon")
+        return links, r.stderr
+
+
+def test_a_comment_edited_after_sign_off_keeps_the_signed_links() -> None:
+    links, err = join_comment_source("T1")
+    assert links == {"Scope?": ("x", ["Problem"])}, "unedited: the source is re-read"
+    links, err = join_comment_source("T2")
+    assert "edited after sign-off (T1 → T2)" in err, err
+    assert links == {"Scope?": ("x", ["Design", "Problem"])}, "edited: the finish's copy"
+    print("  ok  test_a_comment_edited_after_sign_off_keeps_the_signed_links")
+
+
 def test_a_clear_between_gates_keeps_the_questions() -> None:
     """The session parked with `abandon --keep-session`, then an unrelated
     review clears its `.viva/`: the join still has the question texts. No
@@ -320,6 +359,7 @@ def main() -> None:
     test_a_join_that_cannot_read_the_source_keeps_the_signed_links()
     test_a_relaunch_joins_on_the_questions_saved_at_sign_off()
     test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links()
+    test_a_comment_edited_after_sign_off_keeps_the_signed_links()
     test_a_clear_between_gates_keeps_the_questions()
     test_arrows_in_a_question_or_answer_stay_where_they_are()
     test_the_done_intake_gate_is_the_one_visitable_gate()

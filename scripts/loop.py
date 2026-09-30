@@ -725,9 +725,11 @@ def _fetch_spec(root: Path, spec: dict) -> tuple[str | None, str]:
     m = _COMMENT_URL_RE.match(spec["url"])
     argv = ["gh", "api", f"repos/{m.group('repo')}/issues/comments/{m.group('id')}"]
     try:
-        proc = run(argv, capture_output=True, text=True)
+        proc = run(argv, capture_output=True, text=True, timeout=_HTTP_TIMEOUT)
     except FileNotFoundError:
         return None, "a comment source needs `gh` on PATH"
+    except subprocess.TimeoutExpired:
+        return None, f"{' '.join(argv)} timed out"
     if proc.returncode != 0:
         return None, f"{' '.join(argv)} failed: {proc.stderr.strip()}"
     try:
@@ -944,7 +946,12 @@ def _start_join(args, viva: Path, record: dict) -> int:
         shutil.rmtree(stage)
         return 0
     # A copy: the record keeps the `updated_at` it was signed at.
-    spec_text, why = _fetch_spec(viva.parent, dict(session["spec"]))
+    fetched = dict(session["spec"])
+    spec_text, why = _fetch_spec(viva.parent, fetched)
+    if spec_text is not None and fetched.get("updated_at") != session["spec"].get("updated_at"):
+        # Edited after sign-off (pre-mortem 6): the signed links are the finish's.
+        spec_text, why = None, (f"the spec comment was edited after sign-off "
+                                f"({session['spec']['updated_at']} → {fetched['updated_at']})")
     # Read from the session's own `.viva/` before the clear: a relaunch
     # elsewhere has no copy, and only the finish's copy holds the questions.
     kept = _kept_spec_decisions(Path(session["viva_dir"]))

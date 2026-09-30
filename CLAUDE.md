@@ -377,9 +377,9 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   without documenting why here. The state clear lives in `scripts/loop.py`'s
   `_clear_state`, not in prose — it removes the round files, `server.url`,
   `open-notes.json`, `target.json`, `diff.patch`, `decisions.json`,
-  `spec-decisions.json`, and `attachments/`. `decisions.json` (#211) is this session's snapshot of
-  interview-answer annotations; the durable copy is the ledger's
-  `### Decisions` block written at `finish`, so it resets like everything
+  `spec-decisions.json`, and `attachments/`. `decisions.json` (#211) is this
+  session's snapshot of interview-answer annotations; the durable copy is the
+  ledger's `### Decisions` block written at `finish`, so it resets like everything
   else here rather than surviving alongside `preferences.json`.
   `interview` adds `answers.json` to it (a stale one would satisfy the wait
   before the human typed a word); `start` deliberately does not, since
@@ -416,15 +416,9 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   reading `.git` and `commondir` rather than calling git (#258).
   A served round is armed only by `schema.serves_round` — `(mode, round)` off
   a live gate — which every armed-ness check in `loop.py` and `docket.py` asks.
-  `spec-decisions.json` (#244) is `{intake, decisions}`: the interview's
-  `{question, answer}` rows, read off the live server's `GET /intake` at spec
-  `finish` and saved on the session record's `intake` (the only copy of the
-  question texts, so it must survive the clear), and the signed spec's
-  `### Decisions` block parsed (`schema.parse_decisions_block`). The join
-  writes it into the diff gate's `.viva/`: `intake` from the record,
-  `decisions` re-read from the recorded source, or read from the record's
-  `viva_dir` before its clear when that no longer reads. `GET /intake` reads `decisions.json` while the spec
-  gate is live and this file after; the clear removes both.
+  `spec-decisions.json` (#244) is `{intake, decisions}`, the intake gate's
+  links past the spec gate; its `intake` rows ride the session record, since
+  the clear between gates would delete the only copy of the questions.
 
 ## Tests
 

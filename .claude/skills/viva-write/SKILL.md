@@ -198,8 +198,8 @@ one (#145). Write the sidecar and merge it with
 
 Also emit a **decision** flag (#211) for every question the interview
 answered, one flag per section the answer shaped: `kind: "decision"`,
-`message` the question text and chosen answer verbatim (no paraphrase), `id`
-the section's id. `loop.py annotate` snapshots these into
+`message` the question text and chosen answer verbatim as `<question as
+asked> → <answer>` (no paraphrase), `id` the section's id. `loop.py annotate` snapshots these into
 `.viva/decisions.json`, keyed by section identity rather than id, so they
 survive a later round's rewrite; they show up on the card and fold into the
 ledger's `### Decisions` block at sign-off — never in the doc text itself.

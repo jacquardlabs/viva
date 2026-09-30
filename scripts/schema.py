@@ -503,7 +503,8 @@ def decision_links(store: dict) -> list[dict]:
 def parse_decisions_block(doc_text: str) -> list[dict]:
     """The LAST `### Decisions` block under `## Revision History`, as
     `decision_links` rows. It ends at the first line that is neither a bullet
-    nor a lone `**Title**`, so a sign-off line or a later note stays out."""
+    nor a lone `**Title**`; a #253 block has no title lines, so there a bold
+    line ends it too — a note appended after the ledger stays out."""
     lines = [line.strip() for line in doc_text.splitlines()]
     ledger = next((i for i, line in enumerate(lines)
                    if REVISION_HISTORY_RE.match(line)), None)
@@ -513,14 +514,18 @@ def parse_decisions_block(doc_text: str) -> list[dict]:
         return []
     shaped: dict[str, list[str]] = {}
     title = None
+    rows = None  # the layout, decided by the first bullet
     for line in lines[starts[-1] + 1:]:
         bold = _BOLD_LINE_RE.match(line)
+        if bold and rows:
+            break
         if not line or bold:
             title = bold.group(1) if bold else title
             continue
         if not line.startswith("- "):
             break
         row = _DECISION_ROW_RE.match(line)
+        rows = bool(row) if rows is None else rows
         message, titles = ((row.group("message"), _BOLD_RE.findall(row.group("titles")))
                            if row else (line[2:], [title] if title else []))
         got = shaped.setdefault(message, [])
