@@ -74,12 +74,32 @@ function roundKey(d) {
 }
 
 const WAITING_FOR_DIFF = 'Waiting for the implementing PR. Safe to close this tab; /viva-review <PR> reopens the session.';
+const GATE_MARKS = { done: '&#10003;', live: '&#9679;', waiting: '&#9675;' };
+
+/* The session timeline (#243), drawn from the serve-time `session` key and
+   nothing else: a payload without one (every standalone mode) returns before
+   any DOM write, so a plain review renders exactly as before (principle 4). */
+function buildSessionTimeline(d) {
+  if (!d || !d.session) return;
+  const nav = el('session-timeline');
+  const gates = d.session.gates.map(g =>
+    '<li class="tl-gate tl-' + esc(g.state) + '"' + (g.state === 'live' ? ' aria-current="step"' : '') + '>'
+    + '<span class="tl-mark" aria-hidden="true">' + (GATE_MARKS[g.state] || '') + '</span>'
+    + '<span class="tl-kind">' + esc(g.kind) + '</span>'
+    + '<span class="tl-state">' + esc(g.state) + '</span></li>').join('');
+  // Between gates, the diff gate's line (#239's spec, verbatim).
+  const waits = !liveGate(d) && d.session.gates.some(g => g.state === 'waiting');
+  nav.innerHTML = '<span class="tl-label">session</span><ol class="tl-gates">' + gates + '</ol>'
+    + (waits ? '<p class="tl-wait">' + esc(WAITING_FOR_DIFF) + '</p>' : '');
+  nav.style.display = '';
+}
 
 /* A session between gates (#241): its spec is signed off and no round is
    open, so a tab booted or caught up here shows the stamp, never a live
    round. The stream stays open; the diff gate's `round` event lifts it. */
 function showWaitingForDiff(served) {
   REVIEW_DATA = REVIEW_DATA ? Object.assign(REVIEW_DATA, { session: served.session }) : served;
+  buildSessionTimeline(served);
   const stale = el('round-stale-banner');
   if (stale) stale.remove();
   stopVoice('the review is signed off');
@@ -91,7 +111,8 @@ function showWaitingForDiff(served) {
   setTabFavicon('done');
   el('complete-headline').textContent = '';
   el('stamp-sub').style.display       = 'none';
-  el('complete-detail').textContent   = WAITING_FOR_DIFF;
+  el('complete-detail').textContent   = '';
+  document.querySelector('.complete-hint').style.display = 'none';   // the timeline says it
   const entries = REVIEW_DATA.ledger || [];
   el('complete-ledger').style.display = entries.length ? '' : 'none';
   if (entries.length) {
@@ -113,6 +134,7 @@ function showRoundStale(current) {
   closePalette();
   // A closed gate is no round to catch up to; a reload would land here too.
   if (current.session && !liveGate(current)) { showWaitingForDiff(current); return; }
+  buildSessionTimeline(current);
   const b = el('round-stale-banner') || document.createElement('div');
   b.id = 'round-stale-banner';
   b.className = 'error-banner';
@@ -241,6 +263,7 @@ function connectSSE() {
       return;
     }
     clearRoundRefused();
+    buildSessionTimeline(data);   // a session's next gate opens here
     const stale = el('round-stale-banner');
     if (stale) stale.remove();        // the tab holds the served round again
     const modeWord = data.mode === 'diff' ? 'diff' : 'review';
@@ -300,6 +323,8 @@ function connectSSE() {
     const gateAhead = !!(data.session && data.session.gates.some(g => g.state !== 'done'));
     if (!gateAhead) es.close();
     if (gateAhead && REVIEW_DATA) REVIEW_DATA.session = data.session;
+    buildSessionTimeline(data);   // the closed gate, and the waiting line if one is ahead
+    document.querySelector('.complete-hint').style.display = gateAhead ? 'none' : '';
     closePrefsPanel();  // no full-screen backdrop survives into complete-view
     stopVoice('the review is signed off');  // nothing left to command
     el('processing-view').style.display = 'none';
@@ -333,10 +358,6 @@ function connectSSE() {
     el('complete-detail').textContent   = data.resolved === 'empty'
       ? `diff fully resolved · ${rev != null ? rev : 0} hunk${rev !== 1 ? 's' : ''} revised`
       : (rev != null ? `${rev} section${rev !== 1 ? 's' : ''} revised` : '');
-    if (gateAhead) {
-      el('complete-detail').textContent += (el('complete-detail').textContent ? ' · ' : '')
-        + WAITING_FOR_DIFF;
-    }
     const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
     // Hidden when empty, not just left alone: a session's diff gate reuses
     // the view its spec gate filled.
@@ -599,6 +620,7 @@ Promise.all([
     // (references/producers.md, Confidence triage): an empty/absent store
     // has nothing to inspect or mute, so the control stays off.
     el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';
+    buildSessionTimeline(data);   // before the mode branches, so intake gets it too
     // Between a session's gates the served round is the signed-off spec.
     if (data.session && !liveGate(data)) {
       showWaitingForDiff(data);

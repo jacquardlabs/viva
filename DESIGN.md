@@ -1165,6 +1165,33 @@ A second stated decision: because `sectionBalance`'s skip precedes its
 `CHECK_KINDS` branch, an **answered** doc-scope check contributes no `settled`
 anywhere. It is accounted for exactly once, in `checks`/`checksDone`.
 
+## Session timeline (#243)
+
+A `--mode session` tab carries one line above the status bar naming the
+session's gates in order — `intake`, `spec`, `diff` — each with its state
+(`done`, `live`, `waiting`) printed, not implied. It is a
+`<nav id="session-timeline">` outside every view, because the one line spans
+all of them: the interview, the spec's print, the sign-off stamp between
+gates, and the diff.
+
+It renders from the serve-time `session` key and nothing else.
+`buildSessionTimeline` returns before any DOM write when the key is absent,
+and only a session server sends one, so a review, qa, or diff tab ships the
+element hidden and never reveals it (`PRODUCT.md` principle 4). Every payload
+the tab takes — boot's `/input`, the `round` and `complete` events, a `409`'s
+`current` — passes through the builder.
+
+Inks follow the parties. A signed-off gate takes `--machine`, as an approved
+verdict does; the live gate takes `--ink` at weight 600; a waiting gate and
+the state words take `--soft`, never `--faint`, since this is copy the
+reviewer reads to act. No cobalt: no gate is a control yet.
+
+Between gates — spec signed off, diff waiting — the timeline carries the
+spec's line: `Waiting for the implementing PR. Safe to close this tab;
+/viva-review <PR> reopens the session.` It lives here, not under the
+`APPROVED` stamp, so the stamp's detail line keeps only its counts, and the
+stamp's `You can close this tab.` hides while it shows rather than repeat it.
+
 ## Recap overlay — the submit gate (frontend v2 phase 1, unreleased)
 
 Submit never fires blind in review/diff mode. The panel takes the palette's

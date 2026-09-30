@@ -292,7 +292,9 @@ def test_the_tab_restamps_per_round_and_surfaces_a_stale_submit() -> None:
         < stale.index("Reload to catch up"), "a closed gate is not a round to reload into"
     wait = page[page.index("function showWaitingForDiff("):page.index("function showRoundStale(")]
     assert "document.querySelector('.bottom-bar').style.display = 'none';" in wait
-    assert "WAITING_FOR_DIFF" in wait and "+ WAITING_FOR_DIFF;" in done
+    # The waiting line lives in the timeline (#243), not under the stamp.
+    assert "buildSessionTimeline(served);" in wait and "buildSessionTimeline(data);" in done
+    assert "WAITING_FOR_DIFF" not in wait and "WAITING_FOR_DIFF" not in done
     print("  ok  test_the_tab_restamps_per_round_and_surfaces_a_stale_submit")
 
 

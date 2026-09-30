@@ -55,6 +55,45 @@ h1.tb-val { margin: 0; }
   padding-top: 0;
 }
 
+/* ─── Session timeline (#243) ────────────────────────────────
+   One mono line above the status bar, only in a session. A signed-off gate
+   takes the machine's ink (as an approved verdict does); the live gate takes
+   ink weight, not cobalt — nothing here is a control. */
+.timeline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 12px;
+  font-family: ui-monospace, 'SF Mono', 'Fragment Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.tl-label { font-size: 9px; }
+.tl-gates { display: flex; flex-wrap: wrap; align-items: baseline; list-style: none; margin: 0; padding: 0; }
+.tl-gate { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.tl-gate + .tl-gate::before {
+  content: '';
+  align-self: center;
+  width: 18px;
+  margin: 0 8px;
+  border-top: 1px solid var(--rule);
+}
+.tl-state { color: var(--soft); letter-spacing: 0.08em; }
+.tl-done .tl-mark, .tl-done .tl-kind { color: var(--machine); }
+.tl-live .tl-mark, .tl-live .tl-kind { color: var(--ink); font-weight: 600; }
+.tl-wait {
+  flex: 1 1 100%;
+  margin: 0;
+  font-family: 'Helvetica Neue', Helvetica, Inter, system-ui, sans-serif;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink2);
+}
+
 /* ─── Revision ledger ────────────────────────────────────── */
 .ledger {
   border: 1px solid var(--border2);
