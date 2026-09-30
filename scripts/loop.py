@@ -812,12 +812,12 @@ def _kept_spec_decisions(owner: Path) -> dict | None:
 
 
 def _spec_ledger(text: str) -> str:
-    """The signed spec's `## Revision History`, to the next `## ` heading, for
-    the minutes (pre-mortem 5): a repeated sign-off line drops, and every
-    `### Decisions` block folds into the first, one bullet per answer."""
+    """The signed spec's LAST `## Revision History` (the ledger is appended; an
+    earlier one may be a quoted example) to the next `## `, for the minutes: a
+    repeated sign-off line drops, every `### Decisions` folds into one (pre-mortem 5)."""
     lines = text.splitlines()
-    start = next(i for i, line in enumerate(lines)
-                 if schema.REVISION_HISTORY_RE.match(line.strip()))
+    start = [i for i, line in enumerate(lines)
+             if schema.REVISION_HISTORY_RE.match(line)][-1]
     end = next((i for i in range(start + 1, len(lines))
                 if lines[i].startswith("## ")), len(lines))
     out: list = []

@@ -208,6 +208,27 @@ def test_a_comment_source_and_an_edit_after_sign_off() -> None:
     print("  ok  test_a_comment_source_and_an_edit_after_sign_off")
 
 
+def test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger() -> None:
+    """The slice starts at the LAST heading: a fenced example of the ledger
+    above the body leaves the real, appended ledger whole and stays out."""
+    example = ("```markdown\n## Revision History\n\n"
+               "Signed off via viva review — 1 round, 1 section, 0 with comments. 2026-01-01\n```")
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main, env, base = joined(td, "comment")
+        serve_comment(td, SPEC.replace("## Problem", example + "\n\n## Problem", 1), "T1")
+        approve_all(base, 1)
+        assert poll_for(main / ".viva" / "review-r1.json")
+        r = loop(main, "finish", env=env)
+        assert r.returncode == 0, r.stderr
+        wait_gone(main / ".viva")
+        minutes = (main / ".viva" / "minutes.md").read_text()
+        assert_spec_ledger(minutes)
+        assert "2026-01-01" not in minutes and "```" not in minutes, minutes
+        assert spec_part(minutes).count("## Revision History") == 1, minutes
+    print("  ok  test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger")
+
+
 def test_an_unreadable_source_refuses_before_the_record_goes() -> None:
     """Pre-mortem 6: a deleted comment fails the finish before `/complete`, so
     the record, the server, and the verdicts all stay; re-pointing the source
@@ -273,6 +294,7 @@ def test_the_stamp_shows_the_body_and_posts_only_on_yes() -> None:
 def main() -> None:
     test_a_commit_source_and_the_empty_finish()
     test_a_comment_source_and_an_edit_after_sign_off()
+    test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger()
     test_an_unreadable_source_refuses_before_the_record_goes()
     test_a_standalone_review_writes_no_minutes()
     test_the_stamp_shows_the_body_and_posts_only_on_yes()
