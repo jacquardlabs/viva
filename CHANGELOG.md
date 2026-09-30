@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v2.21.0 (2026-09-30)
+
+### Bug Fixes
+
+- Minutes slice the spec's last Revision History heading, not a quoted example above the body
+  ([#273](https://github.com/jacquardlabs/viva/pull/273),
+  [`991e931`](https://github.com/jacquardlabs/viva/commit/991e931ef9c9d84f0afbda0903200b933758f0b5))
+
+### Features
+
+- Session minutes written at the diff gate's sign-off, posted to the PR only on an explicit yes
+  ([#273](https://github.com/jacquardlabs/viva/pull/273),
+  [`991e931`](https://github.com/jacquardlabs/viva/commit/991e931ef9c9d84f0afbda0903200b933758f0b5))
+
+- Session minutes written at the joined diff gate's sign-off, posted to the PR only on an explicit
+  yes ([#273](https://github.com/jacquardlabs/viva/pull/273),
+  [`991e931`](https://github.com/jacquardlabs/viva/commit/991e931ef9c9d84f0afbda0903200b933758f0b5))
+
+
 ## v2.20.0 (2026-09-30)
 
 ### Features
