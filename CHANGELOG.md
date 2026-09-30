@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v2.17.0 (2026-09-30)
+
+### Bug Fixes
+
+- Key the pre-arm guards on the served round's mode and gate, not its number
+  ([#260](https://github.com/jacquardlabs/viva/pull/260),
+  [`89f0a14`](https://github.com/jacquardlabs/viva/commit/89f0a14c5dcb2cf2fb5a8cb38b4e17e79cc8951c))
+
+- Key wait and docket's armed check on the served round's mode and gate
+  ([#260](https://github.com/jacquardlabs/viva/pull/260),
+  [`89f0a14`](https://github.com/jacquardlabs/viva/commit/89f0a14c5dcb2cf2fb5a8cb38b4e17e79cc8951c))
+
+- Refuse finish and rearm between gates, add abandon --keep-session, report a waiting session in
+  docket ([#260](https://github.com/jacquardlabs/viva/pull/260),
+  [`89f0a14`](https://github.com/jacquardlabs/viva/commit/89f0a14c5dcb2cf2fb5a8cb38b4e17e79cc8951c))
+
+- Serve a mode-less /next-round round with its mode, and boot a between-gates session tab on the
+  waiting stamp ([#260](https://github.com/jacquardlabs/viva/pull/260),
+  [`89f0a14`](https://github.com/jacquardlabs/viva/commit/89f0a14c5dcb2cf2fb5a8cb38b4e17e79cc8951c))
+
+### Features
+
+- --mode session carries one server from intake through spec to diff
+  ([#260](https://github.com/jacquardlabs/viva/pull/260),
+  [`89f0a14`](https://github.com/jacquardlabs/viva/commit/89f0a14c5dcb2cf2fb5a8cb38b4e17e79cc8951c))
+
+
 ## v2.16.2 (2026-09-29)
 
 ### Bug Fixes
