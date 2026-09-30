@@ -11,15 +11,22 @@ orphans the waiting server), and 8 (the PR is reviewed from another worktree).
 """
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, poll_for  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import schema  # noqa: E402
+from _server_harness import get, poll_for, post  # noqa: E402
 from _session_harness import (DRAFT, approve_all, gates, git, loop,  # noqa: E402
                               open_session, read, record_path, repo, wait_gone)
+
+
+DOCKET = Path(__file__).resolve().parent.parent / "scripts" / "docket.py"
 
 
 def stub_gh(td: Path) -> dict:
@@ -274,11 +281,123 @@ def test_relaunch_from_another_worktree_through_the_summaries_seam() -> None:
     print("  ok  test_relaunch_from_another_worktree_through_the_summaries_seam")
 
 
+# ── the gate's own `.viva/`, reused by a plain review ───────────────────────
+def test_a_plain_start_in_the_joined_dir_never_joins() -> None:
+    """Pre-mortem 1's fork case: after the joined server dies, a plain review
+    of the same PR in the same `.viva/` must stay standalone — no session
+    relaunch, and its finish leaves the record for the real join."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main = repo(td)
+        env = stub_gh(td)
+        base = signed_session(main, td)
+        sid = read(main)["id"]
+        pr_patch(main, td, "a\nB\nc\n")
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        post(base, "/abandon", {})
+        wait_gone(main / ".viva")
+        before = record_path(main).read_bytes()
+
+        r = loop(main, "start", "--target", "7", env=env)
+        assert r.returncode == 0 and "does not join it" in r.stdout, r.stdout
+        standalone = (main / ".viva" / "server.url").read_text().strip()
+        assert "session" not in get(standalone, "/input"), "a plain start never relaunches the session"
+        approve_all(standalone, 1)
+        assert poll_for(main / ".viva" / "review-r1.json")
+        r = loop(main, "finish", env=env)
+        assert r.returncode == 0 and "record removed" not in r.stdout, r.stdout
+        wait_gone(main / ".viva")
+        assert record_path(main).read_bytes() == before
+
+        # The real join still relaunches it afterward.
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        relaunched = (main / ".viva" / "server.url").read_text().strip()
+        assert get(relaunched, "/input")["session"]["id"] == sid
+        r = loop(main, "abandon")
+        assert r.returncode == 0 and not record_path(main).exists(), r.stderr
+    print("  ok  test_a_plain_start_in_the_joined_dir_never_joins")
+
+
+def test_abandoning_a_standalone_review_keeps_the_kept_session() -> None:
+    """`abandon --keep-session` frees the owner `.viva/` for other reviews;
+    abandoning one of those ends only its own server, not the session."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main = repo(td)
+        env = stub_gh(td)
+        signed_session(main, td)
+        r = loop(main, "abandon", "--keep-session")
+        assert r.returncode == 0, r.stderr
+        wait_gone(main / ".viva")
+        before = record_path(main).read_bytes()
+        pr_patch(main, td, "a\nB\nc\n")
+
+        r = loop(main, "start", "--target", "99", env=env)
+        assert r.returncode == 0, r.stderr
+        r = loop(main, "abandon")
+        assert r.returncode == 0 and "record removed" not in r.stdout, r.stdout
+        wait_gone(main / ".viva")
+        assert record_path(main).read_bytes() == before
+    print("  ok  test_abandoning_a_standalone_review_keeps_the_kept_session")
+
+
+# ── a capture that yields no round costs the waiting session nothing ────────
+def docket_state(td: Path, name: str) -> str:
+    proc = subprocess.run([sys.executable, str(DOCKET), "--root", f"{td}/*",
+                           "--format", "json"], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    return next(r["state"] for r in json.loads(proc.stdout) if r["repo"] == name)
+
+
+def test_a_failed_or_empty_capture_leaves_the_waiting_session_whole() -> None:
+    """The live join clears the spec's round files only once the PR's diff
+    parsed into a round; before that, `.viva/`, record, and docket hold."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main, wt = repo(td), td / "wt"
+        env = stub_gh(td)
+        base = signed_session(main, td)
+        owner = main / ".viva"
+        files = {p.name: p.read_bytes() for p in owner.iterdir()
+                 if p.is_file() and p.name != "server.log"}
+        before = record_path(main).read_bytes()
+        assert docket_state(td, "main") == "waiting"
+
+        # No pr.patch: the stub's `cat` fails, so `gh` exits 1.
+        r = loop(wt, "start", "--target", "999", "--join-session", env=env)
+        assert r.returncode != 0 and "capture failed" in r.stderr, r.stderr
+        (td / "pr.patch").write_text("")
+        r = loop(wt, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0 and "no changes to review" in r.stdout, r.stdout
+        for p in owner.iterdir():
+            if p.is_file() and p.name != "server.log":
+                assert files.get(p.name) == p.read_bytes(), f"{p.name} changed"
+        assert set(files) <= {p.name for p in owner.iterdir()}, "a spec file was cleared"
+        assert not (wt / ".viva" / "target.json").exists()
+        assert record_path(main).read_bytes() == before
+        assert schema.session_is_waiting(get(base, "/input")["session"])
+        assert docket_state(td, "main") == "waiting"
+
+        pr_patch(main, td, "a\nB\nc\n")
+        r = loop(wt, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        assert get(base, "/input")["mode"] == "diff"
+        assert not (owner / "review-r1.json").exists(), "the spec round clears at the join"
+        r = loop(main, "abandon")
+        assert r.returncode == 0 and not record_path(main).exists(), r.stderr
+    print("  ok  test_a_failed_or_empty_capture_leaves_the_waiting_session_whole")
+
+
 def main() -> None:
     test_refusals_leave_the_record_and_the_server_alone()
     test_join_arms_into_the_waiting_server_from_another_worktree()
     test_join_relaunches_a_session_whose_server_died()
     test_relaunch_from_another_worktree_through_the_summaries_seam()
+    test_a_plain_start_in_the_joined_dir_never_joins()
+    test_abandoning_a_standalone_review_keeps_the_kept_session()
+    test_a_failed_or_empty_capture_leaves_the_waiting_session_whole()
     print("OK")
 
 

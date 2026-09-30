@@ -13,17 +13,20 @@ mode off the round file — never typed.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Callable
 
 import schema
 
@@ -610,9 +613,16 @@ def _session_summary(record: dict) -> str:
     return f"session {record['id']} · {record['repo']} · {gates} · {source}{pr}"
 
 
+def _serves(payload: dict | None, record: dict) -> bool:
+    """Is this probed `/input` the session's own server, by id?"""
+    served = (payload or {}).get("session")
+    return isinstance(served, dict) and served.get("id") == record["id"]
+
+
 def _joined(viva: Path) -> dict | None:
     """The session record whose diff gate is THIS `.viva/`'s PR round, or
-    None. Read off disk, so `arm` after a summaries seam relaunches it too."""
+    None. Only `--join-session` stamps `session` into target.json, so a plain
+    review of the same PR in the same dir never counts (#242)."""
     path = _session_path(viva)
     if path is None or not path.exists():
         return None
@@ -622,14 +632,18 @@ def _joined(viva: Path) -> dict | None:
         return None
     if not (_owns(record, viva) and _gate(record, "diff") == "live"):
         return None
+    if target.get("session") != record["id"]:
+        return None
     return record if record.get("pr") == _pr_ref(target, record["repo"]) else None
 
 
-def _join_target(viva: Path, target: dict) -> tuple[Path, dict, Path, dict]:
+def _join_target(viva: Path, target: dict
+                 ) -> tuple[Path, dict, Path, dict, Callable[[], None]]:
     """Refuse a join that could land on the wrong session or PR (#242), then
     pick the `.viva/` the diff gate runs in: a waiting server's own (its
     output root is fixed at launch), else this one, where it relaunches.
-    Returns (that dir, the pinned target, the record's path, the record)."""
+    Returns (that dir, the pinned target, the record's path, the record, and
+    the clear to run once a capture holds a round)."""
     if target.get("kind") != "pr":
         die(f"--join-session joins a PR; {target.get('label')} is a "
             f"{target.get('kind')} diff, which never joins a session")
@@ -657,27 +671,26 @@ def _join_target(viva: Path, target: dict) -> tuple[Path, dict, Path, dict]:
     # Pinned to the session's repo: a bare number otherwise resolves against
     # whatever `gh` defaults to, which in a fork is the upstream.
     target = dict(target, repo=record["repo"], label=f"PR #{number} ({record['repo']})",
-                  capture=["gh", "pr", "diff", str(number), "--repo", record["repo"]])
+                  capture=["gh", "pr", "diff", str(number), "--repo", record["repo"]],
+                  session=record["id"])
 
     owner = Path(record["viva_dir"])
     base = server_url(owner)
     payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
-    served = (payload or {}).get("session")
-    if isinstance(served, dict) and served.get("id") == record["id"]:
-        if not schema.session_is_waiting(served):
+    if _serves(payload, record):
+        if not schema.session_is_waiting(payload["session"]):
             die(f"{_session_summary(record)} — its diff gate is already live "
                 f"at {base}; that tab is the review")
         # The spec's round files go; the server, its url, and the intake's
         # attachments stay, as at `--handoff`.
-        _clear_state(owner, keep_server_url=True, include_attachments=False)
-        return owner, target, path, record
+        return owner, target, path, record, functools.partial(
+            _clear_state, owner, keep_server_url=True, include_attachments=False)
     if owner == viva.resolve() and base and payload is None:
         # The session's own server died without cleanup; the probe just said
         # nothing is home, so the relaunch clears its url itself.
         (viva / "server.url").unlink(missing_ok=True)
     _preflight_no_live_session(viva)
-    _clear_state(viva)
-    return viva.resolve(), target, path, record
+    return viva.resolve(), target, path, record, functools.partial(_clear_state, viva)
 
 
 def _spec_source(viva: Path, ref: str, repo: str) -> dict:
@@ -831,24 +844,60 @@ def _start_diff(args, viva: Path, record: dict) -> int:
         if value is not None:
             die(f"{flag} is a doc-review flag; {record.get('label')} is "
                 f"reviewed hunk by hunk")
-    session = None
     if args.join_session:
-        joined_viva, record, session_path, session = _join_target(viva, record)
-        if joined_viva != viva.resolve():
-            print(f"viva-loop: this diff gate runs in {joined_viva} — pass "
-                  f"`--viva-dir {joined_viva}` to every later loop.py command")
-        viva = args.viva_dir = joined_viva
-    else:
-        _preflight_no_live_session(viva)
-        _, waiting = _read_session(viva)
-        if waiting is not None:
-            hint = ("; if this PR implements its spec, re-run with --join-session"
-                    if record.get("kind") == "pr" and _session_state(waiting) == "waiting"
-                    else "")
-            print(f"viva-loop: {_session_summary(waiting)} — this review does "
-                  f"not join it{hint}")
-        # No resume branch and no preference seam: neither has hunk semantics.
-        _clear_state(viva)
+        return _start_join(args, viva, record)
+    _preflight_no_live_session(viva)
+    _, waiting = _read_session(viva)
+    if waiting is not None:
+        hint = ("; if this PR implements its spec, re-run with --join-session"
+                if record.get("kind") == "pr" and _session_state(waiting) == "waiting"
+                else "")
+        print(f"viva-loop: {_session_summary(waiting)} — this review does "
+              f"not join it{hint}")
+    # No resume branch and no preference seam: neither has hunk semantics.
+    _clear_state(viva)
+    data = _capture_round(viva, record)
+    if data is None:
+        return 0
+    return _diff_seam_or_arm(args, 1, schema.round_file_paths(viva, 1)[0], data)
+
+
+def _start_join(args, viva: Path, record: dict) -> int:
+    """`start --join-session`: capture and parse aside, so a failed or empty
+    capture leaves the session's `.viva/` as it was; only a round clears it."""
+    viva, record, session_path, session, clear = _join_target(viva, record)
+    stage = Path(tempfile.mkdtemp(prefix="viva-join-"))
+    try:
+        data = _capture_round(stage, record)
+    except SystemExit:
+        # A parse failure's error names the staged patch; keep it only then.
+        if not (stage / "diff.patch").exists():
+            shutil.rmtree(stage)
+        raise
+    if data is None:
+        shutil.rmtree(stage)
+        return 0
+    clear()
+    viva.mkdir(parents=True, exist_ok=True)
+    for f in stage.iterdir():
+        shutil.move(str(f), str(viva / f.name))
+    stage.rmdir()
+    if viva != Path(args.viva_dir).resolve():
+        print(f"viva-loop: this diff gate runs in {viva} — pass "
+              f"`--viva-dir {viva}` to every later loop.py command")
+    args.viva_dir = viva
+    # Written before the arm: `arm` reads it to relaunch `--mode session`,
+    # and a failed arm is retried by the same join.
+    _close_gate(session, "spec", opens="diff")
+    session.update(pr=_pr_ref(record, session["repo"]), viva_dir=str(viva))
+    _write_session(session_path, session)
+    print(f"viva-loop: {_session_summary(session)} — diff gate joined")
+    return _diff_seam_or_arm(args, 1, schema.round_file_paths(viva, 1)[0], data)
+
+
+def _capture_round(viva: Path, record: dict) -> dict | None:
+    """Save the target, capture its patch, and parse diff round 1 into
+    `viva`; the round, or None when the capture is empty."""
     viva.mkdir(parents=True, exist_ok=True)
     cwd = Path.cwd().resolve()
     # Record plus its cwd: `rearm`/`finish` re-capture from a later shell
@@ -858,7 +907,7 @@ def _start_diff(args, viva: Path, record: dict) -> int:
     size = _capture(record, viva / "diff.patch", cwd)
     if size == 0:
         print(f"viva-loop: no changes to review — {record.get('label')}")
-        return 0
+        return None
     round_file = schema.round_file_paths(viva, 1)[0]
     # A non-empty patch with no hunks is a real failure: `parse_diff.py`
     # exits 1 on it and this dies rather than completing.
@@ -869,14 +918,7 @@ def _start_diff(args, viva: Path, record: dict) -> int:
     data = load_json(round_file)
     print(f"viva-loop: {len(data.get('sections', []))} hunk(s) · "
           f"{record.get('label')}")
-    if session is not None:
-        # Written before the arm: `arm` reads it to relaunch `--mode session`,
-        # and a failed arm is retried by the same join.
-        _close_gate(session, "spec", opens="diff")
-        session.update(pr=_pr_ref(record, session["repo"]), viva_dir=str(viva))
-        _write_session(session_path, session)
-        print(f"viva-loop: {_session_summary(session)} — diff gate joined")
-    return _diff_seam_or_arm(args, 1, round_file, data)
+    return data
 
 
 def _start_doc(args, viva: Path) -> int:
@@ -1568,11 +1610,15 @@ def cmd_abandon(args) -> int:
             die(f"no live session to abandon (no {viva}/server.url)")
         return _abandon_stale_session(viva, session_path, record)
 
+    # Probed before the stop: only the session's own server ends it, not a
+    # standalone review reusing its `.viva/` after `--keep-session`.
+    ends = _owns(record, viva) and _serves(
+        probe_input(base, timeout=_PREFLIGHT_TIMEOUT), record)
     _stop_server(viva, base)
     n = current_round(viva)
     where = f" at round {n}" if n else ""
     print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
-    if _owns(record, viva):
+    if ends:
         session_path.unlink(missing_ok=True)
         print(f"viva-loop: session {record['id']} ended — record removed")
     return 0

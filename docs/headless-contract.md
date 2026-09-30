@@ -405,7 +405,12 @@ that answers with the session's id gets diff round 1 in the record's
 session --session-id <record id>` on the diff in the joining `.viva/` (a
 stale `server.url` in the record's own `.viva/` is removed first) and moves
 the record's `viva_dir` there. Either way the record gains `pr` and its diff
-gate goes `live`. Without the flag a PR review leaves the session alone.
+gate goes `live`, and `.viva/target.json` carries `session: <record id>` —
+the only mark `arm`, `finish`, and the dead-server hint treat as joined. The
+capture and parse run aside first: a failed or empty capture clears nothing
+and leaves the record as it was. Without the flag a PR review leaves the
+session alone, and plain `abandon` ends a session only when the server it
+stops answers with the session's id.
 
 Between gates, `GET /input` still serves the signed-off spec round, with a
 `session` key that has no live gate. A tab that boots or reconnects there, or
