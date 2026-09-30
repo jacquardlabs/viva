@@ -796,7 +796,8 @@ def _served_intake(base: str) -> list:
 
 def _kept_spec_decisions(owner: Path) -> dict | None:
     """The spec finish's `spec-decisions.json` in the session's own `.viva/`,
-    or None when it is missing or unreadable."""
+    or None when it is missing or unreadable — the `decisions` fallback only;
+    the questions live on the record, which the clear never reaches."""
     try:
         kept = json.loads((owner / schema.SPEC_DECISIONS_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -954,14 +955,16 @@ def _start_join(args, viva: Path, record: dict) -> int:
     stage.rmdir()
     # Display only, so a source that no longer reads warns rather than
     # blocking the diff review.
+    intake = session.get("intake", [])
     if spec_text is not None:
-        _write_spec_decisions(viva, spec_text, kept.get("intake", []) if kept else [])
-    elif kept is not None:
-        schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE,
-                            json.dumps(kept, indent=2) + "\n")
-        warn(f"the intake keeps the sections read at the spec's sign-off: {why}")
+        _write_spec_decisions(viva, spec_text, intake)
     else:
-        warn(f"the intake's answers will name no sections: {why}")
+        decisions = (kept or {}).get("decisions")
+        schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE, json.dumps(
+            {"intake": intake, "decisions": decisions if isinstance(decisions, list) else []},
+            indent=2) + "\n")
+        warn(f"the intake keeps the sections read at the spec's sign-off: {why}"
+             if decisions else f"the intake's answers will name no sections: {why}")
     if viva != Path(args.viva_dir).resolve():
         print(f"viva-loop: this diff gate runs in {viva} — every later "
               f"loop.py command takes the flag before its subcommand: "
@@ -1570,8 +1573,8 @@ def cmd_finish(args) -> int:
                "The session is still live; fix and re-run `loop.py finish`.")
     closes_spec = _owns(record, viva) and _gate(record, "spec") == "live"
     if closes_spec:
-        _write_spec_decisions(viva, Path(doc).read_text(encoding="utf-8"),
-                              _served_intake(base))
+        intake = _served_intake(base)
+        _write_spec_decisions(viva, Path(doc).read_text(encoding="utf-8"), intake)
 
     revised = sum(1 for s in verdicts.get("sections", [])
                   if s.get("verdict") in schema.LEDGER_VERDICTS)
@@ -1586,6 +1589,7 @@ def cmd_finish(args) -> int:
           f"{len(input_data.get('sections', []))} section(s)")
     if closes_spec:
         _close_gate(record, "spec")
+        record["intake"] = intake
         _write_session(session_path, record)
         print(f"viva-loop: session {record['id']} · spec gate closed — the "
               f"server stays up for the diff gate · after the stamp, `loop.py "

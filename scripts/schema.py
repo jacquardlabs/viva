@@ -814,6 +814,9 @@ class SessionRecord(TypedDict, total=False):
     # `{kind: comment, url, updated_at}`; set by `loop.py session --spec-source`
     spec: dict
     pr: str             # optional, presence-gated — `owner/repo#N`, set at the join
+    # optional, presence-gated — the interview's `[{question, answer}]`, set at
+    # spec `finish`: the one copy of the question texts that survives the clear
+    intake: list
 
 
 def validate_session(data: dict) -> None:
@@ -846,6 +849,12 @@ def validate_session(data: dict) -> None:
         _validate_spec_source(data["spec"])
     if "pr" in data and (not isinstance(data["pr"], str) or not _PR_RE.match(data["pr"])):
         raise ValueError("session.pr must be `owner/repo#N`")
+    if "intake" in data and not (
+            isinstance(data["intake"], list)
+            and all(isinstance(r, dict) and set(r) == {"question", "answer"}
+                    and all(isinstance(v, str) for v in r.values())
+                    for r in data["intake"])):
+        raise ValueError("session.intake must be a list of {question, answer} strings")
 
 
 def session_is_waiting(session: object) -> bool:

@@ -176,6 +176,8 @@ def sign_spec(main: Path, question: str = "Scope?") -> str:
         "intake": [{"question": question, "answer": "x"}],
         "decisions": schema.parse_decisions_block(signed)}
     assert intake(base) == {question: ("x", ["Design", "Problem"])}, "spec done"
+    assert read(main)["intake"] == [{"question": question, "answer": "x"}], \
+        "the questions ride the record, which the clear never reaches"
     git(main, "add", "spec.md")
     git(main, "commit", "-q", "-m", "stamp")
     r = loop(main, "session", "--spec-source", "commit:spec.md@HEAD")
@@ -256,6 +258,33 @@ def test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links() -> None
     print("  ok  test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links")
 
 
+def test_a_clear_between_gates_keeps_the_questions() -> None:
+    """The session parked with `abandon --keep-session`, then an unrelated
+    review clears its `.viva/`: the join still has the question texts. No
+    `?`, so the decision can't be split back into question and answer."""
+    question = "Name the gate that carries review → diff"
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main = repo(td)
+        env = stub_gh(td)
+        sign_spec(main, question)
+        r = loop(main, "abandon", "--keep-session")
+        assert r.returncode == 0, r.stderr
+        wait_gone(main / ".viva")
+        (main / "other.md").write_text("# Other\n\n## A\n\nA.\n")
+        r = loop(main, "start", "--doc", "other.md", "--parse-only")
+        assert r.returncode == 0, r.stderr
+        assert not (main / ".viva" / schema.SPEC_DECISIONS_FILE).exists(), "cleared"
+        pr_patch(main, td, "a\nB\nc\n")
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        base = (main / ".viva" / "server.url").read_text().strip()
+        assert intake(base) == {question: ("x", ["Design", "Problem"])}
+        r = loop(main, "abandon")
+        assert r.returncode == 0, r.stderr
+    print("  ok  test_a_clear_between_gates_keeps_the_questions")
+
+
 def test_arrows_in_a_question_or_answer_stay_where_they_are() -> None:
     q = "How does one server carry review → diff when /next-round refuses a mode change?"
     a = "A new --mode session that accepts qa → review → diff in that order"
@@ -291,6 +320,7 @@ def main() -> None:
     test_a_join_that_cannot_read_the_source_keeps_the_signed_links()
     test_a_relaunch_joins_on_the_questions_saved_at_sign_off()
     test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links()
+    test_a_clear_between_gates_keeps_the_questions()
     test_arrows_in_a_question_or_answer_stay_where_they_are()
     test_the_done_intake_gate_is_the_one_visitable_gate()
     print("OK")

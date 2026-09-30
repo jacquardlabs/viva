@@ -418,11 +418,12 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   a live gate — which every armed-ness check in `loop.py` and `docket.py` asks.
   `spec-decisions.json` (#244) is `{intake, decisions}`: the interview's
   `{question, answer}` rows, read off the live server's `GET /intake` at spec
-  `finish` (the only copy of the question texts), and the signed spec's
-  `### Decisions` block parsed (`schema.parse_decisions_block`). The join reads
-  it from the record's `viva_dir` before its clear and writes it into the diff
-  gate's `.viva/`, `decisions` re-read from the recorded source, or kept when
-  that no longer reads. `GET /intake` reads `decisions.json` while the spec
+  `finish` and saved on the session record's `intake` (the only copy of the
+  question texts, so it must survive the clear), and the signed spec's
+  `### Decisions` block parsed (`schema.parse_decisions_block`). The join
+  writes it into the diff gate's `.viva/`: `intake` from the record,
+  `decisions` re-read from the recorded source, or read from the record's
+  `viva_dir` before its clear when that no longer reads. `GET /intake` reads `decisions.json` while the spec
   gate is live and this file after; the clear removes both.
 
 ## Tests
