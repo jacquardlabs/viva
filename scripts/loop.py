@@ -157,6 +157,18 @@ def probe_round(base: str) -> int | None:
     return payload.get("round") if payload is not None else None
 
 
+def holds_round(base: str, inp: Path, n: int) -> bool:
+    """Is the server at `base` serving round `n` of THIS round file? A session
+    server between gates still serves the spec's last round, which a diff
+    round 1 can share by number, so identity is (mode, round), off a live gate."""
+    payload = probe_input(base)
+    if payload is None or payload.get("round") != n:
+        return False
+    if schema.session_is_waiting(payload.get("session")):
+        return False
+    return (payload.get("mode") or "review") == (load_json(inp).get("mode") or "review")
+
+
 def standing_preferences(viva: Path) -> list:
     """`[]` means no standing preferences. A store that exists but won't read
     is a different fact and says so on stderr, rather than silently
@@ -973,7 +985,7 @@ def cmd_annotate(args) -> int:
     # `/next-round`, so annotating an already-armed round writes a file
     # nobody re-reads (loud failure here beats a silent one at `/complete`).
     base = server_url(viva)
-    if base and probe_round(base) == n:
+    if base and holds_round(base, inp, n):
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Annotate before arming: "
             f"finish or `rearm --parse-only` this round, annotate the next one, "
@@ -1033,7 +1045,7 @@ def cmd_summarize(args) -> int:
     inp, _ = schema.round_file_paths(viva, n)
     # Pre-arm, for the reason `annotate` is: the server reads its round once.
     base = server_url(viva)
-    if base and probe_round(base) == n:
+    if base and holds_round(base, inp, n):
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Summarize before arming.")
     try:

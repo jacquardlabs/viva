@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server.py"
+LOOP = ROOT / "scripts" / "loop.py"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _server_harness import (  # noqa: E402
     get, launch_server, poll_for, post, post_result, shipped_source)
@@ -129,6 +130,43 @@ def test_the_gate_table() -> None:
                 time.sleep(0.1)
             assert not (viva / "server.url").exists(), "a diff /complete shuts down"
     print("  ok  test_the_gate_table")
+
+
+def _loop(viva: Path, *argv, stdin: str = "") -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(LOOP), "--viva-dir", str(viva), *argv],
+                          cwd=str(viva.parent), input=stdin, capture_output=True, text=True)
+
+
+def test_a_waiting_server_does_not_hold_the_diff_round() -> None:
+    """Spec round 1 signed off; the server still serves it. Diff round 1 on
+    disk shares its number, and `annotate`/`summarize` must see it unarmed."""
+    flag = json.dumps([{"id": "s1", "kind": "confidence", "severity": "info",
+                        "message": "m", "basis": "sourced"}])
+    with tempfile.TemporaryDirectory() as td:
+        viva = Path(td) / ".viva"
+        viva.mkdir()
+        with session_server(viva, QA, "answers.json") as base:
+            post(base, "/submit", {"answers": [{"id": "q1", "choice": "", "note": "x"}],
+                                   "submitted_early": False})
+            assert next_round(base, viva, SPEC, "review-r1.json")[0] == 200
+            approve(base, 1, "review")
+            assert post_result(base, "/complete", {"rounds_total": 1})[0] == 200
+            assert get(base, "/input")["round"] == 1
+
+            for p in viva.glob("review-r*.json"):
+                p.unlink()
+            (viva / "review-input-r1.json").write_text(json.dumps(DIFF))
+            r = _loop(viva, "annotate", "--sidecar", "-", stdin=flag)
+            assert r.returncode == 0, r.stderr
+            r = _loop(viva, "summarize", "--map", "-", stdin='{"s1": "one line"}')
+            assert r.returncode == 0, r.stderr
+
+            r = _loop(viva, "arm")
+            assert r.returncode == 0, r.stderr
+            assert gates(base)["diff"] == "live"
+            r = _loop(viva, "annotate", "--sidecar", "-", stdin=flag)
+            assert r.returncode != 0 and "already armed" in r.stderr, r.stderr
+    print("  ok  test_a_waiting_server_does_not_hold_the_diff_round")
 
 
 def test_a_diff_boot_is_a_relaunched_diff_gate() -> None:
@@ -245,6 +283,7 @@ def test_the_tab_restamps_per_round_and_surfaces_a_stale_submit() -> None:
 
 def main() -> None:
     test_the_gate_table()
+    test_a_waiting_server_does_not_hold_the_diff_round()
     test_a_diff_boot_is_a_relaunched_diff_gate()
     test_a_mode_less_round_is_served_with_its_mode()
     test_session_boot_refusals()

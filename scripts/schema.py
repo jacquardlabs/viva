@@ -791,12 +791,13 @@ def validate_session(data: dict) -> None:
 
 
 def session_is_waiting(session: object) -> bool:
-    """Is a served `session` key idling between gates — no gate live? The one
+    """Is a served `session` key idling between gates — none live, one still
+    waiting? All-done is a diff sign-off shutting down, not a wait. The one
     rule `loop.py` and `docket.py` apply to a session server's `/input`."""
     gates = session.get("gates") if isinstance(session, dict) else None
-    return (isinstance(gates, list) and bool(gates)
-            and not any(isinstance(g, dict) and g.get("state") == "live"
-                        for g in gates))
+    states = [g.get("state") for g in gates if isinstance(g, dict)] \
+        if isinstance(gates, list) else []
+    return "live" not in states and "waiting" in states
 
 
 def _validate_spec_source(spec: object) -> None:

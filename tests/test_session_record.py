@@ -159,6 +159,8 @@ def test_session_is_waiting() -> None:
                {"kind": "diff", "state": "waiting"}]
     assert schema.session_is_waiting({"id": "x", "gates": between})
     assert not schema.session_is_waiting(good_record()), "a live spec gate"
+    signed = [dict(g, state="done") for g in between]
+    assert not schema.session_is_waiting({"gates": signed}), "a diff sign-off shutting down"
     for junk in (None, {}, {"gates": []}, {"gates": "done"}, [between]):
         assert not schema.session_is_waiting(junk), junk
     print("  ok  test_session_is_waiting")
