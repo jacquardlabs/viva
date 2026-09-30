@@ -204,6 +204,9 @@ _session_id: str = ""  # `--session-id`, set once at startup; session mode only
 # Rebound, never mutated, so a bare read under `_data_lock` is a consistent
 # snapshot — the same discipline as `_input_data`.
 _gates: tuple = ()
+# The interview's questions and submitted answers, kept past the hand-off
+# for `GET /intake` (#244); session mode only, rebound like `_gates`.
+_intake: dict = {}
 # Serializes the /preferences/mute read-modify-write against a concurrent
 # mute (single-reviewer, single-tab in practice, but cheap insurance against
 # two fast double-clicks or two tabs open on the same session — #142).
@@ -314,6 +317,51 @@ def _submit_refusal(data: dict, served: dict, gates: tuple) -> str | None:
     if _launch_mode == "session" and _session_at(gates)[1] != "live":
         return "the session's %s gate is closed — no round is open" % _session_at(gates)[0]
     return None
+
+
+def _intake_links(viva_dir: Path, gates: tuple) -> list[dict]:
+    """The intake's answer → section links (#244): `.viva/decisions.json`
+    while the spec gate is live, the signed spec's `### Decisions` block
+    (`loop.py` writes it as SPEC_DECISIONS_FILE) after. Unreadable → none."""
+    live_spec = _session_at(gates) == ("spec", "live")
+    path = viva_dir / ("decisions.json" if live_spec else schema.SPEC_DECISIONS_FILE)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if live_spec:
+        return schema.decision_links(data) if isinstance(data, dict) else []
+    return [r for r in data if isinstance(r, dict) and isinstance(r.get("message"), str)
+            and isinstance(r.get("sections"), list)] if isinstance(data, list) else []
+
+
+def _intake_rows(intake: dict, links: list[dict]) -> list[dict]:
+    """One `{question, answer, sections}` per interview question. A decision
+    is its question's text and answer verbatim (#211), so it joins on the
+    longest question prefixing it; one that joins none (a relaunch holds no
+    questions) is its own row, split at its arrow."""
+    questions = [q for q in intake.get("questions", []) if isinstance(q, dict)]
+    texts = [" ".join(str(q.get("text", "")).split()) for q in questions]
+    shaped: list[list[str]] = [[] for _ in questions]
+    loose = []
+    for link in links:
+        owners = [i for i, t in enumerate(texts)
+                  if t and (link["message"] == t or link["message"].startswith(t + " "))]
+        if not owners:
+            loose.append(link)
+            continue
+        got = shaped[max(owners, key=lambda i: len(texts[i]))]
+        got.extend(t for t in link["sections"] if t not in got)
+    answers = {a.get("id"): a for a in intake.get("answers", []) if isinstance(a, dict)}
+    rows = []
+    for q, got in zip(questions, shaped):
+        a = answers.get(q.get("id"), {})
+        rows.append({"question": q.get("text", ""), "sections": got,
+                     "answer": " — ".join(str(a[k]) for k in ("choice", "note") if a.get(k))})
+    for link in loose:
+        question, _, answer = link["message"].partition(" → ")
+        rows.append({"question": question, "answer": answer, "sections": link["sections"]})
+    return rows
 
 
 def _served_identity(served: dict, gates: tuple) -> dict:
@@ -684,6 +732,12 @@ class Handler(BaseHTTPRequestHandler):
                                "repo": _viva_dir.parent.name,
                                **_session_payload(gates_snapshot)}).encode()
             self._send(200, "application/json", body)
+        elif path == "/intake" and _launch_mode == "session":
+            # The done intake gate, read-only (#244); a standalone server 404s.
+            with _data_lock:
+                intake_snapshot, gates_snapshot = _intake, _gates
+            rows = _intake_rows(intake_snapshot, _intake_links(_viva_dir, gates_snapshot))
+            self._send(200, "application/json", json.dumps({"answers": rows}).encode())
         elif path == "/preferences":
             # Every preference, every status, label-sorted — the in-page
             # panel's read (#142). Missing/corrupt store degrades to an
@@ -783,7 +837,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error(404, "not found")
 
     def _post_submit(self) -> None:
-        global _last_verdicts
+        global _last_verdicts, _intake
         length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
         if length is None:
             return
@@ -824,6 +878,8 @@ class Handler(BaseHTTPRequestHandler):
                 # Snapshotted under the same lock as `titles`: recommendations
                 # are read off the round on record, never the client's post (#175).
                 questions_snapshot = _input_data.get("questions", [])
+                if isinstance(data.get("answers"), list) and _launch_mode == "session":
+                    _intake = {"questions": questions_snapshot, "answers": data["answers"]}
                 rnd = _input_data.get("round", 0)
                 entries = [schema.verdict_to_ledger_entry(
                     rnd, titles.get(s.get("id"), s.get("id", "?")), s)

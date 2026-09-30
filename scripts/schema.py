@@ -470,6 +470,64 @@ def last_signoff_date(doc_text: str) -> str | None:
     return matches[-1].group(1) if matches else None
 
 
+# ── The ledger's `### Decisions` block (#211, #253, #244) ─────────────────────
+DECISIONS_HEADING = "### Decisions"
+# The signed spec's block as `decision_links` rows, in `.viva/`: `loop.py`
+# writes it past the spec gate, `server.py` serves the intake's links from it.
+SPEC_DECISIONS_FILE = "spec-decisions.json"
+# `- <question → answer> — **Title**, **Title**` (#253). A pre-#253 block
+# groups bare `- <message>` bullets under a `**Title**` line instead.
+_DECISION_ROW_RE = re.compile(r"^- (?P<message>.+) — (?P<titles>\*\*.+\*\*)$")
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_BOLD_LINE_RE = re.compile(r"^\*\*(.+)\*\*$")
+
+
+def decision_links(store: dict) -> list[dict]:
+    """`.viva/decisions.json` as one `{message, sections}` per distinct answer,
+    naming every section it shaped in title order — the rows the `### Decisions`
+    block renders and `parse_decisions_block` reads back."""
+    entries = sorted((e for e in store.values()
+                      if isinstance(e, dict) and isinstance(e.get("flags"), list)),
+                     key=lambda e: str(e.get("title") or "").strip().lower())
+    shaped: dict[str, list[str]] = {}
+    for e in entries:
+        for flag in e["flags"]:
+            if not isinstance(flag, dict):
+                continue
+            titles = shaped.setdefault(" ".join(str(flag.get("message", "")).split()), [])
+            if e.get("title", "") not in titles:
+                titles.append(e.get("title", ""))
+    return [{"message": m, "sections": t} for m, t in shaped.items()]
+
+
+def parse_decisions_block(doc_text: str) -> list[dict]:
+    """The LAST `### Decisions` block under `## Revision History`, as
+    `decision_links` rows. It ends at the first line that is neither a bullet
+    nor a lone `**Title**`, so a sign-off line or a later note stays out."""
+    lines = [line.strip() for line in doc_text.splitlines()]
+    ledger = next((i for i, line in enumerate(lines)
+                   if REVISION_HISTORY_RE.match(line)), None)
+    starts = [i for i, line in enumerate(lines)
+              if line == DECISIONS_HEADING and ledger is not None and i > ledger]
+    if not starts:
+        return []
+    shaped: dict[str, list[str]] = {}
+    title = None
+    for line in lines[starts[-1] + 1:]:
+        bold = _BOLD_LINE_RE.match(line)
+        if not line or bold:
+            title = bold.group(1) if bold else title
+            continue
+        if not line.startswith("- "):
+            break
+        row = _DECISION_ROW_RE.match(line)
+        message, titles = ((row.group("message"), _BOLD_RE.findall(row.group("titles")))
+                           if row else (line[2:], [title] if title else []))
+        got = shaped.setdefault(message, [])
+        got.extend(t for t in titles if t not in got)
+    return [{"message": m, "sections": t} for m, t in shaped.items()]
+
+
 def _check_flags(input_data: dict) -> list:
     """Every check-producer flag on this round — annotations whose `kind` is
     in `CHECK_KINDS`."""

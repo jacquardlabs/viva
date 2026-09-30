@@ -1184,7 +1184,15 @@ the tab takes — boot's `/input`, the `round` and `complete` events, a `409`'s
 Inks follow the parties. A signed-off gate takes `--machine`, as an approved
 verdict does; the live gate takes `--ink` at weight 600; a waiting gate and
 the state words take `--soft`, never `--faint`, since this is copy the
-reviewer reads to act. No cobalt: no gate is a control yet.
+reviewer reads to act. One gate is a control: a `done` intake (#244) prints
+as a cobalt `intake` button, and nothing else in the line takes cobalt.
+
+That button opens `#intake-answers` beneath the line, read-only: each
+interview question, its answer, and the spec sections it shaped, fetched from
+`GET /intake` on every open (the server switches from `decisions.json` to the
+signed spec's `### Decisions` block when the spec gate closes). A section
+whose card is on screen is a cobalt link to it; otherwise a plain name. It is
+a disclosure, not a modal, so it claims no Escape and inerts nothing.
 
 Between gates — spec signed off, diff waiting — the timeline carries the
 spec's line: `Waiting for the implementing PR. Safe to close this tab;

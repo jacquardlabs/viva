@@ -289,7 +289,8 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
     # `decisions.json` is this session's snapshot (#211) — the durable copy is
     # the ledger's `### Decisions` block, written at `finish`, so it resets
     # like everything else here.
-    names = ["open-notes.json", "target.json", "diff.patch", "decisions.json"]
+    names = ["open-notes.json", "target.json", "diff.patch", "decisions.json",
+             schema.SPEC_DECISIONS_FILE]
     if not keep_server_url:
         names.append("server.url")
     if include_answers:
@@ -713,23 +714,46 @@ def _join_target(viva: Path, target: dict
     return viva.resolve(), target, path, record, functools.partial(_clear_state, viva)
 
 
+def _fetch_spec(root: Path, spec: dict) -> tuple[str | None, str]:
+    """The recorded `spec`'s text, or None and why. A comment's fetch also
+    sets its `updated_at` on `spec`."""
+    if spec["kind"] == "commit":
+        shown = _git(root, "show", f"{spec['sha']}:{spec['path']}")
+        if shown.returncode != 0:
+            return None, f"{spec['path']} is not in {spec['sha'][:12]}"
+        return shown.stdout, ""
+    m = _COMMENT_URL_RE.match(spec["url"])
+    argv = ["gh", "api", f"repos/{m.group('repo')}/issues/comments/{m.group('id')}"]
+    try:
+        proc = run(argv, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None, "a comment source needs `gh` on PATH"
+    if proc.returncode != 0:
+        return None, f"{' '.join(argv)} failed: {proc.stderr.strip()}"
+    try:
+        comment = json.loads(proc.stdout)
+        text, updated = comment["body"], comment["updated_at"]
+        if not isinstance(text, str) or not isinstance(updated, str):
+            raise TypeError
+    except (ValueError, KeyError, TypeError):
+        return None, f"{' '.join(argv)} returned no comment body"
+    spec["updated_at"] = updated
+    return text, ""
+
+
 def _spec_source(viva: Path, ref: str, repo: str) -> dict:
     """Resolve `--spec-source` to the record's `spec`, refusing a source that
     carries no sign-off: the minutes read the ledger back from it."""
+    root = viva.resolve().parent
     m = _COMMIT_SOURCE_RE.match(ref)
     if m:
         # Canonical repo-root form: #245 reads the path back from the record.
         path = re.sub(r"^(\./)+", "", m.group("path"))
-        root = viva.resolve().parent
         proc = _git(root, "rev-parse", "--verify", m.group("rev") + "^{commit}")
         if proc.returncode != 0:
             die(f"{m.group('rev')!r} is not a commit in this clone")
-        sha = proc.stdout.strip()
-        shown = _git(root, "show", f"{sha}:{path}")
-        if shown.returncode != 0:
-            die(f"{path} is not in {sha[:12]} — pass the repo-root path of the "
-                f"signed spec")
-        text, spec = shown.stdout, {"kind": "commit", "path": path, "sha": sha}
+        spec = {"kind": "commit", "path": path, "sha": proc.stdout.strip()}
+        hint = " — pass the repo-root path of the signed spec"
     else:
         m = _COMMENT_URL_RE.match(ref)
         if not m:
@@ -738,25 +762,21 @@ def _spec_source(viva: Path, ref: str, repo: str) -> dict:
         if m.group("repo").lower() != repo.lower():
             die(f"the spec comment is in {m.group('repo')}; this session is "
                 f"{repo}")
-        argv = ["gh", "api", f"repos/{m.group('repo')}/issues/comments/{m.group('id')}"]
-        try:
-            proc = run(argv, capture_output=True, text=True)
-        except FileNotFoundError:
-            die("--spec-source with a comment URL needs `gh` on PATH")
-        if proc.returncode != 0:
-            die(f"{' '.join(argv)} failed: {proc.stderr.strip()}")
-        try:
-            comment = json.loads(proc.stdout)
-            text, updated = comment["body"], comment["updated_at"]
-            if not isinstance(text, str) or not isinstance(updated, str):
-                raise TypeError
-        except (ValueError, KeyError, TypeError):
-            die(f"{' '.join(argv)} returned no comment body")
-        spec = {"kind": "comment", "url": ref, "updated_at": updated}
+        spec, hint = {"kind": "comment", "url": ref}, ""
+    text, why = _fetch_spec(root, spec)
+    if text is None:
+        die(why + hint)
     if not schema.has_revision_history(text):
         die(f"{ref} carries no `## Revision History` — record the source the "
             f"stamp produced, after the stamp")
     return spec
+
+
+def _write_spec_decisions(viva: Path, text: str) -> None:
+    """The signed spec's `### Decisions` block, parsed into `viva`: the intake
+    gate's answer → section links once the spec gate is done (#244)."""
+    schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE,
+                        json.dumps(schema.parse_decisions_block(text), indent=2) + "\n")
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -897,11 +917,19 @@ def _start_join(args, viva: Path, record: dict) -> int:
     if data is None:
         shutil.rmtree(stage)
         return 0
+    # A copy: the record keeps the `updated_at` it was signed at.
+    spec_text, why = _fetch_spec(viva.parent, dict(session["spec"]))
     clear()
     viva.mkdir(parents=True, exist_ok=True)
     for f in stage.iterdir():
         shutil.move(str(f), str(viva / f.name))
     stage.rmdir()
+    # Display only, so a source that no longer reads warns rather than
+    # blocking the diff review.
+    if spec_text is None:
+        warn(f"the intake's answers will name no sections: {why}")
+    else:
+        _write_spec_decisions(viva, spec_text)
     if viva != Path(args.viva_dir).resolve():
         print(f"viva-loop: this diff gate runs in {viva} — every later "
               f"loop.py command takes the flag before its subcommand: "
@@ -1508,6 +1536,9 @@ def cmd_finish(args) -> int:
                 "--viva-dir", viva, "--doc", doc],
                "revision-history append",
                "The session is still live; fix and re-run `loop.py finish`.")
+    closes_spec = _owns(record, viva) and _gate(record, "spec") == "live"
+    if closes_spec:
+        _write_spec_decisions(viva, Path(doc).read_text(encoding="utf-8"))
 
     revised = sum(1 for s in verdicts.get("sections", [])
                   if s.get("verdict") in schema.LEDGER_VERDICTS)
@@ -1520,7 +1551,7 @@ def cmd_finish(args) -> int:
          f"`loop.py abandon`.")
     print(f"viva-loop: signed off — {n} round(s), "
           f"{len(input_data.get('sections', []))} section(s)")
-    if _owns(record, viva) and _gate(record, "spec") == "live":
+    if closes_spec:
         _close_gate(record, "spec")
         _write_session(session_path, record)
         print(f"viva-loop: session {record['id']} · spec gate closed — the "

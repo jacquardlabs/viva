@@ -157,6 +157,9 @@ import. It holds:
   `revision_history.py`'s append-vs-create branch ask the same question, and a
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
+- **`decision_links()` / `parse_decisions_block()`** — the ledger's
+  `### Decisions` grammar both ways: `revision_history.py` renders the one,
+  `loop.py` reads a signed spec back with the other (#244).
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
   `validate_session` is the session record's, called by `loop.py` on
   every read and write.
@@ -373,8 +376,8 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   disposable and reset each session. Don't add new state that must survive
   without documenting why here. The state clear lives in `scripts/loop.py`'s
   `_clear_state`, not in prose — it removes the round files, `server.url`,
-  `open-notes.json`, `target.json`, `diff.patch`, `decisions.json`, and
-  `attachments/`. `decisions.json` (#211) is this session's snapshot of
+  `open-notes.json`, `target.json`, `diff.patch`, `decisions.json`,
+  `spec-decisions.json`, and `attachments/`. `decisions.json` (#211) is this session's snapshot of
   interview-answer annotations; the durable copy is the ledger's
   `### Decisions` block written at `finish`, so it resets like everything
   else here rather than surviving alongside `preferences.json`.
@@ -413,6 +416,11 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   reading `.git` and `commondir` rather than calling git (#258).
   A served round is armed only by `schema.serves_round` — `(mode, round)` off
   a live gate — which every armed-ness check in `loop.py` and `docket.py` asks.
+  `spec-decisions.json` (#244) is the signed spec's `### Decisions` block
+  parsed (`schema.parse_decisions_block`): spec `finish` writes it from the
+  doc and the join rewrites it from the recorded source after its clear, so a
+  relaunch elsewhere has it. The server's `GET /intake` reads `decisions.json`
+  while the spec gate is live and this file after; the clear removes both.
 
 ## Tests
 
