@@ -80,14 +80,15 @@ def test_tab_title_identifies_document():
     assert "document.title = 'viva · diff · REV '" not in HTML
     assert "document.title = 'viva · brainstorm'" not in HTML
     assert "document.title = 'viva · ' + modeWord" not in HTML
-    # Exactly one definition + four call sites (shared review/diff boot tail,
-    # qa init, SSE round, SSE complete).
-    assert HTML.count("setTabTitle(") == 5, \
-        "expected setTabTitle def + 4 call sites (bootReviewMode, qa init, SSE round, SSE complete)"
+    # Exactly one definition + five call sites (shared review/diff boot tail,
+    # qa init, SSE round, SSE complete, a session waiting between gates).
+    assert HTML.count("setTabTitle(") == 6, \
+        "expected setTabTitle def + 5 call sites (bootReviewMode, qa init, SSE round, SSE complete, showWaitingForDiff)"
     assert "setTabTitle(tabDocName(data.doc_file), ...(modeWord === 'diff' ? ['diff'] : []), 'REV ' + String(data.round).padStart(2, '0'));" in HTML
     assert "setTabTitle(data.context || 'brainstorm');" in HTML
     assert "setTabTitle(tabDocName(data.doc_file), ...(data.mode === 'diff' ? ['diff', rev] : [rev]));" in HTML
     assert "setTabTitle(REVIEW_DATA ? tabDocName(REVIEW_DATA.doc_file) : null, 'done');" in HTML
+    assert "setTabTitle(tabDocName(REVIEW_DATA.doc_file), 'done');" in HTML
     print("  ok  test_tab_title_identifies_document")
 
 

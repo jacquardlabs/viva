@@ -144,6 +144,22 @@ def test_a_diff_boot_is_a_relaunched_diff_gate() -> None:
     print("  ok  test_a_diff_boot_is_a_relaunched_diff_gate")
 
 
+def test_a_mode_less_round_is_served_with_its_mode() -> None:
+    """Absent `mode` reads as review at /next-round and is stored so: the tab
+    echoes the served mode on submit, and a session server requires it."""
+    with tempfile.TemporaryDirectory() as td:
+        viva = Path(td) / ".viva"
+        viva.mkdir()
+        with session_server(viva, QA, "answers.json") as base:
+            spec = {k: v for k, v in SPEC.items() if k != "mode"}
+            assert next_round(base, viva, spec, "review-r1.json")[0] == 200
+            served = get(base, "/input")
+            assert served["mode"] == "review", served
+            approve(base, 1, served["mode"])
+            assert poll_for(viva / "review-r1.json")
+    print("  ok  test_a_mode_less_round_is_served_with_its_mode")
+
+
 def _boot(viva: Path, data: dict, *extra) -> subprocess.CompletedProcess:
     (viva / "in.json").write_text(json.dumps(data))
     return subprocess.run(
@@ -212,12 +228,25 @@ def test_the_tab_restamps_per_round_and_surfaces_a_stale_submit() -> None:
     send = page[page.index("function sendSubmit("):page.index("function submitReview(")]
     assert "r.status === 409" in send and "showRoundStale(" in send
     assert "if (dropped) recheckRound();" in page, "a reconnect re-checks the served round"
+    # Between gates the served round is the signed-off spec: boot and a stale
+    # refusal both land on the waiting stamp, never a live round or "Reload".
+    boot = page[page.index("Promise.all(["):]
+    assert boot.index("if (data.session && !liveGate(data))") < boot.index("bootReviewMode(data"), \
+        "boot branches on the session's live gate before building cards"
+    assert boot.index("showWaitingForDiff(data);") < boot.index("el('btn-submit').disabled = false;")
+    stale = page[page.index("function showRoundStale("):page.index("function recheckRound(")]
+    assert stale.index("if (current.session && !liveGate(current)) { showWaitingForDiff(current); return; }") \
+        < stale.index("Reload to catch up"), "a closed gate is not a round to reload into"
+    wait = page[page.index("function showWaitingForDiff("):page.index("function showRoundStale(")]
+    assert "document.querySelector('.bottom-bar').style.display = 'none';" in wait
+    assert "WAITING_FOR_DIFF" in wait and "+ WAITING_FOR_DIFF;" in done
     print("  ok  test_the_tab_restamps_per_round_and_surfaces_a_stale_submit")
 
 
 def main() -> None:
     test_the_gate_table()
     test_a_diff_boot_is_a_relaunched_diff_gate()
+    test_a_mode_less_round_is_served_with_its_mode()
     test_session_boot_refusals()
     test_standalone_servers_carry_no_session_and_check_the_round()
     test_the_tab_restamps_per_round_and_surfaces_a_stale_submit()

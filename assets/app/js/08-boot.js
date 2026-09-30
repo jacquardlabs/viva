@@ -73,6 +73,34 @@ function roundKey(d) {
   return d ? [d.mode || (d.questions ? 'qa' : 'review'), d.round || 0, liveGate(d)].join('/') : '';
 }
 
+const WAITING_FOR_DIFF = 'Waiting for the implementing PR. Safe to close this tab; /viva-review <PR> reopens the session.';
+
+/* A session between gates (#241): its spec is signed off and no round is
+   open, so a tab booted or caught up here shows the stamp, never a live
+   round. The stream stays open; the diff gate's `round` event lifts it. */
+function showWaitingForDiff(served) {
+  REVIEW_DATA = REVIEW_DATA ? Object.assign(REVIEW_DATA, { session: served.session }) : served;
+  const stale = el('round-stale-banner');
+  if (stale) stale.remove();
+  stopVoice('the review is signed off');
+  el('processing-view').style.display = 'none';
+  el('review-view').style.display     = 'none';
+  el('qa-view').style.display         = 'none';
+  el('complete-view').style.display   = '';
+  setTabTitle(tabDocName(REVIEW_DATA.doc_file), 'done');
+  setTabFavicon('done');
+  el('complete-headline').textContent = '';
+  el('stamp-sub').style.display       = 'none';
+  el('complete-detail').textContent   = WAITING_FOR_DIFF;
+  const entries = REVIEW_DATA.ledger || [];
+  el('complete-ledger').style.display = entries.length ? '' : 'none';
+  if (entries.length) {
+    el('complete-ledger-count').textContent = entries.length;
+    el('complete-ledger-rows').innerHTML = ledgerRowsHTML(entries);
+  }
+  document.querySelector('.bottom-bar').style.display = 'none';
+}
+
 /* The server serves a round this tab does not hold (#199) — a `round` event
    missed during a drop, or a submit refused 409. The server already refused
    the write; this names what the tab is behind and retires the submit bar. */
@@ -83,6 +111,8 @@ function showRoundStale(current) {
   closeRecap();
   closePrefsPanel();
   closePalette();
+  // A closed gate is no round to catch up to; a reload would land here too.
+  if (current.session && !liveGate(current)) { showWaitingForDiff(current); return; }
   const b = el('round-stale-banner') || document.createElement('div');
   b.id = 'round-stale-banner';
   b.className = 'error-banner';
@@ -302,7 +332,7 @@ function connectSSE() {
       : (rev != null ? `${rev} section${rev !== 1 ? 's' : ''} revised` : '');
     if (gateAhead) {
       el('complete-detail').textContent += (el('complete-detail').textContent ? ' · ' : '')
-        + 'Waiting for the implementing PR. Safe to close this tab; /viva-review <PR> reopens the session.';
+        + WAITING_FOR_DIFF;
     }
     const entries = (REVIEW_DATA && REVIEW_DATA.ledger) || [];
     // Hidden when empty, not just left alone: a session's diff gate reuses
@@ -566,6 +596,12 @@ Promise.all([
     // (references/producers.md, Confidence triage): an empty/absent store
     // has nothing to inspect or mute, so the control stays off.
     el('prefs-toggle').style.display = PREFS_DATA.length ? '' : 'none';
+    // Between a session's gates the served round is the signed-off spec.
+    if (data.session && !liveGate(data)) {
+      showWaitingForDiff(data);
+      connectSSE();
+      return;
+    }
     el('btn-skip').disabled   = false;
     el('btn-submit').disabled = false;
 

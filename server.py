@@ -890,8 +890,8 @@ class Handler(BaseHTTPRequestHandler):
         # The launch mode gates which round mode may replace the served one
         # (#126); a session server walks its gate table instead (#241). The
         # check, the gate move, and the round swap share one lock. Absent
-        # `mode` reads as "review".
-        incoming = new_data.get("mode", "review")
+        # `mode` reads as "review", and is stored so: the tab echoes it on submit.
+        incoming = new_data.setdefault("mode", "review")
         opened = None
         with _data_lock:
             refusal = _next_round_refusal(incoming, _gates)
