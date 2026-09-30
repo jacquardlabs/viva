@@ -319,30 +319,42 @@ def _submit_refusal(data: dict, served: dict, gates: tuple) -> str | None:
     return None
 
 
-def _intake_links(viva_dir: Path, gates: tuple) -> list[dict]:
-    """The intake's answer → section links (#244): `.viva/decisions.json`
-    while the spec gate is live, the signed spec's `### Decisions` block
-    (`loop.py` writes it as SPEC_DECISIONS_FILE) after. Unreadable → none."""
+def _intake_links(viva_dir: Path, gates: tuple) -> tuple[list[dict], list[dict]]:
+    """The intake's answer → section links (#244) and, past the spec gate, the
+    interview `loop.py` saved beside them: `.viva/decisions.json` while the
+    spec gate is live, SPEC_DECISIONS_FILE after. Unreadable → none."""
     live_spec = _session_at(gates) == ("spec", "live")
     path = viva_dir / ("decisions.json" if live_spec else schema.SPEC_DECISIONS_FILE)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
     if live_spec:
-        return schema.decision_links(data) if isinstance(data, dict) else []
-    return [r for r in data if isinstance(r, dict) and isinstance(r.get("message"), str)
-            and isinstance(r.get("sections"), list)] if isinstance(data, list) else []
+        return schema.decision_links(data), []
+    rows = [data.get(k) if isinstance(data.get(k), list) else [] for k in ("decisions", "intake")]
+    return ([r for r in rows[0] if isinstance(r, dict) and isinstance(r.get("message"), str)
+             and isinstance(r.get("sections"), list)],
+            [r for r in rows[1] if isinstance(r, dict) and isinstance(r.get("question"), str)
+             and isinstance(r.get("answer"), str)])
 
 
-def _intake_rows(intake: dict, links: list[dict]) -> list[dict]:
+def _held_intake(intake: dict) -> list[dict]:
+    """The interview this process holds, as `{question, answer}` rows."""
+    answers = {a.get("id"): a for a in intake.get("answers", []) if isinstance(a, dict)}
+    return [{"question": str(q.get("text", "")),
+             "answer": " — ".join(str(a[k]) for k in ("choice", "note") if a.get(k))}
+            for q in intake.get("questions", []) if isinstance(q, dict)
+            for a in [answers.get(q.get("id"), {})]]
+
+
+def _intake_rows(intake: list[dict], links: list[dict]) -> list[dict]:
     """One `{question, answer, sections}` per interview question. A decision
     is its question's text and answer verbatim (#211), so it joins on the
-    longest question prefixing it; one that joins none (a relaunch holds no
-    questions) is its own row, split at its arrow."""
-    questions = [q for q in intake.get("questions", []) if isinstance(q, dict)]
-    texts = [" ".join(str(q.get("text", "")).split()) for q in questions]
-    shaped: list[list[str]] = [[] for _ in questions]
+    longest question prefixing it; one that joins none is its own row."""
+    texts = [" ".join(r["question"].split()) for r in intake]
+    rows = [dict(r, sections=[]) for r in intake]
     loose = []
     for link in links:
         owners = [i for i, t in enumerate(texts)
@@ -350,16 +362,13 @@ def _intake_rows(intake: dict, links: list[dict]) -> list[dict]:
         if not owners:
             loose.append(link)
             continue
-        got = shaped[max(owners, key=lambda i: len(texts[i]))]
+        got = rows[max(owners, key=lambda i: len(texts[i]))]["sections"]
         got.extend(t for t in link["sections"] if t not in got)
-    answers = {a.get("id"): a for a in intake.get("answers", []) if isinstance(a, dict)}
-    rows = []
-    for q, got in zip(questions, shaped):
-        a = answers.get(q.get("id"), {})
-        rows.append({"question": q.get("text", ""), "sections": got,
-                     "answer": " — ".join(str(a[k]) for k in ("choice", "note") if a.get(k))})
     for link in loose:
-        question, _, answer = link["message"].partition(" → ")
+        # Best effort, since either half may hold an arrow: after a `?` if any.
+        question, mark, answer = link["message"].partition("? → ")
+        question, answer = ((question + "?", answer) if mark
+                            else link["message"].partition(" → ")[::2])
         rows.append({"question": question, "answer": answer, "sections": link["sections"]})
     return rows
 
@@ -736,7 +745,9 @@ class Handler(BaseHTTPRequestHandler):
             # The done intake gate, read-only (#244); a standalone server 404s.
             with _data_lock:
                 intake_snapshot, gates_snapshot = _intake, _gates
-            rows = _intake_rows(intake_snapshot, _intake_links(_viva_dir, gates_snapshot))
+            links, signed = _intake_links(_viva_dir, gates_snapshot)
+            # A relaunch holds no interview; the one saved at spec finish stands in.
+            rows = _intake_rows(_held_intake(intake_snapshot) or signed, links)
             self._send(200, "application/json", json.dumps({"answers": rows}).encode())
         elif path == "/preferences":
             # Every preference, every status, label-sorted — the in-page

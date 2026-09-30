@@ -772,11 +772,36 @@ def _spec_source(viva: Path, ref: str, repo: str) -> dict:
     return spec
 
 
-def _write_spec_decisions(viva: Path, text: str) -> None:
-    """The signed spec's `### Decisions` block, parsed into `viva`: the intake
-    gate's answer → section links once the spec gate is done (#244)."""
-    schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE,
-                        json.dumps(schema.parse_decisions_block(text), indent=2) + "\n")
+def _write_spec_decisions(viva: Path, text: str, intake: list) -> None:
+    """The signed spec's `### Decisions` block, parsed into `viva` beside the
+    interview's `{question, answer}` rows: the intake gate's answer → section
+    links once the spec gate is done, on a relaunch too (#244)."""
+    schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE, json.dumps(
+        {"intake": intake, "decisions": schema.parse_decisions_block(text)},
+        indent=2) + "\n")
+
+
+def _served_intake(base: str) -> list:
+    """The live session server's interview as `{question, answer}` rows — the
+    one copy of the question texts, since a decision can't be split back into one."""
+    try:
+        with urllib.request.urlopen(base + "/intake", timeout=_HTTP_TIMEOUT) as resp:
+            rows = json.loads(resp.read())["answers"]
+        return [{"question": r["question"], "answer": r["answer"]} for r in rows]
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as e:
+        warn(f"could not read the interview from {base}/intake ({e}); a "
+             f"relaunch will list the signed decisions without their questions")
+        return []
+
+
+def _kept_spec_decisions(owner: Path) -> dict | None:
+    """The spec finish's `spec-decisions.json` in the session's own `.viva/`,
+    or None when it is missing or unreadable."""
+    try:
+        kept = json.loads((owner / schema.SPEC_DECISIONS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return kept if isinstance(kept, dict) else None
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -919,9 +944,9 @@ def _start_join(args, viva: Path, record: dict) -> int:
         return 0
     # A copy: the record keeps the `updated_at` it was signed at.
     spec_text, why = _fetch_spec(viva.parent, dict(session["spec"]))
-    # A failed fetch keeps the spec finish's copy through the clear.
-    signed = viva / schema.SPEC_DECISIONS_FILE
-    kept = signed.read_text(encoding="utf-8") if spec_text is None and signed.is_file() else None
+    # Read from the session's own `.viva/` before the clear: a relaunch
+    # elsewhere has no copy, and only the finish's copy holds the questions.
+    kept = _kept_spec_decisions(Path(session["viva_dir"]))
     clear()
     viva.mkdir(parents=True, exist_ok=True)
     for f in stage.iterdir():
@@ -930,9 +955,10 @@ def _start_join(args, viva: Path, record: dict) -> int:
     # Display only, so a source that no longer reads warns rather than
     # blocking the diff review.
     if spec_text is not None:
-        _write_spec_decisions(viva, spec_text)
+        _write_spec_decisions(viva, spec_text, kept.get("intake", []) if kept else [])
     elif kept is not None:
-        schema.atomic_write(signed, kept)
+        schema.atomic_write(viva / schema.SPEC_DECISIONS_FILE,
+                            json.dumps(kept, indent=2) + "\n")
         warn(f"the intake keeps the sections read at the spec's sign-off: {why}")
     else:
         warn(f"the intake's answers will name no sections: {why}")
@@ -1544,7 +1570,8 @@ def cmd_finish(args) -> int:
                "The session is still live; fix and re-run `loop.py finish`.")
     closes_spec = _owns(record, viva) and _gate(record, "spec") == "live"
     if closes_spec:
-        _write_spec_decisions(viva, Path(doc).read_text(encoding="utf-8"))
+        _write_spec_decisions(viva, Path(doc).read_text(encoding="utf-8"),
+                              _served_intake(base))
 
     revised = sum(1 for s in verdicts.get("sections", [])
                   if s.get("verdict") in schema.LEDGER_VERDICTS)

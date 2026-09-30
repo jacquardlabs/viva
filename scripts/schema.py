@@ -472,8 +472,8 @@ def last_signoff_date(doc_text: str) -> str | None:
 
 # ── The ledger's `### Decisions` block (#211, #253, #244) ─────────────────────
 DECISIONS_HEADING = "### Decisions"
-# The signed spec's block as `decision_links` rows, in `.viva/`: `loop.py`
-# writes it past the spec gate, `server.py` serves the intake's links from it.
+# `{intake: [{question, answer}], decisions: <decision_links rows>}` in
+# `.viva/`: `loop.py` writes it past the spec gate, `server.py` serves from it.
 SPEC_DECISIONS_FILE = "spec-decisions.json"
 # `- <question → answer> — **Title**, **Title**` (#253). A pre-#253 block
 # groups bare `- <message>` bullets under a `**Title**` line instead.

@@ -2,7 +2,8 @@
 """Intake answers link to the spec sections they shaped (#244), #239's
 test-strategy row 6: the intake gate lists, per answer, the sections named in
 `### Decisions` — from `.viva/decisions.json` while the spec gate is live, from
-the signed spec's block after, and from that block alone on a relaunch.
+the signed spec's block after, joined on a relaunch to the interview saved at
+sign-off.
 """
 from __future__ import annotations
 
@@ -15,8 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import revision_history  # noqa: E402
 import schema  # noqa: E402
+import server  # noqa: E402
 from _server_harness import (get, launch_server, poll_for, post,  # noqa: E402
                              post_result, shipped_source)
 from _session_harness import (DRAFT, approve_all, git, loop, open_session,  # noqa: E402
@@ -109,8 +112,8 @@ def test_the_link_source_moves_when_the_spec_gate_closes() -> None:
                 {"id": "q2", "choice": "no", "note": "not yet"}]})
             assert poll_for(viva / "answers.json")
             (viva / "decisions.json").write_text(json.dumps(STORE))
-            (viva / schema.SPEC_DECISIONS_FILE).write_text(json.dumps(
-                [{"message": "Scope? → the CLI only", "sections": ["Signed"]}]))
+            (viva / schema.SPEC_DECISIONS_FILE).write_text(json.dumps({"intake": [], "decisions": [
+                {"message": "Scope? → the CLI only", "sections": ["Signed"]}]}))
             post(base, "/next-round", dict(spec, output=str(viva / "review-r1.json")))
             # Spec live: decisions.json, joined on the longest question prefix;
             # a decision naming no question is its own row.
@@ -143,9 +146,11 @@ def test_only_a_session_serves_the_intake() -> None:
     print("  ok  test_only_a_session_serves_the_intake")
 
 
-def sign_spec(main: Path) -> str:
+def sign_spec(main: Path, question: str = "Scope?") -> str:
     """A session whose answer shaped both spec sections, signed off and
     committed as its recorded source; returns the waiting server's URL."""
+    (main / ".viva" / "qa-input.json").write_text(json.dumps(
+        {"mode": "qa", "questions": [{"id": "q1", "text": question}]}))
     base = open_session(main)
     (main / "spec.md").write_text(DRAFT)
     r = loop(main, "start", "--doc", "spec.md", "--handoff", "--parse-only")
@@ -153,22 +158,24 @@ def sign_spec(main: Path) -> str:
     sections = json.loads((main / ".viva" / "review-input-r1.json").read_text())["sections"]
     sidecar = main / "decisions-sidecar.json"
     sidecar.write_text(json.dumps([{"kind": "decision", "severity": "info", "id": s["id"],
-                                    "message": "Scope? → x"} for s in sections
+                                    "message": question + " → x"} for s in sections
                                    if s["title"] in ("Problem", "Design")]))
     for argv in (["annotate", "--sidecar", str(sidecar)], ["arm"]):
         r = loop(main, *argv)
         assert r.returncode == 0, r.stderr
-    assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}, "spec live"
+    assert intake(base) == {question: ("x", ["Design", "Problem"])}, "spec live"
     approve_all(base, 1)
     assert poll_for(main / ".viva" / "review-r1.json")
     r = loop(main, "finish")
     assert r.returncode == 0, r.stderr
     signed = (main / "spec.md").read_text()
-    assert "- Scope? → x — **Design**, **Problem**" in signed, signed
-    # Row 6: the intake lists the sections the signed `### Decisions` names.
-    assert json.loads((main / ".viva" / schema.SPEC_DECISIONS_FILE).read_text()) \
-        == schema.parse_decisions_block(signed)
-    assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}, "spec done"
+    assert f"- {question} → x — **Design**, **Problem**" in signed, signed
+    # Row 6: the intake lists the sections the signed `### Decisions` names,
+    # beside the interview's own question texts for a relaunch to join on.
+    assert json.loads((main / ".viva" / schema.SPEC_DECISIONS_FILE).read_text()) == {
+        "intake": [{"question": question, "answer": "x"}],
+        "decisions": schema.parse_decisions_block(signed)}
+    assert intake(base) == {question: ("x", ["Design", "Problem"])}, "spec done"
     git(main, "add", "spec.md")
     git(main, "commit", "-q", "-m", "stamp")
     r = loop(main, "session", "--spec-source", "commit:spec.md@HEAD")
@@ -212,25 +219,53 @@ def test_a_join_that_cannot_read_the_source_keeps_the_signed_links() -> None:
     print("  ok  test_a_join_that_cannot_read_the_source_keeps_the_signed_links")
 
 
-def test_a_relaunch_lists_the_signed_block_alone() -> None:
+def relaunch(question: str, lose_source: bool) -> None:
+    """Sign in `main`, stop its server, join from the other worktree: the
+    relaunch holds no interview, only the spec finish's saved copy of it."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         main, wt = repo(td), td / "wt"
         env = stub_gh(td)
-        sign_spec(main)
+        sign_spec(main, question)
         r = loop(main, "abandon", "--keep-session")
         assert r.returncode == 0, r.stderr
         wait_gone(main / ".viva")
+        if lose_source:
+            record = read(main)
+            record["spec"]["path"] = "gone.md"
+            record_path(main).write_text(json.dumps(record))
         pr_patch(main, td, "a\nB\nc\n")
         r = loop(wt, "start", "--target", "7", "--join-session", env=env)
         assert r.returncode == 0, r.stderr
+        assert ("keeps the sections" in r.stderr) == lose_source, r.stderr
         assert read(main)["viva_dir"] == str((wt / ".viva").resolve())
         base = (wt / ".viva" / "server.url").read_text().strip()
-        # No interview in this process: the block's rows, split at the arrow.
-        assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}
+        assert intake(base) == {question: ("x", ["Design", "Problem"])}
         r = loop(wt, "abandon")
         assert r.returncode == 0, r.stderr
-    print("  ok  test_a_relaunch_lists_the_signed_block_alone")
+
+
+def test_a_relaunch_joins_on_the_questions_saved_at_sign_off() -> None:
+    # #239's own spec asks a question with an arrow in it.
+    relaunch("How does one server carry review → diff when /next-round refuses?", False)
+    print("  ok  test_a_relaunch_joins_on_the_questions_saved_at_sign_off")
+
+
+def test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links() -> None:
+    relaunch("Scope?", True)
+    print("  ok  test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links")
+
+
+def test_arrows_in_a_question_or_answer_stay_where_they_are() -> None:
+    q = "How does one server carry review → diff when /next-round refuses a mode change?"
+    a = "A new --mode session that accepts qa → review → diff in that order"
+    links = [{"message": f"{q} → {a}", "sections": ["Design"]},
+             {"message": "Loose → one? → a → b", "sections": ["Problem"]}]
+    assert server._intake_rows([{"question": q, "answer": a}], links) == [
+        {"question": q, "answer": a, "sections": ["Design"]},
+        {"question": "Loose → one?", "answer": "a → b", "sections": ["Problem"]}], \
+        "a saved question joins by prefix; a loose one splits after its `?`"
+    print("  ok  test_arrows_in_a_question_or_answer_stay_where_they_are")
 
 
 def test_the_done_intake_gate_is_the_one_visitable_gate() -> None:
@@ -254,7 +289,9 @@ def main() -> None:
     test_only_a_session_serves_the_intake()
     test_the_intake_lists_the_sections_named_in_decisions()
     test_a_join_that_cannot_read_the_source_keeps_the_signed_links()
-    test_a_relaunch_lists_the_signed_block_alone()
+    test_a_relaunch_joins_on_the_questions_saved_at_sign_off()
+    test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links()
+    test_arrows_in_a_question_or_answer_stay_where_they_are()
     test_the_done_intake_gate_is_the_one_visitable_gate()
     print("OK")
 
