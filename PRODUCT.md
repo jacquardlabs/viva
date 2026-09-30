@@ -53,11 +53,15 @@ belongs to a different product.
    a product feature, not an implementation detail.
 6. **Local and keyless.** A single stdlib-only Python server, one browser tab,
    no API key, no hosted service. The reviewer's data and learned preferences
-   stay on their machine (preferences are gitignored, per-clone). The one
-   documented exception: dictating a comment through the browser's voice input
-   sends audio to the browser vendor's speech-recognition service, off by
-   default and disclosed in-page before first use (see README, "Voice — the
-   oral examination").
+   stay on their machine (preferences are gitignored, per-clone). Two
+   documented exceptions, both opt-in and disclosed before anything leaves:
+   dictating a comment through the browser's voice input sends audio to the
+   browser vendor's speech-recognition service, off by default and disclosed
+   in-page before first use (see README, "Voice — the oral examination"); and
+   a lifecycle session's minutes — the signed spec's ledger plus the diff
+   review's verbatim notes — post to the implementing PR as a comment through
+   the reviewer's own `gh`, only after the whole body is shown and they answer
+   an explicit yes.
 
 ## What we are NOT building
 
@@ -139,6 +143,8 @@ opt-in layers that all funnel through the section card:
   same tab without a second server launch
 - Voice input — dictate a comment via the browser's speech recognizer, off by
   default and disclosed before first use
+- Session minutes — a lifecycle session's spec ledger and diff-review rows in
+  `.viva/minutes.md`, posted to the implementing PR only on an explicit yes
 - Grounds-classed recommendations in the Q&A interview — sourced / inferred /
   taste
 - Editorial pass depth and declines — a suggestion can be kept as-is by the

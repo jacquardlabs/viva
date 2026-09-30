@@ -318,7 +318,7 @@ live tab, or relaunches it with its history restored; when it prints
 later `loop.py` command in this review takes that flag *before* its
 subcommand — `loop.py --viva-dir <path> wait`, never `loop.py wait
 --viva-dir <path>`, which exits 2. A joined `finish`
-ends the session. A plain `start` in the worktree where the session's server
+writes the session's minutes and ends it (B5). A plain `start` in the worktree where the session's server
 waits is refused; `loop.py abandon --keep-session` frees the worktree and
 keeps the session for its PR.
 
@@ -425,7 +425,22 @@ python3 "$VIVA_DIR/scripts/loop.py" finish
   yes, stage and commit the reviewed working-tree changes.
 - **refused** — a hunk is not approved, or the diff changed since the human
   approved it (you kept editing). Nothing is auto-accepted: `rearm` to re-present
-  it, or `loop.py abandon`.
+  it, or `loop.py abandon`. In a joined session it also refuses when the signed
+  spec no longer reads from its recorded source; the gate stays live, and
+  `loop.py session --spec-source` re-points it before a second `finish`.
+
+**Minutes, in a joined session.** Either sign-off writes the session's minutes
+first — the signed spec's ledger and this review's rows, notes verbatim — and
+prints their path and a `gh pr comment <n> --repo <owner/repo> --body-file
+<path>` command. The notes were written for a local tab, and a PR comment is
+public to the team, so `Read` the file and show the human the whole body in
+the chat before asking:
+
+> "Post these minutes to <PR> as a comment? (y/n)"
+
+Run the printed command only on an explicit yes; anything else posts nothing,
+and the file stays until the next `start`. If the post fails, report the error
+and give the human the printed command to retry.
 
 ## Scope
 

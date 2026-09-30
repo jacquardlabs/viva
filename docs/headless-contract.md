@@ -433,6 +433,18 @@ spec round's number, `wait` exits 2 on it as parsed but not armed, and
 Once the intake is `done`, the timeline's intake gate opens its answers
 read-only, each naming the spec sections it shaped (`GET /intake`, §5).
 
+**Minutes** (#245). The joined diff gate's `finish` writes
+`.viva/minutes.md` before its `POST /complete`: the signed spec's `## Revision
+History`, read back from the recorded source (`git show <sha>:<path>`, or the
+comment's body via `gh api`), with a repeated sign-off line dropped and its
+`### Decisions` blocks folded into one, then the diff gate's rows appended by
+`revision_history.py`. A comment edited since sign-off is read as it stands,
+under a note naming both `updated_at`s. A source that no longer reads refuses
+the finish with the gate live and the record intact. The driver posts
+nothing: it prints `gh pr comment <n> --repo <owner/repo> --body-file <path>`
+for the caller to run on the human's explicit yes. `_clear_state` removes the
+file.
+
 ### hunk review (`/viva-review` branch B, #179)
 
 `loop.py start --target <pr|ref>` or `--kind worktree` launches `--mode diff`
