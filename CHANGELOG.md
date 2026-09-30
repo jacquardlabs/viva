@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.19.0 (2026-09-30)
+
+### Features
+
+- Session timeline, rendered only in a session
+  ([#263](https://github.com/jacquardlabs/viva/pull/263),
+  [`763427b`](https://github.com/jacquardlabs/viva/commit/763427b4895f7f7920e4578b33e9a31049642b1c))
+
+
 ## v2.18.0 (2026-09-30)
 
 ### Bug Fixes
