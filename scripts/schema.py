@@ -790,6 +790,27 @@ def validate_session(data: dict) -> None:
         raise ValueError("session.pr must be `owner/repo#N`")
 
 
+def session_is_waiting(session: object) -> bool:
+    """Is a served `session` key idling between gates — none live, one still
+    waiting? All-done is a diff sign-off shutting down, not a wait. The one
+    rule `loop.py` and `docket.py` apply to a session server's `/input`."""
+    gates = session.get("gates") if isinstance(session, dict) else None
+    states = [g.get("state") for g in gates if isinstance(g, dict)] \
+        if isinstance(gates, list) else []
+    return "live" not in states and "waiting" in states
+
+
+def serves_round(payload: object, round_data: dict, n: int) -> bool:
+    """Is a served `/input` payload round `n` of `round_data`, off a live gate?
+    Identity is (mode, round): a waiting session server still serves the spec's
+    last round, which a diff round 1 shares by number. `loop.py` and `docket.py` ask it."""
+    if not isinstance(payload, dict) or payload.get("round") != n:
+        return False
+    if session_is_waiting(payload.get("session")):
+        return False
+    return (payload.get("mode") or "review") == (round_data.get("mode") or "review")
+
+
 def _validate_spec_source(spec: object) -> None:
     if not isinstance(spec, dict) or spec.get("kind") not in SPEC_SOURCE_KINDS:
         raise ValueError(f"session.spec.kind must be one of {SPEC_SOURCE_KINDS!r}")

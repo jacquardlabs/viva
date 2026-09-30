@@ -1,6 +1,6 @@
 # viva headless invocation contract
 
-**Contract version: 13**
+**Contract version: 14**
 
 This document is for a program that launches `server.py` as a subprocess and
 reads/writes its JSON files — a headless caller — not for the human running
@@ -41,6 +41,7 @@ Changelog:
 
 | version | date | change |
 |---|---|---|
+| 14 | 2026-09-29 | **`POST /submit` now refuses a round it is not serving** (#199): `409` with `{"error": "stale submit: …", "current": {mode, round?, session?}}` where it previously wrote the served round's output file with whatever `round` the body claimed (defaulting an absent one to the served round). A submit must match the served round's shape (`answers` for a Q&A round, `sections` for a review/diff round), carry an integer `round` equal to the served one, and — when it carries `mode` — the served `mode`; a `--mode session` server also requires `mode` and refuses any submit between gates. Nothing is written and no ledger row is appended on a refusal, and a ledger row's `round` is now the served round's, never the body's. **That is the bump** (§1: when an existing endpoint succeeds), even though `/submit` is browser-only (§5). Rides along, not a bump on its own (§1): the new `--mode session` and its `--session-id` flag (§2, §7), the serve-time `session` key (§3), and `POST /complete` keeping a session server up after its spec gate (§5). Also not a bump: a mode-less round accepted at `POST /next-round` is now served with the `"review"` it was read as (§2). |
 | 13 | 2026-09-29 | Server startup now refuses an `--input` whose present `mode` disagrees with the launch `--mode` (#224), closing v9's launch-time carve-out: `--mode diff --input <a file saying "mode": "review">` — or `--mode review` on a `"diff"` file, or `--mode qa` on anything but `"qa"` — now exits `1` with `viva: invalid {review-input,qa-input} {path}: input mode 'X' does not match the server's launch mode (--mode Y, which boots on 'Y' inputs) …` (§6) where it previously booted and rendered the view the JSON named behind a launch that claimed otherwise. **An absent `mode` reads as the launch mode's first boot input** (today the launch mode itself), unlike `/next-round`'s `"review"` default, so a mode-less file still boots under any `--mode`. Checked after the mode-keyed validator, before a port is bound, so a refused launch writes no `server.url`. Every in-repo producer (`parse_sections.py`, `parse_diff.py`, `references/qa.md`'s `qa-input.json`) writes the field its launch expects, so no shipped flow changes. |
 | 12 | 2026-09-05 | `ReviewPass.posture` is removed — `pass` is now `{kind}` only, `kind` still one of `architecture`/`line`/`checks`/`final` (§3). No reader ever existed for it (`server.py` rendered nothing from it, and no `.claude/skills/` prose routed on it), but `validate_review_input` used to `400` a `pass` object carrying an unknown `posture`; that same payload now succeeds, since the key is simply ignored as an unrecognized extra field. **That is the bump**: an existing endpoint's success condition changed for a caller that was relying on the `400` (§1's "changing when an existing endpoint succeeds"). `parse_sections.py --posture` and `loop.py start/rearm --posture` are also removed — a caller invoking either flag now gets an argparse `error: unrecognized arguments` where it previously succeeded. |
 | 11 | 2026-09-04 | Three hardening changes from a standing security review, together: (1) `POST /next-round`'s `output` must now resolve inside `_output_root` — the directory the process's own `--output` named at launch (§4). A caller that previously pointed a later round's `output` at a directory other than the one the server was launched to write into now gets `400 "'output' must resolve inside <dir>"` where it previously succeeded and silently redirected every subsequent `/submit` write to that other directory. Checked immediately after the missing-`output` refusal, before the mode check and shape validation (v9, v10 below) (§5). (2) Every GET request now requires a loopback `Host` header (`127.0.0.1` or `localhost`, exact match) — a request through any other hostname, including an `/etc/hosts` alias, now gets `403 "forbidden host"` where it previously succeeded. (3) `ReviewInput.sections[].id` and `qa-input.questions[].id` must now match `^[A-Za-z0-9_.-]{1,64}$` — both at `POST /next-round`/`POST /submit`'s `validate_review_input`/`validate_verdicts` and at server startup's `validate_qa_input`, so a file or payload carrying an id outside that shape now gets a `400` or exits `1` where it previously succeeded. No caller in this repo (`loop.py`, `viva-write`, `viva-review`'s hunk re-arm, `parse_sections.py`, `parse_diff.py`) ever names an `output` outside its launch directory, connects by a non-loopback hostname, or mints an id outside `s{N}`/`q{N}`, so none of the three is expected to break an existing invocation — only a hypothetical one that relied on the prior lack of a check. Also (not a bump on its own, listed here for completeness): every response now carries a fixed `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer` (§5) — a reviewed document's remote image reference (`![](http://...)`) is now blocked by the CSP's `img-src`, which is the intended effect, not a caller-facing regression. |
@@ -58,12 +59,13 @@ Changelog:
 ## 2. Invocation
 
 ```
-python3 server.py --mode {review,qa,diff} --input PATH --output PATH [--no-browser]
+python3 server.py --mode {review,qa,diff,session} --input PATH --output PATH [--session-id ID] [--no-browser]
 ```
 
 | Flag | Required | Meaning |
 |---|---|---|
-| `--mode` | yes | One of `review`, `qa`, `diff` — exhaustive, enforced by argparse `choices=`. Gates five things: which startup validator runs (§3), which input `mode` it boots on (below, v13), the printed stdout label (`viva · {mode} mode · {url}`), whether `POST /complete` honors `resolved: "empty"` (§5, v10), and which round `mode` `POST /next-round` accepts (§5, v9). |
+| `--mode` | yes | One of `review`, `qa`, `diff`, `session` — exhaustive, enforced by argparse `choices=`. Gates five things: which startup validator runs (§3), which input `mode` it boots on (below, v13), the printed stdout label (`viva · {mode} mode · {url}`), whether `POST /complete` honors `resolved: "empty"` (§5, v10), and which round `mode` `POST /next-round` accepts (§5, v9). `session` is the lifecycle session (§7), which walks a gate table instead of accepting one round mode. |
+| `--session-id` | with `--mode session` only | The session record's id, served back in the `session` key (§3). Required with `--mode session` and refused with any other mode — both argparse usage errors (exit `2`, §6). |
 | `--input` | yes | Any path. Read once, at startup, via `json.load`. Never re-read after boot — a later round's data arrives over HTTP (§5), not by re-reading this path. |
 | `--output` | yes | Any path. Where round verdicts / Q&A answers get written, and the directory `server.url` (§4) is derived from. Does not need to already exist — its parent directories are created on demand (see §4). |
 | `--no-browser` | no | Skips the `webbrowser.open()` call. Nothing else changes: `server.url` is still written, the server still binds and serves. This is the flag a headless caller passes on every invocation, since nothing else suppresses the browser launch. |
@@ -76,14 +78,18 @@ request time, by the `mode` field inside the JSON `GET /input` serves
 
 The two are held in agreement at both boundaries. **At launch** (v13), each
 `--mode` boots only on the input modes `server.py`'s `_BOOT_INPUT_MODES` table
-lists for it — today its own: `review` on `"review"`, `qa` on `"qa"`, `diff`
-on `"diff"` — and an absent `mode` reads as the first input mode listed for
-the launch (today the launch mode itself). Any other `--input` exits `1`
-before a port is bound (§6). **At `POST /next-round`**
-(§5, v9), a `--mode diff` server accepts only `"diff"` rounds, every other
+lists for it — `review` on `"review"`, `qa` on `"qa"`, `diff` on `"diff"`,
+and `session` on `"qa"` or `"diff"` — and an absent `mode` reads as the first
+input mode listed for the launch (`"qa"` for `session`, else the launch mode
+itself). Any other `--input` exits `1` before a port is bound (§6). **At
+`POST /next-round`** (§5, v9), a `--mode diff` server accepts only `"diff"`
+rounds, a `--mode session` server walks its gate table (§7), and every other
 launch mode accepts only `"review"` (absent reads as `"review"`) — launching
 `--mode qa` and later pushing a `"mode": "review"` round is the **defined**
-qa→review hand-off (§7); every other disagreement is refused `400`.
+qa→review hand-off (§7); every other disagreement is refused `400`. Only a
+session server re-stamps the browser's view from a round push.
+`/next-round` stores the `"review"` it reads an absent `mode` as, so a round
+it accepted is always served with a `mode`.
 
 ## 3. `.viva/` round-file naming and shapes
 
@@ -95,7 +101,8 @@ something `server.py` enforces — `--input`/`--output` accept any path. What
 the boundary (on write by the producer, on read by the server):
 
 - `validate_review_input(data)` — called by `server.py` at startup whenever
-  `--mode` is **not** `qa` (the mode is an argparse choice fixed at launch;
+  `--mode` is **not** `qa` (for `--mode session`, whenever the input does
+  not boot as `"qa"`, §2) (the mode is an argparse choice fixed at launch;
   the payload's own shape is whatever the caller wrote, which is why the
   mode is what this keys on), on every `POST /next-round` body, and by
   `scripts/parse_sections.py` on write. Requires
@@ -106,7 +113,8 @@ the boundary (on write by the producer, on read by the server):
   `verdict` in `{"approved", "changes", "info", "pending"}`, and every
   `suggestion` comment to carry non-empty string `replacement`.
 - `validate_qa_input(data)` — called by `server.py` at startup when
-  `args.mode == "qa"` (and only reached if `"sections" not in data`).
+  `args.mode == "qa"`, or `--mode session` on an input that boots as `"qa"`
+  (and only reached if `"sections" not in data`).
   Requires `data.questions` to be a list; every entry must carry string
   `id`, `text`. When a question carries `recommended_choice`, it must be a
   string that exactly matches an entry in that question's own `choices`.
@@ -213,6 +221,14 @@ The same `GET /input` response, and the `round` SSE event, also carry a
 same way `ledger` is. It is informational only: never validated, always safe
 to ignore, and not present in any on-disk file's schema.
 
+A `--mode session` server (§7) — and only one — also injects
+`session: {id, gates: [{kind, state}]}` into `GET /input`, the `round` SSE
+event, and the `complete` SSE event, the same serve-time way. `id` is
+`--session-id`; `kind` is one of `intake`, `spec`, `diff`, in that order;
+`state` is one of `done`, `live`, `waiting` (`schema.SESSION_GATE_KINDS`,
+`SESSION_GATE_STATES`). A review, qa, or diff server's payloads carry no
+`session` key, so the browser's timeline stays off outside a session.
+
 ## 4. `server.url` lifecycle
 
 - Written once, atomically (temp file + `os.replace`), immediately after the
@@ -229,7 +245,9 @@ to ignore, and not present in any on-disk file's schema.
   surfaces as an uncaught exception — see §6).
 - Deleted in the shutdown path's `finally` block on every exit route
   (SIGINT, SIGTERM, `POST /abandon`, or the 2-second timer `POST /complete`
-  starts) — never left behind on a clean exit.
+  starts) — never left behind on a clean exit. A session server's spec-gate
+  `POST /complete` starts no timer, so its `server.url` stays while it waits
+  for the diff gate (§7).
 - A caller that wants to detect "is a session already running" polls for
   this file's existence exactly as `SKILL.md`'s own launch guard does
   (`[ -f .viva/server.url ]`, adjusted for wherever this caller's `--output`
@@ -244,11 +262,11 @@ to the browser tab, not to this contract's wire format.
 
 | Endpoint | Caller-facing? | Notes |
 |---|---|---|
-| `GET /input` | yes | Poll-once, not watched. Returns the loaded `--input` JSON merged with the live `ledger` array and a `repo` key (§3). Most callers get everything they need from the round files directly and only use this to confirm shape. |
+| `GET /input` | yes | Poll-once, not watched. Returns the loaded `--input` JSON merged with the live `ledger` array, a `repo` key, and, from a `--mode session` server only, a `session` key (§3). Most callers get everything they need from the round files directly and only use this to confirm shape. |
 | `GET /events` | **no** | Server-sent events. This is the **browser tab's** private channel (round/complete/processing pushes that make the SPA reflow live) — a headless caller never opens it and this contract does not describe its wire format. |
-| `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. |
-| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. `output` travels in the JSON body like every other POST field (the form `loop.py arm` and `references/qa.md`'s hand-off example both use); the legacy `?output=` query-string param was removed at v10. `output` must resolve inside `_output_root`, the directory the process's own `--output` named at launch (§4) — a caller naming a path outside it gets `400 "'output' must resolve inside <dir>"` (v11), checked immediately after the missing-`output` refusal. Every body is validated with `validate_review_input` before being accepted — `/next-round` is review-shaped only, and a body carrying no `sections` list (a nested round, a Q&A-shaped payload) is refused `400` rather than served. The missing-`output` refusal runs first, then the output-containment check, then shape validation, then (v9) the body's `mode` must agree with the launch mode — `"diff"` on a `--mode diff` server, `"review"` or absent everywhere else — or the round is refused `400` with the served round untouched; a qa-launched server's one legal transition is the review hand-off (§7). This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
-| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. A round carrying a `pass` (§3) must satisfy that base **and** the pass's own conjunct — `checks`: every check flag carries a `result`; `final`: no unresolved suggested edit — so a fully approved round can also be refused `409`, with an `error` naming the pass rather than a section count. A round whose `sections` list is **empty** is refused `409 "the round carries no sections to approve"` — reachable, since `validate_review_input` accepts an empty list, and tested before the pass branch so the message never blames a conjunct for it. The recovery is the **next** round: this process loads its round once and replaces it only from `POST /next-round`, so a check answered on disk under the round already served is one this guard never sees. A pass never makes the request succeed where it would otherwise fail. One exemption by shape — a Q&A round carries `questions` and never `sections` — and one signal (v10): a server launched `--mode diff` signs off a round with non-approved verdicts on record when the body carries `resolved: "empty"`, the caller's assertion that the diff was re-captured and came back empty (`/viva-review`'s empty re-capture finish, which `loop.py finish` derives from the capture itself). The no-verdicts `400` still runs first. `resolved` is the one inspected key of the body: any value but `"empty"` is `400`, and a present `resolved` on a server not launched `--mode diff` is `400`. The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced beyond `resolved`, above) used only for the SSE `"complete"` event's payload; a non-object body is treated as empty. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `references/qa.md`'s finish step) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
+| `POST /submit` | **no** | Browser-only. Exists for the human's browser tab to write verdicts/answers; guarded by an Origin check that rejects non-loopback origins (defense against a malicious page driving the write sink via CSRF) and a 256 MiB body cap. A headless caller never calls this. Since v14 (#199) it refuses, `409` with the served round's identity in `current`, a body that is not for the round being served: the wrong shape (`sections` to a Q&A round, `answers` to a review round), a `round` that is not the served integer, a present `mode` that is not the served one, and on a session server an absent `mode` or any submit between gates. A refusal writes nothing and appends no ledger row. |
+| `POST /next-round` | yes | The endpoint a caller uses to advance a running session: pushes a new round's JSON to the server without tearing the process down. `output` travels in the JSON body like every other POST field (the form `loop.py arm` and `references/qa.md`'s hand-off example both use); the legacy `?output=` query-string param was removed at v10. `output` must resolve inside `_output_root`, the directory the process's own `--output` named at launch (§4) — a caller naming a path outside it gets `400 "'output' must resolve inside <dir>"` (v11), checked immediately after the missing-`output` refusal. Every body is validated with `validate_review_input` before being accepted — `/next-round` is review-shaped only, and a body carrying no `sections` list (a nested round, a Q&A-shaped payload) is refused `400` rather than served. The missing-`output` refusal runs first, then the output-containment check, then shape validation, then (v9) the body's `mode` must agree with the launch mode — `"diff"` on a `--mode diff` server, the current gate's row of §7's table on a `--mode session` server (the `400` names the gate and its state), `"review"` or absent everywhere else — or the round is refused `400` with the served round untouched; a qa-launched server's one legal transition is the review hand-off (§7). This is also the exact mechanism the qa→review hand-off (§7) uses. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit` (#117). |
+| `POST /complete` | yes | Ends the session — **if the round may be signed off**. When the loaded round carries `sections`, the request is refused unless every section in that round carries an `approved` verdict in the most recent `/submit`: `400` `"no verdicts submitted for this round"` when nothing has been submitted since the round was loaded, `409` `"refusing to complete: N of M section(s) not approved"` otherwise. A round carrying a `pass` (§3) must satisfy that base **and** the pass's own conjunct — `checks`: every check flag carries a `result`; `final`: no unresolved suggested edit — so a fully approved round can also be refused `409`, with an `error` naming the pass rather than a section count. A round whose `sections` list is **empty** is refused `409 "the round carries no sections to approve"` — reachable, since `validate_review_input` accepts an empty list, and tested before the pass branch so the message never blames a conjunct for it. The recovery is the **next** round: this process loads its round once and replaces it only from `POST /next-round`, so a check answered on disk under the round already served is one this guard never sees. A pass never makes the request succeed where it would otherwise fail. One exemption by shape — a Q&A round carries `questions` and never `sections` — and one signal (v10): a server launched `--mode diff` signs off a round with non-approved verdicts on record when the body carries `resolved: "empty"`, the caller's assertion that the diff was re-captured and came back empty (`/viva-review`'s empty re-capture finish, which `loop.py finish` derives from the capture itself). The no-verdicts `400` still runs first. `resolved` is the one inspected key of the body: any value but `"empty"` is `400`, and a present `resolved` on a server not serving a diff round (`--mode diff`, or a session server at its live diff gate) is `400`. A `--mode session` server (§7) completes only its live spec or diff gate — at the intake or between gates it is `400` naming the gate — runs the same guard on either, and on the **spec** gate closes the gate, pushes `complete` with the `session` key, and keeps serving: no shutdown timer, `server.url` stays. The refusal is recoverable — `POST /abandon` ends a session that cannot be signed off, so a caller is never stuck holding a live server it cannot close. Accepts an optional JSON body (existing callers pass a free-form summary, e.g. `{rounds_total, sections_total, sections_revised}` — not schema-enforced beyond `resolved`, above) used only for the SSE `"complete"` event's payload; a non-object body is treated as empty. Starts a 2-second shutdown timer so the browser's SSE `"complete"` handler has time to render before the process exits. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. A qa-mode session's finish sequence must call this once `answers.json` exists (see `references/qa.md`'s finish step) unless it is handing off to a review round (§7) — otherwise the process and its `server.url` leak indefinitely. |
 | `POST /abandon` | yes | Ends the session **without** finishing it — the route for a caller that decides to drop an unfinished round. Body is ignored. Sets the shutdown event immediately: no 2-second grace, and no SSE `"complete"` event, so the browser tab sees its `/events` stream drop and reports a lost connection rather than a completed review. Carries none of `/complete`'s sign-off meaning and writes no output file. Guarded by the same loopback-Origin check and 256 MiB body cap as `/submit`. |
 
 Every error response, on any endpoint, is `application/json` with body
@@ -258,7 +276,8 @@ JSON, wrong body shape, failed `validate_review_input`/`validate_verdicts`),
 `/complete`, and `/abandon` all run this check; the host must be exactly
 `127.0.0.1` or `localhost` over `http`, not merely a prefix of the Origin),
 `409` (`/complete` — the round is not all-approved, or its `pass`'s added
-conjunct is unsatisfied; see its endpoint row),
+conjunct is unsatisfied; see its endpoint row — and `/submit`, a body for a
+round the server is not serving, whose body also carries `current`),
 `413` (body over 256 MiB — same four endpoints), `415` (a request body whose
 `Content-Type` is not `application/json` — same four endpoints; this is what
 forces a cross-origin caller into a preflight rather than a simple POST),
@@ -274,13 +293,15 @@ Process exit codes:
 | Exit code | stderr shape | When |
 |---|---|---|
 | `0` | `viva · done` on stdout, nothing distinctive on stderr | Graceful shutdown — `SIGINT`, `SIGTERM` (both handled, so a parent's `proc.terminate()` exits `0` here rather than dying at `-15`), `POST /abandon`, or the 2-second timer after `POST /complete` fires. |
-| `2` | argparse's own usage block | A CLI usage error — a missing required flag, or `--mode` given a value outside `{review,qa,diff}`. |
+| `2` | argparse's own usage block | A CLI usage error — a missing required flag, `--mode` given a value outside `{review,qa,diff,session}`, or `--session-id` missing with `--mode session` / present with any other mode. |
 | `1` | **one line**, `viva: invalid {review-input,qa-input} {path}: {message}` | One of the three deliberate `sys.exit(...)` calls: `validate_review_input`/`validate_qa_input` rejected `--input`'s contents at startup, or (v13) the input's `mode` is not one the launch `--mode` boots on — `{message}` then reads `input mode 'X' does not match the server's launch mode (--mode Y, which boots on 'Y' inputs) …` (§2). A caller can pattern-match on the `viva: ` prefix to distinguish this from the next row. |
 | `1` | **multi-line Python traceback**, no `viva: ` prefix | Every other startup failure: `--input` path doesn't exist or isn't readable, `--input`'s contents aren't valid JSON, or `--output`'s directory can't be created/written to because of a permission failure (its *absence* alone is not a failure — see §4). Nothing in `server.py` catches these; they are uncaught Python exceptions. |
 
 **Startup validation keys on the launch `--mode`, never on the payload's
 shape.** `--mode qa` runs `validate_qa_input`; `--mode review` and
-`--mode diff` both run `validate_review_input`. A shape/mode mismatch — a
+`--mode diff` both run `validate_review_input`; `--mode session` runs the
+one for the input mode it boots as (§2), then refuses any mode but `"qa"`
+or `"diff"`. A shape/mode mismatch — a
 Q&A file handed to `--mode review`, or the reverse — exits `1` at launch with
 the `viva: ` prefix rather than booting a blank view. A shape-valid file whose
 `mode` the launch does not boot on (a `"review"` file under `--mode diff`)
@@ -308,7 +329,7 @@ the banner can't say what a hang will find there.
 
 ### qa → review hand-off (`unified-session`, #109)
 
-This is **not** a third `--mode` value. A caller launches `--mode qa` exactly
+This is **not** a `--mode` value of its own. A caller launches `--mode qa` exactly
 as `references/qa.md` documents, waits for `answers.json`, and — instead of
 tearing the server down — POSTs an ordinary `sections`-shaped `ReviewInput`
 payload (§3) to the same server's still-running `/next-round`. The same
@@ -323,10 +344,9 @@ true, the server prints a distinct stdout line, `viva · hand-off qa → review
 the browser.
 
 **A qa-launched server accepts `"review"` rounds and nothing else.** A
-`"mode": "diff"` round is refused `400` at `/next-round` (§5, v9) — the
-browser stamps its diff layout at boot only, so there is no tab a diff round
-could land in — which is what makes the hand-off line above true by
-construction rather than by convention.
+`"mode": "diff"` round is refused `400` at `/next-round` (§5, v9) — carrying
+a tab on to a diff is what `--mode session` (below) is for — which is what
+makes the hand-off line above true by construction rather than by convention.
 
 **`ReviewInput`'s wire shape carries no field marking a round as
 qa-originated** (deliberate — `unified-session`'s design doc, "Out of scope:
@@ -344,6 +364,49 @@ answers a caller just finished reading.
 read** — that would shut down the process the hand-off is about to reuse.
 The *eventual* review round's own `/complete` call, whenever it finishes,
 ends the process instead.
+
+### lifecycle session (`--mode session`, #239, #241)
+
+One process and one tab carry a feature from intake through spec review to
+the implementing PR's diff review. `loop.py interview --session` launches
+`--mode session --session-id <record id>` on the interview's `qa-input.json`;
+a session server may also boot on a diff input, which opens it at its diff
+gate (intake and spec already done) — the relaunch for a session whose
+server died between gates. `POST /next-round` accepts rounds in one order:
+
+| Current gate | Accepted `mode` | Effect |
+|---|---|---|
+| intake (`questions`) | `review` | The qa → review hand-off above; the spec gate goes live |
+| spec, live | `review` | The next spec round |
+| spec, done | `diff` | Opens the diff gate; the tab re-stamps `mode-diff` and loads diff2html from its `round` handler |
+| diff, live | `diff` | The next diff round |
+
+Every other transition is `400`, naming the current gate and its state.
+`POST /complete` runs the unchanged guard (§5) on a live spec or diff gate
+only: on the spec gate it closes the gate and keeps serving; on the diff gate
+it shuts down as a standalone diff server does, `resolved: "empty"` included.
+The `session` key (§3) reports the gates at every step.
+
+**One `.viva/` epoch per gate.** The spec gate's round files and
+`server.url` stay on disk while the server waits; the diff gate's driver
+clears the round files (keeping `server.url`, as `start --handoff` does) and
+POSTs diff round 1 with an `output` inside the launch `--output` directory —
+the containment rule (§5, v11) is fixed at launch. Round numbers restart at
+`1` per gate, so `POST /submit` tells a spec round from a diff round by
+`mode` (v14), which a session server requires. The in-memory ledger resets
+when the diff gate opens; the spec's rows are already in its doc.
+
+Between gates, `GET /input` still serves the signed-off spec round, with a
+`session` key that has no live gate. A tab that boots or reconnects there, or
+has a submit refused because the gate closed, shows the sign-off stamp and
+waits on its stream for the diff round. It does not open the spec round again.
+The driver refuses `finish` and `rearm` against a server in this state, and
+`loop.py abandon --keep-session` stops it without ending the session: the
+record survives for the diff gate's relaunch. Plain `abandon` ends both.
+A served round counts as armed only by `(mode, round)` off a live gate, so
+`annotate` and `summarize` accept a diff round 1 that shares the signed-off
+spec round's number, `wait` exits 2 on it as parsed but not armed, and
+`docket.py` reports it `parsed-not-armed`.
 
 ### hunk review (`/viva-review` branch B, #179)
 

@@ -27,8 +27,9 @@ STATE:
                     where no `server.url` exists and nothing was submitted.
   agent-working     `review-rN.json` exists for round N — the agent's turn.
   parsed-not-armed  Round N is parsed but the live server is serving something
-                    else (a stale earlier round, or a `/viva-write` qa payload
-                    with no `round` key). Nothing populates `review-rN.json`
+                    else (a stale earlier round, a `/viva-write` qa payload
+                    with no `round` key, or a waiting session's spec round
+                    beside a diff round of the same number). Nothing populates `review-rN.json`
                     until `loop.py arm` runs.
   dead              `server.url` exists but nothing answers within the probe
                     timeout.
@@ -36,6 +37,9 @@ STATE:
                     `review-input-rN.json` — an intake interview, not a round.
   done              Best-effort: `review-rN.json` exists and
                     `schema.round_is_complete()` is satisfied.
+  waiting           `done`, but a `--mode session` server still answers with
+                    no gate live — its spec is signed off and it idles for
+                    the implementing PR's diff gate.
 
 AGE is the mtime of whichever round/qa file is newest — there is no
 timestamp field, so mtime is the only signal. Human string in `--format
@@ -212,6 +216,11 @@ def classify(viva: Path) -> dict[str, object]:
                     state = "done"
             except Exception:
                 pass  # best-effort — never let this crash the row
+        # A session server outlives its spec's sign-off, idling for the PR.
+        base = server_url(viva) if state == "done" else None
+        if base is not None and schema.session_is_waiting(
+                (probe_input(base) or {}).get("session")):
+            state = "waiting"
     else:
         # Round N parsed but unanswered — whose turn depends on what the
         # live server (if any) is actually serving.
@@ -223,8 +232,9 @@ def classify(viva: Path) -> dict[str, object]:
             payload = probe_input(base)
             if payload is None:
                 state = "dead"
-            elif payload.get("round") != n:
-                # Stale round, or a live qa payload with no `round` key.
+            elif not schema.serves_round(payload, input_data, n):
+                # Stale round, a live qa payload with no `round` key, or a
+                # waiting session's spec round sharing a diff round's number.
                 state = "parsed-not-armed"
             else:
                 state = "your-turn"

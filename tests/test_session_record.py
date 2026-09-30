@@ -96,6 +96,8 @@ def open_session(main: Path):
     out, err = proc.communicate(timeout=15)
     assert proc.returncode == 0, err
     assert f"session {read(main)['id']} · o/r" in out, out
+    # `interview --session` launches `--mode session` on the record's id (#241).
+    assert get(base, "/input")["session"]["id"] == read(main)["id"]
     return base
 
 
@@ -108,8 +110,10 @@ def wait_gone(viva: Path) -> None:
 
 
 def approve_all(base: str, round_no: int) -> None:
-    ids = [s["id"] for s in get(base, "/input")["sections"]]
-    post(base, "/submit", {"round": round_no, "submitted_early": False,
+    served = get(base, "/input")
+    ids = [s["id"] for s in served["sections"]]
+    post(base, "/submit", {"round": round_no, "mode": served["mode"],
+                           "submitted_early": False,
                            "sections": [{"id": i, "verdict": "approved"} for i in ids]})
 
 
@@ -150,6 +154,33 @@ def test_validate_session() -> None:
     print("  ok  test_validate_session")
 
 
+def test_session_is_waiting() -> None:
+    between = [{"kind": "intake", "state": "done"}, {"kind": "spec", "state": "done"},
+               {"kind": "diff", "state": "waiting"}]
+    assert schema.session_is_waiting({"id": "x", "gates": between})
+    assert not schema.session_is_waiting(good_record()), "a live spec gate"
+    signed = [dict(g, state="done") for g in between]
+    assert not schema.session_is_waiting({"gates": signed}), "a diff sign-off shutting down"
+    for junk in (None, {}, {"gates": []}, {"gates": "done"}, [between]):
+        assert not schema.session_is_waiting(junk), junk
+    print("  ok  test_session_is_waiting")
+
+
+def test_serves_round() -> None:
+    """Armed-ness is (mode, round) off a live gate — never the number alone."""
+    between = {"gates": [{"kind": "intake", "state": "done"}, {"kind": "spec", "state": "done"},
+                         {"kind": "diff", "state": "waiting"}]}
+    diff, spec = {"mode": "diff", "round": 1}, {"round": 1}
+    assert schema.serves_round({"round": 1}, spec, 1), "a mode-less round is review"
+    assert schema.serves_round(diff, diff, 1)
+    assert not schema.serves_round({"round": 2}, spec, 1), "a stale round"
+    assert not schema.serves_round({"mode": "review", "round": 1}, diff, 1), "mode differs"
+    assert not schema.serves_round(dict(diff, session=between), diff, 1), "a waiting gate"
+    for junk in (None, {}, [], {"questions": []}):
+        assert not schema.serves_round(junk, spec, 1), junk
+    print("  ok  test_serves_round")
+
+
 # ── the lifecycle, across two worktrees ──────────────────────────────────────
 def test_record_spans_worktrees_and_ends_at_the_sessions_diff() -> None:
     with tempfile.TemporaryDirectory() as td:
@@ -181,8 +212,30 @@ def test_record_spans_worktrees_and_ends_at_the_sessions_diff() -> None:
         r = loop(main, "finish")
         assert r.returncode == 0, r.stderr
         assert "spec gate closed" in r.stdout and "--spec-source" in r.stdout, r.stdout
+        assert gates(main) == {"intake": "done", "spec": "done", "diff": "waiting"}
+        # The session server idles for the diff gate; a `start` here would
+        # orphan it, so it refuses and names the waiting session.
+        assert get(base, "/input")["session"]["gates"][1]["state"] == "done"
+        r = loop(main, "start", "--kind", "worktree")
+        assert r.returncode != 0 and "waiting at" in r.stderr, r.stderr
+        assert "abandon --keep-session" in r.stderr, r.stderr
+        # A retried finish or a rearm between gates is refused before it
+        # touches the doc or writes a round (pre-mortem #5: a doubled sign-off).
+        signed = (main / "spec.md").read_text()
+        for verb in ("finish", "rearm"):
+            r = loop(main, verb)
+            assert r.returncode != 0 and "already signed off" in r.stderr, r.stderr
+        assert (main / "spec.md").read_text() == signed, "one sign-off block"
+        assert not (main / ".viva" / "review-input-r2.json").exists()
+        # Stopping the waiting server frees the worktree and keeps the
+        # session; its PR's join relaunches it (spec: Operations).
+        r = loop(main, "abandon", "--keep-session")
+        assert r.returncode == 0 and "kept" in r.stdout, r.stderr
         wait_gone(main / ".viva")
         assert gates(main) == {"intake": "done", "spec": "done", "diff": "waiting"}
+        r = loop(main, "abandon", "--keep-session")
+        assert r.returncode != 0 and "none is answering" in r.stderr, r.stderr
+        assert record_path(main).exists()
         assert "spec" not in read(main), "no spec source before `session --spec-source`"
 
         # A source must carry the sign-off the minutes read back.
@@ -253,7 +306,12 @@ def test_abandon_ends_the_session() -> None:
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         main, wt = repo(td), td / "wt"
-        open_session(main)
+        base = open_session(main)
+
+        # `--keep-session` only stops a server between gates, not a live one.
+        r = loop(main, "abandon", "--keep-session")
+        assert r.returncode != 0 and "between gates" in r.stderr, r.stderr
+        assert get(base, "/input")["session"]["id"] == read(main)["id"]
 
         # Live in `main`: another worktree may not end it.
         r = loop(wt, "abandon")
@@ -297,6 +355,8 @@ def test_interview_session_needs_a_github_origin() -> None:
 
 def main() -> None:
     test_validate_session()
+    test_session_is_waiting()
+    test_serves_round()
     test_record_spans_worktrees_and_ends_at_the_sessions_diff()
     test_abandon_ends_the_session()
     test_interview_session_needs_a_github_origin()

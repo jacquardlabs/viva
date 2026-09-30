@@ -139,7 +139,7 @@ def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:
     """The payload the server at `base` is serving, or None if nothing answers.
     File existence proves neither liveness nor armed-ness (a killed process
     skips the `finally` that unlinks `server.url`). This is the liveness
-    question, deliberately distinct from `probe_round`: a live qa server
+    question, deliberately distinct from `holds_round`: a live qa server
     answers `/input` with no `round` key, so only this one may be read as dead."""
     try:
         with urllib.request.urlopen(base + "/input", timeout=timeout) as resp:
@@ -150,11 +150,9 @@ def probe_input(base: str, timeout: float = _HTTP_TIMEOUT) -> dict | None:
     return payload if isinstance(payload, dict) else {}
 
 
-def probe_round(base: str) -> int | None:
-    """The round actually being served, or None if not answering — or
-    answering with no round (a qa payload)."""
-    payload = probe_input(base)
-    return payload.get("round") if payload is not None else None
+def holds_round(base: str, inp: Path, n: int) -> bool:
+    """Is the server at `base` serving round `n` of THIS round file?"""
+    return schema.serves_round(probe_input(base), load_json(inp), n)
 
 
 def standing_preferences(viva: Path) -> list:
@@ -210,6 +208,26 @@ def _is_interview(payload: dict) -> bool:
     return "questions" in payload
 
 
+def _die_waiting(base: str, session: dict, why: str) -> None:
+    """A session server idling between gates blocks this worktree; name both
+    exits, since plain `abandon` also ends the session."""
+    die(f"session {session.get('id')} is waiting at {base} for its "
+        f"implementing PR's diff gate{why}. `loop.py abandon --keep-session` "
+        f"stops the server and keeps the session for its PR; plain `loop.py "
+        f"abandon` ends the session.")
+
+
+def _refuse_between_gates(viva: Path, verb: str) -> None:
+    """Refuse `verb` against a session server between gates — it outlives the
+    spec's sign-off, so a retried `finish` would append a second ledger."""
+    base = server_url(viva)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    if payload is not None and schema.session_is_waiting(payload.get("session")):
+        _die_waiting(base, payload["session"],
+                     f" — its spec is already signed off, so there is nothing "
+                     f"to {verb}")
+
+
 def _preflight_no_live_session(viva: Path) -> None:
     """Refuse to clear over a session that may still be live. Two cases wear
     one file with opposite recoveries, so ask the server rather than guessing
@@ -223,6 +241,8 @@ def _preflight_no_live_session(viva: Path) -> None:
             die(f"an interview is already open at {base} — `loop.py start "
                 f"--handoff` hands a round to that tab; `loop.py abandon` "
                 f"ends it.")
+        if schema.session_is_waiting(payload.get("session")):
+            _die_waiting(base, payload["session"], "")
         die(f"a session is already open at {base} — that tab is the live "
             f"review. Finish it there, or `loop.py abandon`, before "
             f"starting another.")
@@ -258,7 +278,8 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
         shutil.rmtree(viva / "attachments", ignore_errors=True)
 
 
-def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
+def _launch_server(viva: Path, mode: str, inp: Path, out: Path,
+                   session_id: str | None = None) -> str:
     """Launch `server.py` detached; return its base URL once `server.url`
     appears. Streams go to `.viva/server.log`, not inherited stdout — an
     inherited pipe would hang a caller until the grandchild exits."""
@@ -266,7 +287,8 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path) -> str:
     with log.open("wb") as logfh:
         proc = subprocess.Popen(
             [str(sys.executable), str(SERVER), "--mode", mode,
-             "--input", str(inp), "--output", str(out)],
+             "--input", str(inp), "--output", str(out),
+             *(["--session-id", session_id] if session_id else [])],
             stdout=logfh, stderr=logfh,
         )
     for _ in range(_POLL_TRIES):
@@ -608,9 +630,9 @@ def _spec_source(viva: Path, ref: str, repo: str) -> dict:
 
 # ── subcommands ───────────────────────────────────────────────────────────────
 def cmd_interview(args) -> int:
-    """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`, block
-    for answers, print them. Never `/complete` — `start --handoff` + `arm`
-    ends the interview instead."""
+    """Run the Q&A gate (`references/qa.md`): clear, launch `--mode qa`
+    (`--mode session` with `--session`), block for answers, print them. Never
+    `/complete` — `start --handoff` + `arm` ends the interview instead."""
     viva = Path(args.viva_dir)
     qa_in = Path(args.input)
     if not qa_in.exists():
@@ -630,9 +652,12 @@ def cmd_interview(args) -> int:
     answers = viva / "answers.json"
     # A stale `answers.json` would satisfy the wait below with no answer.
     _clear_state(viva, include_answers=True)
-    base = _launch_server(viva, "qa", qa_in, answers)
+    # Minted before the launch: a `--mode session` server serves its id.
+    session_id = uuid.uuid4().hex if args.session else None
+    base = _launch_server(viva, "session" if args.session else "qa", qa_in,
+                          answers, session_id)
     if args.session:
-        record = {"id": uuid.uuid4().hex, "repo": repo,
+        record = {"id": session_id, "repo": repo,
                   "viva_dir": str(viva.resolve()),
                   "gates": [{"kind": k, "state": "live" if k == "intake" else "waiting"}
                             for k in schema.SESSION_GATE_KINDS]}
@@ -946,7 +971,7 @@ def cmd_annotate(args) -> int:
     # `/next-round`, so annotating an already-armed round writes a file
     # nobody re-reads (loud failure here beats a silent one at `/complete`).
     base = server_url(viva)
-    if base and probe_round(base) == n:
+    if base and holds_round(base, inp, n):
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Annotate before arming: "
             f"finish or `rearm --parse-only` this round, annotate the next one, "
@@ -970,7 +995,7 @@ def cmd_arm(args) -> int:
 
     # Branch on liveness, not the round number — a re-run after a slow start
     # would otherwise launch a second orphaned server.
-    # Liveness is `probe_input`, never `probe_round`: a live qa server has no
+    # Liveness is `probe_input`, never `holds_round`: a live qa server has no
     # `round` key, and reading that as dead broke handing a round to an open
     # `/viva-write` interview (#179).
     base = server_url(viva)
@@ -1006,7 +1031,7 @@ def cmd_summarize(args) -> int:
     inp, _ = schema.round_file_paths(viva, n)
     # Pre-arm, for the reason `annotate` is: the server reads its round once.
     base = server_url(viva)
-    if base and probe_round(base) == n:
+    if base and holds_round(base, inp, n):
         die(f"round {n} is already armed — the server at {base} holds it in "
             f"memory and would never see this merge. Summarize before arming.")
     try:
@@ -1057,16 +1082,18 @@ def cmd_wait(args) -> int:
         if not base:
             die(f"server is gone ({viva}/server.url disappeared) and round {n} "
                 f"never returned verdicts. {relaunch}", 2)
-        served = probe_round(base)
-        if served is None:
+        payload = probe_input(base)
+        if payload is None:
             die(f"server at {base} is not answering and round {n} never "
                 f"returned verdicts. Delete {viva}/server.url, then relaunch. "
                 f"{relaunch}", 2)
-        if served != n:
-            # Parsed but never armed: `rearm --parse-only` wrote round n while
-            # the server still serves `served`, so no verdicts will ever land.
+        if not schema.serves_round(payload, input_data, n):
+            # Parsed but never armed (`rearm --parse-only`, or a diff round
+            # beside a waiting session's spec round): no verdicts will land.
+            served = f"{payload.get('mode') or 'review'} round {payload['round']}" \
+                if "round" in payload else "no round"
             die(f"round {n} is parsed but not armed — the server is still "
-                f"serving round {served}. Run `loop.py arm` (after "
+                f"serving {served}. Run `loop.py arm` (after "
                 f"`loop.py annotate` if a producer is pending).", 2)
         time.sleep(_WAIT_INTERVAL)
 
@@ -1107,6 +1134,7 @@ def cmd_rearm(args) -> int:
     inp, out = schema.round_file_paths(viva, n)
     if not out.exists():
         die(f"round {n} has no verdicts yet — run `loop.py wait` first")
+    _refuse_between_gates(viva, "re-arm")
 
     # Doc, split pattern, and type travel in the round file the parser wrote,
     # so the agent names none of them again — round N+1 splits the way round
@@ -1273,6 +1301,7 @@ def cmd_finish(args) -> int:
         die(f"no live server to complete (no {viva}/server.url). The verdicts "
             f"are on disk; append the ledger by hand with `python3 "
             f"{SCRIPTS / 'revision_history.py'} --viva-dir {viva} --doc {doc}`.")
+    _refuse_between_gates(viva, "finish")
 
     # Everything fallible runs BEFORE the irreversible POST: `/complete`
     # starts the server's shutdown timer, so a failure after it is stuck.
@@ -1300,9 +1329,9 @@ def cmd_finish(args) -> int:
     if _owns(record, viva) and _gate(record, "spec") == "live":
         _close_gate(record, "spec")
         _write_session(session_path, record)
-        print(f"viva-loop: session {record['id']} · spec gate closed — after "
-              f"the stamp, `loop.py session --spec-source <commit:path@sha | "
-              f"comment URL>`")
+        print(f"viva-loop: session {record['id']} · spec gate closed — the "
+              f"server stays up for the diff gate · after the stamp, `loop.py "
+              f"session --spec-source <commit:path@sha | comment URL>`")
     # Only a signed-off session learns; the clustering asked for is judgment work.
     print(f"viva-loop: record this session's recurring critiques → "
           f"{REFERENCES / 'preferences.md'}")
@@ -1393,6 +1422,8 @@ def _end_session(path: Path | None, record: dict | None, closes: bool) -> None:
 
 def cmd_abandon(args) -> int:
     viva = Path(args.viva_dir)
+    if args.keep_session:
+        return _stop_waiting_server(viva)
     session_path, record = _session_path(viva), None
     if session_path is not None and session_path.exists():
         try:
@@ -1406,6 +1437,17 @@ def cmd_abandon(args) -> int:
             die(f"no live session to abandon (no {viva}/server.url)")
         return _abandon_stale_session(viva, session_path, record)
 
+    _stop_server(viva, base)
+    n = current_round(viva)
+    where = f" at round {n}" if n else ""
+    print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
+    if _owns(record, viva):
+        session_path.unlink(missing_ok=True)
+        print(f"viva-loop: session {record['id']} ended — record removed")
+    return 0
+
+
+def _stop_server(viva: Path, base: str) -> None:
     # Over HTTP, not by signal: `start` detaches the server, so this process
     # holds no child handle.
     post(base, "/abandon", {}, "abandoning the session",
@@ -1420,12 +1462,21 @@ def cmd_abandon(args) -> int:
         die(f"server acknowledged /abandon but {viva}/server.url is still "
             f"there — the process may be wedged; stop it before the next start.")
 
-    n = current_round(viva)
-    where = f" at round {n}" if n else ""
-    print(f"viva-loop: session abandoned{where} — the doc was NOT signed off.")
-    if _owns(record, viva):
-        session_path.unlink(missing_ok=True)
-        print(f"viva-loop: session {record['id']} ended — record removed")
+
+def _stop_waiting_server(viva: Path) -> int:
+    """`abandon --keep-session`: stop a session server idling between gates,
+    record untouched, for its PR's join to relaunch. Refused with a gate live,
+    where the kept record would claim a gate nothing serves."""
+    base = server_url(viva)
+    payload = probe_input(base, timeout=_PREFLIGHT_TIMEOUT) if base else None
+    session = (payload or {}).get("session")
+    if not schema.session_is_waiting(session):
+        die("--keep-session stops only a session server waiting between gates "
+            "for its implementing PR, and none is answering here. Plain "
+            "`loop.py abandon` ends an unfinished session.")
+    _stop_server(viva, base)
+    print(f"viva-loop: server stopped — session {session.get('id')} kept for "
+          f"its implementing PR; `/viva-review <PR>` reopens it.")
     return 0
 
 
@@ -1583,6 +1634,10 @@ def main() -> int:
 
     p = sub.add_parser("abandon", help="end an unfinished session — the one "
                                        "exit that is not a sign-off")
+    p.add_argument("--keep-session", action="store_true",
+                   help="stop a session server waiting between gates but keep "
+                        "the session record for its implementing PR, freeing "
+                        "this worktree for another review")
     p.set_defaults(func=cmd_abandon)
 
     p = sub.add_parser("session", help="record the signed spec's source on the "

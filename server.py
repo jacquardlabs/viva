@@ -4,6 +4,7 @@
 Usage:
   python server.py --mode review --input .viva/review-input-r1.json --output .viva/review-r1.json
   python server.py --mode qa     --input .viva/qa-input.json        --output .viva/answers.json
+  python server.py --mode session --session-id ID --input .viva/qa-input.json --output .viva/answers.json
 """
 from __future__ import annotations  # 3.8-safe `X | None` hints (CI matrix runs 3.8)
 
@@ -187,7 +188,22 @@ _launch_mode: str = "review"
 # equality, since a launch mode may boot on another mode's input. The
 # first entry is what a mode-less input reads as.
 _BOOT_INPUT_MODES: dict[str, tuple[str, ...]] = {
-    "review": ("review",), "qa": ("qa",), "diff": ("diff",)}
+    "review": ("review",), "qa": ("qa",), "diff": ("diff",),
+    # A lifecycle session (#241) boots on its interview, or on its diff when
+    # #242 relaunches one whose server died between gates.
+    "session": ("qa", "diff")}
+# A session server's gates: (current gate, its state) → (round mode it
+# accepts at /next-round, the gate that round leaves live). Anything else 400s.
+_SESSION_ROUTES: dict[tuple[str, str], tuple[str, str]] = {
+    ("intake", "live"): ("review", "spec"),
+    ("spec", "live"): ("review", "spec"),
+    ("spec", "done"): ("diff", "diff"),
+    ("diff", "live"): ("diff", "diff"),
+}
+_session_id: str = ""  # `--session-id`, set once at startup; session mode only
+# Rebound, never mutated, so a bare read under `_data_lock` is a consistent
+# snapshot — the same discipline as `_input_data`.
+_gates: tuple = ()
 # Serializes the /preferences/mute read-modify-write against a concurrent
 # mute (single-reviewer, single-tab in practice, but cheap insurance against
 # two fast double-clicks or two tabs open on the same session — #142).
@@ -226,13 +242,100 @@ def _boot_refusal(launch_mode: str, data: dict,
             % (incoming, launch_mode, " or ".join(map(repr, accepted))))
 
 
+def _boot_input_mode(launch_mode: str, data: dict) -> str:
+    """The input mode `data` boots as: its own, else the launch's first."""
+    return data.get("mode", _BOOT_INPUT_MODES[launch_mode][0])
+
+
+def _open_gate(kind: str) -> tuple:
+    """`kind` live, every gate before it done, every gate after it waiting."""
+    at = schema.SESSION_GATE_KINDS.index(kind)
+    return tuple({"kind": k,
+                  "state": "done" if i < at else "live" if i == at else "waiting"}
+                 for i, k in enumerate(schema.SESSION_GATE_KINDS))
+
+
+def _close_gate(gates: tuple, kind: str) -> tuple:
+    return tuple(dict(g, state="done") if g["kind"] == kind else g for g in gates)
+
+
+def _session_at(gates: tuple) -> tuple[str, str]:
+    """(gate, state) a session server is at: the live gate, else the last done."""
+    live = [g["kind"] for g in gates if g["state"] == "live"]
+    if live:
+        return live[0], "live"
+    return [g["kind"] for g in gates if g["state"] == "done"][-1], "done"
+
+
+def _session_payload(gates: tuple) -> dict:
+    """The serve-time `session` key, like `ledger` and `repo` — only a
+    session server carries one, so a standalone tab renders no timeline."""
+    if _launch_mode != "session":
+        return {}
+    return {"session": {"id": _session_id, "gates": [dict(g) for g in gates]}}
+
+
+def _next_round_refusal(incoming: str, gates: tuple) -> str | None:
+    """Why `/next-round` must not serve a round of mode `incoming`, or None."""
+    if _launch_mode != "session":
+        allowed = "diff" if _launch_mode == "diff" else "review"
+        if incoming == allowed:
+            return None
+        return ("round mode %r does not match the server's launch mode "
+                "(--mode %s, which serves %r rounds) — only a --mode session "
+                "server re-stamps its view from a round push"
+                % (incoming, _launch_mode, allowed))
+    at = _session_at(gates)
+    route = _SESSION_ROUTES.get(at)
+    if route and route[0] == incoming:
+        return None
+    return ("round mode %r refused — this session is at its %s gate (%s), "
+            "which accepts %s" % (incoming, at[0], at[1],
+                                  "%r rounds" % route[0] if route else "no rounds"))
+
+
+def _submit_refusal(data: dict, served: dict, gates: tuple) -> str | None:
+    """Why a `/submit` is not for the round being served (#199), or None. A
+    session's spec round N and diff round 1 share a process, so identity is
+    shape, `round`, and `mode` — which, in a session, names the gate."""
+    if "questions" in served:
+        if "answers" not in data or "sections" in data:
+            return "this server is serving an interview, not a review round"
+    elif "sections" not in data:
+        return "this server is serving a review round, not an interview"
+    else:
+        rnd, mode = data.get("round"), data.get("mode")
+        if type(rnd) is not int or rnd != served.get("round"):
+            return "round %r is not the round being served" % (rnd,)
+        if mode is None and _launch_mode == "session":
+            return "a session server needs the round's mode on every submit"
+        if mode is not None and mode != served.get("mode", "review"):
+            return "mode %r is not the mode being served" % (mode,)
+    if _launch_mode == "session" and _session_at(gates)[1] != "live":
+        return "the session's %s gate is closed — no round is open" % _session_at(gates)[0]
+    return None
+
+
+def _served_identity(served: dict, gates: tuple) -> dict:
+    """The round a stale tab is behind, for a `/submit` refusal's body."""
+    ident = {"mode": served.get("mode", "qa" if "questions" in served else "review")}
+    if "round" in served:
+        ident["round"] = served["round"]
+    return {**ident, **_session_payload(gates)}
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="viva review server")
     p.add_argument("--mode",       required=True, choices=list(_BOOT_INPUT_MODES))
     p.add_argument("--input",      required=True)
     p.add_argument("--output",     required=True)
+    p.add_argument("--session-id", help="the lifecycle session record's id; "
+                                        "required with, and only with, --mode session")
     p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
-    return p.parse_args()
+    args = p.parse_args()
+    if (args.mode == "session") != bool(args.session_id):
+        p.error("--session-id is required with, and only with, --mode session")
+    return args
 
 
 def find_free_port() -> int:
@@ -575,9 +678,11 @@ class Handler(BaseHTTPRequestHandler):
             with _data_lock:
                 data_snapshot = _input_data
                 ledger_snapshot = list(_ledger)
+                gates_snapshot = _gates
             body = json.dumps({**_with_revision_counts(data_snapshot, _viva_dir),
                                "ledger": ledger_snapshot,
-                               "repo": _viva_dir.parent.name}).encode()
+                               "repo": _viva_dir.parent.name,
+                               **_session_payload(gates_snapshot)}).encode()
             self._send(200, "application/json", body)
         elif path == "/preferences":
             # Every preference, every status, label-sorted — the in-page
@@ -704,25 +809,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
         with _data_lock:
-            out = _output_path
-            # Snapshot for /complete's finish guard, under the same lock
-            # that guards `_input_data` so the two describe the same round.
-            if "sections" in data:
-                _last_verdicts = data
-            titles = {s.get("id"): s.get("title", "")
-                      for s in _input_data.get("sections", [])}
-            # Snapshotted under the same lock as `titles`: recommendations
-            # are read off the round on record, never the client's post (#175).
-            questions_snapshot = _input_data.get("questions", [])
-            try:
-                rnd = int(data.get("round", _input_data.get("round", 0)))
-            except (TypeError, ValueError):
-                rnd = 0
-            for s in data.get("sections", []):
-                entry = schema.verdict_to_ledger_entry(
+            # A tab that missed a `round` event must not write the served
+            # round's file (#199) — refused with what it is behind.
+            refusal = _submit_refusal(data, _input_data, _gates)
+            current = _served_identity(_input_data, _gates) if refusal else None
+            if refusal is None:
+                out = _output_path
+                # Snapshot for /complete's finish guard, under the same lock
+                # that guards `_input_data` so the two describe the same round.
+                if "sections" in data:
+                    _last_verdicts = data
+                titles = {s.get("id"): s.get("title", "")
+                          for s in _input_data.get("sections", [])}
+                # Snapshotted under the same lock as `titles`: recommendations
+                # are read off the round on record, never the client's post (#175).
+                questions_snapshot = _input_data.get("questions", [])
+                rnd = _input_data.get("round", 0)
+                entries = [schema.verdict_to_ledger_entry(
                     rnd, titles.get(s.get("id"), s.get("id", "?")), s)
-                if entry is not None:
-                    _ledger.append(entry)
+                    for s in data.get("sections", [])]
+                _ledger.extend(e for e in entries if e is not None)
+        if refusal is not None:
+            self._send(409, "application/json", json.dumps(
+                {"error": "stale submit: %s" % refusal, "current": current}).encode())
+            return
         data = extract_attachments(data, out, rnd)
         if "answers" in data:
             data = annotate_qa_acceptance(data, questions_snapshot)
@@ -736,7 +846,7 @@ class Handler(BaseHTTPRequestHandler):
         _push_sse("processing", {})
 
     def _post_next_round(self) -> None:
-        global _input_data, _output_path, _last_verdicts
+        global _input_data, _output_path, _last_verdicts, _gates
         length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
         if length is None:
             return
@@ -777,45 +887,55 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._error(400, f"invalid review-input: {e}")
             return
-        # The launch mode gates which round shape may replace the served
-        # one (#126): the browser stamps diff styling only at boot, so a
-        # diff payload on a non-diff server would render raw fenced code —
-        # refused rather than re-stamped. Absent `mode` reads as "review".
-        incoming = new_data.get("mode", "review")
-        allowed = "diff" if _launch_mode == "diff" else "review"
-        if incoming != allowed:
-            self._error(400, "round mode %r does not match the server's "
-                             "launch mode (--mode %s, which serves %r "
-                             "rounds) — the browser's view is fixed at "
-                             "boot and cannot be re-stamped from a round "
-                             "push" % (incoming, _launch_mode, allowed))
-            return
+        # The launch mode gates which round mode may replace the served one
+        # (#126); a session server walks its gate table instead (#241). The
+        # check, the gate move, and the round swap share one lock. Absent
+        # `mode` reads as "review", and is stored so: the tab echoes it on submit.
+        incoming = new_data.setdefault("mode", "review")
+        opened = None
         with _data_lock:
-            # Unified Q&A → review session (#109): the wire payload carries
-            # no distinguishing field by design, so the hand-off is inferred
-            # here, never persisted — prior round was Q&A-shaped
-            # (`questions`), this one is review-shaped (`sections`).
-            handoff = "questions" in _input_data and "sections" in new_data
-            # Normalize on the way in, as at startup: an absent `round`
-            # renders as "REV undefined" and breaks the freshness test.
-            _input_data = schema.default_round(new_data)
-            _output_path = str(resolved)
-            # The verdict snapshot belongs to the round that produced it.
-            # Section ids are stable across rounds (s1…sN), so a carried
-            # all-approved snapshot would sign off a round nobody has seen.
-            _last_verdicts = None
-            ledger_snapshot = list(_ledger)
+            refusal = _next_round_refusal(incoming, _gates)
+            if refusal is None:
+                if _launch_mode == "session":
+                    opens = _SESSION_ROUTES[_session_at(_gates)][1]
+                    if _session_at(_gates) != (opens, "live"):
+                        # A gate is a fresh epoch: the spec's rows are already
+                        # in its doc's ledger, so the diff gate's start empty.
+                        _gates, opened = _open_gate(opens), opens
+                        _ledger.clear()
+                # Unified Q&A → review session (#109): the wire payload carries
+                # no distinguishing field by design, so the hand-off is inferred
+                # here, never persisted — prior round was Q&A-shaped
+                # (`questions`), this one is review-shaped (`sections`).
+                handoff = "questions" in _input_data and "sections" in new_data
+                # Normalize on the way in, as at startup: an absent `round`
+                # renders as "REV undefined" and breaks the freshness test.
+                _input_data = schema.default_round(new_data)
+                _output_path = str(resolved)
+                # The verdict snapshot belongs to the round that produced it.
+                # Section ids are stable across rounds (s1…sN), so a carried
+                # all-approved snapshot would sign off a round nobody has seen.
+                _last_verdicts = None
+                ledger_snapshot = list(_ledger)
+                gates_snapshot = _gates
+        if refusal is not None:
+            self._error(400, refusal)
+            return
         if handoff:
             # Distinct from the per-mode startup line so a terminal-watching
             # caller (or a human tailing stdout) can see the hand-off happen,
             # not just infer it from the browser reflowing.
             print(f"viva · hand-off qa → review · {_url}", flush=True)
+        if opened:
+            print(f"viva · session {opened} gate open · {_url}", flush=True)
         self._send(200, "application/json", b'{"ok":true}')
         _push_sse("round", {**_with_revision_counts(new_data, _viva_dir),
                             "ledger": ledger_snapshot,
-                            "repo": _viva_dir.parent.name})
+                            "repo": _viva_dir.parent.name,
+                            **_session_payload(gates_snapshot)})
 
     def _post_complete(self) -> None:
+        global _gates
         length = self._check_origin_and_length(MAX_SUBMIT_BYTES)
         if length is None:
             return
@@ -833,12 +953,20 @@ class Handler(BaseHTTPRequestHandler):
         with _data_lock:
             round_input = _input_data
             submitted   = _last_verdicts
+            at = _session_at(_gates) if _launch_mode == "session" else None
+        # A session completes its spec and diff gates only; the intake ends by
+        # hand-off, and a closed gate has no round left to sign off.
+        if at is not None and at not in (("spec", "live"), ("diff", "live")):
+            self._error(400, "this session is at its %s gate (%s), which has "
+                             "no round to complete" % at)
+            return
+        # Server state, never the body: is the served round a diff round?
+        diff_round = _launch_mode == "diff" or at == ("diff", "live")
         # Q&A is exempt by shape (`questions`, never `sections`). Diff mode
         # is NOT exempt by mode any more (#177): a blanket exemption let a
         # `--mode diff` server accept ANY verdicts, reopening for hunks the
         # hole #102 closed for sections. The caller now must say WHY via
-        # `resolved: "empty"`, honored only when `_launch_mode == "diff"`
-        # (fixed at startup, unforgeable by the request body).
+        # `resolved: "empty"`, honored only on a diff round (`diff_round`).
         if "sections" in round_input:
             if submitted is None:
                 self._error(400, "no verdicts submitted for this round — "
@@ -847,15 +975,16 @@ class Handler(BaseHTTPRequestHandler):
             resolved = summary.get("resolved")
             if resolved is not None and resolved != "empty":
                 self._error(400, "unknown 'resolved' value %r — the only "
-                                 "signal is \"empty\", and only a --mode "
-                                 "diff server honors it" % (resolved,))
+                                 "signal is \"empty\", and only a diff "
+                                 "round honors it" % (resolved,))
                 return
-            if resolved is not None and _launch_mode != "diff":
+            if resolved is not None and not diff_round:
                 self._error(400, "'resolved' is a diff-review signal — a "
-                                 "%s session cannot resolve empty; every "
-                                 "section must be approved" % _launch_mode)
+                                 "%s round cannot resolve empty; every "
+                                 "section must be approved"
+                                 % round_input.get("mode", "review"))
                 return
-            resolved_empty = resolved == "empty" and _launch_mode == "diff"
+            resolved_empty = resolved == "empty" and diff_round
             if not resolved_empty and not schema.round_is_complete(
                     round_input, submitted):
                 # `round_is_complete` above is the gate; this only builds the
@@ -894,8 +1023,23 @@ class Handler(BaseHTTPRequestHandler):
                                  "auto-accepted; re-present the round or "
                                  "abandon it." % why)
                 return
+        if at == ("spec", "live"):
+            # The spec gate closes and the process idles for the diff gate
+            # (#241); the tab keeps its stream open on the `session` it reads.
+            with _data_lock:
+                _gates = _close_gate(_gates, "spec")
+                gates_snapshot = _gates
+            self._send(200, "application/json", b'{"ok":true}')
+            print(f"viva · session spec gate closed · waiting for the diff "
+                  f"gate · {_url}", flush=True)
+            _push_sse("complete", {**summary, **_session_payload(gates_snapshot)})
+            return
+        with _data_lock:
+            if at is not None:
+                _gates = _close_gate(_gates, "diff")
+            gates_snapshot = _gates
         self._send(200, "application/json", b'{"ok":true}')
-        _push_sse("complete", summary)
+        _push_sse("complete", {**summary, **_session_payload(gates_snapshot)})
         threading.Timer(2.0, _shutdown.set).start()
 
     def _post_abandon(self) -> None:
@@ -1000,8 +1144,11 @@ if __name__ == "__main__":
     # Validate the input on read, keyed on the LAUNCH MODE — same reason as
     # `/complete`'s guard: keying on shape let a file with neither `sections`
     # nor `questions` through unvalidated. A shape/mode mismatch now exits 1
-    # at launch instead of booting a tab that can't render.
-    if args.mode == "qa":
+    # at launch instead of booting a tab that can't render. A session boots
+    # on two input modes, so it keys on the one the input boots as.
+    boot_mode = args.mode if args.mode != "session" else \
+        _boot_input_mode(args.mode, _input_data if isinstance(_input_data, dict) else {})
+    if boot_mode == "qa":
         try:
             schema.validate_qa_input(_input_data)
         except ValueError as e:
@@ -1017,11 +1164,16 @@ if __name__ == "__main__":
     refusal = _boot_refusal(args.mode, _input_data)
     if refusal:
         sys.exit("viva: invalid %s %s: %s"
-                 % ("qa-input" if args.mode == "qa" else "review-input",
+                 % ("qa-input" if boot_mode == "qa" else "review-input",
                     args.input, refusal))
     _output_path = args.output
     _output_root = Path(args.output).resolve().parent
     _launch_mode = args.mode
+    if args.mode == "session":
+        # Gates derive from the boot input: an interview opens the intake,
+        # a diff (#242's relaunch) means intake and spec are already signed.
+        _session_id = args.session_id
+        _gates = _open_gate("intake" if boot_mode == "qa" else "diff")
 
     port = find_free_port()
     server = ThreadedHTTPServer(("127.0.0.1", port), Handler)

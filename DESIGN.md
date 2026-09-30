@@ -1269,6 +1269,12 @@ server validates every `/next-round` body, so this is a backstop, not the
 boundary; it clears from the `processing` and `round` handlers, the two
 events that mean the session moved on.
 
+A fourth names a tab that fell behind (#199): `/submit` answers `409` with
+the served round when the tab's round, mode, or session gate isn't it, and
+a reconnect re-reads `/input` for a `round` it missed while down. `This tab
+is behind — the server is on REV 03 … Reload to catch up.` retires the
+submit bar rather than retrying into the same refusal.
+
 ## Multiple inline comments (#68, v1.10.0)
 
 A section card hosts a list of typed comments rather than a single verdict pick. The
@@ -1406,7 +1412,9 @@ is one column in source order, so every selection inside it already is.
 
 ## Diff-first layout (mode-diff)
 
-Diff mode stamps `mode-diff` on `<body>`. Mode-scoped overrides widen
+Diff mode stamps `mode-diff` on `<body>`, at boot and again from each
+`round` event, which toggles it and calls `loadDiff2html` — a session's diff
+gate lands in the tab its spec rounds used (#241). Mode-scoped overrides widen
 `.shell`, `.bottom-inner`, and `#paper` together to `min(95vw, 1600px)` and remove
 `.section-content`'s `60vh` nested scroll — page scroll is the only
 vertical scroll in diff mode. Widening the container (never escaping it)

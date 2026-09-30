@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _server_harness import get, get_text, launch_server, post  # noqa: E402
+from _server_harness import get, get_text, launch_server, post, post_status  # noqa: E402
 
 
 def main() -> None:
@@ -58,12 +58,14 @@ def main() -> None:
                        ".ledger-verdict.v-changes"):
             assert needle in page, f"page missing: {needle}"
 
-        # round coerced to int (stored-XSS hardening)
-        post(base, "/submit", {"round": "<img src=x>", "submitted_early": False,
-                               "sections": [{"id": "s1", "verdict": "info", "note": "n"}]})
-        post(base, "/next-round", dict(r1, round=4, output=str(viva / "out4.json")))
-        ledger = get(base, "/input")["ledger"]
-        assert ledger[3]["round"] == 0, f"round not coerced: {ledger[3]}"
+        # A non-integer round is a stale submit (#199), refused before any
+        # row is written; a row's round is the served one, never the client's
+        # (stored-XSS hardening).
+        assert post_status(base, "/submit", {
+            "round": "<img src=x>", "submitted_early": False,
+            "sections": [{"id": "s1", "verdict": "info", "note": "n"}]}) == 409
+        assert len(get(base, "/input")["ledger"]) == 3, "a refused submit adds no row"
+        assert all(type(e["round"]) is int for e in get(base, "/input")["ledger"])
 
         print("OK")
 

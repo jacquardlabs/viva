@@ -290,12 +290,14 @@ def poll_for(path, tries: int = 50, delay: float = 0.2) -> bool:
 
 
 @contextmanager
-def launch_server(input_path, output_path, mode: str = "review", cwd=None):
+def launch_server(input_path, output_path, mode: str = "review", cwd=None,
+                  extra: tuple = ()):
     """Launch `server.py` on the given input/output, yield its base URL, and
-    always terminate it on exit."""
+    always terminate it on exit. `extra` appends flags (`--session-id`)."""
     proc = subprocess.Popen(
         [sys.executable, str(SERVER), "--mode", mode,
-         "--input", str(input_path), "--output", str(output_path), "--no-browser"],
+         "--input", str(input_path), "--output", str(output_path), "--no-browser",
+         *extra],
         cwd=str(cwd) if cwd else None,
     )
     try:
