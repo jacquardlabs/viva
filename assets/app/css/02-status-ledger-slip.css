@@ -84,6 +84,29 @@ h1.tb-val { margin: 0; }
 .tl-state { color: var(--soft); letter-spacing: 0.08em; }
 .tl-done .tl-mark, .tl-done .tl-kind { color: var(--machine); }
 .tl-live .tl-mark, .tl-live .tl-kind { color: var(--ink); font-weight: 600; }
+/* The done intake gate is the timeline's one control (#244): cobalt, as every
+   interactive control is. Scoped to `.tl-done` to outrank that gate's --machine. */
+.tl-done .tl-visit {
+  font: inherit; letter-spacing: inherit; text-transform: inherit;
+  color: var(--acc); background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.intake-answers {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--rule);
+  font-size: 13px;
+  color: var(--ink2);
+}
+.ia-list { list-style: none; margin: 0; padding: 0; }
+.ia-row + .ia-row { margin-top: 10px; }
+.ia-row p, .ia-note { margin: 0; }
+.ia-q { color: var(--ink); font-weight: 600; }
+.ia-shaped { color: var(--soft); font-size: 12px; }
+.ia-link {
+  font: inherit; color: var(--acc); background: none; border: 0; padding: 0;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
 .tl-wait {
   flex: 1 1 100%;
   margin: 0;

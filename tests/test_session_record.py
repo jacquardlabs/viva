@@ -40,6 +40,7 @@ def test_validate_session() -> None:
         pr="o/r#7", spec={"kind": "commit", "path": "d.md", "sha": "a" * 40}))
     schema.validate_session(good_record(
         spec={"kind": "comment", "url": "https://x", "updated_at": "t"}))
+    schema.validate_session(good_record(intake=[{"question": "q", "answer": "a"}]))
     bad = [
         [],
         good_record(id="xyz"),
@@ -60,6 +61,9 @@ def test_validate_session() -> None:
         good_record(spec={"kind": "comment", "url": "https://x"}),
         good_record(pr=7),
         good_record(pr="#7"),
+        good_record(intake={"question": "q", "answer": "a"}),
+        good_record(intake=[{"question": "q"}]),
+        good_record(intake=[{"question": "q", "answer": None}]),
     ]
     for record in bad:
         try:

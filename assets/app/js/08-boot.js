@@ -82,16 +82,64 @@ const GATE_MARKS = { done: '&#10003;', live: '&#9679;', waiting: '&#9675;' };
 function buildSessionTimeline(d) {
   if (!d || !d.session) return;
   const nav = el('session-timeline');
+  const shown = el('intake-answers').style.display !== 'none';
   const gates = d.session.gates.map(g =>
     '<li class="tl-gate tl-' + esc(g.state) + '"' + (g.state === 'live' ? ' aria-current="step"' : '') + '>'
     + '<span class="tl-mark" aria-hidden="true">' + (GATE_MARKS[g.state] || '') + '</span>'
-    + '<span class="tl-kind">' + esc(g.kind) + '</span>'
+    // The done intake is the one visitable gate (#244).
+    + (g.kind === 'intake' && g.state === 'done'
+      ? '<button type="button" class="tl-kind tl-visit" aria-controls="intake-answers" aria-expanded="'
+        + shown + '">intake</button>'
+      : '<span class="tl-kind">' + esc(g.kind) + '</span>')
     + '<span class="tl-state">' + esc(g.state) + '</span></li>').join('');
   // Between gates, the diff gate's line (#239's spec, verbatim).
   const waits = !liveGate(d) && d.session.gates.some(g => g.state === 'waiting');
   nav.innerHTML = '<span class="tl-label">session</span><ol class="tl-gates">' + gates + '</ol>'
     + (waits ? '<p class="tl-wait">' + esc(WAITING_FOR_DIFF) + '</p>' : '');
+  const visit = nav.querySelector('.tl-visit');
+  if (visit) visit.addEventListener('click', () => toggleIntakeAnswers(visit));
+  if (shown) loadIntakeAnswers();   // a closed spec gate moves the links' source
   nav.style.display = '';
+}
+
+/* The intake gate, read-only (#244): per answer, the spec sections it shaped.
+   Fetched on every open, since the server reads the links off disk. */
+function toggleIntakeAnswers(btn) {
+  const panel = el('intake-answers');
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? '' : 'none';
+  btn.setAttribute('aria-expanded', String(open));
+  if (open) loadIntakeAnswers();
+}
+
+function loadIntakeAnswers() {
+  const panel = el('intake-answers');
+  fetch('/intake')
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => {
+      panel.innerHTML = intakeAnswersHTML(d.answers || []);
+      panel.querySelectorAll('.ia-link').forEach(b =>
+        b.addEventListener('click', () => activateReviewCard(b.dataset.target)));
+    })
+    .catch(() => { panel.innerHTML = '<p class="ia-note">The intake answers did not load.</p>'; });
+}
+
+function intakeAnswersHTML(rows) {
+  if (!rows.length) return '<p class="ia-note">No answers on record.</p>';
+  return '<ol class="ia-list">' + rows.map(r => '<li class="ia-row">'
+    + '<p class="ia-q">' + esc(r.question) + '</p>'
+    + '<p class="ia-a">' + (r.answer ? esc(r.answer) : 'not answered') + '</p>'
+    + '<p class="ia-shaped">' + (r.sections.length
+      ? 'shaped ' + r.sections.map(intakeSectionHTML).join(', ') : 'shaped no section')
+    + '</p></li>').join('') + '</ol>';
+}
+
+// A spec section still on screen is a link to its card; otherwise a name.
+function intakeSectionHTML(title) {
+  const onScreen = isContinuousPrint() && el('review-view').style.display !== 'none';
+  const s = onScreen && REVIEW_DATA.sections.find(x => x.title === title);
+  return s ? '<button type="button" class="ia-link" data-target="' + esc(s.id) + '">' + esc(title) + '</button>'
+           : '<span class="ia-sec">' + esc(title) + '</span>';
 }
 
 /* A session between gates (#241): its spec is signed off and no round is

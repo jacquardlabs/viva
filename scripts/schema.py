@@ -470,6 +470,69 @@ def last_signoff_date(doc_text: str) -> str | None:
     return matches[-1].group(1) if matches else None
 
 
+# ── The ledger's `### Decisions` block (#211, #253, #244) ─────────────────────
+DECISIONS_HEADING = "### Decisions"
+# `{intake: [{question, answer}], decisions: <decision_links rows>}` in
+# `.viva/`: `loop.py` writes it past the spec gate, `server.py` serves from it.
+SPEC_DECISIONS_FILE = "spec-decisions.json"
+# `- <question → answer> — **Title**, **Title**` (#253). A pre-#253 block
+# groups bare `- <message>` bullets under a `**Title**` line instead.
+_DECISION_ROW_RE = re.compile(r"^- (?P<message>.+) — (?P<titles>\*\*.+\*\*)$")
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_BOLD_LINE_RE = re.compile(r"^\*\*(.+)\*\*$")
+
+
+def decision_links(store: dict) -> list[dict]:
+    """`.viva/decisions.json` as one `{message, sections}` per distinct answer,
+    naming every section it shaped in title order — the rows the `### Decisions`
+    block renders and `parse_decisions_block` reads back."""
+    entries = sorted((e for e in store.values()
+                      if isinstance(e, dict) and isinstance(e.get("flags"), list)),
+                     key=lambda e: str(e.get("title") or "").strip().lower())
+    shaped: dict[str, list[str]] = {}
+    for e in entries:
+        for flag in e["flags"]:
+            if not isinstance(flag, dict):
+                continue
+            titles = shaped.setdefault(" ".join(str(flag.get("message", "")).split()), [])
+            if e.get("title", "") not in titles:
+                titles.append(e.get("title", ""))
+    return [{"message": m, "sections": t} for m, t in shaped.items()]
+
+
+def parse_decisions_block(doc_text: str) -> list[dict]:
+    """The LAST `### Decisions` block under `## Revision History`, as
+    `decision_links` rows. It ends at the first line that is neither a bullet
+    nor a lone `**Title**`; a #253 block has no title lines, so there a bold
+    line ends it too — a note appended after the ledger stays out."""
+    lines = [line.strip() for line in doc_text.splitlines()]
+    ledger = next((i for i, line in enumerate(lines)
+                   if REVISION_HISTORY_RE.match(line)), None)
+    starts = [i for i, line in enumerate(lines)
+              if line == DECISIONS_HEADING and ledger is not None and i > ledger]
+    if not starts:
+        return []
+    shaped: dict[str, list[str]] = {}
+    title = None
+    rows = None  # the layout, decided by the first bullet
+    for line in lines[starts[-1] + 1:]:
+        bold = _BOLD_LINE_RE.match(line)
+        if bold and rows:
+            break
+        if not line or bold:
+            title = bold.group(1) if bold else title
+            continue
+        if not line.startswith("- "):
+            break
+        row = _DECISION_ROW_RE.match(line)
+        rows = bool(row) if rows is None else rows
+        message, titles = ((row.group("message"), _BOLD_RE.findall(row.group("titles")))
+                           if row else (line[2:], [title] if title else []))
+        got = shaped.setdefault(message, [])
+        got.extend(t for t in titles if t not in got)
+    return [{"message": m, "sections": t} for m, t in shaped.items()]
+
+
 def _check_flags(input_data: dict) -> list:
     """Every check-producer flag on this round — annotations whose `kind` is
     in `CHECK_KINDS`."""
@@ -756,6 +819,9 @@ class SessionRecord(TypedDict, total=False):
     # `{kind: comment, url, updated_at}`; set by `loop.py session --spec-source`
     spec: dict
     pr: str             # optional, presence-gated — `owner/repo#N`, set at the join
+    # optional, presence-gated — the interview's `[{question, answer}]`, set at
+    # spec `finish`: the one copy of the question texts that survives the clear
+    intake: list
 
 
 def validate_session(data: dict) -> None:
@@ -788,6 +854,12 @@ def validate_session(data: dict) -> None:
         _validate_spec_source(data["spec"])
     if "pr" in data and (not isinstance(data["pr"], str) or not _PR_RE.match(data["pr"])):
         raise ValueError("session.pr must be `owner/repo#N`")
+    if "intake" in data and not (
+            isinstance(data["intake"], list)
+            and all(isinstance(r, dict) and set(r) == {"question", "answer"}
+                    and all(isinstance(v, str) for v in r.values())
+                    for r in data["intake"])):
+        raise ValueError("session.intake must be a list of {question, answer} strings")
 
 
 def session_is_waiting(session: object) -> bool:

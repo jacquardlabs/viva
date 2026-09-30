@@ -10,6 +10,7 @@ pinned by `test_server_session.test_standalone_servers_carry_no_session_and_chec
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import time
@@ -160,7 +161,21 @@ def test_the_waiting_line_is_the_specs_and_lives_in_the_timeline() -> None:
 def test_the_timeline_takes_no_reviewer_ink() -> None:
     page = shipped_source()
     css = page[page.index("/* ─── Session timeline (#243)"):page.index("/* ─── Revision ledger")]
-    assert "--acc" not in css and "--touch" not in css, "no gate is a control or a touch"
+    # The done intake gate and its section links are the only controls (#244).
+    controls = re.findall(r"\n(?:\.tl-done \.tl-visit|\.ia-link) \{[^}]*\}", css)
+    assert len(controls) == 2 and all("color: var(--acc);" in c for c in controls), controls
+    # Cascade, not rule text: the button is `.tl-kind.tl-visit` in a `.tl-gate.tl-done`,
+    # so the colour it prints is the last of its highest-specificity matches.
+    matches = [(sel.count("."), i, rule) for i, (sels, rule) in enumerate(
+        re.findall(r"\n([^{}\n]+) \{([^}]*)\}", css)) if "color:" in rule
+        for sel in sels.split(", ")
+        if set(re.findall(r"\.([\w-]+)", sel)) <= {"tl-gate", "tl-done", "tl-kind", "tl-visit"}
+        and re.search(r"\.tl-(?:kind|visit)$", sel)]
+    assert "color: var(--acc);" in max(matches)[2], "the done intake button prints cobalt"
+    rest = css
+    for c in controls:
+        rest = rest.replace(c, "")
+    assert "--acc" not in rest and "--touch" not in css, "no other gate is a control or a touch"
     assert "--faint" not in css, "the timeline is live copy (DESIGN.md: --faint never is)"
     assert ".tl-done .tl-mark, .tl-done .tl-kind { color: var(--machine); }" in css
     print("  ok  test_the_timeline_takes_no_reviewer_ink")

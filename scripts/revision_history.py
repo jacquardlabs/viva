@@ -86,8 +86,8 @@ def build_threads_block(threads: list[dict]) -> str:
 
 
 def collect_decisions(viva_dir: Path) -> list[dict]:
-    """Read `.viva/decisions.json` (#211), return `{title, flags}` entries in
-    title order. Absent or empty → no decisions."""
+    """Read `.viva/decisions.json` (#211) as `schema.decision_links` rows.
+    Absent or empty → no decisions."""
     path = viva_dir / "decisions.json"
     if not path.exists():
         return []
@@ -95,24 +95,15 @@ def collect_decisions(viva_dir: Path) -> list[dict]:
         store = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
-    entries = [e for e in store.values() if isinstance(e, dict) and e.get("flags")]
-    entries.sort(key=lambda e: (e.get("title") or "").strip().lower())
-    return entries
+    return schema.decision_links(store) if isinstance(store, dict) else []
 
 
-def build_decisions_block(entries: list[dict]) -> str:
-    """Render one bullet per distinct answered question, naming every section
-    it shaped (#211 emits a flag per section). `message` is the question and
-    answer verbatim, exactly as `loop.py annotate` merged it."""
-    shaped: dict[str, list[str]] = {}
-    for e in entries:
-        for flag in e.get("flags", []):
-            titles = shaped.setdefault(flat(flag.get("message", "")), [])
-            if e.get("title", "") not in titles:
-                titles.append(e.get("title", ""))
-    lines = ["### Decisions", ""]
-    lines += [f"- {msg} — " + ", ".join(f"**{t}**" for t in titles)
-              for msg, titles in shaped.items()]
+def build_decisions_block(links: list[dict]) -> str:
+    """One bullet per distinct answered question, naming every section it
+    shaped; `schema.parse_decisions_block` reads it back."""
+    lines = [schema.DECISIONS_HEADING, ""]
+    lines += [f"- {link['message']} — " + ", ".join(f"**{t}**" for t in link["sections"])
+              for link in links]
     return "\n".join(lines)
 
 

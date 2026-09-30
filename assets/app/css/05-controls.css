@@ -409,7 +409,7 @@ mark.cmt-hl-suggestion { background: var(--accent-dim); border-bottom: 2px solid
 .thread-reply-btn:focus-visible,
 .transmittal-row:focus-visible, .transmittal-head:focus-visible,
 .recap-row:focus-visible, .recap-close:focus-visible,
-.annot-jump:focus-visible,
+.annot-jump:focus-visible, .tl-visit:focus-visible, .ia-link:focus-visible,
 .prefs-toggle:focus-visible, .prefs-close:focus-visible, .pref-mute-btn:focus-visible,
 .theme-toggle:focus-visible, .pal-hint:focus-visible,
 .voice-toggle:focus-visible, .mic-btn:focus-visible, .voice-notice button:focus-visible,

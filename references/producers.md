@@ -193,3 +193,6 @@ normal byte-identical carry would otherwise drop it from. At sign-off,
 `revision_history.py` folds the store into a `### Decisions` block in the
 ledger: one bullet per distinct answered question, naming every section it
 shaped (issue #211).
+In a lifecycle session the timeline's intake gate joins each decision to
+its question by that text (#244), so `message` starts with the question
+exactly as asked, then ` → ` and the answer.
