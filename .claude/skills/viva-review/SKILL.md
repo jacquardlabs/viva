@@ -314,8 +314,10 @@ Never add `--join-session` on your own reading: the human confirms which PR
 implements the spec, since the join hands this PR the session's spec and
 intake. A working tree or a ref never joins. The join arms into the session's
 live tab, or relaunches it with its history restored; when it prints
-`--viva-dir <path>`, the gate runs in another worktree's `.viva/`, so pass
-that flag to every later `loop.py` command in this review. A joined `finish`
+`--viva-dir <path>`, the gate runs in another worktree's `.viva/`, so every
+later `loop.py` command in this review takes that flag *before* its
+subcommand — `loop.py --viva-dir <path> wait`, never `loop.py wait
+--viva-dir <path>`, which exits 2. A joined `finish`
 ends the session. A plain `start` in the worktree where the session's server
 waits is refused; `loop.py abandon --keep-session` frees the worktree and
 keeps the session for its PR.

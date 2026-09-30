@@ -252,9 +252,29 @@ def _preflight_no_live_session(viva: Path) -> None:
             f"starting another.")
     # `server_url` is None for an empty file, which is still a collision.
     where = f" ({base})" if base else ""
+    record = _dead_session(viva)
+    if record is not None:
+        die(f"{viva}/server.url exists but nothing is answering{where} — "
+            f"{_session_summary(record)} lost its server here. `loop.py start "
+            f"--target <PR> --join-session` relaunches it for its PR and clears "
+            f"the file itself; to end the session, delete the file, then "
+            f"`loop.py abandon`. Deleting it alone keeps the session waiting.")
     die(f"{viva}/server.url exists but nothing is answering{where} — a "
         f"prior session was killed without cleaning up. Delete the file, "
         f"then re-run.")
+
+
+def _dead_session(viva: Path) -> dict | None:
+    """The session record whose gate this `.viva/` held, or None — read
+    leniently, since a preflight must still name the stale file."""
+    path = _session_path(viva)
+    if path is None or not path.exists():
+        return None
+    try:
+        record = _load_session(path)
+    except (OSError, ValueError):
+        return None
+    return record if _owns(record, viva) else None
 
 
 def _clear_state(viva: Path, keep_server_url: bool = False,
@@ -883,8 +903,9 @@ def _start_join(args, viva: Path, record: dict) -> int:
         shutil.move(str(f), str(viva / f.name))
     stage.rmdir()
     if viva != Path(args.viva_dir).resolve():
-        print(f"viva-loop: this diff gate runs in {viva} — pass "
-              f"`--viva-dir {viva}` to every later loop.py command")
+        print(f"viva-loop: this diff gate runs in {viva} — every later "
+              f"loop.py command takes the flag before its subcommand: "
+              f"`loop.py --viva-dir {viva} wait`")
     args.viva_dir = viva
     # Written before the arm: `arm` reads it to relaunch `--mode session`,
     # and a failed arm is retried by the same join.

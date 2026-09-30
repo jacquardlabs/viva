@@ -167,7 +167,9 @@ def test_join_arms_into_the_waiting_server_from_another_worktree() -> None:
 
         r = loop(wt, "start", "--target", "7", "--join-session", env=env)
         assert r.returncode == 0, r.stderr
-        assert f"--viva-dir {main / '.viva'}" in r.stdout, r.stdout
+        # Pre-mortem 8: the flag is global, so the hint spells it before the
+        # subcommand; appended after one it exits 2.
+        assert f"`loop.py --viva-dir {main / '.viva'} wait`" in r.stdout, r.stdout
         assert last_gh(td) == "pr diff 7 --repo o/r", last_gh(td)
         served = get(base, "/input")
         assert served["mode"] == "diff" and served["round"] == 1, served
@@ -224,6 +226,18 @@ def test_join_relaunches_a_session_whose_server_died() -> None:
         wait_gone(main / ".viva")
         (main / ".viva" / "server.url").write_text("http://127.0.0.1:9")
         pr_patch(main, td, "a\nB\nc\n")
+
+        # Pre-mortem 2, dead-server case: every preflight names the session
+        # and its two exits rather than the bare delete-the-file rule.
+        before = record_path(main).read_bytes()
+        for argv in (["start", "--doc", "f.txt"], ["start", "--target", "7"],
+                     ["interview", "--input", ".viva/qa-input.json"]):
+            r = loop(main, *argv, env=env)
+            assert r.returncode != 0, r.stdout
+            assert f"session {sid}" in r.stderr, r.stderr
+            assert "--join-session" in r.stderr and "abandon" in r.stderr, r.stderr
+        assert (main / ".viva" / "server.url").exists()
+        assert record_path(main).read_bytes() == before
 
         r = loop(main, "start", "--target", "#7", "--join-session", env=env)
         assert r.returncode == 0, r.stderr
