@@ -9,6 +9,11 @@
 
 <main class="shell" id="main-content" tabindex="-1">
 
+  <!-- Session timeline (#243): outside every view so it spans intake, spec,
+       and diff. Ships hidden; only buildSessionTimeline, given a `session`
+       key, reveals it — a standalone tab never does. -->
+  <nav class="timeline" id="session-timeline" aria-label="Session gates" style="display:none"></nav>
+
   <!-- ── Review mode ──────────────────────────────────────── -->
   <div id="review-view" style="display:none">
     <div class="header">
