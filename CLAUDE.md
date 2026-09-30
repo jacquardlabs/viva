@@ -419,7 +419,7 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   `spec-decisions.json` (#244) is the signed spec's `### Decisions` block
   parsed (`schema.parse_decisions_block`): spec `finish` writes it from the
   doc and the join rewrites it from the recorded source after its clear, so a
-  relaunch elsewhere has it. The server's `GET /intake` reads `decisions.json`
+  relaunch elsewhere has it; a source that no longer reads keeps the prior copy. The server's `GET /intake` reads `decisions.json`
   while the spec gate is live and this file after; the clear removes both.
 
 ## Tests

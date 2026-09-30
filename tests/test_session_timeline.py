@@ -162,8 +162,16 @@ def test_the_timeline_takes_no_reviewer_ink() -> None:
     page = shipped_source()
     css = page[page.index("/* ─── Session timeline (#243)"):page.index("/* ─── Revision ledger")]
     # The done intake gate and its section links are the only controls (#244).
-    controls = re.findall(r"\n\.(?:tl-visit|ia-link) \{[^}]*\}", css)
+    controls = re.findall(r"\n(?:\.tl-done \.tl-visit|\.ia-link) \{[^}]*\}", css)
     assert len(controls) == 2 and all("color: var(--acc);" in c for c in controls), controls
+    # Cascade, not rule text: the button is `.tl-kind.tl-visit` in a `.tl-gate.tl-done`,
+    # so the colour it prints is the last of its highest-specificity matches.
+    matches = [(sel.count("."), i, rule) for i, (sels, rule) in enumerate(
+        re.findall(r"\n([^{}\n]+) \{([^}]*)\}", css)) if "color:" in rule
+        for sel in sels.split(", ")
+        if set(re.findall(r"\.([\w-]+)", sel)) <= {"tl-gate", "tl-done", "tl-kind", "tl-visit"}
+        and re.search(r"\.tl-(?:kind|visit)$", sel)]
+    assert "color: var(--acc);" in max(matches)[2], "the done intake button prints cobalt"
     rest = css
     for c in controls:
         rest = rest.replace(c, "")

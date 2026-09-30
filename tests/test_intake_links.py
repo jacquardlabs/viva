@@ -20,7 +20,7 @@ import schema  # noqa: E402
 from _server_harness import (get, launch_server, poll_for, post,  # noqa: E402
                              post_result, shipped_source)
 from _session_harness import (DRAFT, approve_all, git, loop, open_session,  # noqa: E402
-                              read, repo, wait_gone)
+                              read, record_path, repo, wait_gone)
 from test_session_join import pr_patch, stub_gh  # noqa: E402
 
 SID = "ef" * 16
@@ -193,6 +193,25 @@ def test_the_intake_lists_the_sections_named_in_decisions() -> None:
     print("  ok  test_the_intake_lists_the_sections_named_in_decisions")
 
 
+def test_a_join_that_cannot_read_the_source_keeps_the_signed_links() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main = repo(td)
+        env = stub_gh(td)
+        base = sign_spec(main)
+        record = read(main)
+        record["spec"]["path"] = "gone.md"
+        record_path(main).write_text(json.dumps(record))
+        pr_patch(main, td, "a\nB\nc\n")
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        assert "gone.md is not in" in r.stderr and "keeps the sections" in r.stderr, r.stderr
+        assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}, "the finish-time copy"
+        r = loop(main, "abandon")
+        assert r.returncode == 0, r.stderr
+    print("  ok  test_a_join_that_cannot_read_the_source_keeps_the_signed_links")
+
+
 def test_a_relaunch_lists_the_signed_block_alone() -> None:
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
@@ -234,6 +253,7 @@ def main() -> None:
     test_the_link_source_moves_when_the_spec_gate_closes()
     test_only_a_session_serves_the_intake()
     test_the_intake_lists_the_sections_named_in_decisions()
+    test_a_join_that_cannot_read_the_source_keeps_the_signed_links()
     test_a_relaunch_lists_the_signed_block_alone()
     test_the_done_intake_gate_is_the_one_visitable_gate()
     print("OK")

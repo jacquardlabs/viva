@@ -919,6 +919,9 @@ def _start_join(args, viva: Path, record: dict) -> int:
         return 0
     # A copy: the record keeps the `updated_at` it was signed at.
     spec_text, why = _fetch_spec(viva.parent, dict(session["spec"]))
+    # A failed fetch keeps the spec finish's copy through the clear.
+    signed = viva / schema.SPEC_DECISIONS_FILE
+    kept = signed.read_text(encoding="utf-8") if spec_text is None and signed.is_file() else None
     clear()
     viva.mkdir(parents=True, exist_ok=True)
     for f in stage.iterdir():
@@ -926,10 +929,13 @@ def _start_join(args, viva: Path, record: dict) -> int:
     stage.rmdir()
     # Display only, so a source that no longer reads warns rather than
     # blocking the diff review.
-    if spec_text is None:
-        warn(f"the intake's answers will name no sections: {why}")
-    else:
+    if spec_text is not None:
         _write_spec_decisions(viva, spec_text)
+    elif kept is not None:
+        schema.atomic_write(signed, kept)
+        warn(f"the intake keeps the sections read at the spec's sign-off: {why}")
+    else:
+        warn(f"the intake's answers will name no sections: {why}")
     if viva != Path(args.viva_dir).resolve():
         print(f"viva-loop: this diff gate runs in {viva} — every later "
               f"loop.py command takes the flag before its subcommand: "
