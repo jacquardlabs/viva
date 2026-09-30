@@ -112,8 +112,16 @@ plugin root is the full contract; `choices`, `recommended_choice`, and
 
 ```bash
 mkdir -p .viva
-python3 "$VIVA_DIR/scripts/loop.py" interview --input .viva/qa-input.json
+python3 "$VIVA_DIR/scripts/loop.py" interview --input .viva/qa-input.json [--session]
 ```
+
+**Pass `--session` when a PR will implement the doc** — a spec (`design-doc`,
+`plan`) in a repo with a GitHub `origin`; ask when unsure. It opens a
+lifecycle session: after sign-off the server and tab stay up, waiting for the
+implementing PR, whose `/viva-review` joins it as the diff gate. Not for a doc
+no PR follows (a readme, a progress note, a PR description), which would leave
+a session waiting forever. One session per clone: it refuses while another is
+open, and says how to end that one.
 
 `interview` clears stale state (`loop.py start`'s clear plus `answers.json`;
 `preferences.json` is the one survivor), launches the interview server, prints
@@ -278,6 +286,22 @@ stamp the bundle declares. Its `target` runs when its ref resolves, its
 
 Ask before running it — a stamp is outward-facing (#165 guard 2).
 
+**In a session** — `finish` printed `spec gate closed` and kept the server up
+— record what the stamp produced, so the PR's join can read the signed spec
+back. A `commit` stamp is the commit it made; an `issue-comment` stamp is the
+comment URL `gh issue comment` printed:
+
+```bash
+python3 "$VIVA_DIR/scripts/loop.py" session --spec-source "commit:<doc>@<sha>"
+python3 "$VIVA_DIR/scripts/loop.py" session --spec-source "<issue comment URL>"
+```
+
+A stamp that produces neither (`pr-body`, `issue-body`, a `*-create`) has no
+source to record, and no PR can join until one is. Then tell the human the
+tab is safe to close: `/viva-review <PR>`, from any worktree of this clone,
+joins the implementing PR to the session. If no PR will follow,
+`loop.py abandon` ends it.
+
 Cluster this session's `changes`/`info` notes into distinct recurring
 critiques and record them — `finish` prints the path to `preferences.md`. A
 session with no recurring critique records nothing.
@@ -302,6 +326,7 @@ prints the absolute path of whichever file documents the step you have reached:
 ├── qa-input.json          ← you write (step 3)
 ├── answers.json           ← `interview` prints and leaves (step 3)
 ├── server.url             ← one server, launched at step 3, torn down at step 7
+│                            (a session's waits for its PR's diff gate)
 ├── review-input-r1.json   ← `start --handoff` writes (step 5), `arm` hands off
 ├── review-r1.json         ← the verdicts the server writes back
 ├── open-notes.json        ← threads carried across rounds

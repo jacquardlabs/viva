@@ -154,8 +154,11 @@ function showDeadSession() {
   stopVoice('the session ended');
   // The one command this tab can honestly name. `doc_file` is a real target
   // only in review mode (parse_diff.py writes review_target.py's LABEL, e.g.
-  // "PR #187"); qa has no doc, so it gets the generic line instead.
-  const doc = REVIEW_DATA && REVIEW_DATA.mode === 'review' && REVIEW_DATA.doc_file;
+  // "PR #187"); qa has no doc, so it gets the generic line instead. A session
+  // past its spec reopens only through its PR's join (#242), never the spec.
+  const joins = REVIEW_DATA && REVIEW_DATA.session
+    && !['intake', 'spec'].includes(liveGate(REVIEW_DATA));
+  const doc = joins ? '<PR>' : REVIEW_DATA && REVIEW_DATA.mode === 'review' && REVIEW_DATA.doc_file;
   el('dead-cmd').textContent = doc ? '/viva-review ' + doc : '';
   el('dead-resume').style.display = doc ? '' : 'none';
   el('dead-overlay').style.display = '';

@@ -40,6 +40,10 @@ STATE:
   waiting           `done`, but a `--mode session` server still answers with
                     no gate live — its spec is signed off and it idles for
                     the implementing PR's diff gate.
+  stale-session     The clone's session record (`<git common dir>/viva/
+                    session.json`, found by reading `.git`, never running
+                    git) names this `.viva/`, and no server here answers. A
+                    PR join relaunches it; `loop.py abandon` ends it.
 
 AGE is the mtime of whichever round/qa file is newest — there is no
 timestamp field, so mtime is the only signal. Human string in `--format
@@ -173,9 +177,65 @@ def probe_input(base: str, timeout: float = _PROBE_TIMEOUT) -> dict | None:
     return payload if isinstance(payload, dict) else {}
 
 
+# ── the session record — found on disk, never through `git` ─────────────────
+def git_common_dir(tree: Path) -> Path | None:
+    """The git common dir over `tree`, read off `.git` itself: a directory, or
+    a linked worktree's `gitdir:` file and that gitdir's `commondir`."""
+    for top in (tree, *tree.parents):
+        dot = top / ".git"
+        if dot.is_dir():
+            return dot
+        if dot.is_file():
+            try:
+                text = dot.read_text(encoding="utf-8").strip()
+            except OSError:
+                return None
+            if not text.startswith("gitdir:"):
+                return None
+            gitdir = (top / text[len("gitdir:"):].strip()).resolve()
+            try:
+                rel = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+            except OSError:
+                return gitdir
+            return (gitdir / rel).resolve()
+    return None
+
+
+def stale_session(viva: Path) -> dict[str, object] | None:
+    """The row for a session record (#240) whose gate this `.viva/` owns
+    while no server here answers — the PR that never arrived (#258)."""
+    viva = viva.resolve()
+    common = git_common_dir(viva.parent)
+    path = common / "viva" / "session.json" if common else None
+    record = load_json(path) if path else None
+    try:
+        schema.validate_session(record)
+    except ValueError:
+        return None
+    if Path(record["viva_dir"]) != viva:
+        return None
+    base = server_url(viva)
+    if base is not None and probe_input(base) is not None:
+        return None
+    spec = record.get("spec") or {}
+    source = spec.get("path") or spec.get("url") or "no spec source"
+    return {
+        "state": "stale-session",
+        "doc_file": None,
+        "doc_type": None,
+        "round": None,
+        "context": f"session {record['id']} · {record.get('pr') or 'no PR joined'}"
+                   f" · {source}",
+        "mtime": mtime_of([path]),
+    }
+
+
 # ── classification — the entire point of this tool ─────────────────────────
 def classify(viva: Path) -> dict[str, object]:
     """One `.viva/` session's status: state, doc identity, round, mtime."""
+    stale = stale_session(viva)
+    if stale is not None:
+        return stale
     n = current_round(viva)
 
     if n == 0:

@@ -394,16 +394,23 @@ file named `187` means that file, not the PR — so a branch named `42` needs
   The lifecycle session record (#240) is the one state outside `.viva/`:
   `<git common dir>/viva/session.json`, per clone and shared by every
   worktree, so the clear never reaches it. `loop.py interview --session`
-  writes it; diff `finish` on the session's PR and `abandon` delete it.
+  writes it; diff `finish` in the joined `.viva/` (its `target.json` carries
+  `session: <id>`, written only by the join) and `abandon` of the session's
+  own server (probed by id) delete it.
   **One `.viva/` epoch per gate, one process across them** (#241): the
   session server outlives the spec's `finish`, so `server.url` and the spec's
-  round files stay until the diff gate's join (#242) clears them with
-  `keep_server_url`, as `--handoff` does, and arms diff round 1 into the
-  record's `viva_dir` — the server's `_output_root` is fixed at launch.
+  round files stay until `start --target <pr> --join-session` (#242) has
+  parsed the PR's diff aside, then clears them with `keep_server_url`, as
+  `--handoff` does, and arms diff round 1 into
+  the record's `viva_dir` — the server's `_output_root` is fixed at launch.
+  With no server answering, the join relaunches in the joining `.viva/` and
+  moves `viva_dir` there; `arm` derives the relaunch mode from the record.
   Round numbers restart per gate; the server resets its ledger when the
   diff gate opens. Between gates, `finish` and `rearm` refuse
   (`schema.session_is_waiting`), `abandon --keep-session` stops the server
-  but keeps the record, and `docket.py` reports the process as `waiting`.
+  but keeps the record, and `docket.py` reports the process as `waiting` —
+  or, with no server answering, the record as `stale-session`, found by
+  reading `.git` and `commondir` rather than calling git (#258).
   A served round is armed only by `schema.serves_round` — `(mode, round)` off
   a live gate — which every armed-ness check in `loop.py` and `docket.py` asks.
 

@@ -396,6 +396,26 @@ the containment rule (§5, v11) is fixed at launch. Round numbers restart at
 `mode` (v14), which a session server requires. The in-memory ledger resets
 when the diff gate opens; the spec's rows are already in its doc.
 
+**The diff gate is joined, never inferred** (#242). `loop.py start --target
+<pr> --join-session` refuses a PR in another repo than the session's, a
+session with no recorded spec source or already joined to another PR, and any
+non-PR target; it pins the capture to the session's repo. A waiting server
+that answers with the session's id gets diff round 1 in the record's
+`viva_dir`, from any worktree. When none does, the driver relaunches `--mode
+session --session-id <record id>` on the diff in the joining `.viva/` (a
+stale `server.url` in the record's own `.viva/` is removed first) and moves
+the record's `viva_dir` there. Either way the record gains `pr` and its diff
+gate goes `live`, and `.viva/target.json` carries `session: <record id>` —
+the only mark `arm`, `finish`, and the dead-server hint treat as joined. The
+capture and parse run aside first: a failed or empty capture clears nothing
+and leaves the record as it was. A live join into another worktree's
+`.viva/` prints the `loop.py --viva-dir <path> <subcommand>` form every later
+command takes. Any other `start`, or `interview`, over a stale `server.url`
+in the record's own `.viva/` is refused naming the session, the join that
+relaunches it, and `abandon` to end it. Without the flag a PR review leaves
+the session alone, and plain `abandon` ends a session only when the server it
+stops answers with the session's id.
+
 Between gates, `GET /input` still serves the signed-off spec round, with a
 `session` key that has no live gate. A tab that boots or reconnects there, or
 has a submit refused because the gate closed, shows the sign-off stamp and
