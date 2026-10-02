@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.21.1 (2026-10-02)
+
+### Bug Fixes
+
+- Ignore a Revision History heading quoted inside fenced code
+  ([#274](https://github.com/jacquardlabs/viva/pull/274),
+  [`97ff0e2`](https://github.com/jacquardlabs/viva/commit/97ff0e2bca3f0b7ad7bf7b198e0ec4ef678f6b09))
+
+
 ## v2.21.0 (2026-09-30)
 
 ### Bug Fixes
