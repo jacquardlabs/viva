@@ -438,6 +438,27 @@ def validate_verdicts(data: dict) -> None:
 
 
 REVISION_HISTORY_RE = re.compile(r"(?m)^## Revision History\s*$")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def mask_fences(doc_text: str) -> str:
+    """`doc_text` with every fenced code line blanked to spaces — same length
+    and offsets, so a heading quoted in a fenced example never matches as the
+    ledger (#272). Search this, slice the original."""
+    out, fence = [], None
+    for line in doc_text.splitlines(keepends=True):
+        m = _FENCE_RE.match(line)
+        if fence is None and m:
+            fence = m.group(1)
+        elif fence is not None and m and m.group(1)[0] == fence[0] \
+                and len(m.group(1)) >= len(fence) and not line[m.end():].strip():
+            fence = None
+        elif fence is None:
+            out.append(line)
+            continue
+        body = line.rstrip("\r\n")
+        out.append(" " * len(body) + line[len(body):])
+    return "".join(out)
 
 
 def has_revision_history(doc_text: str) -> bool:
@@ -449,7 +470,7 @@ def has_revision_history(doc_text: str) -> bool:
     `loop.py`'s resume detection and `revision_history.py`'s append-vs-create
     branch both ask this.
     """
-    return REVISION_HISTORY_RE.search(doc_text) is not None
+    return REVISION_HISTORY_RE.search(mask_fences(doc_text)) is not None
 
 
 # The literal line shape `revision_history.py`'s `build_block` writes —
@@ -466,7 +487,7 @@ def last_signoff_date(doc_text: str) -> str | None:
     under the one `## Revision History` heading each session, so this is the
     most RECENT sign-off, not the first — the one a recheck (#83) or the
     drift hook (#143) needs."""
-    matches = list(SIGNOFF_LINE_RE.finditer(doc_text))
+    matches = list(SIGNOFF_LINE_RE.finditer(mask_fences(doc_text)))
     return matches[-1].group(1) if matches else None
 
 
@@ -539,7 +560,7 @@ def decisions_block_at(lines: list[str], start: int) -> tuple[list[dict], int]:
 def parse_decisions_block(doc_text: str) -> list[dict]:
     """The LAST `### Decisions` block under `## Revision History`, as
     `decision_links` rows."""
-    lines = [line.strip() for line in doc_text.splitlines()]
+    lines = [line.strip() for line in mask_fences(doc_text).splitlines()]
     ledger = next((i for i, line in enumerate(lines)
                    if REVISION_HISTORY_RE.match(line)), None)
     starts = [i for i, line in enumerate(lines)

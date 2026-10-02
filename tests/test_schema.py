@@ -561,9 +561,19 @@ def test_has_revision_history_is_anchored():
     assert not schema.has_revision_history(
         "the parser appends `## Revision History` at sign-off"), \
         "a mention inside backticks is not a signed-off doc"
-    # Residue, documented rather than asserted away: a fenced block whose
-    # content starts the line still matches. Every real mention in this repo is
-    # inline-backticked mid-line, which is the reported defect and is fixed.
+    # A fenced example is quoted, not signed (#272) — backticks or tildes, and
+    # a longer closing fence; the real heading after it still counts.
+    example = "# D\n\n```markdown\n## Revision History\n\nSigned off.\n```\n\n## Problem\n"
+    assert not schema.has_revision_history(example), "a fenced example is not a sign-off"
+    assert not schema.has_revision_history("~~~\n## Revision History\n~~~~\n")
+    assert not schema.has_revision_history("```\n## Revision History\n"), \
+        "an unclosed fence runs to the end of the doc"
+    assert schema.has_revision_history(example + "\n## Revision History\n\nrow\n")
+    masked = schema.mask_fences(example)
+    assert len(masked) == len(example) and masked.count("\n") == example.count("\n"), \
+        "offsets survive, so callers search the mask and slice the original"
+    signed = example.replace("Signed off.", "Signed off via viva review — 1 round. 2026-01-01")
+    assert schema.last_signoff_date(signed) is None, "a fenced sign-off line is quoted"
     assert not schema.has_revision_history("### Revision History\n"), \
         "a different heading level is a different heading"
     print("  ok  test_has_revision_history_is_anchored")

@@ -816,7 +816,7 @@ def _spec_ledger(text: str) -> str:
     earlier one may be a quoted example) to the next `## `, for the minutes: a
     repeated sign-off line drops, every `### Decisions` folds into one (pre-mortem 5)."""
     lines = text.splitlines()
-    start = [i for i, line in enumerate(lines)
+    start = [i for i, line in enumerate(schema.mask_fences(text).splitlines())
              if schema.REVISION_HISTORY_RE.match(line)][-1]
     end = next((i for i in range(start + 1, len(lines))
                 if lines[i].startswith("## ")), len(lines))

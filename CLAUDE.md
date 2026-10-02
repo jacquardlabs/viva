@@ -153,7 +153,7 @@ import. It holds:
   re-capture came back empty — and skips the predicate for that finish alone;
   any other `resolved`, or one on a review server, is a `400`.
 - **`has_revision_history()`** — has this doc already been signed off? Anchored,
-  never a substring test: `loop.py`'s resume detection and
+  blind to fenced code (`mask_fences`, #272), never a substring test: `loop.py`'s resume detection and
   `revision_history.py`'s append-vs-create branch ask the same question, and a
   bare `in` also matches the phrase inside backticks (viva's own SKILL.md
   contains it).
