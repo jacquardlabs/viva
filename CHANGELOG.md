@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.21.2 (2026-10-02)
+
+### Bug Fixes
+
+- Backtick @mentions in the session minutes so posting notifies no one
+  ([#275](https://github.com/jacquardlabs/viva/pull/275),
+  [`0137a86`](https://github.com/jacquardlabs/viva/commit/0137a86d70bbedc15f2dd98f466c65c3ae9e7a42))
+
+
 ## v2.21.1 (2026-10-02)
 
 ### Bug Fixes
