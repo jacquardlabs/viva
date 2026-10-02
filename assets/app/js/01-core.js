@@ -42,7 +42,9 @@ function revTriTooltip(round, section) {
 }
 
 function tabDocName(path) {
-  return (path || '').split('/').pop();
+  // A PR's label (`PR #276 (owner/repo)`) is not a path to split (#277).
+  const pr = /^PR #\d+/.exec(path || '');
+  return pr ? pr[0] : (path || '').split('/').pop();
 }
 
 // Session identity, not per-event data (#172) — the repo name is fixed for
