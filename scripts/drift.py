@@ -139,7 +139,7 @@ def _doc_references(text: str) -> list:
     """`find_references`'s file half, over the doc truncated at its own
     `## Revision History` heading — a ledger row quoting a filename is not a
     reference the doc makes."""
-    m = schema.REVISION_HISTORY_RE.search(text)
+    m = schema.REVISION_HISTORY_RE.search(schema.mask_fences(text))
     body = text[:m.start()] if m else text
     files, _symbols = find_references(body)
     return files
