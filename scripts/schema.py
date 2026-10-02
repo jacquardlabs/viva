@@ -461,6 +461,32 @@ def mask_fences(doc_text: str) -> str:
     return "".join(out)
 
 
+# An `@handle` or `@org/team` GitHub would notify: not mid-word (an email),
+# not already in code. `quiet_mentions` backticks it; `mention_key` undoes that.
+_MENTION_RE = re.compile(
+    r"(?<![\w@/.`])@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:/[A-Za-z0-9._-]+)?(?![\w-])")
+_CODE_SPAN_RE = re.compile(r"(`+).+?\1")
+
+
+def quiet_mentions(text: str) -> str:
+    """`text` with every mention outside code wrapped in backticks, so posting
+    it notifies no one (#268). Fenced lines and inline code are left alone."""
+    out = []
+    for line, masked in zip(text.splitlines(keepends=True),
+                            mask_fences(text).splitlines(keepends=True)):
+        spans = [] if line != masked else [m.span() for m in _CODE_SPAN_RE.finditer(line)]
+        out.append(line if line != masked else _MENTION_RE.sub(
+            lambda m: m.group(0) if any(a <= m.start() < b for a, b in spans)
+            else f"`{m.group(0)}`", line))
+    return "".join(out)
+
+
+def mention_key(line: str) -> str:
+    """`line` with backticks around a lone mention dropped — the form a posted
+    minutes row is compared to its spec row in (#239's success signal)."""
+    return re.sub(r"`(@[^`\s]+)`", r"\1", line)
+
+
 def has_revision_history(doc_text: str) -> bool:
     """Has this doc already been signed off — i.e. is a `start` a resume?
 

@@ -229,6 +229,34 @@ def test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger() -> None:
     print("  ok  test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger")
 
 
+def test_mentions_post_quietly_and_rows_still_match() -> None:
+    """#268: the minutes notify no one — every mention outside code is
+    backticked, in both ledgers — and each spec row still matches its posted
+    row under `schema.mention_key`."""
+    loud = "| 1 | Design | changes | “ask @alice and @org/team, not x@y.com or `@keep`” |"
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td).resolve()
+        main, env, base = joined(td, "comment")
+        serve_comment(td, SPEC.replace(ROW, loud), "T1")
+        request_changes(main, base, "cc @bob")
+        r = loop(main, "rearm", env=env)
+        assert r.returncode == 0, r.stderr
+        approve_all(base, 2)
+        assert poll_for(main / ".viva" / "review-r2.json")
+        r = loop(main, "finish", env=env)
+        assert r.returncode == 0, r.stderr
+        wait_gone(main / ".viva")
+        minutes = (main / ".viva" / "minutes.md").read_text()
+        bare = re.findall(r"(?<![\w`@/.])@[A-Za-z0-9][\w/-]*(?!`)", minutes)
+        assert not bare, f"would notify {bare}:\n{minutes}"
+        assert "`@alice`" in minutes and "`@org/team`" in minutes and "`@bob`" in minutes
+        assert "x@y.com" in minutes and "``@keep``" not in minutes, minutes
+        posted = [line for line in minutes.splitlines() if line.startswith("| 1 | Design")]
+        assert [schema.mention_key(p) for p in posted] == [schema.mention_key(loud)], posted
+    assert schema.quiet_mentions("```\n@fenced\n```\n") == "```\n@fenced\n```\n"
+    print("  ok  test_mentions_post_quietly_and_rows_still_match")
+
+
 def test_an_unreadable_source_refuses_before_the_record_goes() -> None:
     """Pre-mortem 6: a deleted comment fails the finish before `/complete`, so
     the record, the server, and the verdicts all stay; re-pointing the source
@@ -295,6 +323,7 @@ def main() -> None:
     test_a_commit_source_and_the_empty_finish()
     test_a_comment_source_and_an_edit_after_sign_off()
     test_a_quoted_ledger_heading_above_the_body_is_not_the_ledger()
+    test_mentions_post_quietly_and_rows_still_match()
     test_an_unreadable_source_refuses_before_the_record_goes()
     test_a_standalone_review_writes_no_minutes()
     test_the_stamp_shows_the_body_and_posts_only_on_yes()

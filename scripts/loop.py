@@ -877,6 +877,8 @@ def _write_minutes(viva: Path, session: dict) -> Path:
     run_or_die([sys.executable, SCRIPTS / "revision_history.py",
                 "--viva-dir", viva, "--doc", minutes],
                "minutes", "The session is still live; fix and re-run `loop.py finish`.")
+    # Every ping already went out at sign-off; the post notifies no one (#268).
+    schema.atomic_write(minutes, schema.quiet_mentions(minutes.read_text(encoding="utf-8")))
     return minutes
 
 
