@@ -430,7 +430,8 @@ python3 "$VIVA_DIR/scripts/loop.py" finish
   `loop.py session --spec-source` re-points it before a second `finish`.
 
 **Minutes, in a joined session.** Either sign-off writes the session's minutes
-first — the signed spec's ledger and this review's rows, notes verbatim — and
+first — the signed spec's ledger and this review's rows, notes verbatim with
+`@mentions` backticked so the post notifies no one (#268) — and
 prints their path and a `gh pr comment <n> --repo <owner/repo> --body-file
 <path>` command. The notes were written for a local tab, and a PR comment is
 public to the team, so `Read` the file and show the human the whole body in
