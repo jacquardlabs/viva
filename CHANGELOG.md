@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.21.4 (2026-10-02)
+
+### Bug Fixes
+
+- Name the PR in a PR review's tab title ([#278](https://github.com/jacquardlabs/viva/pull/278),
+  [`47dc961`](https://github.com/jacquardlabs/viva/commit/47dc9618e940ffc832077e081cf6d336679f7d2f))
+
+
 ## v2.21.3 (2026-10-02)
 
 ### Bug Fixes
