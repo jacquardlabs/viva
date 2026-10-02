@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.22.0 (2026-10-02)
+
+### Features
+
+- Name the reviewer on every round file, answers.json, and ledger line
+  ([#279](https://github.com/jacquardlabs/viva/pull/279),
+  [`5be4385`](https://github.com/jacquardlabs/viva/commit/5be4385d97f968850997956d3593284e1e15c9e1))
+
+
 ## v2.21.4 (2026-10-02)
 
 ### Bug Fixes
