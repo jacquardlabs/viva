@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.21.3 (2026-10-02)
+
+### Bug Fixes
+
+- Refuse a join whose signed spec no longer reads, before the capture
+  ([#276](https://github.com/jacquardlabs/viva/pull/276),
+  [`c3fced6`](https://github.com/jacquardlabs/viva/commit/c3fced6a9066313f012fdfae87662bb4f0d409d4))
+
+
 ## v2.21.2 (2026-10-02)
 
 ### Bug Fixes
