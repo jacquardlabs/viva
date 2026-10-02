@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import re
 import shlex
 import shutil
@@ -50,6 +51,9 @@ _PREFLIGHT_TIMEOUT = 2
 # Above this many hunks, a diff round stops until every hunk carries a
 # one-line `summary` (`loop.py summarize`) — below it, not worth it (#188).
 SUMMARY_THRESHOLD = 10
+REVIEWER_HELP = ("who reviews (#212), stamped on every output file and the "
+                 "ledger; default `git config user.name`, then $USER. A session "
+                 "keeps the name its interview resolved.")
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -305,8 +309,29 @@ def _clear_state(viva: Path, keep_server_url: bool = False,
         shutil.rmtree(viva / "attachments", ignore_errors=True)
 
 
+def _reviewer(viva: Path, override: str | None) -> str | None:
+    """Who reviews (#212): `--reviewer`, else `git config user.name`, else
+    `$USER`, else nobody. Verbatim — never normalized, never an email."""
+    if override is not None:
+        if not override.strip():
+            die("--reviewer must be a non-empty name; omit it to resolve one")
+        return override
+    try:
+        name = _git(viva.resolve().parent, "config", "user.name").stdout.strip()
+    except FileNotFoundError:
+        name = ""
+    return name or os.environ.get("USER") or None
+
+
+def _refuse_reviewer_override(session: dict, override: str | None) -> None:
+    """A session's gates all stamp the name its interview resolved (#212)."""
+    if override is not None and override != session.get("reviewer"):
+        die(f"this session's reviewer is {session.get('reviewer')!r}, named at its "
+            f"interview — every gate stamps that name (#212); drop --reviewer")
+
+
 def _launch_server(viva: Path, mode: str, inp: Path, out: Path,
-                   session_id: str | None = None) -> str:
+                   session_id: str | None = None, reviewer: str | None = None) -> str:
     """Launch `server.py` detached; return its base URL once `server.url`
     appears. Streams go to `.viva/server.log`, not inherited stdout — an
     inherited pipe would hang a caller until the grandchild exits."""
@@ -315,7 +340,8 @@ def _launch_server(viva: Path, mode: str, inp: Path, out: Path,
         proc = subprocess.Popen(
             [str(sys.executable), str(SERVER), "--mode", mode,
              "--input", str(inp), "--output", str(out),
-             *(["--session-id", session_id] if session_id else [])],
+             *(["--session-id", session_id] if session_id else []),
+             *(["--reviewer", reviewer] if reviewer else [])],
             stdout=logfh, stderr=logfh,
         )
     for _ in range(_POLL_TRIES):
@@ -921,13 +947,17 @@ def cmd_interview(args) -> int:
     _clear_state(viva, include_answers=True)
     # Minted before the launch: a `--mode session` server serves its id.
     session_id = uuid.uuid4().hex if args.session else None
+    # Resolved once; a session's every later gate reads it off the record.
+    reviewer = _reviewer(viva, args.reviewer)
     base = _launch_server(viva, "session" if args.session else "qa", qa_in,
-                          answers, session_id)
+                          answers, session_id, reviewer)
     if args.session:
         record = {"id": session_id, "repo": repo,
                   "viva_dir": str(viva.resolve()),
                   "gates": [{"kind": k, "state": "live" if k == "intake" else "waiting"}
                             for k in schema.SESSION_GATE_KINDS]}
+        if reviewer:
+            record["reviewer"] = reviewer
         _write_session(session_path, record)
         print(f"viva-loop: session {record['id']} · {repo}", flush=True)
     # Flushed: this process now blocks on human time.
@@ -1022,6 +1052,7 @@ def _start_join(args, viva: Path, record: dict) -> int:
     """`start --join-session`: capture and parse aside, so a failed or empty
     capture leaves the session's `.viva/` as it was; only a round clears it."""
     viva, record, session_path, session, clear = _join_target(viva, record)
+    _refuse_reviewer_override(session, args.reviewer)
     # Before the capture and the clear (#265, #270): the diff `finish` refuses
     # a source that no longer reads, so the join refuses it up front.
     spec_text, fetched = _signed_spec(
@@ -1367,7 +1398,12 @@ def cmd_arm(args) -> int:
     session = _joined(viva) if mode == "diff" else None
     if session:
         mode = "session"
-    base = _launch_server(viva, mode, inp, out, session["id"] if session else None)
+    override = getattr(args, "reviewer", None)
+    if session:
+        _refuse_reviewer_override(session, override)
+    reviewer = session.get("reviewer") if session else _reviewer(viva, override)
+    base = _launch_server(viva, mode, inp, out, session["id"] if session else None,
+                          reviewer)
     print(f"viva-loop: round {n} armed · {base}")
     return 0
 
@@ -1895,6 +1931,7 @@ def main() -> int:
 
     p = sub.add_parser("interview", help="clear state, run the Q&A interview, "
                                          "print the answers")
+    p.add_argument("--reviewer", default=None, metavar="NAME", help=REVIEWER_HELP)
     p.add_argument("--input", required=True, metavar="PATH",
                    help="the QAInput JSON the caller wrote (references/qa.md). "
                         "Answers land in .viva/answers.json and on stdout; "
@@ -1908,6 +1945,7 @@ def main() -> int:
 
     p = sub.add_parser("start", help="clear state, parse round 1, arm it — a "
                                      "doc (--doc) or a diff (--target/--kind)")
+    p.add_argument("--reviewer", default=None, metavar="NAME", help=REVIEWER_HELP)
     p.add_argument("--doc", default=None, metavar="PATH",
                    help="the markdown doc to review, section by section")
     p.add_argument("--target", default=None, metavar="TARGET",
@@ -1982,6 +2020,7 @@ def main() -> int:
     p.set_defaults(func=cmd_summarize)
 
     p = sub.add_parser("arm", help="make the current round file live")
+    p.add_argument("--reviewer", default=None, metavar="NAME", help=REVIEWER_HELP)
     p.set_defaults(func=cmd_arm)
 
     p = sub.add_parser("wait", help="block for verdicts; classify the round")

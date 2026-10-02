@@ -164,6 +164,8 @@ import. It holds:
 - **`validate_review_input` / `validate_verdicts`** — boundary validators.
   `validate_session` is the session record's, called by `loop.py` on
   every read and write.
+  A round's `reviewer` (#212) is presence-gated and server-written from
+  `--reviewer` only; a session resolves it once, at `interview --session`.
 - **`read_json_or_exit(path, prog)`** / **`atomic_write(path, text)`** — the
   shared read/write boundary every script and `server.py` route their round
   files through, so a partial write is never observed and a bad file names
