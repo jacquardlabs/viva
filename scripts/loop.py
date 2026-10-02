@@ -848,23 +848,36 @@ def _spec_ledger(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 
+def _spec_label(spec: dict) -> str:
+    return (f"`{spec['path']}` at `{spec['sha'][:12]}`" if spec["kind"] == "commit"
+            else spec["url"])
+
+
+def _signed_spec(root: Path, spec: dict, verb: str, retry: str) -> tuple[str, dict]:
+    """The recorded spec's text and the fetched copy of `spec`, or refuse
+    `verb` naming the re-point: the join and the diff `finish` both need the
+    signed ledger, so neither degrades past a source that no longer reads."""
+    fetched = dict(spec)
+    text, why = _fetch_spec(root, fetched)
+    if text is not None and not schema.has_revision_history(text):
+        text, why = None, "it carries no `## Revision History`"
+    if text is None:
+        die(f"refusing to {verb}: the session reads the signed spec back from "
+            f"{_spec_label(spec)}, which did not read — {why}. {retry}: "
+            f"`loop.py session --spec-source <commit:path@sha | comment URL>` "
+            f"re-points it.")
+    return text, fetched
+
+
 def _write_minutes(viva: Path, session: dict) -> Path:
     """`.viva/minutes.md`: the signed spec's ledger read back from its recorded
     source, then the diff gate's rows appended by `revision_history.py`. Runs
     before `/complete`, so a source that no longer reads leaves the session live."""
     spec = session["spec"]
-    label = (f"`{spec['path']}` at `{spec['sha'][:12]}`" if spec["kind"] == "commit"
-             else spec["url"])
-    fetched = dict(spec)
-    text, why = _fetch_spec(viva.resolve().parent, fetched)
-    if text is not None and not schema.has_revision_history(text):
-        text, why = None, "it carries no `## Revision History`"
-    if text is None:
-        die(f"refusing to finish: the minutes read the signed spec back from "
-            f"{label}, which did not read — {why}. The session is still live: "
-            f"`loop.py session --spec-source <commit:path@sha | comment URL>` "
-            f"re-points it, then re-run `loop.py finish`.")
-    head = [f"**viva session minutes** · {session['pr']} · spec {label}", ""]
+    text, fetched = _signed_spec(
+        viva.resolve().parent, spec, "finish",
+        "The session is still live; re-run `loop.py finish` once")
+    head = [f"**viva session minutes** · {session['pr']} · spec {_spec_label(spec)}", ""]
     if fetched.get("updated_at") != spec.get("updated_at"):
         # Pre-mortem 6: read as it stands now, and say so above the sign-off.
         head += [f"> The spec comment was edited after sign-off "
@@ -1009,6 +1022,11 @@ def _start_join(args, viva: Path, record: dict) -> int:
     """`start --join-session`: capture and parse aside, so a failed or empty
     capture leaves the session's `.viva/` as it was; only a round clears it."""
     viva, record, session_path, session, clear = _join_target(viva, record)
+    # Before the capture and the clear (#265, #270): the diff `finish` refuses
+    # a source that no longer reads, so the join refuses it up front.
+    spec_text, fetched = _signed_spec(
+        viva.parent, session["spec"], "join",
+        "Nothing was cleared; re-run the join once")
     stage = Path(tempfile.mkdtemp(prefix="viva-join-"))
     try:
         data = _capture_round(stage, record)
@@ -1020,10 +1038,7 @@ def _start_join(args, viva: Path, record: dict) -> int:
     if data is None:
         shutil.rmtree(stage)
         return 0
-    # A copy: the record keeps the `updated_at` it was signed at.
-    fetched = dict(session["spec"])
-    spec_text, why = _fetch_spec(viva.parent, fetched)
-    if spec_text is not None and fetched.get("updated_at") != session["spec"].get("updated_at"):
+    if fetched.get("updated_at") != session["spec"].get("updated_at"):
         # Edited after sign-off (pre-mortem 6): the signed links are the finish's.
         spec_text, why = None, (f"the spec comment was edited after sign-off "
                                 f"({session['spec']['updated_at']} → {fetched['updated_at']})")
@@ -1035,8 +1050,6 @@ def _start_join(args, viva: Path, record: dict) -> int:
     for f in stage.iterdir():
         shutil.move(str(f), str(viva / f.name))
     stage.rmdir()
-    # Display only, so a source that no longer reads warns rather than
-    # blocking the diff review.
     intake = session.get("intake", [])
     if spec_text is not None:
         _write_spec_decisions(viva, spec_text, intake)

@@ -312,7 +312,10 @@ It names the session, then prints one line to route on:
 
 Never add `--join-session` on your own reading: the human confirms which PR
 implements the spec, since the join hands this PR the session's spec and
-intake. A working tree or a ref never joins. The join arms into the session's
+intake. A working tree or a ref never joins. A join whose signed spec no
+longer reads is refused with nothing cleared: show the human the cause and
+the `loop.py session --spec-source` re-point it names, then join again.
+The join arms into the session's
 live tab, or relaunches it with its history restored; when it prints
 `--viva-dir <path>`, the gate runs in another worktree's `.viva/`, so every
 later `loop.py` command in this review takes that flag *before* its

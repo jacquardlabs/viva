@@ -205,23 +205,40 @@ def test_the_intake_lists_the_sections_named_in_decisions() -> None:
     print("  ok  test_the_intake_lists_the_sections_named_in_decisions")
 
 
-def test_a_join_that_cannot_read_the_source_keeps_the_signed_links() -> None:
+def lose_source_of(main: Path) -> dict:
+    record = read(main)
+    record["spec"]["path"] = "gone.md"
+    record_path(main).write_text(json.dumps(record))
+    return record
+
+
+def assert_refused_untouched(r, main: Path, record: dict) -> None:
+    """#265/#270: refused before the capture and the clear, naming the re-point."""
+    assert r.returncode != 0 and "refusing to join" in r.stderr, r.stderr
+    assert "gone.md is not in" in r.stderr and "--spec-source" in r.stderr, r.stderr
+    assert read(main) == record, "the record is untouched"
+    assert (main / ".viva" / schema.SPEC_DECISIONS_FILE).exists(), "nothing was cleared"
+
+
+def test_a_join_that_cannot_read_the_source_refuses_until_re_pointed() -> None:
     with tempfile.TemporaryDirectory() as td:
         td = Path(td).resolve()
         main = repo(td)
         env = stub_gh(td)
         base = sign_spec(main)
-        record = read(main)
-        record["spec"]["path"] = "gone.md"
-        record_path(main).write_text(json.dumps(record))
+        record = lose_source_of(main)
         pr_patch(main, td, "a\nB\nc\n")
         r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert_refused_untouched(r, main, record)
+        assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}, "still waiting"
+        r = loop(main, "session", "--spec-source", "commit:spec.md@HEAD")
         assert r.returncode == 0, r.stderr
-        assert "gone.md is not in" in r.stderr and "keeps the sections" in r.stderr, r.stderr
-        assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}, "the finish-time copy"
+        r = loop(main, "start", "--target", "7", "--join-session", env=env)
+        assert r.returncode == 0, r.stderr
+        assert intake(base) == {"Scope?": ("x", ["Design", "Problem"])}
         r = loop(main, "abandon")
         assert r.returncode == 0, r.stderr
-    print("  ok  test_a_join_that_cannot_read_the_source_keeps_the_signed_links")
+    print("  ok  test_a_join_that_cannot_read_the_source_refuses_until_re_pointed")
 
 
 def relaunch(question: str, lose_source: bool) -> None:
@@ -235,14 +252,15 @@ def relaunch(question: str, lose_source: bool) -> None:
         r = loop(main, "abandon", "--keep-session")
         assert r.returncode == 0, r.stderr
         wait_gone(main / ".viva")
-        if lose_source:
-            record = read(main)
-            record["spec"]["path"] = "gone.md"
-            record_path(main).write_text(json.dumps(record))
         pr_patch(main, td, "a\nB\nc\n")
+        if lose_source:
+            record = lose_source_of(main)
+            r = loop(wt, "start", "--target", "7", "--join-session", env=env)
+            assert_refused_untouched(r, main, record)
+            assert not (wt / ".viva" / "server.url").exists(), "nothing relaunched"
+            return
         r = loop(wt, "start", "--target", "7", "--join-session", env=env)
         assert r.returncode == 0, r.stderr
-        assert ("keeps the sections" in r.stderr) == lose_source, r.stderr
         assert read(main)["viva_dir"] == str((wt / ".viva").resolve())
         base = (wt / ".viva" / "server.url").read_text().strip()
         assert intake(base) == {question: ("x", ["Design", "Problem"])}
@@ -256,9 +274,9 @@ def test_a_relaunch_joins_on_the_questions_saved_at_sign_off() -> None:
     print("  ok  test_a_relaunch_joins_on_the_questions_saved_at_sign_off")
 
 
-def test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links() -> None:
+def test_a_relaunch_that_cannot_read_the_source_refuses() -> None:
     relaunch("Scope?", True)
-    print("  ok  test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links")
+    print("  ok  test_a_relaunch_that_cannot_read_the_source_refuses")
 
 
 def join_comment_source(updated_at: str) -> tuple:
@@ -355,9 +373,9 @@ def main() -> None:
     test_the_link_source_moves_when_the_spec_gate_closes()
     test_only_a_session_serves_the_intake()
     test_the_intake_lists_the_sections_named_in_decisions()
-    test_a_join_that_cannot_read_the_source_keeps_the_signed_links()
+    test_a_join_that_cannot_read_the_source_refuses_until_re_pointed()
     test_a_relaunch_joins_on_the_questions_saved_at_sign_off()
-    test_a_relaunch_that_cannot_read_the_source_keeps_the_owners_links()
+    test_a_relaunch_that_cannot_read_the_source_refuses()
     test_a_comment_edited_after_sign_off_keeps_the_signed_links()
     test_a_clear_between_gates_keeps_the_questions()
     test_arrows_in_a_question_or_answer_stay_where_they_are()
