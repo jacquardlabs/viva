@@ -74,6 +74,10 @@ def test_tab_title_identifies_document():
     # are distinguishable (#172). All four title sites route through one
     # shared helper so none can drift back to a hardcoded, doc-blind title.
     assert "function tabDocName(path)" in HTML
+    tab_name = HTML[HTML.index("function tabDocName(path)"):]
+    tab_name = tab_name[:tab_name.index("\n}\n")]
+    assert "const pr = /^PR #\\d+/.exec(path || '');" in tab_name and "return pr ? pr[0] :" in tab_name, \
+        "a PR label names the PR, never the tail of its `(owner/repo)` (#277)"
     assert "function setTabTitle(...parts)" in HTML
     # No call site may hardcode the old doc-blind title strings.
     assert "document.title = 'viva · review · REV '" not in HTML
