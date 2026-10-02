@@ -440,7 +440,8 @@ comment's body via `gh api`), with a repeated sign-off line dropped and its
 `### Decisions` blocks folded into one, then the diff gate's rows appended by
 `revision_history.py`. A comment edited since sign-off is read as it stands,
 under a note naming both `updated_at`s. A source that no longer reads refuses
-the finish with the gate live and the record intact. The driver posts
+the finish with the gate live and the record intact, and refuses the join
+(`start --join-session`) before its capture or clear (#270). The driver posts
 nothing: it prints `gh pr comment <n> --repo <owner/repo> --body-file <path>`
 for the caller to run on the human's explicit yes. `_clear_state` removes the
 file.
