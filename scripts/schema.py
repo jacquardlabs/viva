@@ -296,6 +296,9 @@ class ReviewOutput(TypedDict, total=False):
     round: int
     submitted_early: bool
     sections: list[SectionVerdict]
+    # optional, presence-gated — who reviewed (#212); the server writes it
+    # from its own `--reviewer`, never from the submitted body
+    reviewer: str
 
 
 # ── Boundary validation ───────────────────────────────────────────────────────
@@ -397,6 +400,12 @@ def validate_review_input(data: dict) -> None:
             )
 
 
+def _validate_reviewer(name: object, where: str) -> None:
+    """A present `reviewer` (#212) is a non-empty string; absence is legal."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"{where}.reviewer must be a non-empty string")
+
+
 def validate_verdicts(data: dict) -> None:
     """Raise `ValueError` if `data` is not a structurally valid review output
     (`review-r{N}.json`).
@@ -410,6 +419,8 @@ def validate_verdicts(data: dict) -> None:
     sections = data.get("sections")
     if not isinstance(sections, list):
         raise ValueError("review output.sections must be a list")
+    if "reviewer" in data:
+        _validate_reviewer(data["reviewer"], "review output")
     for i, s in enumerate(sections):
         if not isinstance(s, dict):
             raise ValueError(f"review output.sections[{i}] must be an object")
@@ -784,6 +795,7 @@ class QAAnswer(TypedDict, total=False):
 class QAOutput(TypedDict, total=False):
     answers: list[QAAnswer]
     submitted_early: bool
+    reviewer: str  # optional — as on ReviewOutput (#212)
 
 
 class DiffInput(TypedDict, total=False):
@@ -883,6 +895,9 @@ class SessionRecord(TypedDict, total=False):
     # optional, presence-gated — the interview's `[{question, answer}]`, set at
     # spec `finish`: the one copy of the question texts that survives the clear
     intake: list
+    # optional, presence-gated — resolved once at `interview --session`; every
+    # gate stamps this name and none resolves again (#212)
+    reviewer: str
 
 
 def validate_session(data: dict) -> None:
@@ -915,6 +930,8 @@ def validate_session(data: dict) -> None:
         _validate_spec_source(data["spec"])
     if "pr" in data and (not isinstance(data["pr"], str) or not _PR_RE.match(data["pr"])):
         raise ValueError("session.pr must be `owner/repo#N`")
+    if "reviewer" in data:
+        _validate_reviewer(data["reviewer"], "session")
     if "intake" in data and not (
             isinstance(data["intake"], list)
             and all(isinstance(r, dict) and set(r) == {"question", "answer"}

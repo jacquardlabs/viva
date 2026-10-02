@@ -59,13 +59,14 @@ Changelog:
 ## 2. Invocation
 
 ```
-python3 server.py --mode {review,qa,diff,session} --input PATH --output PATH [--session-id ID] [--no-browser]
+python3 server.py --mode {review,qa,diff,session} --input PATH --output PATH [--session-id ID] [--reviewer NAME] [--no-browser]
 ```
 
 | Flag | Required | Meaning |
 |---|---|---|
 | `--mode` | yes | One of `review`, `qa`, `diff`, `session` — exhaustive, enforced by argparse `choices=`. Gates five things: which startup validator runs (§3), which input `mode` it boots on (below, v13), the printed stdout label (`viva · {mode} mode · {url}`), whether `POST /complete` honors `resolved: "empty"` (§5, v10), and which round `mode` `POST /next-round` accepts (§5, v9). `session` is the lifecycle session (§7), which walks a gate table instead of accepting one round mode. |
 | `--session-id` | with `--mode session` only | The session record's id, served back in the `session` key (§3). Required with `--mode session` and refused with any other mode — both argparse usage errors (exit `2`, §6). |
+| `--reviewer` | no | Who reviews (#212). Stamped as `reviewer` on every output file the server writes (§3), from this flag alone: a `reviewer` key in a submitted body is dropped. Omitted, no file carries the field. An empty or blank value is an argparse usage error (exit `2`, §6). Not a version bump (§1): optional, and absent changes nothing. |
 | `--input` | yes | Any path. Read once, at startup, via `json.load`. Never re-read after boot — a later round's data arrives over HTTP (§5), not by re-reading this path. |
 | `--output` | yes | Any path. Where round verdicts / Q&A answers get written, and the directory `server.url` (§4) is derived from. Does not need to already exist — its parent directories are created on demand (see §4). |
 | `--no-browser` | no | Skips the `webbrowser.open()` call. Nothing else changes: `server.url` is still written, the server still binds and serves. This is the flag a headless caller passes on every invocation, since nothing else suppresses the browser launch. |
@@ -166,7 +167,10 @@ review or diff round):
 | `comments[].replacement` | with `type: "suggestion"` | The reviewer's exact wording for the anchored span, applied **verbatim** — no rewrite, no interpretation, nothing outside the anchor. It is the payload that makes the comment appliable, so `validate_verdicts` rejects a `suggestion` whose `replacement` is absent, non-string, or blank (`400` on `POST /submit`); the `note`, if any, is rationale rather than a second instruction. A section with a live suggestion derives to `changes`, so it cannot be approved, and the wording rides into the ledger and into a carried open-note exchange. Absent on every other type. |
 
 The full output file (`ReviewOutput`) also carries `round` and
-`submitted_early` at the top level, alongside `sections: [SectionVerdict]`.
+`submitted_early` at the top level, alongside `sections: [SectionVerdict]`,
+and `reviewer` when the server was launched with `--reviewer` (§2, #212) —
+presence-gated by `validate_verdicts`: absent is legal, a present value must
+be a non-empty string.
 
 **`QAInput`** (`qa-input.json`, what a caller writes before `--mode qa`):
 
@@ -194,6 +198,7 @@ submits):
 |---|---|---|
 | `answers` | **yes** | List of `QAAnswer`. |
 | `submitted_early` | no | |
+| `reviewer` | no | The server's `--reviewer` (§2, #212); absent when launched without one. |
 
 **`QAAnswer`**: `id` (question id), `choice` (selected chip value, if any),
 `note` (free-text field value), `attachments` (server-written image paths),

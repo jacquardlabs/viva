@@ -201,6 +201,7 @@ _SESSION_ROUTES: dict[tuple[str, str], tuple[str, str]] = {
     ("diff", "live"): ("diff", "diff"),
 }
 _session_id: str = ""  # `--session-id`, set once at startup; session mode only
+_reviewer: str = ""  # `--reviewer` (#212), stamped on every output file; "" → none
 # Rebound, never mutated, so a bare read under `_data_lock` is a consistent
 # snapshot — the same discipline as `_input_data`.
 _gates: tuple = ()
@@ -388,10 +389,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output",     required=True)
     p.add_argument("--session-id", help="the lifecycle session record's id; "
                                         "required with, and only with, --mode session")
+    p.add_argument("--reviewer", help="who reviews (#212): stamped as `reviewer` on "
+                                      "every output file; omit for none")
     p.add_argument("--no-browser", action="store_true", help="Skip opening browser (for testing)")
     args = p.parse_args()
     if (args.mode == "session") != bool(args.session_id):
         p.error("--session-id is required with, and only with, --mode session")
+    if args.reviewer is not None and not args.reviewer.strip():
+        p.error("--reviewer must be a non-empty name; omit it for none")
     return args
 
 
@@ -863,6 +868,10 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             self._error(400, "body must be a JSON object")
             return
+        # The name is the launch's, never the tab's (#212).
+        data.pop("reviewer", None)
+        if _reviewer:
+            data["reviewer"] = _reviewer
 
         # Validate review verdicts at the boundary. Q&A submits an `answers`
         # payload with no `sections`, so it is gated out (shape, not mode).
@@ -1236,6 +1245,7 @@ if __name__ == "__main__":
     _output_path = args.output
     _output_root = Path(args.output).resolve().parent
     _launch_mode = args.mode
+    _reviewer = args.reviewer or ""
     if args.mode == "session":
         # Gates derive from the boot input: an interview opens the intake,
         # a diff (#242's relaunch) means intake and spec are already signed.

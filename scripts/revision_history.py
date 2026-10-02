@@ -155,6 +155,17 @@ def collect_changed(viva_dir: Path) -> list[str] | None:
     ]
 
 
+def collect_reviewer(viva_dir: Path) -> str | None:
+    """Who reviewed (#212): the finishing round's output `reviewer`, which
+    the server stamps from its launch; None when it ran unnamed."""
+    for n in reversed(round_numbers(viva_dir)):
+        out = schema.round_file_paths(viva_dir, n)[1]
+        if out.exists():
+            name = json.loads(out.read_text(encoding="utf-8")).get("reviewer")
+            return name if isinstance(name, str) and name.strip() else None
+    return None
+
+
 def round_unit(viva_dir: Path) -> str:
     """What a card is in these rounds: a diff session's are hunks (#245)."""
     last = schema.round_file_paths(viva_dir, round_numbers(viva_dir)[-1])[0]
@@ -164,7 +175,8 @@ def round_unit(viva_dir: Path) -> str:
 
 def build_block(entries: list[dict], rounds_total: int,
                 sections_total: int, day: str, is_recheck: bool = False,
-                changed: list[str] | None = None, unit: str = "section") -> str:
+                changed: list[str] | None = None, unit: str = "section",
+                reviewer: str | None = None) -> str:
     # `with comments`, not `revised` (#178) — an `info` question earns a
     # ledger row too, with no edit behind it.
     commented = len({e["section_title"] for e in entries})
@@ -177,11 +189,13 @@ def build_block(entries: list[dict], rounds_total: int,
         resign = (f"; re-signed, {len(changed)} changed since last sign-off: "
                   f"{', '.join(flat(t) for t in changed)}" if changed
                   else "; re-signed, unchanged since last sign-off")
+    # Before the date, which `schema.SIGNOFF_LINE_RE` reads off the line's end.
+    named = f"; reviewed by {flat(reviewer)}" if reviewer else ""
     lines = [
         f"{verb} via viva review — {rounds_total} "
         f"round{'s' if rounds_total != 1 else ''}, {sections_total} "
         f"{unit}{'s' if sections_total != 1 else ''}, "
-        f"{commented} with comments{resign}. {day}"
+        f"{commented} with comments{resign}{named}. {day}"
     ]
     if entries:
         lines += ["", "| Round | Section | Verdict | Note |",
@@ -200,7 +214,8 @@ def append_history(viva_dir: Path, doc_path: Path, day: str) -> None:
     if rounds_total == 0:
         die(f"no review round files found in {viva_dir}")
     block = build_block(entries, rounds_total, sections_total, day, is_recheck,
-                        collect_changed(viva_dir), round_unit(viva_dir))
+                        collect_changed(viva_dir), round_unit(viva_dir),
+                        collect_reviewer(viva_dir))
     decisions = collect_decisions(viva_dir)
     if decisions:
         block = block + "\n\n" + schema.decisions_block(decisions)

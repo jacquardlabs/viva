@@ -162,7 +162,7 @@ def test_a_commit_source_and_the_empty_finish() -> None:
         assert minutes.startswith("**viva session minutes** · o/r#7 · spec `spec.md` at `"), minutes
         assert_spec_ledger(minutes)
         diff = minutes.split("## Diff review · o/r#7")[1]
-        assert "Signed off via viva review — 1 round, 1 hunk, 1 with comments." in diff, diff
+        assert "Signed off via viva review — 1 round, 1 hunk, 1 with comments; reviewed by t." in diff, diff
         assert f"| 1 | {title} | changes | “private: ask bob \\| not in the PR” |" in diff, diff
         assert not record_path(main).exists(), "the record goes once the minutes are written"
         # Nothing posts without the confirm: the driver only prints the command.
@@ -200,7 +200,7 @@ def test_a_comment_source_and_an_edit_after_sign_off() -> None:
     assert minutes.startswith(f"**viva session minutes** · o/r#7 · spec {COMMENT_URL}\n"), minutes
     assert_spec_ledger(minutes)
     assert "edited after sign-off" not in minutes
-    assert "Signed off via viva review — 1 round, 1 hunk, 0 with comments." in minutes, minutes
+    assert "Signed off via viva review — 1 round, 1 hunk, 0 with comments; reviewed by t." in minutes, minutes
     minutes = comment_minutes(edited=True)
     note = minutes.index("edited after sign-off (T1 → T2)")
     assert note < minutes.index("## Revision History"), minutes

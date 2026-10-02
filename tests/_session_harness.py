@@ -31,12 +31,17 @@ def git(cwd: Path, *argv) -> str:
         cwd=str(cwd), check=True, capture_output=True, text=True).stdout.strip()
 
 
+REVIEWER = "t"
+
+
 def repo(td: Path) -> Path:
     """A clone with a GitHub origin, one commit, and a linked worktree."""
     main = td / "main"
     main.mkdir()
     git(main, "init", "-q")
     git(main, "remote", "add", "origin", "git@github.com:o/r.git")
+    # The reviewer every session here resolves (#212), on any machine.
+    git(main, "config", "user.name", REVIEWER)
     (main / "f.txt").write_text("a\nb\nc\n")
     git(main, "add", "f.txt")
     git(main, "commit", "-q", "-m", "init")
